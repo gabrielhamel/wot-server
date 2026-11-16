@@ -1,0 +1,58 @@
+ContextMap Server {
+  type = SYSTEM_LANDSCAPE
+  state = AS_IS
+  contains GameClient, ResourceExtraction, BinaryMapping, Accounts, Social, Access, Admin
+  GameClient [U] -> [D,ACL] BinaryMapping {
+    implementationTechnology = "Read-only AMD64 PE; evidence-bearing offline investigation models"
+  }
+  GameClient [U] -> [D,ACL] ResourceExtraction {
+    implementationTechnology = "Offline read-only indexing of installed packages and loose resources"
+  }
+  ResourceExtraction [U,PL] -> [D,ACL] Accounts {
+    implementationTechnology = "Versioned resource bundle containing garage definitions, regular tech trees and vehicle labels"
+  }
+  ResourceExtraction [U,PL] -> [D,ACL] Access {
+    implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
+  }
+  GameClient [U] -> [D,ACL] Access {
+    implementationTechnology = "Mercury UDP wire messages translated into login, handoff, and garage RPCs"
+  }
+  Accounts [U,OHS,PL] -> [D,ACL] Admin {
+    implementationTechnology = "PlayerAccounts API for identity listing and provisioning, plus account snapshots and the vehicle catalog for the operator garage"
+  }
+  Access [U,OHS,PL] -> [D,ACL] Admin {
+    implementationTechnology = "Bounded PlayerGrants application API coordinates resource and tank grants with garage writes and publishes committed updates to game sessions"
+  }
+  Accounts [U,OHS,PL] -> [D,ACL] Social {
+    implementationTechnology = "Read-only account_directory SQL identity projection and account-ID foreign keys; shared SQLx pool"
+  }
+  Social [U,OHS,PL] -> [D,ACL] Access {
+    implementationTechnology = "Published contacts/search and durable private message APIs; Access adapts native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
+  }
+  Accounts [U,OHS,PL] -> [D,ACL] Access {
+    implementationTechnology = "Published account application API and immutable snapshots; Access adapts credentials, preferences, revision-checked ammunition, equipment, consumables, directives, depot sales, crew management and tank/module progression commits and garage projections to client sessions"
+  }
+}
+BoundedContext GameClient {
+  domainVisionStatement = "External versioned World of Tanks executable and resources supply compatibility evidence and garage definitions."
+}
+BoundedContext ResourceExtraction {
+  domainVisionStatement = "Select the installed definitions and component class presence needed by the server and publish a standalone runtime resource bundle."
+}
+BoundedContext BinaryMapping {
+  domainVisionStatement = "Recover supported native type and network framing metadata, retain evidence and unknowns, and emit offline Rust declarations and JSON mappings."
+}
+BoundedContext Accounts {
+  domainVisionStatement = "Own durable identity, password hashes, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, crew rosters and training, and revisions in PostgreSQL; project snapshots into versioned garage caches."
+}
+BoundedContext Access {
+  domainVisionStatement = "Admit authenticated clients, manage expiring handoff tickets and sessions, and adapt login and garage commands through the server-owned Mercury UDP transport."
+}
+
+BoundedContext Social {
+  domainVisionStatement = "Own persistent directed friends and ignored contacts, bounded durable private conversations and retained offline history, legacy window subscriptions, and validated nickname searches over the account directory."
+}
+
+BoundedContext Admin {
+  domainVisionStatement = "Authenticate server operators and expose account listing, creation, garage inspection and player grants over HTTP and a same-origin React Admin dashboard."
+}

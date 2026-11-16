@@ -1,0 +1,65 @@
+mod selection;
+
+use anyhow::{Context, Result, ensure};
+use std::{collections::BTreeSet, fs, path::Path};
+
+use crate::infrastructure::ClientResources;
+use wot_resources::{ResourceBundle, validate_resource_path};
+
+pub struct Summary {
+    pub files: usize,
+    pub bytes: u64,
+}
+
+pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
+    let mut client = ClientResources::open(game_dir)?;
+    let extensions: BTreeSet<_> = client
+        .paths()
+        .filter_map(|path| path.strip_suffix("/extension.xml"))
+        .map(str::to_owned)
+        .collect();
+    let mut files = Vec::new();
+    let mut classes = BTreeSet::new();
+    for path in client.paths() {
+        let Some((root, relative)) = selection::resource_root(path, &extensions) else {
+            continue;
+        };
+        if selection::is_definition(root, relative) {
+            validate_resource_path(path)?;
+            files.push(path.to_owned());
+        }
+        if let Some(name) = selection::client_class(relative) {
+            classes.insert(name.to_owned());
+        }
+    }
+    // Access uses client class presence only for components. Discard other script names.
+    let components: BTreeSet<_> = files
+        .iter()
+        .filter_map(|path| selection::component_name(path))
+        .collect();
+    classes.retain(|name| components.contains(name.as_str()));
+
+    for path in selection::required_files() {
+        ensure!(client.contains(&path), "Missing client resource {path}");
+    }
+
+    fs::create_dir(output)
+        .with_context(|| format!("Create new output directory {}", output.display()))?;
+    let result = (|| {
+        let mut bytes = 0;
+        for path in &files {
+            bytes += client.copy(path, &output.join("res").join(path))?;
+        }
+        ResourceBundle::write_manifest(output, classes).context("Write bundle manifest")?;
+        Ok(Summary {
+            files: files.len(),
+            bytes,
+        })
+    })();
+    if result.is_err()
+        && let Err(error) = fs::remove_dir_all(output)
+    {
+        eprintln!("Could not clean up {}: {error}", output.display());
+    }
+    result
+}

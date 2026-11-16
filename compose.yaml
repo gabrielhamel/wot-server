@@ -1,0 +1,20 @@
+name: wot-server
+
+services:
+  postgres:
+    image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wot_server}
+      POSTGRES_USER: ${POSTGRES_USER:-wot_server}
+      POSTGRES_PASSWORD: local-development
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres_data:

@@ -1,0 +1,230 @@
+# Running the server
+
+The `wot-server` binary runs a LoginApp and BaseApp in one process. PostgreSQL is
+mandatory. The binary can also serve the [HTTP API and dashboard](admin.md).
+Startup reads an [extracted resource bundle](resources.md), validates Account
+binding and applies embedded migrations without creating accounts or inventory.
+Offline binary mapping remains available as a separate development tool.
+
+## Running
+
+Generate a bundle with [wot-extract](resources.md) and place it under
+`target/release/resources` or set `resource_dir` to its location. From the
+repository root, start the server with no arguments:
+
+```sh
+cargo run --release
+```
+
+The built binary also starts directly with no arguments:
+
+```sh
+./target/release/wot-server
+```
+
+On first start, the server creates **`server.json` beside the executable**, then
+starts using its defaults. Existing configuration files are never overwritten.
+With Cargo the file is `target/release/server.json`; moving the binary to its own
+folder makes that folder the server's home. Relative resource, key and log paths resolve
+against this folder, independently of the shell's working directory. Restart after
+editing the file. There are no CLI options or environment-variable overrides,
+including `RUST_LOG`; the offline mapper's CLI is independent.
+
+The generated JSON contains every supported startup setting:
+
+| Field | Default / meaning |
+| --- | --- |
+| `resource_dir` | `resources`; directory containing the generated bundle manifest and `res/` |
+| `database_url` | `postgresql://wot_server:local-development@127.0.0.1:54329/wot_server` |
+| `login_bind` | `0.0.0.0:20016` UDP |
+| `base_bind` | `0.0.0.0:20017` UDP for BaseApp and TCP for native XMPP |
+| `advertised_base` | `null`: automatically choose the route to each client; set e.g. `"192.168.1.10:20017"` for an explicit non-local handoff destination |
+| `private_key` | `login.pem`; its public key is exported as `login.pubkey` |
+| `db_connections` | `16`, allowed range 1–256 |
+| `max_clients` | `256`, admitted/pending handoff capacity, allowed range 1–256 |
+| `max_pending` | `32`, authentication worker capacity, allowed range 1–256 |
+| `log_level` | `"info"`; accepts `"error"`, `"info"`, `"debug"` |
+| `log_file` | `logs/server.log`, appended across restarts |
+| `admin` | `null`; set an [admin configuration object](admin.md) to enable HTTP |
+
+Unknown fields, invalid types and invalid limits stop startup with a diagnostic.
+Missing fields use defaults. In an existing configuration, replace `game_dir`
+with `resource_dir` and point it to the generated bundle. The configuration contains the database password;
+new files have owner-only permissions on Unix. Do not commit or share this file.
+
+When BaseApp listens on all interfaces or loopback, a localhost client always
+receives `127.0.0.1` and the actual bound BaseApp port, even when `advertised_base`
+is configured. This avoids sending local sessions through the router's public
+address. Other clients receive the explicit destination when configured, or the
+route-selected interface address otherwise. A concrete non-loopback BaseApp bind
+does not support this loopback shortcut. Client server-list entries on other
+machines must point to this computer's reachable address on port 20016.
+
+PostgreSQL is a separate service; start the existing Compose instance with
+`docker compose up -d --wait` if stopped. Embedded migrations run automatically,
+but startup never creates accounts or vehicles. Existing accounts and inventory
+remain untouched. Use the independent [demo seed command](seeding.md) to create
+Player_1 and Player_2 with complete tier I garages. The [admin API](admin.md)
+provisions individual accounts on demand. Integration tests also create
+their own temporary accounts.
+The removed `seed_username`, `seed_name`, `seed_password` and `seed_vehicle` fields
+must also be removed from older configuration files, since unknown fields are rejected.
+Passwords use salted Argon2id hashes. The Compose DB port is bound to loopback.
+The PostgreSQL volume survives `docker compose down`. The `--volumes` flag
+deletes it. Ctrl-C gracefully stops the gateway.
+
+The migration `migrations/0001_initial_schema.sql` creates the complete database
+schema. Start with an empty PostgreSQL database; the server applies the migration
+automatically and tracks it in `_sqlx_migrations`.
+
+### Logging
+
+`error` records failures, `info` adds startup/shutdown and account sessions, and
+`debug` adds protocol method names and resource transfer sizes. Levels are cumulative.
+Server events use those three severities; dependency errors are also included.
+Console and file contain timestamps, severity, module and structured event fields,
+without terminal color codes. Logs append; rotation is currently manual. File writes
+are synchronous, so debug logging can reduce throughput under load. The server does
+not intentionally log passwords, private keys or decoded login payloads.
+Configuration errors before logging initializes appear on stderr; subsequent startup
+and runtime failures also go to the log file. For troubleshooting, set
+`"log_level": "debug"`, restart, reproduce the problem and inspect the file.
+
+## Protocol implementation
+
+The server owns its [Mercury adapter](../src/access/infrastructure/mercury) for
+UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish, session lifecycle
+and Account RPCs. The adapter loads the method tables and creation layout from
+the configured bundle. The [shared codecs](../src/client_formats/README.md)
+read packed resources and serialize Python values for Access and Accounts.
+
+A standalone checkout builds with `cargo build --locked`. See the
+[resilience report](resilience-audit.md) for packet limits and regression
+coverage, and [third-party notices](../THIRD_PARTY_NOTICES.md) for provenance.
+
+## Connecting the game
+
+The real client's server list must contain this server. The existing toolkit's
+`wg-toolkit-wot/src/main.rs` documents its proven Packed XML server registration
+filter. Use a separate/local entry with `url` and `url_token` set to
+`127.0.0.1:20016` (or this machine's reachable address), a unique name/short name,
+and an unused `periphery_id` (250 in the validated installation; 205 is EU5). Preserve a backup of `res/scripts_config.xml` before editing.
+The binary does not automatically change client files. The installed client was
+configured and tested separately; see [live validation](client-validation.md).
+
+RSA-encrypted login is enabled by default. Startup reuses the configured
+`private_key` and exports its matching public key alongside it with a `.pubkey`
+extension. If absent, it generates a 2048-bit PKCS#8 key with owner-only permissions
+on Unix; existing keys are never replaced. Preserve the key when moving the server.
+For this already-configured installation, the saved `.local/login.pem` identity
+is selected directly by `private_key` in `target/release/server.json`, preserving
+the game client's matching public key. Keep the identity outside `target/`: cleaning
+build outputs must not remove the key. The default `login.pem` is appropriate when
+the binary lives in a persistent server folder. A missing key generates a new
+identity, which requires updating the public key in all configured clients.
+
+The [validated client entry](client-validation.md) references a file in the
+client's `res/` directory that must match the exported public key. The existing
+configured installation already has the matching key. If you generate a new
+key, copy its public key into each client that uses the server. BaseApp traffic uses the client's negotiated Blowfish key. Use
+username/password login for an existing account; official Wargaming launcher/SSO
+tokens are not local database credentials.
+
+## Runtime contract
+
+1. Login extracts `login` from the client's JSON username envelope when
+   `auth_method` is `basic`, then validates username/password asynchronously against
+   PostgreSQL. Plain usernames remain supported for protocol tools.
+2. A random one-use handoff ticket binds the account and negotiated cipher to the
+   source IP, expires after 30 seconds and is installed before login success.
+3. BaseApp consumes the ticket, negotiates the session and announces 10 Hz updates.
+4. After `enableEntities`, it creates Account and sends `showGUI` with the actual
+   database ID. No networked garage space or Vehicle entity is required.
+5. `CMD_SYNC_DATA` (100), `CMD_SYNC_SHOP` (300) and `CMD_SYNC_DOSSIERS` (600)
+   return zlib-compressed Python pickle resources, correlated to request IDs.
+   Resource descriptions contain `(compressed length, signed CRC32)`.
+6. Integer preference writes (1600) update JSONB and revision atomically, then
+   rebuild the session projection and send the committed diff/response. A stale/initial
+   revision receives a complete snapshot; the follow-up request at the current
+   revision is acknowledged with `onCmdResponseExt` to finish synchronization.
+
+Shop prices are loaded once from resources and shared; account projections are
+prepared outside the UDP loop and shared by reference during sync. Argon2 work and compression use Tokio's blocking
+pool. SQLx uses a shared asynchronous connection pool. Password jobs, result
+queues, handoffs and admitted clients have explicit bounds. Simultaneous logins
+for the same account are refused; different accounts have separate snapshots and
+entities. Disconnect messages and silent client expiry reclaim capacity.
+
+Atomic JSONB merge and revision increments prevent concurrent preference writes
+from losing unrelated keys. Reads use a repeatable-read transaction to keep
+balances, ownership, settings, progression and ammunition coherent. The integration test fixture creates accounts and ownership in one transaction;
+simultaneous/repeated fixture seeds do not overwrite existing state.
+Migrations are embedded and tracked by SQLx; no separate migration CLI is required.
+
+## Evidence and limits
+
+The original research target was EU `2.4.1.5498`; the installed client has since
+updated to `2.4.1.5514` (`v.2.4.1.1 #993`). Confirmed locally: resource loading,
+Account schema binding, PostgreSQL migration/seed, encrypted UDP tests, and actual
+login and garage rendering with both seeded tanks in the carousel. See the
+[live validation record](client-validation.md) for evidence, fixes and remaining
+ancillary UI errors.
+
+Supporting sources:
+
+- Toolkit `wg-toolkit-wot/src/base/{mod,account,shop}.rs`: working prototype bootstrap,
+  payload shape, command responses and resource streams.
+- Toolkit `wg-toolkit-wot/src/wot/{schema,items,item_defs,item_prices}.rs`: schemas,
+  descriptors and installed catalog readers. Adaptations here remove battle-only
+  resource/physics loading and replace global account constants with snapshots.
+- `docs/references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/login/login_modes/credentials_mode.py`
+  and `common/external_strings_utils.py`: production basic login validates an email-shaped identifier.
+- `docs/references/wot-src/sources/res/scripts/client/connection_mgr.py` (15, 170–190): basic/token
+  method names and JSON login envelope; `client_common/pwd_token.py`: English
+  passwords pass through, while the CN/VN paths transform them (not supported).
+- `docs/references/wot-src/sources/res/scripts/client/Account.py`: `onBecomePlayer` (248) and
+  `onStreamComplete` (424); `account_helpers/AccountSyncData.py` (150) requests full sync;
+  `account_helpers/SyncController.py` decompresses/unpickles the resource.
+- `docs/references/wot-src/sources/res/scripts/client/gui/ClientHangarSpace.py`: local space and
+  `HangarVehicle` creation. Its decompiled tree reports `v.2.4.1.1 #993`, EU;
+  treat it as corroboration, not proof of executable build identity.
+- `docs/references/BigWorld-Engine-14.4.1/programming/bigworld/lib/connection/baseapp_ext_interface.hpp`
+  and `common_client_interface.hpp`: historical connection framing references.
+  Modern framing and method order come from the toolkit and installed resource
+  model, not an assumption that the old engine's ABI still matches.
+
+Vehicle ownership, balances, preferences and ammunition are durable. The shell
+panel can load/unload, reorder and buy missing shells using shared depot stock;
+see [garage ammunition](ammunition.md). Tank modules can be researched, bought,
+installed and swapped from the shared depot. See [module progression](modules.md).
+Equipment can be bought from the shop, mounted from the depot, or bought and
+mounted together from the equipment panel. See [garage equipment](equipment.md).
+[Garage consumables](consumables.md) covers purchases, slot changes, combined
+Auto Fill and the consumable auto-resupply preference.
+[Garage directives](directives.md) covers buying, mounting and removing crew
+and equipment directives, and storing the auto-resupply setting.
+The [Garage Depot](depot.md) displays shared stock and supports single and bulk
+sales of unmounted equipment, modules, shells and consumables.
+Tank research, permanent vehicle purchases and sales, and garage slot purchases are covered in
+[tank progression](vehicles.md). The [crew guide](crew.md) covers hiring,
+assignments, barracks, retraining, perks and the related shop operations.
+Stock modules come from the extracted vehicle definitions. Battle entry,
+matchmaking and results remain outside the garage server.
+Contacts search, durable directed friends/ignored users, presence, offline private
+messages and retained history use the native XMPP TCP endpoint authenticated through
+the game connection; see [social protocol](social.md).
+Dossiers are empty; external web-service token payloads are placeholders; type-1 XMPP tokens are game-session credentials; two optional UI
+initialization commands are acknowledged without gameplay effects. Unsupported
+commands in the bound subset receive an explicit failure. Unbound telemetry and
+unknown methods may be ignored by the server.
+
+The runtime supports multiple active clients by multiplexing UDP events and using
+bounded asynchronous database work. It has not been load-tested for production
+capacity. Large resource writes still use synchronous UDP sends.
+Transport budgets and login rate limits are implemented; fair resource scheduling,
+SSO, further operational hardening and
+cross-platform real-client validation remain future work. External DB mutations
+are observed on next login; new catalog keys require restarting the server.
+
+Native chat uses TCP on the BaseApp port as well as UDP. Forward/allow both
+transports for remote clients; see [native chat endpoint](social.md#native-endpoint-and-authentication).

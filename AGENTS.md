@@ -1,0 +1,147 @@
+# Project instructions
+
+## Goal and workspace
+
+Build a complete, functional server for World of Tanks. This repository,
+`wot-server`, is the home of the server implementation and its binary.
+
+The workspace uses the server project, four reference submodules, and a supplied
+game client. Paths below are relative to the repository root unless absolute:
+
+- `.`: the server project (repository root).
+- `docs/references/wg-toolkit-rs`: the user's existing project,
+  developed with a collaborator, containing parts of the World of Tanks network
+  protocol and login/game client implementations. A substantial amount of
+  `WorldOfTanks.exe` reverse engineering, including game structures, has already
+  been done there. Consult it as a research reference. The server owns its
+  protocol implementation and has no Toolkit build or runtime dependency.
+- Compiled game client: run `python3 tools/game-client.py status --json` before
+  client-dependent work. This discovers the local executable and full resource
+  tree and reports the executable SHA-256. Use
+  `python3 tools/game-client.py path` for its absolute directory. Selection is
+  `WOT_GAME_DIR`, then ignored `.local/game-client.json`, then
+  `.local/game-client/`; never assume a developer-specific absolute path.
+  If unavailable, the command reports setup instructions: register an existing
+  installation with `use /path/to/World_of_Tanks`, or provision one with
+  `install` through `wg-launcher`. See [game client setup](docs/game-client.md).
+  This is the real compiled client, including `WorldOfTanks.exe` and packaged
+  resources, not the decompiled source submodule or extracted server bundle.
+  Record executable identity with research findings. A directory name does not
+  establish its version, freshness or server compatibility. Check for updates
+  explicitly; do not update a research fixture as part of routine discovery.
+- `docs/references/BigWorld-Engine-14.4.1`: the C++ BigWorld engine
+  source supplied by the user as a reference for the engine Wargaming used to
+  build World of Tanks. Consult it for networking and game implementation
+  details. This is an older engine version; Wargaming may have changed it since.
+  Treat its behavior as historical reference and verify applicability against
+  the supplied game client and existing reverse-engineering findings before
+  relying on it for compatibility.
+- `docs/references/wot-src`: decompiled Python and ActionScript
+  game code supplied by the user. Consult it for entity definitions, game
+  structures, and game behavior alongside the existing protocol findings,
+  supplied client executable, and BigWorld engine reference. Record source
+  locations for findings and verify version applicability and decompilation
+  uncertainties before treating them as confirmed compatibility requirements.
+- `docs/references/wg-launcher`: reference for file organization, bounded-context
+  guides, and context-map generation and automation. Adapt its architectural
+  patterns to the server's responsibilities.
+
+Initialize the reference submodules with `git submodule update --init` before
+consulting them. Their revisions are pinned by this repository. Keep reference
+changes separate from server implementation changes; see
+[research references](docs/references/README.md) for setup and provenance.
+
+## Living technical documentation
+
+Keep documentation up to date throughout the work, using Markdown files under
+`docs/` as needed. Document how the game server, network protocol, and relevant
+game structures and behavior work, including new understanding obtained from
+reverse engineering or implementation.
+
+Update the relevant documentation as discoveries are made or behavior changes.
+Distinguish confirmed findings from hypotheses and unresolved questions. Record
+the supporting source, executable version, or code location when useful so that
+future work can verify and extend the findings.
+
+## Architecture
+
+Use `docs/references/wg-launcher` as the reference for file
+organization, bounded-context guides, and the context-map system. Adapt its
+patterns to the game server's actual responsibilities rather than copying its
+launcher-specific contexts or product rules.
+
+Use domain-driven design with explicit bounded contexts. Each bounded context
+must contain its own layered architecture following Clean Architecture
+principles, with domain concepts separated from application orchestration and
+infrastructure concerns. Keep dependencies directed toward the domain and make
+boundaries between contexts explicit.
+
+At the root of each bounded context's directory, maintain a `README.md` that:
+
+- Describes the context's purpose, responsibilities, and boundaries.
+- Explains its internal layers and their roles.
+- Contains a short glossary defining its ubiquitous language.
+
+Organize production code by bounded context first, then by `domain/`,
+`application/`, `infrastructure/`, and `presentation/` where needed inside each
+context. Do not create crate-wide layer directories or empty layers for
+symmetry. Use `crates/` when introducing workspace package boundaries; choose
+packages for real responsibilities rather than making every context a crate.
+Keep executable bootstrapping small, use focused modules with clear ownership,
+and expose context entry points instead of reaching into another context's
+internals. Keep protocol wire representations separate from domain models.
+
+### Context maps
+
+Follow the context-map system in `docs/references/wg-launcher`:
+
+- Maintain a root `CONTEXT_MAP.md` displaying maps for production crates.
+- Keep editable Context Mapper CML models in `docs/context-maps/` and rendered
+  SVG diagrams in `docs/context-maps/generated/`.
+- Reuse and adapt `docs/context-maps/generate.py` and
+  `.github/workflows/context-maps.yml` from the reference project when setting
+  up rendering and automation. Preserve model validation, pinned tooling with
+  checksum verification, and deterministic rendering.
+- Describe actual context responsibilities, upstream/downstream relationships,
+  integration contracts, and applicable DDD integration patterns. Distinguish
+  implemented boundaries from planned ones; do not present a target design as
+  the current implementation.
+- Update CML models, context README files, glossaries, and relevant source maps
+  together when boundaries, terminology, integration contracts, or file
+  organization change. Follow the reference's automated SVG generation workflow.
+
+Keep the root README focused on getting started and use `docs/README.md` as the
+documentation navigation hub. Keep architectural explanations, protocol
+findings, contributor guidance, and testing details in their relevant guides.
+
+## Rust safety and server resilience
+
+The server's Rust code must be 100% safe Rust: do not introduce `unsafe` code.
+Safe Rust alone does not guarantee resilience; prevent panics and uncontrolled
+resource consumption in all client-facing paths as well.
+
+Client packets, malformed or unexpected input, authentication failures,
+disconnects, timeouts and other recoverable errors must never crash the server.
+Reject the affected request or disconnect the affected client, log the error at
+the appropriate level, and continue serving other clients. Bound client-driven
+allocations, queues and work so one client cannot exhaust server resources.
+
+Do not use `unwrap()`, `expect()`, unchecked indexing, panic-prone arithmetic or
+other panic paths on client-controlled data or recoverable runtime results.
+Apply this requirement across the packet-processing dependency chain.
+Add regression tests for discovered packet-triggered crashes and verify that a
+valid client can still be served after the offending input is rejected.
+
+Terminate the server only for critical, unrecoverable errors that prevent safe
+or correct operation, such as invalid required startup configuration, failure to
+initialize required services, or an unrecoverable internal invariant violation.
+Report the cause clearly and shut down gracefully where possible. Do not promote
+an individual client or recoverable operation failure into a process-wide exit.
+
+## Code clarity and comments
+
+Prefer clear semantic names and code that communicates intent. Avoid comments
+inside code when good naming and structure can explain the behavior. If a
+necessary concept or decision cannot be expressed clearly through code, write
+a focused comment explaining it. Keep broader explanations and reverse-
+engineering knowledge in the technical documentation.

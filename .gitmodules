@@ -1,0 +1,16 @@
+[submodule "docs/references/wg-toolkit-rs"]
+	path = docs/references/wg-toolkit-rs
+	url = https://github.com/theorzr/wg-toolkit-rs
+	branch = main
+[submodule "docs/references/BigWorld-Engine-14.4.1"]
+	path = docs/references/BigWorld-Engine-14.4.1
+	url = https://github.com/v2v3v4/BigWorld-Engine-14.4.1
+	branch = main
+[submodule "docs/references/wot-src"]
+	path = docs/references/wot-src
+	url = https://github.com/izeberg/wot-src
+	branch = EU
+[submodule "docs/references/wg-launcher"]
+	path = docs/references/wg-launcher
+	url = https://github.com/gabrielhamel/wg-launcher
+	branch = main

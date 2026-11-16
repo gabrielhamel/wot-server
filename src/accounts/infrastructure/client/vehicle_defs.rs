@@ -1,0 +1,221 @@
+use super::{GarageCatalog, item_defs, item_prices::ItemPrices, items::IntCompactDescr};
+use crate::accounts::{ProgressionError, ShellCurrency, VehicleCost, VehiclePurchaseRules};
+use anyhow::{Context, Result};
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read;
+use wot_resources::ResourceBundle;
+
+const FORBIDDEN_FOR_BATTLE: &str =
+    "scripts/item_defs/vehicles/common/forbidden_vehicles_to_battle_config.xml";
+const NON_RANDOM_TAGS: &[&str] = &[
+    "event_battles",
+    "fallout",
+    "epic_battles",
+    "bob",
+    "battle_royale",
+    "clanWarsBattles",
+    "fun_random",
+    "comp7",
+    "comp7_light",
+    "fort_rush",
+    "maps_training",
+    "premiumIGR",
+    "observer",
+    "pillbox",
+    "private",
+    "testTank",
+];
+
+pub(super) struct VehicleOffer {
+    pub key: String,
+    pub name: String,
+    pub price: Option<VehicleCost>,
+    pub requires_research: bool,
+    pub level: Option<i64>,
+    pub tags: BTreeSet<String>,
+    forbidden_for_battle: bool,
+}
+
+impl VehicleOffer {
+    pub(super) fn grantable(&self) -> bool {
+        self.level.is_some_and(|level| (1..=11).contains(&level))
+            && !self.forbidden_for_battle
+            && !NON_RANDOM_TAGS.iter().any(|tag| self.tags.contains(*tag))
+    }
+}
+
+pub(super) fn offers(
+    fs: &ResourceBundle,
+    prices: &ItemPrices,
+) -> Result<BTreeMap<i32, VehicleOffer>> {
+    let forbidden = match item_defs::read_xml(fs, FORBIDDEN_FOR_BATTLE) {
+        Ok(config) => config
+            .get_child_element("forbiddenVehicles")
+            .into_iter()
+            .flat_map(|section| section.iter_children_all())
+            .filter_map(|(_, value)| {
+                value
+                    .as_string()
+                    .or_else(|| value.as_element()?.value.as_string())
+            })
+            .map(str::trim)
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let mut offers = BTreeMap::new();
+    for (nation, nation_name) in item_defs::NATIONS.iter().enumerate() {
+        let path = format!("text/lc_messages/{nation_name}_vehicles.mo");
+        let names = vehicle_names(fs, &path).unwrap_or_default();
+        for dir in item_defs::vehicle_dirs(fs, nation_name) {
+            let list = item_defs::read_xml(fs, &format!("{dir}/list.xml"))?;
+            for (name, vehicle) in list.iter_child_elements() {
+                let Some(id) = vehicle.get_child_integer("id") else {
+                    continue;
+                };
+                let cd = IntCompactDescr {
+                    item_type: 1,
+                    nation: u8::try_from(nation)?,
+                    id: u16::try_from(id)?,
+                };
+                let price = prices
+                    .prices
+                    .iter()
+                    .find(|(id, _)| *id == cd)
+                    .filter(|(id, p)| p.amount >= 0 && !prices.not_in_shop.contains(id))
+                    .and_then(|(_, p)| match p.currency {
+                        "credits" => Some(VehicleCost {
+                            credits: p.amount,
+                            gold: 0,
+                        }),
+                        "gold" => Some(VehicleCost {
+                            credits: 0,
+                            gold: p.amount,
+                        }),
+                        _ => None,
+                    });
+                let premium = vehicle
+                    .get_child_string("tags")
+                    .is_some_and(|tags| tags.split_whitespace().any(|tag| tag == "premium"));
+                let key = format!("{nation_name}:{name}");
+                offers.entry(cd.to_int() as i32).or_insert(VehicleOffer {
+                    forbidden_for_battle: forbidden.contains(&key),
+                    key,
+                    name: vehicle
+                        .get_child_string("userString")
+                        .and_then(|label| label.split_once(':'))
+                        .and_then(|(_, label)| names.get(label))
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            name.split_once('_')
+                                .map_or(name, |(_, name)| name)
+                                .replace('_', " ")
+                        }),
+                    price,
+                    level: vehicle.get_child_integer("level"),
+                    tags: vehicle
+                        .get_child_string("tags")
+                        .unwrap_or_default()
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect(),
+                    requires_research: !premium && price.is_none_or(|p| p.gold == 0),
+                });
+            }
+        }
+    }
+    Ok(offers)
+}
+
+fn vehicle_names(fs: &ResourceBundle, path: &str) -> Option<BTreeMap<String, String>> {
+    let mut bytes = Vec::new();
+    fs.read(path)
+        .ok()?
+        .take(2 * 1024 * 1024)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    let little_endian = match bytes.get(..4)? {
+        [0xde, 0x12, 0x04, 0x95] => true,
+        [0x95, 0x04, 0x12, 0xde] => false,
+        _ => return None,
+    };
+    let word = |offset: usize| {
+        let value: [u8; 4] = bytes.get(offset..offset.checked_add(4)?)?.try_into().ok()?;
+        Some(if little_endian {
+            u32::from_le_bytes(value)
+        } else {
+            u32::from_be_bytes(value)
+        } as usize)
+    };
+    let count = word(8)?;
+    let keys = word(12)?;
+    let translations = word(16)?;
+    let string = |table: usize, index: usize| {
+        let entry = table.checked_add(index.checked_mul(8)?)?;
+        let length = word(entry)?;
+        let start = word(entry.checked_add(4)?)?;
+        std::str::from_utf8(bytes.get(start..start.checked_add(length)?)?).ok()
+    };
+    let mut names = BTreeMap::new();
+    for index in 0..count.min(bytes.len() / 8) {
+        if let (Some(key), Some(translation)) = (string(keys, index), string(translations, index))
+            && !key.is_empty()
+            && !translation.is_empty()
+            && !translation.contains('\0')
+        {
+            names.insert(key.to_owned(), translation.to_owned());
+        }
+    }
+    Some(names)
+}
+
+impl GarageCatalog {
+    pub(super) fn purchase_rules(&self, id: i32) -> Result<VehiclePurchaseRules> {
+        let offer = self.offers.get(&id).context("Unknown vehicle offer")?;
+        let template = self.vehicle(&offer.key)?;
+        let ammo = template
+            .ammunition_rules(&template.modules.rules.stock)
+            .context("Missing stock gun ammunition")?;
+        let ammunition_cost = ammo
+            .defaults
+            .iter()
+            .filter(|(_, count)| *count > 0)
+            .try_fold(VehicleCost::default(), |cost, &(id, count)| {
+                let price = ammo.prices.get(&id)?;
+                let amount = price
+                    .amount
+                    .checked_mul(i64::from(count))
+                    .filter(|&n| n >= 0)?;
+                cost.checked_add(match price.currency {
+                    ShellCurrency::Credits => VehicleCost {
+                        credits: amount,
+                        gold: 0,
+                    },
+                    ShellCurrency::Gold => VehicleCost {
+                        credits: 0,
+                        gold: amount,
+                    },
+                })
+                .ok()
+            });
+        Ok(VehiclePurchaseRules {
+            vehicle: id,
+            catalog_key: offer.key.clone(),
+            price: offer.price,
+            requires_research: offer.requires_research,
+            crew_size: u32::try_from(template.crew_roles.len())?,
+            ammunition: ammo.defaults.clone(),
+            ammunition_cost,
+        })
+    }
+
+    pub(super) fn vehicle_by_id(&self, id: i32) -> Result<std::sync::Arc<super::CatalogVehicle>> {
+        self.vehicle(&self.offers.get(&id).context("Unknown vehicle type")?.key)
+    }
+
+    pub(super) fn catalog_failure(error: anyhow::Error) -> ProgressionError {
+        tracing::error!(%error,"Load garage vehicle definitions failed");
+        ProgressionError::CatalogUnavailable
+    }
+}
