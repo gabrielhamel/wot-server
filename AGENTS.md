@@ -21,10 +21,10 @@ game client. Paths below are relative to the repository root unless absolute:
   `WorldOfTanks.exe` reverse engineering, including game structures, has already
   been done there. Consult it as a research reference. The server owns its
   protocol implementation and has no Toolkit build or runtime dependency.
-- Compiled game client: run `python3 tools/game-client.py status --json` before
+- Compiled game client: run `cargo game-client status --json` before
   client-dependent work. This discovers the local executable and full resource
   tree and reports the executable SHA-256. Use
-  `python3 tools/game-client.py path` for its absolute directory. Selection is
+  `cargo game-client path` for its absolute directory. Selection is
   `WOT_GAME_DIR`, then ignored `.local/game-client.json`, then
   `.local/game-client/`; never assume a developer-specific absolute path.
   If unavailable, the command reports setup instructions: register an existing
@@ -101,14 +101,15 @@ At the root of each bounded context's directory, maintain a `README.md` that:
 Organize production code by bounded context first, then by `domain/`,
 `application/`, `infrastructure/`, and `presentation/` where needed inside each
 context. Do not create crate-wide layer directories or empty layers for
-symmetry. Use `crates/` when introducing workspace package boundaries; choose
+symmetry. Use `tools/` when introducing workspace package boundaries; choose
 packages for real responsibilities rather than making every context a crate.
 Keep executable bootstrapping small, use focused modules with clear ownership,
 and expose context entry points instead of reaching into another context's
 internals. Keep protocol wire representations separate from domain models.
 Keep the root `src/` for server contexts, their shared support, and server
 composition. Give standalone tools their own workspace packages under
-`crates/`.
+`tools/`. The server and tools inherit their release version from
+`[workspace.package]` in the root Cargo manifest.
 
 ### Context maps
 

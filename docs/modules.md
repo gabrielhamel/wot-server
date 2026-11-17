@@ -74,7 +74,7 @@ Decompiled source references under `docs/references/wot-src/sources/res/scripts/
   cache update contracts.
 
 Runtime definitions are read from the installed EU client, discoverable with
-`python3 tools/game-client.py path` (see [game client setup](game-client.md)), including
+`cargo game-client path` (see [game client setup](game-client.md)), including
 `scripts/item_defs/vehicles/germany/G12_Ltraktor.xml` and nation component files.
 The resource-backed test confirms research index 0 is the 35-XP gun `515604`
 (2 cm Breda (i) (LTr)), corresponding to the supplied screenshot. The older

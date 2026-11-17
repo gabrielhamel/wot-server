@@ -25,7 +25,7 @@ Run from the toolkit checkout:
 
 ```sh
 # From the wot-server repository root:
-export WOT_GAME_DIR="$(python3 tools/game-client.py path)"
+export WOT_GAME_DIR="$(cargo game-client path)"
 cd docs/references/wg-toolkit-rs
 cargo test --locked -p wg-toolkit -p wg-toolkit-wot
 cargo run --locked -p wg-toolkit-wot --example dump_entity -- "$WOT_GAME_DIR"

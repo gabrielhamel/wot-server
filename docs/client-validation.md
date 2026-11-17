@@ -5,7 +5,7 @@
 On 2026-11-11 the installed EU client reported launcher build `2.4.1.5514` and
 in-game version `v.2.4.1.1 #993`. It runs through the official macOS Wargaming Game
 Center's CrossOver/Wine environment. Discover the current local game directory
-with `python3 tools/game-client.py path`; see [game client setup](game-client.md).
+with `cargo game-client path`; see [game client setup](game-client.md).
 
 At the time of validation, the older-named Development reference directory
 (`...2.4.1.5498...`) was a symlink to that installation. Its name did not establish the binary version;

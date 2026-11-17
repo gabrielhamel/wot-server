@@ -189,7 +189,7 @@ Sources under `docs/references/wot-src/sources/res/scripts/`:
 
 Definitions and prices come from the configured installation, tested here with EU
 `2.4.1.5514` as recorded in the server guide. Discover the current installation
-with `python3 tools/game-client.py path` (see [game client setup](game-client.md)).
+with `cargo game-client path` (see [game client setup](game-client.md)).
 Decompiled source is supporting
 reference, not proof of compatibility with a different build.
 

@@ -1,0 +1,2 @@
+[alias]
+game-client = "run --quiet --locked -p wot-game-client --"

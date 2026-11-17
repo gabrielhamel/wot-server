@@ -23,8 +23,8 @@ inventory/balance changes and purchase receipts. Player Sessions owns the Mercur
 garage RPCs to the extracted script definitions. Both contexts use the shared
 [client formats](src/platform/infrastructure/client_formats/README.md) infrastructure.
 
-[Resource Extraction](crates/wot-extract/README.md) runs offline and publishes
-the [bundle contract](crates/wot-resources/README.md) to Accounts and Player Sessions. The
+[Resource Extraction](tools/wot-extract/README.md) runs offline and publishes
+the [bundle contract](tools/wot-resources/README.md) to Accounts and Player Sessions. The
 extractor reads installed client packages and loose files. Accounts loads the
 garage catalog from the bundle, and Player Sessions loads its ABI definitions and
 component class metadata.
@@ -38,7 +38,7 @@ messenger RPC versions, presence and committed participant delivery. See [social
 [Player Administration](src/player_administration/README.md) authenticates operators and adapts Accounts' player
 listing and creation contract to HTTP and the React Admin dashboard.
 
-[Binary Mapping](crates/wot-binary-map/src/binary_mapping/README.md) runs in its
+[Binary Mapping](tools/wot-binary-map/src/binary_mapping/README.md) runs in its
 own workspace package. It reads the external executable and produces offline
 research artifacts. Catalog, Battles and Battle Allocation are future candidate
 boundaries and do not appear as implemented contexts.

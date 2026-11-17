@@ -2,7 +2,7 @@
 
 Shared infrastructure for Player Sessions and Accounts. It decodes Packed XML and
 handles the Python pickle values carried in Account messages and compressed
-garage caches. The [bundle reader](../../../../crates/wot-resources/README.md) supplies
+garage caches. The [bundle reader](../../../../tools/wot-resources/README.md) supplies
 the extracted files.
 
 | Module | Responsibility |
