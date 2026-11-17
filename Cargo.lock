@@ -1498,6 +1498,7 @@ dependencies = [
  "portable-atomic",
  "rand 0.9.5",
  "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]
@@ -3319,8 +3320,10 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
+ "opentelemetry-proto",
  "opentelemetry_sdk",
  "paste",
+ "prost",
  "quick-xml",
  "roxmltree",
  "rsa 0.8.2",

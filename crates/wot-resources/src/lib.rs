@@ -27,6 +27,8 @@ pub struct ResourceBundle {
 #[derive(Deserialize, Serialize)]
 struct Manifest {
     format_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    game_version: Option<String>,
     component_client_classes: BTreeSet<String>,
 }
 
@@ -65,10 +67,23 @@ impl ResourceBundle {
         })
     }
 
+    pub fn game_version(&self) -> Option<&str> {
+        self.manifest.game_version.as_deref()
+    }
+
     /// Write the manifest after the extracted files are ready.
     pub fn write_manifest(
         root: &Path,
         component_client_classes: BTreeSet<String>,
+    ) -> io::Result<()> {
+        Self::write_manifest_with_version(root, component_client_classes, None)
+    }
+
+    /// Include the source client's version.xml version when available.
+    pub fn write_manifest_with_version(
+        root: &Path,
+        component_client_classes: BTreeSet<String>,
+        game_version: Option<String>,
     ) -> io::Result<()> {
         let mut file = BufWriter::new(
             File::options()
@@ -80,6 +95,7 @@ impl ResourceBundle {
             &mut file,
             &Manifest {
                 format_version: FORMAT_VERSION,
+                game_version,
                 component_client_classes,
             },
         )?;

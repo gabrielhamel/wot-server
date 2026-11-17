@@ -2,7 +2,7 @@
 
 This offline context reads a World of Tanks installation and publishes the
 versioned resource bundle consumed by Accounts and Access. It owns package
-reading, input precedence and the resource selection for the implemented server.
+reading, source version provenance, input precedence and the resource selection for the implemented server.
 Its only shared code with the server is the [bundle contract](../wot-resources/README.md).
 
 | Layer | Responsibility |

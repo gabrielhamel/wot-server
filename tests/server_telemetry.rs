@@ -1,4 +1,13 @@
 use axum::{Router, body::Bytes, extract::State, http::Uri};
+use opentelemetry_proto::tonic::{
+    collector::{
+        logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
+        trace::v1::ExportTraceServiceRequest,
+    },
+    common::v1::any_value::Value,
+    resource::v1::Resource,
+};
+use prost::Message;
 use std::{
     fs,
     path::PathBuf,
@@ -23,7 +32,13 @@ impl ServerHome {
         fs::copy(env!("CARGO_BIN_EXE_wot-server"), home.executable()).unwrap();
         fs::write(
             home.0.join("server.json"),
-            r#"{"resource_dir":"missing","log_file":"legacy/server.log"}"#,
+            r#"{"resource_dir":"resources","database_url":"invalid","log_file":"legacy/server.log"}"#,
+        )
+        .unwrap();
+        fs::create_dir(home.0.join("resources")).unwrap();
+        fs::write(
+            home.0.join("resources/manifest.json"),
+            r#"{"format_version":1,"component_client_classes":[],"game_version":"v.2.4.1.1 #993"}"#,
         )
         .unwrap();
         home
@@ -53,7 +68,7 @@ impl ServerHome {
             .unwrap();
         assert!(
             !output.status.success(),
-            "startup requires a resource bundle"
+            "fixture intentionally fails startup"
         );
         assert!(
             String::from_utf8_lossy(&output.stderr).contains("Server stopped with an error"),
@@ -102,6 +117,35 @@ async fn console_filter_is_independent_of_otlp_and_no_log_file_is_created() {
 
     collector.abort();
     let requests: Vec<_> = std::iter::from_fn(|| receive.try_recv().ok()).collect();
+    for (path, payload) in &requests {
+        match path.as_str() {
+            "/v1/logs" => {
+                for logs in ExportLogsServiceRequest::decode(payload.clone())
+                    .unwrap()
+                    .resource_logs
+                {
+                    assert_resource(logs.resource);
+                }
+            }
+            "/v1/traces" => {
+                for traces in ExportTraceServiceRequest::decode(payload.clone())
+                    .unwrap()
+                    .resource_spans
+                {
+                    assert_resource(traces.resource);
+                }
+            }
+            "/v1/metrics" => {
+                for metrics in ExportMetricsServiceRequest::decode(payload.clone())
+                    .unwrap()
+                    .resource_metrics
+                {
+                    assert_resource(metrics.resource);
+                }
+            }
+            _ => panic!("unexpected export {path}"),
+        }
+    }
     for (path, marker) in [
         ("/v1/logs", &b"Starting server"[..]),
         ("/v1/traces", &b"server.load_resources"[..]),
@@ -112,6 +156,78 @@ async fn console_filter_is_independent_of_otlp_and_no_log_file_is_created() {
                 received_path == path && payload.windows(marker.len()).any(|bytes| bytes == marker)
             }),
             "missing {path} export"
+        );
+    }
+}
+
+#[test]
+fn resource_bundle_preserves_source_version_and_reads_legacy_manifests() {
+    let home = ServerHome::new();
+    let root = home.0.join("resources");
+    assert_eq!(
+        wot_resources::ResourceBundle::open(&root)
+            .unwrap()
+            .game_version(),
+        Some("v.2.4.1.1 #993")
+    );
+    fs::write(
+        root.join("manifest.json"),
+        r#"{"format_version":1,"component_client_classes":[]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        wot_resources::ResourceBundle::open(&root)
+            .unwrap()
+            .game_version(),
+        None
+    );
+    let output = home.0.join("new-bundle");
+    fs::create_dir(&output).unwrap();
+    wot_resources::ResourceBundle::write_manifest_with_version(
+        &output,
+        Default::default(),
+        Some("source-version".into()),
+    )
+    .unwrap();
+    assert_eq!(
+        wot_resources::ResourceBundle::open(&output)
+            .unwrap()
+            .game_version(),
+        Some("source-version")
+    );
+}
+
+fn assert_resource(resource: Option<Resource>) {
+    let attributes = resource.unwrap().attributes;
+    if let Some(version) = option_env!("WOT_GAME_VERSION").filter(|value| !value.is_empty()) {
+        assert!(attributes.iter().any(|attribute| {
+            attribute.key == "wot.game.build_version"
+                && attribute
+                    .value
+                    .as_ref()
+                    .and_then(|value| value.value.as_ref())
+                    == Some(&Value::StringValue(version.into()))
+        }));
+    }
+    for (key, expected) in [
+        (
+            "service.version",
+            option_env!("WOT_SERVER_VERSION")
+                .filter(|version| !version.is_empty())
+                .unwrap_or(env!("CARGO_PKG_VERSION")),
+        ),
+        ("wot.game.version", "v.2.4.1.1 #993"),
+    ] {
+        assert!(
+            attributes.iter().any(|attribute| {
+                attribute.key == key
+                    && attribute
+                        .value
+                        .as_ref()
+                        .and_then(|value| value.value.as_ref())
+                        == Some(&Value::StringValue(expected.into()))
+            }),
+            "missing {key}={expected}"
         );
     }
 }

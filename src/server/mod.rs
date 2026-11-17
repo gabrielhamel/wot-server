@@ -35,7 +35,8 @@ pub async fn run() -> Result<()> {
         .join("server.json");
     let config = Configuration::load(&path).with_context(|| format!("Load {}", path.display()))?;
     let level = options.log_level.unwrap_or(config.log_level);
-    let telemetry = tokio::task::spawn_blocking(move || logging::initialize(level))
+    let resource_dir = config.resource_dir.clone();
+    let telemetry = tokio::task::spawn_blocking(move || logging::initialize(level, &resource_dir))
         .await
         .context("Join logging initialization")??;
     tracing::info!(configuration = %path.display(), "Starting server");

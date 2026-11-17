@@ -238,6 +238,19 @@ impl Gateway {
                     }
                 }
                 base::Event::BaseMethod(event) => {
+                    let command_span = if let MethodCall::Known { name, .. } = &event.call {
+                        self.sessions.get(&event.client).map(|session| {
+                            tracing::info_span!(
+                                "game.command",
+                                "user.id" = %session.account.snapshot.id,
+                                "rpc.method" = %name,
+                                "network.protocol.name" = "mercury",
+                            )
+                        })
+                    } else {
+                        None
+                    };
+                    let _command = command_span.as_ref().map(tracing::Span::enter);
                     if let MethodCall::Known { name, .. } = &event.call {
                         tracing::debug!(client = %event.client, method = %name, "Received base method");
                     }
@@ -298,6 +311,32 @@ impl Gateway {
         let catalog = self.catalog.clone();
         let sender = self.sender.clone();
         let grant_epoch = self.grant_epoch;
+        let language = serde_json::from_str::<serde_json::Value>(&event.request.context)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("lang_id")?
+                    .as_str()
+                    .filter(|language| language.len() <= 32)
+                    .map(str::to_owned)
+            });
+        let digest = event.request.digest.map(|digest| {
+            digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        });
+        let span = tracing::info_span!(
+            "game.authenticate",
+            outcome = tracing::field::Empty,
+            "user.id" = tracing::field::Empty,
+            "user.name" = tracing::field::Empty,
+            "user.email" = tracing::field::Empty,
+            "wot.client.protocol_version" = event.request.protocol,
+            "wot.client.resource_digest" = digest.as_deref(),
+            "wot.client.language" = language.as_deref(),
+            "network.protocol.name" = "mercury",
+        );
         self.runtime.spawn(
             async move {
                 let result = async {
@@ -307,6 +346,16 @@ impl Gateway {
                     else {
                         return Ok(None);
                     };
+                    let span = tracing::Span::current();
+                    span.record("user.id", snapshot.id.to_string());
+                    span.record("user.name", username.as_str());
+                    if let Some((local, domain)) = username.split_once('@')
+                        && !local.is_empty()
+                        && domain.contains('.')
+                        && !username.chars().any(char::is_whitespace)
+                    {
+                        span.record("user.email", username.as_str());
+                    }
                     tokio::task::spawn_blocking(move || catalog.prepare(snapshot))
                         .await?
                         .map(Some)
@@ -329,10 +378,7 @@ impl Gateway {
                 });
                 drop(permit);
             }
-            .instrument(tracing::info_span!(
-                "game.authenticate",
-                outcome = tracing::field::Empty
-            )),
+            .instrument(span),
         );
     }
 

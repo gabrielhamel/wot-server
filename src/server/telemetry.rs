@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
-use opentelemetry::{metrics::MeterProvider, trace::TracerProvider};
+use opentelemetry::{KeyValue, metrics::MeterProvider, trace::TracerProvider};
 use opentelemetry_sdk::{
     Resource, logs::SdkLoggerProvider, metrics::SdkMeterProvider, trace::SdkTracerProvider,
 };
-use std::{env, time::Instant};
+use std::{env, path::Path, time::Instant};
 
 pub(super) struct Telemetry {
     logger: SdkLoggerProvider,
@@ -12,15 +12,15 @@ pub(super) struct Telemetry {
 }
 
 impl Telemetry {
-    pub(super) fn from_environment() -> Result<Option<Self>> {
+    pub(super) fn from_environment(resource_dir: &Path) -> Result<Option<Self>> {
         match env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
-            Ok(endpoint) if !endpoint.is_empty() => Self::new().map(Some),
+            Ok(endpoint) if !endpoint.is_empty() => Self::new(resource_dir).map(Some),
             Ok(_) | Err(env::VarError::NotPresent) => Ok(None),
             Err(error) => Err(error).context("Read OTEL_EXPORTER_OTLP_ENDPOINT"),
         }
     }
 
-    fn new() -> Result<Self> {
+    fn new(resource_dir: &Path) -> Result<Self> {
         // Let the SDK resolve the common endpoint, per-signal paths, headers, and timeouts.
         let logs = opentelemetry_otlp::LogExporter::builder()
             .with_http()
@@ -39,7 +39,22 @@ impl Telemetry {
             .ok()
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| env!("CARGO_PKG_NAME").into());
-        let resource = Resource::builder().with_service_name(name).build();
+        let version = option_env!("WOT_SERVER_VERSION")
+            .filter(|value| !value.is_empty())
+            .unwrap_or(env!("CARGO_PKG_VERSION"));
+        let mut resource = Resource::builder()
+            .with_service_name(name)
+            .with_attribute(KeyValue::new("service.version", version));
+        if let Some(version) = option_env!("WOT_GAME_VERSION").filter(|value| !value.is_empty()) {
+            resource = resource.with_attribute(KeyValue::new("wot.game.build_version", version));
+        }
+        if let Some(version) = wot_resources::ResourceBundle::open(resource_dir)
+            .ok()
+            .and_then(|bundle| bundle.game_version().map(str::to_owned))
+        {
+            resource = resource.with_attribute(KeyValue::new("wot.game.version", version));
+        }
+        let resource = resource.build();
         let logger = SdkLoggerProvider::builder()
             .with_resource(resource.clone())
             .with_batch_exporter(logs)

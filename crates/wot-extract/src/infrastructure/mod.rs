@@ -215,3 +215,20 @@ fn package_paths(game_dir: &Path, packages_dir: &Path) -> Result<Vec<PathBuf>> {
     packages.extend(installed);
     Ok(packages)
 }
+
+pub fn game_version(game_dir: &Path) -> Result<Option<String>> {
+    let xml = match fs::read_to_string(game_dir.join("version.xml")) {
+        Ok(xml) => xml,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).context("Read source client version.xml"),
+    };
+    let document = roxmltree::Document::parse(&xml).context("Parse source client version.xml")?;
+    Ok(document
+        .root_element()
+        .children()
+        .find(|node| node.has_tag_name("version"))
+        .and_then(|node| node.text())
+        .map(str::trim)
+        .filter(|version| !version.is_empty())
+        .map(str::to_owned))
+}

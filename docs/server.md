@@ -109,6 +109,39 @@ process uptime in seconds. Exports run in the background with bounded
 queues. Collector outages do not stop the game server, but telemetry can be
 lost. On SIGINT or SIGTERM, the server shuts down and flushes pending exports.
 
+Telemetry resources include `service.version`, set to the exact Git tag by
+the release image workflow. Local Cargo builds use the package version unless
+`WOT_SERVER_VERSION` is supplied at build time. Release images also include
+`wot.game.build_version` from the launcher version used during extraction
+(for example `2.4.1.5514`). `wot.game.version` comes from the loaded bundle's
+`game_version`, copied from the source client's `version.xml` (for example
+`v.2.4.1.1 #993`). Older bundles without that field omit this attribute.
+These resource attributes accompany logs, traces and metrics.
+
+Authentication spans include `outcome`, `network.protocol.name`,
+`wot.client.protocol_version`, the optional `wot.client.resource_digest`,
+and `wot.client.language` from the login context when present.
+Successful authentication adds the local account ID as `user.id` and the
+login as `user.name`. Email-shaped logins also populate `user.email`;
+this identifies the supplied login and does not establish email ownership.
+Account IDs and email addresses are span attributes, so operators can search
+individual player traces. They are not added to metric labels.
+
+`game.command` spans cover synchronous dispatch for known Account RPCs
+from admitted sessions and include `user.id` and `rpc.method`.
+Their duration covers dispatch, including scheduling asynchronous work, rather
+than the completion of queued database operations.
+
+The login packet does not provide a confirmed client release version or a
+persistent installation ID. The protocol number and resource digest describe
+what the peer sent, and the account ID identifies the authenticated player.
+The decompiled reference at
+`docs/references/wot-src/sources/res/scripts/client/connection_mgr.py:192`
+constructs a context with `lang_id` and `publication`. Its applicability to
+other client versions remains a research question. The selected local fixture
+reports `v.2.4.1.1 #993`, executable SHA-256
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
+
 ## Protocol implementation
 
 The server owns its [Mercury adapter](../src/access/infrastructure/mercury) for

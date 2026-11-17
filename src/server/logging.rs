@@ -3,8 +3,11 @@ use anyhow::{Context, Result};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{filter::Targets, prelude::*};
 
-pub(super) fn initialize(level: LogLevel) -> Result<Option<Telemetry>> {
-    let (telemetry, export_error) = match Telemetry::from_environment() {
+pub(super) fn initialize(
+    level: LogLevel,
+    resource_dir: &std::path::Path,
+) -> Result<Option<Telemetry>> {
+    let (telemetry, export_error) = match Telemetry::from_environment(resource_dir) {
         Ok(telemetry) => (telemetry, None),
         Err(error) => (None, Some(error)),
     };

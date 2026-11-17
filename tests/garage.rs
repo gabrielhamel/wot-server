@@ -23,6 +23,8 @@ mod vehicles_flow;
 use garage_peer::Peer;
 #[path = "support/social_flow.rs"]
 mod social_flow;
+#[path = "support/telemetry_capture.rs"]
+mod telemetry_capture;
 #[path = "support/xmpp_flow.rs"]
 mod xmpp_flow;
 use std::{
@@ -58,6 +60,7 @@ async fn postgres_to_encrypted_garage_with_isolated_clients() {
 }
 
 async fn exercise_garage(encrypted_login: bool) {
+    telemetry_capture::exporter();
     let url = std::env::var("WG_TEST_DATABASE_URL").expect("WG_TEST_DATABASE_URL");
     let resources = wot_resources::ResourceBundle::open(std::path::Path::new(
         &std::env::var("WG_RESOURCE_DIR").expect("WG_RESOURCE_DIR"),
@@ -384,6 +387,9 @@ async fn exercise_garage(encrypted_login: bool) {
     .await;
     stop.store(true, Ordering::Relaxed);
     worker.await.unwrap().unwrap();
+    if result.is_ok() {
+        telemetry_capture::assert_player_spans(a.id, &first);
+    }
     let fresh_social = wot_server::social::Social::new(wot_server::social::PostgresSocial::new(
         PostgresAccounts::connect(&url, 2)
             .await
