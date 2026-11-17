@@ -1,4 +1,4 @@
-use super::{AdminState, players::ApiError};
+use super::{AdminState, RequestSpan, players::ApiError};
 use crate::{
     accounts::{
         AccountNotFound, AccountSnapshot, GarageCatalog, GrantCurrency, GrantError, PlayerGrant,
@@ -7,7 +7,7 @@ use crate::{
     client_gateway::{GrantDelivery, GrantRequestError},
 };
 use axum::{
-    Json,
+    Extension, Json,
     extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
 };
@@ -113,19 +113,18 @@ fn player_id(id: &str) -> Result<i64, ApiError> {
 #[tracing::instrument(name = "admin.garage.show", skip_all, fields(ddd.bounded_context.name = "admin", input.id.bytes = id.len()), err)]
 pub(super) async fn show(
     State(state): State<AdminState>,
+    Extension(RequestSpan(request_span)): Extension<RequestSpan>,
     Path(id): Path<String>,
 ) -> Result<Json<Garage>, ApiError> {
-    let snapshot = state
-        .garage_accounts
-        .snapshot(player_id(&id)?)
-        .await
-        .map_err(|error| {
-            if error.is::<AccountNotFound>() {
-                ApiError::new(StatusCode::NOT_FOUND, "Player not found.")
-            } else {
-                ApiError::internal(error)
-            }
-        })?;
+    let id = player_id(&id)?;
+    request_span.record("input.account_id", id);
+    let snapshot = state.garage_accounts.snapshot(id).await.map_err(|error| {
+        if error.is::<AccountNotFound>() {
+            ApiError::new(StatusCode::NOT_FOUND, "Player not found.")
+        } else {
+            ApiError::internal(error)
+        }
+    })?;
     Ok(Json(Garage::from_snapshot(snapshot, &state.catalog)))
 }
 
@@ -143,10 +142,12 @@ pub(super) async fn catalog(State(state): State<AdminState>) -> Json<Vec<Vehicle
 #[tracing::instrument(name = "admin.garage.grant", skip_all, fields(ddd.bounded_context.name = "admin", input.id.bytes = id.len(), input.grant = tracing::field::Empty), err)]
 pub(super) async fn grant(
     State(state): State<AdminState>,
+    Extension(RequestSpan(request_span)): Extension<RequestSpan>,
     Path(id): Path<String>,
     body: Result<Json<GrantBody>, JsonRejection>,
 ) -> Result<Json<GrantResponse>, ApiError> {
     let id = player_id(&id)?;
+    request_span.record("input.account_id", id);
     let Json(body) = body.map_err(|error| {
         ApiError::new(
             error.status(),
@@ -159,15 +160,22 @@ pub(super) async fn grant(
     })?;
     let grant = match body {
         GrantBody::Currency { currency, amount } => {
-            let currency = match currency {
-                Currency::Credits => GrantCurrency::Credits,
-                Currency::Gold => GrantCurrency::Gold,
-                Currency::Bonds => GrantCurrency::Bonds,
-                Currency::FreeXp => GrantCurrency::FreeXp,
+            let (currency, name) = match currency {
+                Currency::Credits => (GrantCurrency::Credits, "credits"),
+                Currency::Gold => (GrantCurrency::Gold, "gold"),
+                Currency::Bonds => (GrantCurrency::Bonds, "bonds"),
+                Currency::FreeXp => (GrantCurrency::FreeXp, "free_xp"),
             };
+            request_span.record("input.grant.kind", "currency");
+            request_span.record("input.grant.currency", name);
+            request_span.record("input.amount", amount);
             PlayerGrant::Currency { currency, amount }
         }
-        GrantBody::Vehicle { vehicle } => PlayerGrant::Vehicle { vehicle },
+        GrantBody::Vehicle { vehicle } => {
+            request_span.record("input.grant.kind", "vehicle");
+            request_span.record("input.vehicle_type", vehicle);
+            PlayerGrant::Vehicle { vehicle }
+        }
     };
     tracing::Span::current().record("input.grant", tracing::field::debug(grant));
     let (snapshot, delivery) = state.grants.grant(id, grant).await.map_err(grant_error)?;

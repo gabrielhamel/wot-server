@@ -73,6 +73,16 @@ business outcomes where available. HTTP traces include method, path and
 response status. Business layer spans select the IDs, counts and values
 relevant to their operation.
 
+The root `admin.http.request` span carries route-specific inputs so a trace
+can be filtered without opening child spans. The player list exports supplied
+numeric pagination parameters. Garage routes export the parsed account ID,
+and grants export their kind and either currency and amount or vehicle type.
+Player creation exports the UTF-8 lengths of the login and display name.
+Handlers record these fields after authentication and typed decoding, before
+business validation where applicable. A rejected query or JSON body can still
+be debugged using the status and available size metadata. The raw query, raw
+JSON and credential headers are excluded.
+
 Passwords, hashes, auth tokens, private keys, database connection credentials
 and complete authentication envelopes are excluded. Message content and
 binary data are represented by sizes and identifiers. User identity

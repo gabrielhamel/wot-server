@@ -46,7 +46,7 @@ and uses the image only to read the resource files. It needs no registry
 credentials, so it also works for fork pull requests. Update the image digest
 and fixture build together when the tests need a new resource bundle.
 
-Both targets are opt-in when running Cargo locally. The independent demo seeder
+The database-dependent tests are opt-in when running Cargo locally. The independent demo seeder
 test creates and drops a fresh database using the configured test role; see
 [seeding verification](seeding.md#verification).
 
@@ -59,8 +59,13 @@ docker compose up -d --wait
 export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
+cargo test --locked --lib exports_admin_http_request_inputs -- --ignored
 cargo test --locked --test garage --test seeding -- --ignored
 ```
+
+The admin HTTP test sends requests through the authenticated router and inspects
+exported inputs, status and parent links for successful and rejected requests.
+It checks that raw credentials and invalid input text stay out of spans.
 
 For an existing database, set `WG_TEST_DATABASE_URL` to the same connection
 URL used by the server. The test uses uniquely named temporary accounts and removes them after its network

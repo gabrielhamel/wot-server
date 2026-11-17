@@ -1,9 +1,9 @@
-use super::AdminState;
+use super::{AdminState, RequestSpan};
 use crate::accounts::{
     CreatePlayerError, NewPlayer, NewPlayerError, PlayerAccount, PlayerPagination,
 };
 use axum::{
-    Json,
+    Extension, Json,
     extract::{
         Query, State,
         rejection::{JsonRejection, QueryRejection},
@@ -55,9 +55,12 @@ pub(super) struct CreatePlayerRequest {
 #[tracing::instrument(name = "admin.players.list", skip_all, fields(ddd.bounded_context.name = "admin", input.page = tracing::field::Empty, input.per_page = tracing::field::Empty), err)]
 pub(super) async fn list(
     State(state): State<AdminState>,
+    Extension(RequestSpan(request_span)): Extension<RequestSpan>,
     query: Result<Query<PaginationQuery>, QueryRejection>,
 ) -> Result<Json<PlayerList>, ApiError> {
     let Query(query) = query.map_err(|_| ApiError::invalid_pagination())?;
+    request_span.record("input.page", query.page);
+    request_span.record("input.per_page", query.per_page);
     tracing::Span::current().record("input.page", query.page.unwrap_or(1));
     tracing::Span::current().record("input.per_page", query.per_page.unwrap_or(25));
     let pagination = PlayerPagination::new(query.page.unwrap_or(1), query.per_page.unwrap_or(25))
@@ -76,6 +79,7 @@ pub(super) async fn list(
 #[tracing::instrument(name = "admin.players.create", skip_all, fields(ddd.bounded_context.name = "admin", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
 pub(super) async fn create(
     State(state): State<AdminState>,
+    Extension(RequestSpan(request_span)): Extension<RequestSpan>,
     body: Result<Json<CreatePlayerRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<PlayerRecord>), ApiError> {
     let Json(body) = body.map_err(|error| {
@@ -90,8 +94,12 @@ pub(super) async fn create(
             },
         )
     })?;
-    tracing::Span::current().record("input.username.bytes", body.username.len());
-    tracing::Span::current().record("input.display_name.bytes", body.display_name.len());
+    let username_bytes = body.username.len();
+    let display_name_bytes = body.display_name.len();
+    request_span.record("input.username.bytes", username_bytes);
+    request_span.record("input.display_name.bytes", display_name_bytes);
+    tracing::Span::current().record("input.username.bytes", username_bytes);
+    tracing::Span::current().record("input.display_name.bytes", display_name_bytes);
     let player = NewPlayer::new(body.username, body.display_name, body.password)?;
     let permit = state.create_slots.try_acquire_owned().map_err(|_| {
         ApiError::new(

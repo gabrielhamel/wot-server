@@ -50,14 +50,19 @@ meanings on different operations; those differences are listed explicitly.
 | --- | --- |
 | [`http.request.method`](../src/admin/presentation/mod.rs) | HTTP method on the root admin request span. |
 | [`url.path`](../src/admin/presentation/mod.rs) | Admin request URI path, excluding its query string. |
+| [`http.route`](../src/admin/presentation/mod.rs) | Matched route template on the root HTTP span when available, with path parameters left as placeholders. |
+| [`input.query.bytes`](../src/admin/presentation/mod.rs) | Length in bytes of the encoded URI query, when present. Query text is excluded. |
+| [`input.content_length`](../src/admin/presentation/mod.rs) | Declared body length in bytes when a valid nonnegative `Content-Length` fits in a signed 64-bit integer. This is request metadata and does not count bytes read. |
 | [`http.response.status_code`](../src/admin/presentation/mod.rs) | HTTP response status, recorded after the admin handler returns a response. |
 | [`input.method`](../src/admin/presentation/mod.rs) | HTTP method checked by admin authentication. |
 | [`input.id.bytes`](../src/admin/presentation/garage.rs) | Byte length of the admin account-ID path parameter before parsing. |
-| [`input.page`](../src/admin/presentation/players.rs) | Requested player-list page, or default `1`; recorded after query decoding. |
-| [`input.per_page`](../src/admin/presentation/players.rs) | Requested page size, or default `25`; recorded after query decoding. |
+| [`input.page`](../src/admin/presentation/players.rs) | Requested player-list page after query decoding. The root span records supplied values only. The list operation records default `1` when omitted. |
+| [`input.per_page`](../src/admin/presentation/players.rs) | Requested player-list page size after query decoding. The root span records supplied values only. The list operation records default `25` when omitted. |
 | [`input.offset`](../src/accounts/application/players.rs) | Validated zero-based pagination offset passed to the player repository. |
 | [`input.limit`](../src/accounts/application/players.rs) | Validated maximum player rows requested by pagination. |
 | [`input.grant`](../src/client_gateway/application/grants.rs) | Debug representation of the parsed `PlayerGrant`: currency and amount, or vehicle type descriptor. Recorded after admin validation, and on the Client Gateway grant use case. |
+| [`input.grant.kind`](../src/admin/presentation/garage.rs) | Decoded grant kind on the root HTTP span, either `currency` or `vehicle`. |
+| [`input.grant.currency`](../src/admin/presentation/garage.rs) | Decoded currency on the root HTTP span for currency grants only. One of `credits`, `gold`, `bonds`, or `free_xp`. |
 | [`xmpp.stanza.name`](../src/client_gateway/infrastructure/xmpp/protocol.rs) | Parsed XML element local name on `client_gateway.xmpp.handle`; unavailable if XML parsing fails. |
 | [`xmpp.stanza.id`](../src/client_gateway/infrastructure/xmpp/protocol.rs) | Optional XML stanza `id` when at most 128 bytes; omitted when absent or longer. |
 | [`messaging.destination.id`](../src/client_gateway/infrastructure/xmpp/protocol.rs) | Resolved recipient account ID on an XMPP private-message handler; recorded after recipient resolution. |
@@ -80,7 +85,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.args.count`](../src/client_gateway/infrastructure/gateway/commands.rs) | Decoded array argument length on array command forms; array contents are not recorded. |
 | [`input.has_command`](../src/client_gateway/infrastructure/gateway/progression.rs) | Whether progression dispatch received a parsed progression command. |
 | [`input.id`](../src/client_gateway/application/mod.rs) | Operation-specific ID: account ID for account snapshot/settings and Social player lookup; target account for XMPP pushes/presence; crew member ID for crew dismissal/restoration; conversation ID for `social.conversations.load`. Interpret with the span name. |
-| [`input.account_id`](../src/client_gateway/application/grants.rs) | Target account ID passed to the Client Gateway admin-grant use case. |
+| [`input.account_id`](../src/client_gateway/application/grants.rs) | Target account ID passed to the Client Gateway admin-grant use case. Also recorded on the root HTTP span after an authenticated garage or grant route parses a positive account ID. |
 | [`input.owner`](../src/client_gateway/infrastructure/xmpp/protocol.rs) | Account owning a social operation, roster, friendship, or private conversation; authenticated account for XMPP roster/IQ operations. |
 | [`input.peer`](../src/client_gateway/infrastructure/xmpp/protocol.rs) | Other account in a friendship, roster-state, or private-conversation operation. |
 | [`input.player`](../src/social/application/mod.rs) | Account whose presence observers are being queried. |
@@ -100,8 +105,8 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`input.username.bytes`](../src/client_gateway/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, seeding, or player creation; raw login is not recorded in this field. |
-| [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. |
+| [`input.username.bytes`](../src/client_gateway/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, seeding, or player creation. Recorded on the root HTTP span after successful player-creation JSON decoding. |
+| [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. |
 | [`input.algorithm`](../src/accounts/application/players.rs) | Password hashing algorithm on `accounts.players.hash_password`, currently `argon2id`. Password and hash are omitted. |
 | [`input.previous_revision`](../src/client_gateway/application/mod.rs) | Expected persisted revision for an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
 | [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input account snapshot used for catalog preparation or mutation planning. |
@@ -109,7 +114,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
 | [`input.inventory_id`](../src/accounts/application/mod.rs) | Owned vehicle inventory ID for ammunition planning, module mounting, equipment application, or consumables. Distinct from a vehicle type descriptor. |
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
-| [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. |
+| [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor on the root HTTP span for a decoded vehicle grant. |
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
 | [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`). |
 | [`input.count`](../src/accounts/domain/consumables.rs) | Requested purchase quantity, equipment charge quantity, or cost multiplier, depending on the operation. |
@@ -120,7 +125,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.researched`](../src/accounts/domain/vehicles.rs) | Whether the vehicle purchase rule received a researched vehicle. |
 | [`input.gold`](../src/accounts/domain/vehicles.rs) | Gold component of a proposed vehicle/item cost before charging; not the account balance. |
 | [`input.credits`](../src/accounts/domain/vehicles.rs) | Credit component of a proposed vehicle/item cost before charging; not the account balance. |
-| [`input.amount`](../src/accounts/domain/grants.rs) | Requested amount in a currency grant, before positivity and balance-limit checks. |
+| [`input.amount`](../src/accounts/domain/grants.rs) | Requested amount in a currency grant, before positivity and balance-limit checks. Also recorded on the root HTTP span after decoding a currency grant. |
 | [`input.slots`](../src/accounts/domain/consumables.rs) | Current garage slot balance on `accounts.vehicles.buy_vehicle_slot`; available consumable-slot count on consumable purchase/fill operations. |
 | [`input.requested.count`](../src/accounts/domain/ammunition.rs) | Number of requested shell selections passed to ammunition validation. |
 | [`input.depot.count`](../src/accounts/domain/ammunition.rs) | Number of distinct shell types in the depot passed to ammunition validation; not total shell units. |

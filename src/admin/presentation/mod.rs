@@ -1,5 +1,7 @@
 mod garage;
 mod players;
+#[cfg(test)]
+mod request_traces;
 
 use crate::{
     accounts::{Accounts, GarageCatalog, PlayerAccounts, PostgresAccounts, PostgresPlayers},
@@ -7,7 +9,7 @@ use crate::{
 };
 use axum::{
     Router,
-    extract::{DefaultBodyLimit, Request, State},
+    extract::{DefaultBodyLimit, MatchedPath, Request, State},
     http::{HeaderValue, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -40,6 +42,9 @@ struct AdminState {
     grants: PlayerGrants,
     create_slots: Arc<Semaphore>,
 }
+
+#[derive(Clone)]
+struct RequestSpan(tracing::Span);
 
 pub(crate) fn router(
     accounts: PlayerAccounts<PostgresPlayers>,
@@ -103,8 +108,36 @@ async fn prevent_caching(request: Request, next: Next) -> Response {
     response
 }
 
-#[tracing::instrument(name = "admin.http.request", parent = None, skip_all, fields(ddd.bounded_context.name = "admin", http.request.method = request.method().as_str(), url.path = request.uri().path(), http.response.status_code = tracing::field::Empty))]
-async fn set_browser_headers(request: Request, next: Next) -> Response {
+#[tracing::instrument(
+    name = "admin.http.request",
+    parent = None,
+    skip_all,
+    fields(
+        ddd.bounded_context.name = "admin",
+        http.request.method = request.method().as_str(),
+        url.path = request.uri().path(),
+        http.route = request.extensions().get::<MatchedPath>().map(MatchedPath::as_str),
+        input.query.bytes = request.uri().query().map(str::len),
+        input.content_length = request.headers().get(header::CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+            .and_then(|length| i64::try_from(length).ok()),
+        input.page = tracing::field::Empty,
+        input.per_page = tracing::field::Empty,
+        input.account_id = tracing::field::Empty,
+        input.username.bytes = tracing::field::Empty,
+        input.display_name.bytes = tracing::field::Empty,
+        input.grant.kind = tracing::field::Empty,
+        input.grant.currency = tracing::field::Empty,
+        input.amount = tracing::field::Empty,
+        input.vehicle_type = tracing::field::Empty,
+        http.response.status_code = tracing::field::Empty,
+    )
+)]
+async fn set_browser_headers(mut request: Request, next: Next) -> Response {
+    request
+        .extensions_mut()
+        .insert(RequestSpan(tracing::Span::current()));
     let mut response = next.run(request).await;
     tracing::Span::current().record(
         "http.response.status_code",

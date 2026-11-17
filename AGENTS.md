@@ -82,6 +82,11 @@ principles, with domain concepts separated from application orchestration and
 infrastructure concerns. Keep dependencies directed toward the domain and make
 boundaries between contexts explicit.
 
+Name bounded contexts after the responsibilities and vocabulary of the domain.
+Use technical names for adapters and implementation details. See
+[naming bounded contexts](docs/bounded-contexts.md) for examples and guidance
+on supporting tools.
+
 At the root of each bounded context's directory, maintain a `README.md` that:
 
 - Describes the context's purpose, responsibilities, and boundaries.

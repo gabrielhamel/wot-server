@@ -1,5 +1,8 @@
 # Context map
 
+See [naming bounded contexts](docs/bounded-contexts.md) for naming criteria and
+a review of the names used in this map.
+
 ## wot-server
 
 ![wot-server context map](docs/context-maps/generated/wot-server.svg)
