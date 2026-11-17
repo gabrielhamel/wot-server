@@ -12,7 +12,7 @@ use crate::{
         BERTH_PACK_GOLD, BERTH_PACK_SIZE, CREW_FREE_RESTORE_DURATION, CREW_RESTORE_CREDITS,
         CREW_RESTORE_DURATION, CREW_RESTORE_LIMIT, FREE_XP_RATE,
     },
-    client_formats::pickle::{Global, Value},
+    platform::client_formats::pickle::{Global, Value},
 };
 
 use super::item_defs::NATIONS;

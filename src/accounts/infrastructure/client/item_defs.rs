@@ -1,6 +1,6 @@
 //! Garage-only resource loader adapted from wg-toolkit-wot; see THIRD_PARTY_NOTICES.md.
 use super::items::{IntCompactDescr, VehicleDescr, item_type};
-use crate::client_formats::pxml::{self, Element};
+use crate::platform::client_formats::pxml::{self, Element};
 use std::io;
 pub use wot_resources::NATIONS;
 use wot_resources::ResourceBundle;

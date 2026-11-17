@@ -34,15 +34,15 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use wot_server::client_formats::pickle::Value as Pickle;
-use wot_server::client_gateway::mercury::app::{
+use wot_server::platform::client_formats::pickle::Value as Pickle;
+use wot_server::player_sessions::mercury::app::{
     dispatch::ScriptDispatch,
     login::element::{LoginError, LoginResponse},
 };
-use wot_server::client_gateway::mercury::script::Value;
+use wot_server::player_sessions::mercury::script::Value;
 use wot_server::{
     accounts::{AccountRepository, Accounts, GarageCatalog, PostgresAccounts},
-    client_gateway::{Gateway, GatewayConfig},
+    player_sessions::{Gateway, GatewayConfig},
 };
 
 fn dict(value: &Pickle, name: &str) -> Pickle {
@@ -205,8 +205,9 @@ async fn exercise_garage(encrypted_login: bool) {
         stored.settings
     );
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[tank_a, tank_b]).unwrap());
-    let script =
-        ScriptDispatch::new(wot_server::client_gateway::mercury::script::load(&resources).unwrap());
+    let script = ScriptDispatch::new(
+        wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
+    );
     let private_key = encrypted_login
         .then(|| Arc::new(rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).unwrap()));
     let public_key = private_key

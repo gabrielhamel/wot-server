@@ -12,7 +12,7 @@ use crate::{
         EquipmentDefinition, EquipmentPrice, EquipmentRules, EquipmentVehicle,
         EquipmentVehicleFilter, MAX_EQUIPMENT_SLOTS,
     },
-    client_formats::pxml::Element,
+    platform::client_formats::pxml::Element,
 };
 use anyhow::{Context, Result};
 use std::collections::BTreeSet;

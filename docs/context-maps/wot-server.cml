@@ -1,7 +1,25 @@
 ContextMap Server {
   type = SYSTEM_LANDSCAPE
   state = AS_IS
-  contains GameClient, ResourceExtraction, BinaryMapping, Accounts, Social, ClientGateway, Admin
+  contains GameClient, ResourceExtraction, BinaryMapping, Accounts, Social, PlayerSessions, PlayerAdministration, SharedKernel, Platform
+  SharedKernel [U] -> [D] PlayerAdministration {
+    implementationTechnology = "Shared Rust AccountId validates parsed HTTP path identifiers"
+  }
+  SharedKernel [U] -> [D] PlayerSessions {
+    implementationTechnology = "Shared Rust AccountId validates parsed XMPP account identifiers"
+  }
+  SharedKernel [U] -> [D] Social {
+    implementationTechnology = "Shared Rust AccountId validates participants before Social enforces its distinct-account rule"
+  }
+  Platform [U] -> [D] Accounts {
+    implementationTechnology = "Common client-format codecs and PostgreSQL span adapter"
+  }
+  Platform [U] -> [D] PlayerSessions {
+    implementationTechnology = "Common client-format codecs and blocking-work span propagation"
+  }
+  Platform [U] -> [D] Social {
+    implementationTechnology = "Common PostgreSQL span adapter"
+  }
   GameClient [U] -> [D,ACL] BinaryMapping {
     implementationTechnology = "Read-only AMD64 PE; evidence-bearing offline investigation models"
   }
@@ -11,26 +29,26 @@ ContextMap Server {
   ResourceExtraction [U,PL] -> [D,ACL] Accounts {
     implementationTechnology = "Versioned resource bundle containing garage definitions, regular tech trees and vehicle labels"
   }
-  ResourceExtraction [U,PL] -> [D,ACL] ClientGateway {
+  ResourceExtraction [U,PL] -> [D,ACL] PlayerSessions {
     implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
   }
-  GameClient [U] -> [D,ACL] ClientGateway {
+  GameClient [U] -> [D,ACL] PlayerSessions {
     implementationTechnology = "Mercury UDP wire messages translated into login, handoff, and garage RPCs"
   }
-  Accounts [U,OHS,PL] -> [D,ACL] Admin {
+  Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccounts API for identity listing and provisioning, plus account snapshots and the vehicle catalog for the operator garage"
   }
-  ClientGateway [U,OHS,PL] -> [D,ACL] Admin {
+  PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "Bounded PlayerGrants application API coordinates resource and tank grants with garage writes and publishes committed updates to game sessions"
   }
   Accounts [U,OHS,PL] -> [D,ACL] Social {
     implementationTechnology = "Read-only account_directory SQL identity projection and account-ID foreign keys; shared SQLx pool"
   }
-  Social [U,OHS,PL] -> [D,ACL] ClientGateway {
-    implementationTechnology = "Published contacts/search and durable private message APIs; the Client Gateway adapts native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
+  Social [U,OHS,PL] -> [D,ACL] PlayerSessions {
+    implementationTechnology = "Published contacts/search and durable private message APIs adapted to native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
   }
-  Accounts [U,OHS,PL] -> [D,ACL] ClientGateway {
-    implementationTechnology = "Published account application API and immutable snapshots; the Client Gateway adapts credentials, preferences, revision-checked ammunition, equipment, consumables, directives, depot sales, crew management and tank/module progression commits and garage projections to client sessions"
+  Accounts [U,OHS,PL] -> [D,ACL] PlayerSessions {
+    implementationTechnology = "Published account application API and immutable snapshots adapted to authenticated sessions, preferences, inventory, progression and garage projections"
   }
 }
 BoundedContext GameClient {
@@ -45,14 +63,22 @@ BoundedContext BinaryMapping {
 BoundedContext Accounts {
   domainVisionStatement = "Own durable identity, password hashes, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, crew rosters and training, and revisions in PostgreSQL; project snapshots into versioned garage caches."
 }
-BoundedContext ClientGateway {
-  domainVisionStatement = "Admit authenticated clients, manage expiring handoff tickets and sessions, and adapt login and garage commands through the server-owned Mercury UDP transport."
+BoundedContext PlayerSessions {
+  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle and delivery of committed garage and chat updates."
 }
 
 BoundedContext Social {
   domainVisionStatement = "Own persistent directed friends and ignored contacts, bounded durable private conversations and retained offline history, legacy window subscriptions, and validated nickname searches over the account directory."
 }
 
-BoundedContext Admin {
-  domainVisionStatement = "Authenticate server operators and expose account listing, creation, garage inspection and player grants over HTTP and a same-origin React Admin dashboard."
+BoundedContext PlayerAdministration {
+  domainVisionStatement = "Authorize operators to find and provision player accounts, inspect garages and grant currency or vehicles."
+}
+
+BoundedContext SharedKernel {
+  domainVisionStatement = "Maintain the shared meaning and validity rule of a local player account identifier."
+}
+
+BoundedContext Platform {
+  domainVisionStatement = "Supply reusable tracing adapters and client-format codecs independently of the server's domain models."
 }

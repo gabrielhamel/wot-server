@@ -24,8 +24,8 @@ use crate::accounts::{
     AccountSnapshot, AmmoError, AmmunitionChange, AmmunitionRules, ShellCurrency, ShellPrice,
     ShellSelection,
 };
-use crate::client_formats::pickle::Value;
-use crate::client_formats::pxml;
+use crate::platform::client_formats::pickle::Value;
+use crate::platform::client_formats::pxml;
 use anyhow::{Context, Result};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},

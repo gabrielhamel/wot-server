@@ -57,7 +57,7 @@ pub(in crate::accounts) async fn hash_password(password: String) -> anyhow::Resu
         Argon2, PasswordHasher,
         password_hash::{SaltString, rand_core::OsRng},
     };
-    tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+    tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
         Argon2::default()
             .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
             .map(|hash| hash.to_string())

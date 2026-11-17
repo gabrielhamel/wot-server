@@ -8,7 +8,7 @@ use crate::{
         AccountSnapshot, CrewCommand, CrewMember, CrewPassport, CrewRecruitment, CrewRoster,
         CrewTraining, CrewVehicle, PassportChoice, ProgressionError, VehicleCost, reset_perk_terms,
     },
-    client_formats::{pickle::Value, pxml::Element},
+    platform::client_formats::{pickle::Value, pxml::Element},
 };
 use std::{
     collections::BTreeMap,

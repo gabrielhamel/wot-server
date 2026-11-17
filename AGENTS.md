@@ -87,6 +87,11 @@ Use technical names for adapters and implementation details. See
 [naming bounded contexts](docs/bounded-contexts.md) for examples and guidance
 on supporting tools.
 
+Put shared domain concepts with the same meaning and invariants in
+`src/shared_kernel/`. Put reusable infrastructure independent of the domain in
+`src/platform/`. Keep context-specific policies and published integration
+contracts with the context that owns them.
+
 At the root of each bounded context's directory, maintain a `README.md` that:
 
 - Describes the context's purpose, responsibilities, and boundaries.

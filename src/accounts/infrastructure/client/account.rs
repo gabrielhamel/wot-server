@@ -6,7 +6,7 @@ use std::io;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
 
-use crate::client_formats::pickle::{self, Value};
+use crate::platform::client_formats::pickle::{self, Value};
 
 use super::crew::{crew_descriptor, recycle_bin};
 use super::items::{VehicleDescr, item_type};

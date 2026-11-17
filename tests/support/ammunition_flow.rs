@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, Value, dict};
-use wot_server::client_gateway::mercury::{
+use wot_server::player_sessions::mercury::{
     app::dispatch::ScriptDispatch,
     script::{PythonValue, StringValue},
 };
@@ -197,7 +197,7 @@ fn pickle_value(value: &Value) -> Pickle {
             value.clone()
         }
         Value::Python(PythonValue::Raw(bytes)) | Value::String(StringValue::Raw(bytes)) => {
-            wot_server::client_formats::pickle::from_bytes(bytes).unwrap()
+            wot_server::platform::client_formats::pickle::from_bytes(bytes).unwrap()
         }
         other => panic!("Expected pickle, got {other:?}"),
     }

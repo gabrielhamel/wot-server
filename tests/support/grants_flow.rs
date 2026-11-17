@@ -3,7 +3,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use wot_server::client_gateway::mercury::app::{
+use wot_server::player_sessions::mercury::app::{
     dispatch::ScriptDispatch, login::element::LoginResponse,
 };
 use wot_server::{
@@ -11,7 +11,7 @@ use wot_server::{
         Accounts, GarageCatalog, GrantCurrency, GrantError, PlayerGrant, PostgresAccounts,
         ProgressionError,
     },
-    client_gateway::{Gateway, GatewayConfig, GrantDelivery, GrantRequestError},
+    player_sessions::{Gateway, GatewayConfig, GrantDelivery, GrantRequestError},
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -75,8 +75,9 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         .find(|tank| tank.key == "ussr:R111_ISU130")
         .unwrap()
         .id;
-    let script =
-        ScriptDispatch::new(wot_server::client_gateway::mercury::script::load(&resources).unwrap());
+    let script = ScriptDispatch::new(
+        wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
+    );
     let gateway = Gateway::bind(
         GatewayConfig {
             login_bind: "127.0.0.1:0".parse().unwrap(),

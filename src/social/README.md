@@ -1,7 +1,7 @@
 # Social
 
 Social owns durable, directed contacts, native private conversations and retained
-messages. Client Gateway supplies authenticated account IDs. Social does not authenticate
+messages. Player Sessions supplies authenticated account IDs. Social does not authenticate
 users, own socket connections, alter account identities, or implement battles.
 
 | Layer | Responsibility |
@@ -19,7 +19,7 @@ or decline them. Legacy contact changes lock the owner, and private writes
 lock both participants in ID order, making ignore checks and writes coherent.
 Embedded migrations run before either context serves traffic.
 
-Client Gateway consumes the public Social API and models. Its native XMPP adapter owns
+Player Sessions consumes the public Social API and models. Its native XMPP adapter owns
 XML/JID translation and presence/socket delivery. Its BW compatibility adapter
 still uses the separate in-memory `Conversations` model; that legacy lifecycle
 is not the durable native conversation contract.
@@ -34,7 +34,7 @@ is not the durable native conversation contract.
 | Message | Committed text with authenticated sender, timestamp and stable ID. |
 | Recent conversation | Saved pair selected for bounded restoration on reconnect. |
 | Legacy subscription | One initialized BW client window; closing leaves the peer alone. |
-| Presence | Availability of a native chat resource, supplied by Client Gateway. |
+| Presence | Availability of a native chat resource, supplied by Player Sessions. |
 
 Limits: 300 contacts and 300 saved pairs per account, 100 retained messages per
 pair, 16 recent native conversations restored, 2048 message bytes. Recent-set

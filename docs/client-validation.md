@@ -88,7 +88,7 @@ After a full resource transfer, `AccountSyncData.__onSyncComplete` sets its new
 revision and immediately requests synchronization again. An unconditional full
 stream makes that loop repeat every client frame and leaves loading stuck.
 
-Client Gateway now sends `onCmdResponseExt(RES_SUCCESS, {prevRev, rev})` when the requested
+Player Sessions now sends `onCmdResponseExt(RES_SUCCESS, {prevRev, rev})` when the requested
 revision equals the current snapshot. A different revision gets a full stream,
 followed by the acknowledgement when the client asks again. The encrypted UDP
 integration test exercises this second request and checks that it starts no new

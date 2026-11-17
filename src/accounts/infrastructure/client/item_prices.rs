@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io;
 
-use crate::client_formats::pxml::{self, Element};
+use crate::platform::client_formats::pxml::{self, Element};
 use wot_resources::ResourceBundle;
 
 use super::item_defs::{self, NATIONS};

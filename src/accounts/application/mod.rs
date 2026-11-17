@@ -55,15 +55,17 @@ impl<R: AccountRepository> Accounts<R> {
         let Some((id, hash)) = self.repository.credentials(username).await? else {
             return Ok(None);
         };
-        let valid = tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
-            let hash = PasswordHash::new(&hash)
-                .map_err(|e| anyhow::anyhow!("Invalid stored password hash: {e}"))?;
-            Ok::<_, anyhow::Error>(
-                Argon2::default()
-                    .verify_password(password.as_bytes(), &hash)
-                    .is_ok(),
-            )
-        }))
+        let valid = tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
+            move || {
+                let hash = PasswordHash::new(&hash)
+                    .map_err(|e| anyhow::anyhow!("Invalid stored password hash: {e}"))?;
+                Ok::<_, anyhow::Error>(
+                    Argon2::default()
+                        .verify_password(password.as_bytes(), &hash)
+                        .is_ok(),
+                )
+            },
+        ))
         .await??;
         if !valid {
             return Ok(None);

@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, Value, dict};
-use wot_server::{client_gateway::mercury::app::dispatch::ScriptDispatch, pickle};
+use wot_server::{pickle, player_sessions::mercury::app::dispatch::ScriptDispatch};
 
 const AIMING: i32 = (101 << 8) | 0xf9;
 const RAMMER: i32 = (81 << 8) | 0xf9;

@@ -1,7 +1,7 @@
 # Tank research, vehicle purchases and sales, and garage slots
 
 Accounts owns vehicle research, purchases and sales through the same revision-checked
-progression use case as module research and installation. Client Gateway translates the
+progression use case as module research and installation. Player Sessions translates the
 native garage requests; the client resources supply research trees, prices,
 stock modules, ammunition and crew roles.
 
@@ -222,4 +222,4 @@ reconnect, and inventory ID allocation after a sale.
 | `src/accounts/infrastructure/client/progression.rs` | Research/purchase coordination and cache deltas. |
 | `src/accounts/infrastructure/client/vehicle_sales.rs` | Resource-backed vehicle and fitting valuation, crew disposition and sale planning. |
 | `src/accounts/infrastructure/postgres.rs` | Atomic progression and ownership persistence. |
-| `src/client_gateway/infrastructure/gateway/progression.rs` | Native request decoding and bounded persistence jobs. |
+| `src/player_sessions/infrastructure/gateway/progression.rs` | Native request decoding and bounded persistence jobs. |

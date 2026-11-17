@@ -1,7 +1,7 @@
 # Garage ammunition
 
 Accounts owns loaded shells, their order, shared depot stock, shell purchases,
-balances and revisions. Client Gateway translates the garage RPC and publishes committed
+balances and revisions. Player Sessions translates the garage RPC and publishes committed
 updates. Stock defaults and initial crew descriptors come from the catalog; module loadouts
 and vehicle purchase options are persisted (see [tank progression](vehicles.md)); this milestone
 does not implement battle consumption or postbattle automatic resupply.

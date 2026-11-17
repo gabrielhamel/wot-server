@@ -4,8 +4,8 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use wot_server::client_gateway::mercury::app::login::{App, Event, element::LoginRequest};
-use wot_server::client_gateway::mercury::net::{
+use wot_server::player_sessions::mercury::app::login::{App, Event, element::LoginRequest};
+use wot_server::player_sessions::mercury::net::{
     bundle::Bundle, proto::Protocol, socket::PacketSocket,
 };
 

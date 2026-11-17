@@ -33,7 +33,7 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
             classes.insert(name.to_owned());
         }
     }
-    // Client Gateway uses client class presence only for components. Discard other script names.
+    // Player Sessions uses client class presence only for components. Discard other script names.
     let components: BTreeSet<_> = files
         .iter()
         .filter_map(|path| selection::component_name(path))

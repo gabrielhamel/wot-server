@@ -11,21 +11,23 @@ for endpoint configuration, resource attributes and console filtering.
 Each game command, XMPP stanza and admin request starts an operation trace.
 Spans below it represent meaningful boundaries and decisions in the owning
 bounded context. The custom attribute `ddd.bounded_context.name` identifies
-`client_gateway`, `accounts`, `social`, `admin`, or `server` (server composition).
+`player_sessions`, `accounts`, `social`, `player_administration`, or `server`
+(server composition).
 Omit architecture
 layer segments (presentation, application, domain, infrastructure) from span names.
 Name spans after the operation and meaningful subsystem instead.
 
-Client Gateway traces use `client_gateway` in place of the former `access`
-context value and span-name prefix. Queries that span the rename can match
-both values or prefixes. Protocol operation names such as `game.command`
-and `xmpp.request` retain their names.
+Player Sessions traces use `player_sessions` as their context value and span
+prefix. Historical traces may use `access` or `client_gateway`.
+Player Administration traces use the context value `player_administration`
+in place of `admin`. The `admin.*`, `game.command`, and `xmpp.request`
+operation names remain stable.
 
 An online XMPP private message follows this hierarchy. Repository operations
 can contain several query and transaction spans.
 
-    xmpp.request                              [client_gateway]
-      client_gateway.xmpp.handle              [client_gateway]
+    xmpp.request                              [player_sessions]
+      player_sessions.xmpp.handle              [player_sessions]
         social.open                           [social]
           social.open                         [social]
             social.conversations.open_conversation
@@ -34,8 +36,8 @@ can contain several query and transaction spans.
           social.send                         [social]
             social.conversations.send_message
               postgresql.query                [BEGIN / SELECT / INSERT / COMMIT]
-        client_gateway.enqueue                [client_gateway]
-          xmpp.response                       [client_gateway]
+        player_sessions.enqueue                [player_sessions]
+          xmpp.response                       [player_sessions]
 
 The response may run on the recipient's connection task. It carries the
 originating request's parent through the bounded output queue. Offline
@@ -99,8 +101,9 @@ even when writing its protocol error response succeeds.
 
 ## PostgreSQL
 
-The shared database tracing adapter is in src/observability.rs. Application-issued queries and explicit transaction boundaries are awaited
-inside postgresql.query spans.
+The [Platform database tracing adapter](../src/platform/infrastructure/observability.rs)
+awaits application-issued queries and explicit transaction boundaries inside
+`postgresql.query` spans. It records the context of the caller.
 
 | Attribute | Meaning |
 | --- | --- |

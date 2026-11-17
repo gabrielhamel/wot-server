@@ -8,7 +8,7 @@ use std::{
 use wot_server::accounts::{
     AccountRepository, Accounts, DEMO_PLAYERS, GarageCatalog, PostgresAccounts,
 };
-use wot_server::client_formats::pickle::{self, Value};
+use wot_server::platform::client_formats::pickle::{self, Value};
 
 #[tokio::test]
 #[ignore = "Requires WG_TEST_DATABASE_URL with CREATE DATABASE permission and WG_RESOURCE_DIR"]

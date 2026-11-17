@@ -1,7 +1,7 @@
 # Resource Extraction
 
 This offline context reads a World of Tanks installation and publishes the
-versioned resource bundle consumed by Accounts and Client Gateway. It owns package
+versioned resource bundle consumed by Accounts and Player Sessions. It owns package
 reading, source version provenance, input precedence and the resource selection for the implemented server.
 Its only shared code with the server is the [bundle contract](../wot-resources/README.md).
 

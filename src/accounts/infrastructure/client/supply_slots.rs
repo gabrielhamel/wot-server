@@ -1,5 +1,5 @@
 use super::item_defs::read_xml;
-use crate::client_formats::pxml::Element;
+use crate::platform::client_formats::pxml::Element;
 use anyhow::{Context, Result};
 use std::collections::BTreeSet;
 use wot_resources::ResourceBundle;

@@ -4,12 +4,12 @@ The following `wot-server` sources contain code adapted from WG Toolkit under
 the MIT license below.
 
 - The garage compatibility modules in
-  `src/accounts/infrastructure/client/`, and the Client Gateway account schema and
+  `src/accounts/infrastructure/client/`, and the Player Sessions account schema and
   bootstrap settings, originated from revision
   `ee50535b10e192b80f11ce5558d2ca45d54c3233`.
 - The Mercury login and garage wire implementation in
-  `src/client_gateway/infrastructure/mercury/`, and the binary codecs in
-  `src/client_formats/`, were adapted from the hardened reference revision
+  `src/player_sessions/infrastructure/mercury/`, and the binary codecs in
+  `src/platform/infrastructure/client_formats/`, were adapted from the hardened reference revision
   `f3b1f2b7c515183c0827735ce2e58f7802fc13b3`.
 
 MIT License

@@ -2,7 +2,7 @@
 
 Accounts owns durable player identity, password hashes, balances, vehicle ownership,
 integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes immutable snapshots to
-Client Gateway. It does not own transport sessions, entities, battles or matchmaking.
+Player Sessions. It does not own transport sessions, entities, battles or matchmaking.
 
 | Layer | Responsibilities |
 | --- | --- |
@@ -14,10 +14,10 @@ Client Gateway. It does not own transport sessions, entities, battles or matchma
 | `presentation/` | Standalone seed CLI configuration and result output. |
 | `infrastructure/client/` | Anti-corruption layer adapting the versioned [resource bundle](../../docs/resources.md), garage catalog and account/shop cache formats. These wire models are not account domain models. |
 
-Client Gateway consumes `Accounts<R>`, `AccountSnapshot`, and the `GarageCatalog` encoder
+Player Sessions consumes `Accounts<R>`, `AccountSnapshot`, and the `GarageCatalog` encoder
 through this context's entry point (`mod.rs`). Catalog loading and garage cache
 encoding remain infrastructure of Accounts for this milestone and use the shared
-[client formats](../client_formats/README.md) codecs. Its catalog adapter also discovers tier I demo vehicles from the tech tree and prepares durable initial loadouts; see [database seeding](../../docs/seeding.md). A separate Catalog
+[client formats](../platform/infrastructure/client_formats/README.md) codecs. Its catalog adapter also discovers tier I demo vehicles from the tech tree and prepares durable initial loadouts; see [database seeding](../../docs/seeding.md). A separate Catalog
 context is a possible future boundary, not an implemented one.
 
 | Term | Meaning |
@@ -70,11 +70,11 @@ identity projection for Social, and exposes the shared SQLx pool for composition
 Social owns its contact table; foreign keys use Accounts IDs. Credentials, balances,
 inventory and revisions are not part of this directory contract.
 
-[Admin](../admin/README.md) consumes `PlayerAccounts<R>` through the public
+[Player Administration](../player_administration/README.md) consumes `PlayerAccounts<R>` through the public
 context entry point. It receives account IDs, logins and display names. Account
 creation hashes the password with Argon2id and commits the identity and starter
 garage in one PostgreSQL transaction.
-Admin also reads snapshots and vehicle catalog entries. Client Gateway uses the same
+Player Administration also reads snapshots and vehicle catalog entries. Player Sessions uses the same
 revision-checked progression transaction for player grants and garage purchases.
 
 Accounts emits application, domain decision, catalog and repository spans.

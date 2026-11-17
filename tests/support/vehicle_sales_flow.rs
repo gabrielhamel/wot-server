@@ -9,8 +9,8 @@ use wot_server::{
         AccountRepository, GarageCatalog, PostgresAccounts, ProgressionCommand, ProgressionError,
         VehiclePurchaseOptions, VehicleSaleRequest,
     },
-    client_gateway::mercury::app::dispatch::ScriptDispatch,
     pickle,
+    player_sessions::mercury::app::dispatch::ScriptDispatch,
 };
 
 const AIMING: i32 = (101 << 8) | 0xf9;

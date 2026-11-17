@@ -26,13 +26,14 @@ impl PostgresAccounts {
     pub async fn seed_demo_players(&self, catalog: &GarageCatalog) -> Result<Vec<DemoSeedReport>> {
         let keys = catalog.tier_one_keys()?;
         let pool = self.connection_pool();
-        let mut tx = crate::observability::database("accounts", "BEGIN", pool.begin()).await?;
+        let mut tx =
+            crate::platform::observability::database("accounts", "BEGIN", pool.begin()).await?;
         let mut reports = Vec::new();
         for (username, display_name) in DEMO_PLAYERS {
             let hash = super::super::application::players::hash_password("demo".into()).await?;
             let created: Option<i64> = {
                 let statement = "INSERT INTO accounts(username,display_name,password_hash) VALUES($1,$2,$3) ON CONFLICT(username) DO NOTHING RETURNING id";
-                crate::observability::database(
+                crate::platform::observability::database(
                     "accounts",
                     statement,
                     sqlx::query_scalar(statement)
@@ -45,7 +46,7 @@ impl PostgresAccounts {
             }?;
             let row = {
                 let statement = "SELECT id, display_name, password_hash FROM accounts WHERE username=$1 FOR UPDATE";
-                crate::observability::database(
+                crate::platform::observability::database(
                     "accounts",
                     statement,
                     sqlx::query(statement).bind(username).fetch_one(&mut *tx),
@@ -58,12 +59,13 @@ impl PostgresAccounts {
                 "Demo email {username} belongs to a different display name"
             );
             let stored_hash: String = row.try_get("password_hash")?;
-            let valid_password =
-                tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+            let valid_password = tokio::task::spawn_blocking(
+                crate::platform::observability::in_current_span(move || {
                     PasswordHash::new(&stored_hash)
                         .is_ok_and(|hash| Argon2::default().verify_password(b"demo", &hash).is_ok())
-                }))
-                .await?;
+                }),
+            )
+            .await?;
             ensure!(
                 valid_password,
                 "Demo email {username} has a different password; credentials were preserved"
@@ -87,7 +89,7 @@ impl PostgresAccounts {
                 tier_one_vehicles: keys.len(),
             });
         }
-        crate::observability::database("accounts", "COMMIT", tx.commit()).await?;
+        crate::platform::observability::database("accounts", "COMMIT", tx.commit()).await?;
         Ok(reports)
     }
 }
@@ -108,7 +110,7 @@ pub(super) async fn persist_starter_garage(
     let id = next.id;
     {
         let statement = "UPDATE accounts SET revision=$2, settings=$3, progression=$4, crew_roster=$5, slots=$6 WHERE id=$1";
-        crate::observability::database(
+        crate::platform::observability::database(
             "accounts",
             statement,
             sqlx::query(statement)
@@ -125,7 +127,7 @@ pub(super) async fn persist_starter_garage(
     for owned in &next.vehicles {
         {
             let statement = "INSERT INTO owned_vehicles(account_id,inventory_id,catalog_key,ammunition,has_crew) VALUES($1,$2,$3,$4,$5) ON CONFLICT(account_id,inventory_id) DO UPDATE SET ammunition=EXCLUDED.ammunition,has_crew=EXCLUDED.has_crew";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "accounts",
                 statement,
                 sqlx::query(statement)

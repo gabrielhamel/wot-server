@@ -27,7 +27,7 @@ establish compatibility with the current client.
 | Required operation spans, SQL tracing, queue propagation and verification | [Telemetry](telemetry.md) |
 | Complete span attribute inventory, meanings and emission conditions | [Span attributes](telemetry-attributes.md) |
 | Running the server, database and client configuration | [Server guide](server.md) |
-| Listing players, creating accounts and granting resources or tanks | [Admin dashboard](admin.md) |
+| Listing players, creating accounts and granting resources or tanks | [Player Administration dashboard](admin.md) |
 | Creating demo players and tier I garages | [Database seeding](seeding.md) |
 | Researching, buying and selling tanks, and buying garage slots | [Tank progression](vehicles.md) |
 | Researching, buying and installing tank modules | [Module progression](modules.md) |
@@ -55,4 +55,6 @@ establish compatibility with the current client.
 
 Architecture rules and documentation maintenance requirements are in
 [AGENTS.md](../AGENTS.md). The toolkit map records its audit baseline; its future
-contexts remain planning material. wot-server currently implements Accounts, Social, Client Gateway, Admin plus offline Binary Mapping and Resource Extraction.
+contexts remain planning material. The runtime contexts are Accounts, Social,
+Player Sessions, and Player Administration. Shared Kernel and Platform support
+the runtime. Binary Mapping and Resource Extraction run offline.
