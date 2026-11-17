@@ -38,5 +38,9 @@ body:
   - type: textarea
     id: evidence
     attributes:
-      label: Logs or screenshots
-      description: Attach relevant evidence and redact credentials, tokens, private keys, and personal information.
+      label: Screen recording or screenshots
+      description: >-
+        Attach a short screen recording showing the problem if possible.
+        If you can't record a video, attach screenshots showing the problem.
+        Include relevant logs if available, and redact credentials, tokens,
+        private keys, and personal information from all attachments.
