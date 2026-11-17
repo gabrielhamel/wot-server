@@ -5,7 +5,7 @@
 On 2026-11-11 the installed EU client reported launcher build `2.4.1.5514` and
 in-game version `v.2.4.1.1 #993`. It runs through the official macOS Wargaming Game
 Center's CrossOver/Wine environment. Discover the current local game directory
-with `python3 tools/game-client.py path`; see [game client setup](game-client.md).
+with `cargo game-client path`; see [game client setup](game-client.md).
 
 At the time of validation, the older-named Development reference directory
 (`...2.4.1.5498...`) was a symlink to that installation. Its name did not establish the binary version;
@@ -88,7 +88,7 @@ After a full resource transfer, `AccountSyncData.__onSyncComplete` sets its new
 revision and immediately requests synchronization again. An unconditional full
 stream makes that loop repeat every client frame and leaves loading stuck.
 
-Access now sends `onCmdResponseExt(RES_SUCCESS, {prevRev, rev})` when the requested
+Player Sessions now sends `onCmdResponseExt(RES_SUCCESS, {prevRev, rev})` when the requested
 revision equals the current snapshot. A different revision gets a full stream,
 followed by the acknowledgement when the client asks again. The encrypted UDP
 integration test exercises this second request and checks that it starts no new

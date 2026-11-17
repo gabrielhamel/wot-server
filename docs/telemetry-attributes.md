@@ -33,66 +33,71 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`ddd.bounded_context.name`](../src/access/application/grants.rs) | Custom DDD attribute naming the owning bounded context: `access`, `accounts`, `social`, `admin`, or `server`. |
-| [`user.id`](../src/access/application/mod.rs) | Local account ID when known: authenticated login, session, account operation, or authenticated XMPP handler. It identifies the affected account, not necessarily an admin caller. Login records it only after authentication succeeds. |
-| [`user.name`](../src/access/infrastructure/gateway/mod.rs) | Nonempty player display name from the account snapshot already returned by successful game authentication. Never copied from the login email; omitted if unavailable. No extra database query. |
-| [`user.email`](../src/access/infrastructure/gateway/mod.rs) | Email-shaped login supplied by the current game authentication payload, recorded after authentication succeeds. Requires nonempty local part, a dot in the domain, and no whitespace; this is a shape check, not proof of ownership. Omitted for non-email logins and requests without an email payload. |
-| [`network.protocol.name`](../src/access/infrastructure/gateway/mod.rs) | `mercury` for game authentication/commands, `xmpp` for incoming XMPP requests. |
-| [`rpc.method`](../src/access/infrastructure/gateway/mod.rs) | Known incoming game entity method name on `game.command`. |
-| [`wot.client.protocol_version`](../src/access/infrastructure/gateway/mod.rs) | Protocol number supplied by the game login request; not a confirmed game release version. |
-| [`wot.client.resource_digest`](../src/access/infrastructure/gateway/mod.rs) | Optional login digest encoded as hexadecimal. Omitted when the request does not supply a digest. |
-| [`wot.client.language`](../src/access/infrastructure/gateway/mod.rs) | Login context `lang_id`, when valid JSON provides a string of at most 32 bytes; otherwise omitted. |
-| [`outcome`](../src/access/infrastructure/gateway/mod.rs) | Game authentication result: `authenticated`, `rejected` (credentials did not authenticate), or `error` (operation failed). |
+| [`ddd.bounded_context.name`](../src/player_sessions/application/grants.rs) | Custom DDD attribute naming the owning context: `player_sessions`, `accounts`, `social`, `player_administration`, or `server`. |
+| [`user.id`](../src/player_sessions/application/mod.rs) | Local account ID when known: authenticated login, session, account operation, or authenticated XMPP handler. It identifies the affected account, not necessarily an admin caller. Login records it only after authentication succeeds. |
+| [`user.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | Nonempty player display name from the account snapshot already returned by successful game authentication. Never copied from the login email; omitted if unavailable. No extra database query. |
+| [`user.email`](../src/player_sessions/infrastructure/gateway/mod.rs) | Email-shaped login supplied by the current game authentication payload, recorded after authentication succeeds. Requires nonempty local part, a dot in the domain, and no whitespace; this is a shape check, not proof of ownership. Omitted for non-email logins and requests without an email payload. |
+| [`network.protocol.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | `mercury` for game authentication/commands, `xmpp` for incoming XMPP requests. |
+| [`rpc.method`](../src/player_sessions/infrastructure/gateway/mod.rs) | Known incoming game entity method name on `game.command`. |
+| [`wot.client.protocol_version`](../src/player_sessions/infrastructure/gateway/mod.rs) | Protocol number supplied by the game login request; not a confirmed game release version. |
+| [`wot.client.resource_digest`](../src/player_sessions/infrastructure/gateway/mod.rs) | Optional login digest encoded as hexadecimal. Omitted when the request does not supply a digest. |
+| [`wot.client.language`](../src/player_sessions/infrastructure/gateway/mod.rs) | Login context `lang_id`, when valid JSON provides a string of at most 32 bytes; otherwise omitted. |
+| [`outcome`](../src/player_sessions/infrastructure/gateway/mod.rs) | Game authentication result: `authenticated`, `rejected` (credentials did not authenticate), or `error` (operation failed). |
 
 ## HTTP and XMPP
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`http.request.method`](../src/admin/presentation/mod.rs) | HTTP method on the root admin request span. |
-| [`url.path`](../src/admin/presentation/mod.rs) | Admin request URI path, excluding its query string. |
-| [`http.response.status_code`](../src/admin/presentation/mod.rs) | HTTP response status, recorded after the admin handler returns a response. |
-| [`input.method`](../src/admin/presentation/mod.rs) | HTTP method checked by admin authentication. |
-| [`input.id.bytes`](../src/admin/presentation/garage.rs) | Byte length of the admin account-ID path parameter before parsing. |
-| [`input.page`](../src/admin/presentation/players.rs) | Requested player-list page, or default `1`; recorded after query decoding. |
-| [`input.per_page`](../src/admin/presentation/players.rs) | Requested page size, or default `25`; recorded after query decoding. |
+| [`http.request.method`](../src/player_administration/presentation/mod.rs) | HTTP method on the root admin request span. |
+| [`url.path`](../src/player_administration/presentation/mod.rs) | Admin request URI path, excluding its query string. |
+| [`http.route`](../src/player_administration/presentation/mod.rs) | Matched route template on the root HTTP span when available, with path parameters left as placeholders. |
+| [`input.query.bytes`](../src/player_administration/presentation/mod.rs) | Length in bytes of the encoded URI query, when present. Query text is excluded. |
+| [`input.content_length`](../src/player_administration/presentation/mod.rs) | Declared body length in bytes when a valid nonnegative `Content-Length` fits in a signed 64-bit integer. This is request metadata and does not count bytes read. |
+| [`http.response.status_code`](../src/player_administration/presentation/mod.rs) | HTTP response status, recorded after the admin handler returns a response. |
+| [`input.method`](../src/player_administration/presentation/mod.rs) | HTTP method checked by admin authentication. |
+| [`input.id.bytes`](../src/player_administration/presentation/garage.rs) | Byte length of the admin account-ID path parameter before parsing. |
+| [`input.page`](../src/player_administration/presentation/players.rs) | Requested player-list page after query decoding. The root span records supplied values only. The list operation records default `1` when omitted. |
+| [`input.per_page`](../src/player_administration/presentation/players.rs) | Requested player-list page size after query decoding. The root span records supplied values only. The list operation records default `25` when omitted. |
 | [`input.offset`](../src/accounts/application/players.rs) | Validated zero-based pagination offset passed to the player repository. |
 | [`input.limit`](../src/accounts/application/players.rs) | Validated maximum player rows requested by pagination. |
-| [`input.grant`](../src/access/application/grants.rs) | Debug representation of the parsed `PlayerGrant`: currency and amount, or vehicle type descriptor. Recorded after admin validation, and on the Access grant use case. |
-| [`xmpp.stanza.name`](../src/access/infrastructure/xmpp/protocol.rs) | Parsed XML element local name on `access.xmpp.handle`; unavailable if XML parsing fails. |
-| [`xmpp.stanza.id`](../src/access/infrastructure/xmpp/protocol.rs) | Optional XML stanza `id` when at most 128 bytes; omitted when absent or longer. |
-| [`messaging.destination.id`](../src/access/infrastructure/xmpp/protocol.rs) | Resolved recipient account ID on an XMPP private-message handler; recorded after recipient resolution. |
-| [`messaging.message.body.size`](../src/access/infrastructure/xmpp/protocol.rs) | UTF-8 byte length of the private-message body. The body text is not recorded. |
-| [`input.bytes`](../src/access/infrastructure/xmpp/mod.rs) | Incoming XMPP stanza byte length on `xmpp.request`. |
-| [`input.stanza.bytes`](../src/access/infrastructure/xmpp/mod.rs) | XMPP stanza byte length on handling or push operations. |
-| [`input.available`](../src/access/infrastructure/xmpp/mod.rs) | Presence availability boolean requested by `access.presence`. |
+| [`input.grant`](../src/player_sessions/application/grants.rs) | Debug representation of the parsed `PlayerGrant`: currency and amount, or vehicle type descriptor. Recorded after admin validation, and on the Player Sessions grant use case. |
+| [`input.grant.kind`](../src/player_administration/presentation/garage.rs) | Decoded grant kind on the root HTTP span, either `currency` or `vehicle`. |
+| [`input.grant.currency`](../src/player_administration/presentation/garage.rs) | Decoded currency on the root HTTP span for currency grants only. One of `credits`, `gold`, `bonds`, or `free_xp`. |
+| [`xmpp.stanza.name`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Parsed XML element local name on `player_sessions.xmpp.handle`; unavailable if XML parsing fails. |
+| [`xmpp.stanza.id`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Optional XML stanza `id` when at most 128 bytes; omitted when absent or longer. |
+| [`messaging.destination.id`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Resolved recipient account ID on an XMPP private-message handler; recorded after recipient resolution. |
+| [`messaging.message.body.size`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | UTF-8 byte length of the private-message body. The body text is not recorded. |
+| [`input.bytes`](../src/player_sessions/infrastructure/xmpp/mod.rs) | Incoming XMPP stanza byte length on `xmpp.request`. |
+| [`input.stanza.bytes`](../src/player_sessions/infrastructure/xmpp/mod.rs) | XMPP stanza byte length on handling or push operations. |
+| [`input.available`](../src/player_sessions/infrastructure/xmpp/mod.rs) | Presence availability boolean requested by `player_sessions.presence`. |
 
 ## Dispatch, social operations and identifiers
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`input.client.address`](../src/access/infrastructure/gateway/mod.rs) | Client socket address (IP and port) for connection, gateway enable, or social dispatch/work/completion operations. |
-| [`input.request_id`](../src/access/infrastructure/gateway/ammunition.rs) | Decoded Mercury command or legacy chat request correlation ID; also retained by resource responses and garage completions. Unused fields remain absent if decoding fails. |
-| [`input.command_id`](../src/access/infrastructure/gateway/commands.rs) | Decoded account command number on `access.commands.command`. |
-| [`input.arg0`](../src/access/infrastructure/gateway/commands.rs) | First decoded scalar argument on supported scalar command forms; absent for array-only forms. |
-| [`input.arg1`](../src/access/infrastructure/gateway/commands.rs) | Second decoded scalar argument, when the command form supplies it. |
-| [`input.arg2`](../src/access/infrastructure/gateway/commands.rs) | Third decoded scalar argument, when the command form supplies it. |
-| [`input.arg3`](../src/access/infrastructure/gateway/commands.rs) | Fourth decoded scalar argument, when the command form supplies it. |
-| [`input.args.count`](../src/access/infrastructure/gateway/commands.rs) | Decoded array argument length on array command forms; array contents are not recorded. |
-| [`input.has_command`](../src/access/infrastructure/gateway/progression.rs) | Whether progression dispatch received a parsed progression command. |
-| [`input.id`](../src/access/application/mod.rs) | Operation-specific ID: account ID for account snapshot/settings and Social player lookup; target account for XMPP pushes/presence; crew member ID for crew dismissal/restoration; conversation ID for `social.conversations.load`. Interpret with the span name. |
-| [`input.account_id`](../src/access/application/grants.rs) | Target account ID passed to the Access admin-grant use case. |
-| [`input.owner`](../src/access/infrastructure/xmpp/protocol.rs) | Account owning a social operation, roster, friendship, or private conversation; authenticated account for XMPP roster/IQ operations. |
-| [`input.peer`](../src/access/infrastructure/xmpp/protocol.rs) | Other account in a friendship, roster-state, or private-conversation operation. |
+| [`input.client.address`](../src/player_sessions/infrastructure/gateway/mod.rs) | Client socket address (IP and port) for connection, gateway enable, or social dispatch/work/completion operations. |
+| [`input.request_id`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Decoded Mercury command or legacy chat request correlation ID; also retained by resource responses and garage completions. Unused fields remain absent if decoding fails. |
+| [`input.command_id`](../src/player_sessions/infrastructure/gateway/commands.rs) | Decoded account command number on `player_sessions.commands.command`. |
+| [`input.arg0`](../src/player_sessions/infrastructure/gateway/commands.rs) | First decoded scalar argument on supported scalar command forms; absent for array-only forms. |
+| [`input.arg1`](../src/player_sessions/infrastructure/gateway/commands.rs) | Second decoded scalar argument, when the command form supplies it. |
+| [`input.arg2`](../src/player_sessions/infrastructure/gateway/commands.rs) | Third decoded scalar argument, when the command form supplies it. |
+| [`input.arg3`](../src/player_sessions/infrastructure/gateway/commands.rs) | Fourth decoded scalar argument, when the command form supplies it. |
+| [`input.args.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Decoded array argument length on array command forms; array contents are not recorded. |
+| [`input.has_command`](../src/player_sessions/infrastructure/gateway/progression.rs) | Whether progression dispatch received a parsed progression command. |
+| [`input.id`](../src/player_sessions/application/mod.rs) | Operation-specific ID: account ID for account snapshot/settings and Social player lookup; target account for XMPP pushes/presence; crew member ID for crew dismissal/restoration; conversation ID for `social.conversations.load`. Interpret with the span name. |
+| [`input.account_id`](../src/player_sessions/application/grants.rs) | Target account ID passed to the Player Sessions admin-grant use case. Also recorded on the root HTTP span after an authenticated garage or grant route parses a positive account ID. |
+| [`input.owner`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Account owning a social operation, roster, friendship, or private conversation; authenticated account for XMPP roster/IQ operations. |
+| [`input.peer`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Other account in a friendship, roster-state, or private-conversation operation. |
 | [`input.player`](../src/social/application/mod.rs) | Account whose presence observers are being queried. |
 | [`input.first`](../src/social/infrastructure/conversations.rs) | First account ID used to acquire a private-conversation pair lock. |
 | [`input.second`](../src/social/infrastructure/conversations.rs) | Second account ID used to acquire a private-conversation pair lock. |
 | [`input.conversation`](../src/social/application/mod.rs) | Private-conversation ID for send, close, history loading, or retention operations. |
-| [`input.action`](../src/access/infrastructure/gateway/social.rs) | Legacy chat action number on `access.social.send_chat`; debug-form friendship action (`Save`, `Request`, `Accept`, `Decline`, `Cancel`, `Remove`) on Social friendship operations. Interpret with the span name. |
+| [`input.action`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat action number on `player_sessions.social.send_chat`; debug-form friendship action (`Save`, `Request`, `Accept`, `Decline`, `Cancel`, `Remove`) on Social friendship operations. Interpret with the span name. |
 | [`input.change`](../src/social/application/mod.rs) | Debug-form contact change (`Friend`, `Ignore`, `RemoveFriend`, `RemoveIgnored`) requested through the Social use case/repository. |
-| [`input.request`](../src/access/infrastructure/gateway/social.rs) | Legacy chat correlation ID passed to the protocol error-response builder. |
-| [`input.event`](../src/access/infrastructure/gateway/social.rs) | Legacy chat event/action byte passed to the protocol error-response builder. |
-| [`input.channel`](../src/access/infrastructure/gateway/social.rs) | Legacy chat channel ID passed to the protocol error-response builder. |
-| [`input.response`](../src/access/infrastructure/gateway/social.rs) | Legacy chat response code passed to the protocol error-response builder. |
+| [`input.request`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat correlation ID passed to the protocol error-response builder. |
+| [`input.event`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat event/action byte passed to the protocol error-response builder. |
+| [`input.channel`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat channel ID passed to the protocol error-response builder. |
+| [`input.response`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat response code passed to the protocol error-response builder. |
 | [`input.prefix.bytes`](../src/social/application/mod.rs) | UTF-8 byte length of a player-search prefix; prefix text is omitted. |
 | [`input.text.bytes`](../src/social/application/mod.rs) | UTF-8 byte length of a private message passed to Social; message text is omitted. |
 
@@ -100,16 +105,16 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`input.username.bytes`](../src/access/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, seeding, or player creation; raw login is not recorded in this field. |
-| [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. |
+| [`input.username.bytes`](../src/player_sessions/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, or player creation. Recorded on the root HTTP span after successful player-creation JSON decoding. |
+| [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. |
 | [`input.algorithm`](../src/accounts/application/players.rs) | Password hashing algorithm on `accounts.players.hash_password`, currently `argon2id`. Password and hash are omitted. |
-| [`input.previous_revision`](../src/access/application/mod.rs) | Expected persisted revision for an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
+| [`input.previous_revision`](../src/player_sessions/application/mod.rs) | Expected persisted revision for an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
 | [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input account snapshot used for catalog preparation or mutation planning. |
-| [`input.changes.count`](../src/access/application/mod.rs) | Number of incoming account-setting changes in the Access settings use case. |
+| [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case. |
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
 | [`input.inventory_id`](../src/accounts/application/mod.rs) | Owned vehicle inventory ID for ammunition planning, module mounting, equipment application, or consumables. Distinct from a vehicle type descriptor. |
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
-| [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. |
+| [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor on the root HTTP span for a decoded vehicle grant. |
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
 | [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`). |
 | [`input.count`](../src/accounts/domain/consumables.rs) | Requested purchase quantity, equipment charge quantity, or cost multiplier, depending on the operation. |
@@ -120,14 +125,13 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.researched`](../src/accounts/domain/vehicles.rs) | Whether the vehicle purchase rule received a researched vehicle. |
 | [`input.gold`](../src/accounts/domain/vehicles.rs) | Gold component of a proposed vehicle/item cost before charging; not the account balance. |
 | [`input.credits`](../src/accounts/domain/vehicles.rs) | Credit component of a proposed vehicle/item cost before charging; not the account balance. |
-| [`input.amount`](../src/accounts/domain/grants.rs) | Requested amount in a currency grant, before positivity and balance-limit checks. |
+| [`input.amount`](../src/accounts/domain/grants.rs) | Requested amount in a currency grant, before positivity and balance-limit checks. Also recorded on the root HTTP span after decoding a currency grant. |
 | [`input.slots`](../src/accounts/domain/consumables.rs) | Current garage slot balance on `accounts.vehicles.buy_vehicle_slot`; available consumable-slot count on consumable purchase/fill operations. |
 | [`input.requested.count`](../src/accounts/domain/ammunition.rs) | Number of requested shell selections passed to ammunition validation. |
 | [`input.depot.count`](../src/accounts/domain/ammunition.rs) | Number of distinct shell types in the depot passed to ammunition validation; not total shell units. |
 | [`input.stock.shell_types`](../src/accounts/domain/depot.rs) | Number of distinct shell types currently held in depot stock at the start of a depot sale. |
 | [`input.stock.fitting_types`](../src/accounts/domain/depot.rs) | Number of distinct fitting/item descriptors currently held in depot stock at the start of a depot sale. |
-| [`input.player_count`](../src/accounts/infrastructure/seeding.rs) | Number of predefined demo players in the seeding operation. |
-| [`input.vehicle_count`](../src/accounts/infrastructure/seeding.rs) | Number of owned vehicles being persisted in a starter garage. |
+| [`input.vehicle_count`](../src/accounts/infrastructure/players.rs) | Number of vehicles persisted on `accounts.players.persist_starter_garage` during player creation. |
 
 ## Crew inputs
 
@@ -152,12 +156,12 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`output.bytes`](../src/access/infrastructure/gateway/commands.rs) | Encoded outgoing XMPP stanza or Mercury resource response byte length; excludes transport framing added later. |
+| [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Encoded outgoing XMPP stanza or Mercury resource response byte length; excludes transport framing added later. |
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
-| [`output.outcome`](../src/access/infrastructure/gateway/ammunition.rs) | Garage progression/ammunition completion result: `committed`, `unchanged`, `rejected`, `stale`, or `error`. Describes the mutation result, not guaranteed socket delivery. |
-| [`output.response`](../src/access/infrastructure/gateway/social.rs) | Legacy chat `actionResponse` code sent by `access.social.send_chat`. |
-| [`output.stanza_count`](../src/access/infrastructure/xmpp/mod.rs) | Number of immediate replies returned by the XMPP handler, recorded before writing them. Does not count separate queued pushes or prove all writes succeeded. |
-| [`output.success`](../src/access/infrastructure/gateway/grants.rs) | Whether a Social job or admin-grant completion contains an `Ok` result; does not by itself prove recipient delivery. |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage progression/ammunition completion result: `committed`, `unchanged`, `rejected`, `stale`, or `error`. Describes the mutation result, not guaranteed socket delivery. |
+| [`output.response`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat `actionResponse` code sent by `player_sessions.social.send_chat`. |
+| [`output.stanza_count`](../src/player_sessions/infrastructure/xmpp/mod.rs) | Number of immediate replies returned by the XMPP handler, recorded before writing them. Does not count separate queued pushes or prove all writes succeeded. |
+| [`output.success`](../src/player_sessions/infrastructure/gateway/grants.rs) | Whether a Social job or admin-grant completion contains an `Ok` result; does not by itself prove recipient delivery. |
 
 ## Startup, database and OpenTelemetry controls
 
@@ -166,16 +170,16 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.resource_dir`](../src/server/mod.rs) | Configured extracted server resource-bundle path loaded at startup. |
 | [`input.pool.max_connections`](../src/server/mod.rs) | Configured maximum PostgreSQL pool connections on `server.connect_database`. |
 | [`input.connections`](../src/accounts/infrastructure/postgres.rs) | Requested maximum PostgreSQL pool connections on `accounts.postgres.connect`. |
-| [`db.system.name`](../src/observability.rs) | Database system, always `postgresql` in the shared database tracing adapter. |
-| [`db.operation.name`](../src/observability.rs) | First SQL statement token, such as `SELECT`, `UPDATE`, `BEGIN`, or `COMMIT`; falls back to `QUERY` for an empty statement. |
-| [`db.query.text`](../src/observability.rs) | Complete executed SQL statement with parameter placeholders. Bind values are not interpolated or serialized. |
-| [`error.type`](../src/observability.rs) | Rust error type name when a database operation fails; omitted on success. |
-| [`otel.kind`](../src/observability.rs) | Tracing bridge control field set to `client` for PostgreSQL operations. Exported as the intrinsic span kind, not an ordinary attribute. |
-| [`otel.status_code`](../src/observability.rs) | Tracing bridge control field set to `ERROR` on database failure. Exported as intrinsic span status, not an ordinary attribute; diagnostic error events can also mark spans as failed. |
+| [`db.system.name`](../src/platform/infrastructure/observability.rs) | Database system, always `postgresql` in the shared database tracing adapter. |
+| [`db.operation.name`](../src/platform/infrastructure/observability.rs) | First SQL statement token, such as `SELECT`, `UPDATE`, `BEGIN`, or `COMMIT`; falls back to `QUERY` for an empty statement. |
+| [`db.query.text`](../src/platform/infrastructure/observability.rs) | Complete executed SQL statement with parameter placeholders. Bind values are not interpolated or serialized. |
+| [`error.type`](../src/platform/infrastructure/observability.rs) | Rust error type name when a database operation fails; omitted on success. |
+| [`otel.kind`](../src/platform/infrastructure/observability.rs) | Tracing bridge control field set to `client` for PostgreSQL operations. Exported as the intrinsic span kind, not an ordinary attribute. |
+| [`otel.status_code`](../src/platform/infrastructure/observability.rs) | Tracing bridge control field set to `ERROR` on database failure. Exported as intrinsic span status, not an ordinary attribute; diagnostic error events can also mark spans as failed. |
 
 ## Transport diagnostic spans
 
-The Mercury [protocol tracker](../src/access/infrastructure/mercury/net/proto.rs)
+The Mercury [protocol tracker](../src/player_sessions/infrastructure/mercury/net/proto.rs)
 also declares legacy TRACE-level spans with implicit argument fields. The
 production OTLP filter exports the server target at INFO, so these spans and
 their fields are not currently exported. The `pigb` TRACE span has no declared

@@ -8,7 +8,7 @@ type Tx<'a> = Transaction<'a, Postgres>;
 async fn save(tx: &mut Tx<'_>, owner: i64, peer: i64, state: Friendship) -> anyhow::Result<bool> {
     let count: i64 = {
         let statement = "SELECT count(*) FROM social_contacts WHERE owner_id=$1 AND peer_id<>$2";
-        crate::observability::database(
+        crate::platform::observability::database(
             "social",
             statement,
             sqlx::query_scalar(statement)
@@ -21,7 +21,7 @@ async fn save(tx: &mut Tx<'_>, owner: i64, peer: i64, state: Friendship) -> anyh
     anyhow::ensure!(count < 300, "Contact limit reached");
     let result = {
         let statement = "INSERT INTO social_contacts(owner_id,peer_id,friendship) VALUES($1,$2,$3) ON CONFLICT(owner_id,peer_id) DO UPDATE SET friendship=EXCLUDED.friendship WHERE NOT social_contacts.ignored AND social_contacts.friendship < EXCLUDED.friendship";
-        crate::observability::database(
+        crate::platform::observability::database(
             "social",
             statement,
             sqlx::query(statement)
@@ -44,11 +44,12 @@ impl PostgresSocial {
         action: FriendshipAction,
     ) -> anyhow::Result<bool> {
         use FriendshipAction::*;
-        let mut tx = crate::observability::database("social", "BEGIN", self.pool.begin()).await?;
+        let mut tx =
+            crate::platform::observability::database("social", "BEGIN", self.pool.begin()).await?;
         for id in [owner.min(peer), owner.max(peer)] {
             {
                 let statement = "SELECT pg_advisory_xact_lock($1)";
-                crate::observability::database(
+                crate::platform::observability::database(
                     "social",
                     statement,
                     sqlx::query(statement).bind(id).execute(&mut *tx),
@@ -58,7 +59,7 @@ impl PostgresSocial {
         }
         let blocked: bool = {
             let statement = "SELECT EXISTS(SELECT 1 FROM social_contacts WHERE ignored AND ((owner_id=$1 AND peer_id=$2) OR (owner_id=$2 AND peer_id=$1)))";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_scalar(statement)
@@ -77,7 +78,7 @@ impl PostgresSocial {
             Request => {
                 let count: i64 = {
                     let statement = "SELECT count(*) FROM social_contacts WHERE peer_id=$1 AND owner_id<>$2 AND friendship=1 AND NOT ignored";
-                    crate::observability::database(
+                    crate::platform::observability::database(
                         "social",
                         statement,
                         sqlx::query_scalar(statement)
@@ -93,7 +94,7 @@ impl PostgresSocial {
             Accept => {
                 let incoming: bool = {
                     let statement = "SELECT EXISTS(SELECT 1 FROM social_contacts WHERE owner_id=$1 AND peer_id=$2 AND friendship=1 AND NOT ignored)";
-                    crate::observability::database(
+                    crate::platform::observability::database(
                         "social",
                         statement,
                         sqlx::query_scalar(statement)
@@ -116,7 +117,7 @@ impl PostgresSocial {
                     (owner, peer)
                 };
                 let statement = "UPDATE social_contacts SET friendship=0 WHERE owner_id=$1 AND peer_id=$2 AND friendship=1 AND NOT ignored";
-                let result = crate::observability::database(
+                let result = crate::platform::observability::database(
                     "social",
                     statement,
                     sqlx::query(statement)
@@ -130,7 +131,7 @@ impl PostgresSocial {
             Remove => {
                 let statement =
                     "DELETE FROM social_contacts WHERE owner_id=$1 AND peer_id=$2 AND NOT ignored";
-                let result = crate::observability::database(
+                let result = crate::platform::observability::database(
                     "social",
                     statement,
                     sqlx::query(statement)
@@ -142,7 +143,7 @@ impl PostgresSocial {
                 let removed = result.rows_affected() != 0;
                 {
                     let statement = "UPDATE social_contacts SET friendship=0 WHERE owner_id=$1 AND peer_id=$2 AND NOT ignored";
-                    crate::observability::database(
+                    crate::platform::observability::database(
                         "social",
                         statement,
                         sqlx::query(statement)
@@ -155,7 +156,7 @@ impl PostgresSocial {
                 removed
             }
         };
-        crate::observability::database("social", "COMMIT", tx.commit()).await?;
+        crate::platform::observability::database("social", "COMMIT", tx.commit()).await?;
         Ok(changed)
     }
 
@@ -163,7 +164,7 @@ impl PostgresSocial {
     pub(super) async fn pending_inbound(&self, owner: i64) -> anyhow::Result<Vec<Player>> {
         let rows: Vec<(i64, String)> = {
             let statement = "SELECT a.id, a.display_name FROM social_contacts c JOIN account_directory a ON a.id=c.owner_id WHERE c.peer_id=$1 AND c.friendship=1 AND NOT c.ignored AND NOT EXISTS (SELECT 1 FROM social_contacts b WHERE b.owner_id=$1 AND b.peer_id=c.owner_id AND b.ignored) ORDER BY a.id LIMIT 100";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_as(statement).bind(owner).fetch_all(&self.pool),

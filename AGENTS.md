@@ -21,10 +21,10 @@ game client. Paths below are relative to the repository root unless absolute:
   `WorldOfTanks.exe` reverse engineering, including game structures, has already
   been done there. Consult it as a research reference. The server owns its
   protocol implementation and has no Toolkit build or runtime dependency.
-- Compiled game client: run `python3 tools/game-client.py status --json` before
+- Compiled game client: run `cargo game-client status --json` before
   client-dependent work. This discovers the local executable and full resource
   tree and reports the executable SHA-256. Use
-  `python3 tools/game-client.py path` for its absolute directory. Selection is
+  `cargo game-client path` for its absolute directory. Selection is
   `WOT_GAME_DIR`, then ignored `.local/game-client.json`, then
   `.local/game-client/`; never assume a developer-specific absolute path.
   If unavailable, the command reports setup instructions: register an existing
@@ -82,6 +82,16 @@ principles, with domain concepts separated from application orchestration and
 infrastructure concerns. Keep dependencies directed toward the domain and make
 boundaries between contexts explicit.
 
+Name bounded contexts after the responsibilities and vocabulary of the domain.
+Use technical names for adapters and implementation details. See
+[naming bounded contexts](docs/bounded-contexts.md) for examples and guidance
+on supporting tools.
+
+Put shared domain concepts with the same meaning and invariants in
+`src/shared_kernel/`. Put reusable infrastructure independent of the domain in
+`src/platform/`. Keep context-specific policies and published integration
+contracts with the context that owns them.
+
 At the root of each bounded context's directory, maintain a `README.md` that:
 
 - Describes the context's purpose, responsibilities, and boundaries.
@@ -91,11 +101,15 @@ At the root of each bounded context's directory, maintain a `README.md` that:
 Organize production code by bounded context first, then by `domain/`,
 `application/`, `infrastructure/`, and `presentation/` where needed inside each
 context. Do not create crate-wide layer directories or empty layers for
-symmetry. Use `crates/` when introducing workspace package boundaries; choose
+symmetry. Use `tools/` when introducing workspace package boundaries; choose
 packages for real responsibilities rather than making every context a crate.
 Keep executable bootstrapping small, use focused modules with clear ownership,
 and expose context entry points instead of reaching into another context's
 internals. Keep protocol wire representations separate from domain models.
+Keep the root `src/` for server contexts, their shared support, and server
+composition. Give standalone tools their own workspace packages under
+`tools/`. The server and tools inherit their release version from
+`[workspace.package]` in the root Cargo manifest.
 
 ### Context maps
 
@@ -104,10 +118,9 @@ Follow the context-map system in `docs/references/wg-launcher`:
 - Maintain a root `CONTEXT_MAP.md` displaying maps for production crates.
 - Keep editable Context Mapper CML models in `docs/context-maps/` and rendered
   SVG diagrams in `docs/context-maps/generated/`.
-- Reuse and adapt `docs/context-maps/generate.py` and
-  `.github/workflows/context-maps.yml` from the reference project when setting
-  up rendering and automation. Preserve model validation, pinned tooling with
-  checksum verification, and deterministic rendering.
+- Use `cargo context-maps` to render context maps. The Rust tool and
+  `.github/workflows/context-maps.yml` preserve the reference project's model
+  validation, pinned tooling with checksum verification, and deterministic rendering.
 - Describe actual context responsibilities, upstream/downstream relationships,
   integration contracts, and applicable DDD integration patterns. Distinguish
   implemented boundaries from planned ones; do not present a target design as

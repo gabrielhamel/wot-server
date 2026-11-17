@@ -4,7 +4,7 @@ use crate::{
         AccountSnapshot, ModuleKind, ProgressionChange, ProgressionCommand, ProgressionError,
         VehicleAmmunition, VehicleCost,
     },
-    client_formats::pickle::Value,
+    platform::client_formats::pickle::Value,
 };
 use std::collections::{BTreeMap, BTreeSet};
 

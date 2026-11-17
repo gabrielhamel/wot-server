@@ -1,7 +1,7 @@
 use crate::{
-    access::{Gateway, GatewayConfig},
     accounts::{Accounts, GarageCatalog, PlayerAccounts, PostgresAccounts, PostgresPlayers},
-    admin,
+    player_administration,
+    player_sessions::{Gateway, GatewayConfig},
 };
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -36,22 +36,22 @@ pub async fn run() -> Result<()> {
     let config = Configuration::load(&path).with_context(|| format!("Load {}", path.display()))?;
     let level = options.log_level.unwrap_or(config.log_level);
     let resource_dir = config.resource_dir.clone();
-    let telemetry = tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
-        logging::initialize(level, &resource_dir)
-    }))
-    .await
-    .context("Join logging initialization")??;
+    let telemetry =
+        tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
+            logging::initialize(level, &resource_dir)
+        }))
+        .await
+        .context("Join logging initialization")??;
     tracing::info!(configuration = %path.display(), "Starting server");
     let result = serve(config).await;
     if let Err(error) = &result {
         tracing::error!(error = %format!("{error:#}"), "Server stopped with an error");
     }
     if let Some(telemetry) = telemetry
-        && let Err(error) =
-            tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
-                telemetry.shutdown()
-            }))
-            .await
+        && let Err(error) = tokio::task::spawn_blocking(
+            crate::platform::observability::in_current_span(move || telemetry.shutdown()),
+        )
+        .await
     {
         tracing::warn!(%error, "OpenTelemetry shutdown task failed");
     }
@@ -72,14 +72,14 @@ async fn serve(config: Configuration) -> Result<()> {
     let keys = repository.catalog_keys().await?;
     let catalog_resources = resources.clone();
     let catalog = Arc::new(
-        tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+        tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
             GarageCatalog::load(catalog_resources, &keys)
         }))
         .await??,
     );
     let key_path = config.private_key.clone();
     let private_key =
-        tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+        tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
             login_key::load_login_key(&key_path)
         }))
         .await??;
@@ -107,18 +107,17 @@ async fn serve(config: Configuration) -> Result<()> {
                 dashboard.display()
             );
         }
-        let token = admin::AdminToken::new(&settings.token);
+        let token = player_administration::AdminToken::new(&settings.token);
         let listener = tokio::net::TcpListener::bind(settings.bind)
             .await
             .with_context(|| format!("Bind admin HTTP listener at {}", settings.bind))?;
         let player_catalog = catalog.clone();
         let player_repository = repository.clone();
-        let players =
-            tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
-                PostgresPlayers::new(&player_repository, player_catalog)
-            }))
-            .await??;
-        let router = admin::router(
+        let players = tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
+            move || PostgresPlayers::new(&player_repository, player_catalog),
+        ))
+        .await??;
+        let router = player_administration::router(
             PlayerAccounts::new(players),
             accounts,
             catalog,
@@ -134,12 +133,16 @@ async fn serve(config: Configuration) -> Result<()> {
     let worker_stop = stop.clone();
     let admin_worker = if let Some((listener, router)) = admin_listener {
         tracing::info!(address = %listener.local_addr()?, "Admin HTTP listener started");
-        Some(tokio::spawn(admin::serve(listener, router, admin_shutdown)))
+        Some(tokio::spawn(player_administration::serve(
+            listener,
+            router,
+            admin_shutdown,
+        )))
     } else {
         None
     };
     let mut worker =
-        tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+        tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
             gateway.run(worker_stop)
         }));
     let result = tokio::select! {

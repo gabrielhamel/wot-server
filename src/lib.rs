@@ -1,13 +1,11 @@
 #![forbid(unsafe_code)]
 
-pub mod access;
 pub mod accounts;
-pub(crate) mod admin;
-pub mod binary_mapping;
-pub(crate) mod observability;
+pub(crate) mod player_administration;
+pub mod player_sessions;
 pub mod server;
-
+pub(crate) mod shared_kernel;
 pub mod social;
 
 #[doc(hidden)]
-pub mod client_formats;
+pub mod platform;

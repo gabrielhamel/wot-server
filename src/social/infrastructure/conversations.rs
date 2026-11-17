@@ -9,7 +9,7 @@ async fn lock_pair(tx: &mut Tx<'_>, first: i64, second: i64) -> anyhow::Result<(
     for id in [first, second] {
         {
             let statement = "SELECT pg_advisory_xact_lock($1)";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query(statement).bind(id).execute(&mut **tx),
@@ -19,7 +19,7 @@ async fn lock_pair(tx: &mut Tx<'_>, first: i64, second: i64) -> anyhow::Result<(
     }
     let ignored: bool = {
         let statement = "SELECT EXISTS(SELECT 1 FROM social_contacts WHERE ignored AND ((owner_id=$1 AND peer_id=$2) OR (owner_id=$2 AND peer_id=$1)))";
-        crate::observability::database(
+        crate::platform::observability::database(
             "social",
             statement,
             sqlx::query_scalar(statement)
@@ -39,7 +39,7 @@ async fn lock_pair(tx: &mut Tx<'_>, first: i64, second: i64) -> anyhow::Result<(
 async fn retain_recent(tx: &mut Tx<'_>, owner: i64, conversation: i32) -> anyhow::Result<()> {
     {
         let statement = "UPDATE private_conversations SET first_open=CASE WHEN first_id=$1 THEN FALSE ELSE first_open END, second_open=CASE WHEN second_id=$1 THEN FALSE ELSE second_open END WHERE id IN (SELECT id FROM private_conversations WHERE id<>$2 AND ((first_id=$1 AND first_open) OR (second_id=$1 AND second_open)) ORDER BY last_used DESC,id DESC OFFSET 15)";
-        crate::observability::database(
+        crate::platform::observability::database(
             "social",
             statement,
             sqlx::query(statement)
@@ -56,7 +56,7 @@ async fn retain_recent(tx: &mut Tx<'_>, owner: i64, conversation: i32) -> anyhow
 async fn load(tx: &mut Tx<'_>, id: i32) -> anyhow::Result<PrivateConversation> {
     let (first, first_name, second, second_name): (i64, String, i64, String) = {
         let statement = "SELECT c.first_id,a.display_name,c.second_id,b.display_name FROM private_conversations c JOIN account_directory a ON a.id=c.first_id JOIN account_directory b ON b.id=c.second_id WHERE c.id=$1";
-        crate::observability::database(
+        crate::platform::observability::database(
             "social",
             statement,
             sqlx::query_as(statement).bind(id).fetch_one(&mut **tx),
@@ -65,7 +65,7 @@ async fn load(tx: &mut Tx<'_>, id: i32) -> anyhow::Result<PrivateConversation> {
     }?;
     let rows: Vec<(i64, i64, String, f64, String)> = {
         let statement = "SELECT m.id,m.sender_id,a.display_name,m.sent_at,m.body FROM private_messages m JOIN account_directory a ON a.id=m.sender_id WHERE conversation_id=$1 ORDER BY m.id DESC LIMIT 100";
-        crate::observability::database(
+        crate::platform::observability::database(
             "social",
             statement,
             sqlx::query_as(statement).bind(id).fetch_all(&mut **tx),
@@ -105,12 +105,13 @@ impl PostgresSocial {
         peer: i64,
     ) -> anyhow::Result<PrivateConversation> {
         let (first, second) = (owner.min(peer), owner.max(peer));
-        let mut tx = crate::observability::database("social", "BEGIN", self.pool.begin()).await?;
+        let mut tx =
+            crate::platform::observability::database("social", "BEGIN", self.pool.begin()).await?;
         lock_pair(&mut tx, first, second).await?;
         for player in [owner, peer] {
             let count: i64 = {
                 let statement = "SELECT count(*) FROM private_conversations WHERE (first_id=$1 OR second_id=$1) AND NOT (first_id=$2 AND second_id=$3)";
-                crate::observability::database(
+                crate::platform::observability::database(
                     "social",
                     statement,
                     sqlx::query_scalar(statement)
@@ -125,7 +126,7 @@ impl PostgresSocial {
         }
         let id: i32 = {
             let statement = "INSERT INTO private_conversations(first_id,second_id) VALUES($1,$2) ON CONFLICT(first_id,second_id) DO UPDATE SET first_id=EXCLUDED.first_id RETURNING id";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_scalar(statement)
@@ -138,7 +139,7 @@ impl PostgresSocial {
         retain_recent(&mut tx, owner, id).await?;
         {
             let statement = "UPDATE private_conversations SET first_open=first_open OR first_id=$2, second_open=second_open OR second_id=$2, last_used=extract(epoch FROM clock_timestamp()) WHERE id=$1";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query(statement)
@@ -149,7 +150,7 @@ impl PostgresSocial {
             .await
         }?;
         let room = load(&mut tx, id).await?;
-        crate::observability::database("social", "COMMIT", tx.commit()).await?;
+        crate::platform::observability::database("social", "COMMIT", tx.commit()).await?;
         Ok(room)
     }
 
@@ -161,10 +162,11 @@ impl PostgresSocial {
         text: &str,
     ) -> anyhow::Result<PrivateConversation> {
         let id = i32::try_from(conversation)?;
-        let mut tx = crate::observability::database("social", "BEGIN", self.pool.begin()).await?;
+        let mut tx =
+            crate::platform::observability::database("social", "BEGIN", self.pool.begin()).await?;
         let (first, second): (i64, i64) = {
             let statement = "SELECT first_id,second_id FROM private_conversations WHERE id=$1 AND (first_id=$2 OR second_id=$2)";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_as(statement)
@@ -177,7 +179,7 @@ impl PostgresSocial {
         lock_pair(&mut tx, first, second).await?;
         let subscribed: bool = {
             let statement = "SELECT CASE WHEN first_id=$2 THEN first_open ELSE second_open END FROM private_conversations WHERE id=$1";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_scalar(statement)
@@ -194,7 +196,7 @@ impl PostgresSocial {
         {
             let statement =
                 "INSERT INTO private_messages(conversation_id,sender_id,body) VALUES($1,$2,$3)";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query(statement)
@@ -207,7 +209,7 @@ impl PostgresSocial {
         }?;
         {
             let statement = "DELETE FROM private_messages WHERE conversation_id=$1 AND id NOT IN (SELECT id FROM private_messages WHERE conversation_id=$1 ORDER BY id DESC LIMIT 100)";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query(statement).bind(id).execute(&mut *tx),
@@ -216,7 +218,7 @@ impl PostgresSocial {
         }?;
         {
             let statement = "UPDATE private_conversations SET first_open=TRUE,second_open=TRUE,last_used=extract(epoch FROM clock_timestamp()) WHERE id=$1";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query(statement).bind(id).execute(&mut *tx),
@@ -224,7 +226,7 @@ impl PostgresSocial {
             .await
         }?;
         let room = load(&mut tx, id).await?;
-        crate::observability::database("social", "COMMIT", tx.commit()).await?;
+        crate::platform::observability::database("social", "COMMIT", tx.commit()).await?;
         Ok(room)
     }
 
@@ -234,10 +236,11 @@ impl PostgresSocial {
         owner: i64,
         conversation: u32,
     ) -> anyhow::Result<()> {
-        let mut tx = crate::observability::database("social", "BEGIN", self.pool.begin()).await?;
+        let mut tx =
+            crate::platform::observability::database("social", "BEGIN", self.pool.begin()).await?;
         {
             let statement = "SELECT pg_advisory_xact_lock($1)";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query(statement).bind(owner).execute(&mut *tx),
@@ -246,7 +249,7 @@ impl PostgresSocial {
         }?;
         let result = {
             let statement = "UPDATE private_conversations SET first_open=CASE WHEN first_id=$2 THEN FALSE ELSE first_open END, second_open=CASE WHEN second_id=$2 THEN FALSE ELSE second_open END WHERE id=$1 AND (first_id=$2 OR second_id=$2)";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query(statement)
@@ -257,7 +260,7 @@ impl PostgresSocial {
             .await
         }?;
         anyhow::ensure!(result.rows_affected() == 1, "Unknown conversation");
-        crate::observability::database("social", "COMMIT", tx.commit()).await?;
+        crate::platform::observability::database("social", "COMMIT", tx.commit()).await?;
         Ok(())
     }
 
@@ -266,10 +269,11 @@ impl PostgresSocial {
         &self,
         owner: i64,
     ) -> anyhow::Result<Vec<PrivateConversation>> {
-        let mut tx = crate::observability::database("social", "BEGIN", self.pool.begin()).await?;
+        let mut tx =
+            crate::platform::observability::database("social", "BEGIN", self.pool.begin()).await?;
         {
             let statement = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query(statement).execute(&mut *tx),
@@ -278,7 +282,7 @@ impl PostgresSocial {
         }?;
         let ids: Vec<i32> = {
             let statement = "SELECT c.id FROM private_conversations c WHERE ((c.first_id=$1 AND c.first_open) OR (c.second_id=$1 AND c.second_open)) AND NOT EXISTS (SELECT 1 FROM social_contacts b WHERE b.ignored AND ((b.owner_id=c.first_id AND b.peer_id=c.second_id) OR (b.owner_id=c.second_id AND b.peer_id=c.first_id))) ORDER BY c.last_used DESC,c.id DESC LIMIT 16";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_scalar(statement)
@@ -291,7 +295,7 @@ impl PostgresSocial {
         for id in ids {
             rooms.push(load(&mut tx, id).await?);
         }
-        crate::observability::database("social", "COMMIT", tx.commit()).await?;
+        crate::platform::observability::database("social", "COMMIT", tx.commit()).await?;
         Ok(rooms)
     }
 }

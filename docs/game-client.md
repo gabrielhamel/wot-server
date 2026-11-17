@@ -8,20 +8,21 @@ and retain their publisher's ownership. Ordinary server builds do not need them.
 
 ## Discover or register a client
 
-The helper requires Python 3.11+ and uses only the standard library. From the
-repository root:
+Use the Cargo alias for the [game-client tool](../tools/wot-game-client/README.md)
+from the repository root:
 
 ```sh
-python3 tools/game-client.py use '/path/to/World_of_Tanks'
-python3 tools/game-client.py status
-python3 tools/game-client.py status --json
-python3 tools/game-client.py path
+cargo game-client use '/path/to/World_of_Tanks'
+cargo game-client status
+cargo game-client status --json
+cargo game-client path
 ```
 
 `use` checks for the executable and `res/packages/`, then saves the resolved
 absolute directory in ignored `.local/game-client.json`. It does not copy or
-modify the game. Paths with spaces and symlinks are supported. The helper itself
-can be invoked from any working directory using its absolute script path.
+modify the game. Paths with spaces and symlinks are supported. The built
+`game-client` executable keeps the workspace's local selection when run from
+another directory.
 
 Selection precedence is `WOT_GAME_DIR` (an environment override), the saved local
 selection, then `.local/game-client/` in this checkout. An invalid explicit
@@ -45,11 +46,11 @@ brew install gabrielhamel/tap/wg-launcher
 Then provision the client (a large download requiring substantial disk space):
 
 ```sh
-python3 tools/game-client.py install
+cargo game-client install
 # Or choose a shared location and build selection:
-python3 tools/game-client.py install --output '/path/to/World_of_Tanks' --region eu --language en
-python3 tools/game-client.py check-updates
-python3 tools/game-client.py update
+cargo game-client install --output '/path/to/World_of_Tanks' --region eu --language en
+cargo game-client check-updates
+cargo game-client update
 ```
 
 Installation defaults to the selected location, or `.local/game-client/` on a
@@ -82,8 +83,8 @@ validation instead of treating it as passed.
 Use the same location with existing tools:
 
 ```sh
-export WOT_GAME_DIR="$(python3 tools/game-client.py path)"
-cargo run --locked --bin wg-binary-map -- "$WOT_GAME_DIR" --output artifacts/client-map
+export WOT_GAME_DIR="$(cargo game-client path)"
+cargo run --locked -p wot-binary-map -- "$WOT_GAME_DIR" --output artifacts/client-map
 cargo run --locked -p wot-extract -- "$WOT_GAME_DIR" --output artifacts/client-resources
 ```
 
@@ -91,7 +92,7 @@ Ensure `artifacts/` exists and output directories are new where required by thos
 tools. The historical ignored mapper test uses `WG_GAME_FOLDER` instead:
 
 ```sh
-WG_GAME_FOLDER="$WOT_GAME_DIR" cargo test --test supplied_client -- --ignored
+WG_GAME_FOLDER="$WOT_GAME_DIR" cargo test -p wot-binary-map --test supplied_client -- --ignored
 ```
 
 That test pins a historical executable hash and structural counts; a newer
@@ -105,5 +106,5 @@ in validation reports remain evidence of those past runs, not discovery defaults
 Helper checks (no real download needed):
 
 ```sh
-python3 -m unittest discover -s tools -p 'test_*.py'
+cargo test --locked -p wot-game-client
 ```

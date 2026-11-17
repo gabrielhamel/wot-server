@@ -13,8 +13,7 @@ The output directory must be new and its parent must already exist. After
 successful extraction, copy the entire output directory to the server host.
 The default location is `resources/` beside the server executable. To use
 another location, set `resource_dir` in `server.json`. Replace the old
-`game_dir` field when upgrading an existing configuration. The
-[demo seeder](seeding.md) uses the same bundle.
+`game_dir` field when upgrading an existing configuration.
 
 The [published container image](container.md) includes the bundle. To use a
 different bundle, mount it read-only and set `resource_dir` to its absolute
@@ -26,17 +25,17 @@ templates, so keep its files available for the lifetime of the process.
 
 The version 1 bundle contains `manifest.json` and a `res/` tree of selected
 definitions. The manifest records which component client classes exist so
-Access can reconstruct the network replication component IDs. The extractor
+Player Sessions can reconstruct the network replication component IDs. The extractor
 reads the original package file indexes for class presence and copies zero
 Python bytecode. When the installation has `version.xml`, the extractor
 also records its trimmed `version` text in the optional `game_version`
 manifest field. This travels with the bundle when it is moved to another
 server. Older manifests without the field remain supported.
 
-- **Access** uses Packed XML aliases, entity and component lists and definitions,
+- **Player Sessions** uses Packed XML aliases, entity and component lists and definitions,
   interface definitions and extension descriptors for the protocol ABI.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
-  item definitions, regular tech trees for demo seeding and available vehicle
+  item definitions, regular tech trees for starter garages and available vehicle
   name catalogs for admin labels.
 
 The extractor copies selected definition files as complete files and preserves
@@ -48,7 +47,7 @@ Package files take precedence over loose files. The extractor uses package
 order from `paths.xml` where present and considers remaining installed packages
 in filename order. Mod overlays are outside the extraction scope. Resource
 requirements come from the current [garage catalog](../src/accounts/infrastructure/client)
-and [script ABI loader](../src/access/infrastructure/mercury/script/load.rs).
+and [script ABI loader](../src/player_sessions/infrastructure/mercury/script/load.rs).
 Regenerate the bundle when changing the game build or updating to a server
 that reads different resource paths. The format version identifies the bundle
 contract and the extracted Account definition supplies the protocol's required

@@ -22,7 +22,7 @@ inputs and output overwrite rejection. Fixtures contain no game binary bytes.
 To validate the supplied client explicitly:
 
 ```sh
-WG_GAME_FOLDER=/path/to/game cargo test --test supplied_client -- --ignored
+WG_GAME_FOLDER=/path/to/game cargo test -p wot-binary-map --test supplied_client -- --ignored
 ```
 
 This opt-in test checks the documented executable hash, interface sizes and
@@ -31,7 +31,7 @@ runs for determinism and compiles generated Rust. It is not run in CI because
 the game executable is an external input. See [findings](binary-mapping.md) for
 version boundaries and expected evidence.
 
-Context maps use `python3 docs/context-maps/generate.py` with Java 17+ and
+Context maps use `cargo context-maps` with Java 17+ and
 Graphviz on PATH. The renderer validates CML, checks the pinned Context Mapper
 archive's SHA-256, normalizes randomized graph attributes and publishes SVGs
 only after all models render. The workflow regenerates them on `main`.
@@ -46,12 +46,10 @@ and uses the image only to read the resource files. It needs no registry
 credentials, so it also works for fork pull requests. Update the image digest
 and fixture build together when the tests need a new resource bundle.
 
-Both targets are opt-in when running Cargo locally. The independent demo seeder
-test creates and drops a fresh database using the configured test role; see
-[seeding verification](seeding.md#verification).
+The database-dependent tests are opt-in when running Cargo locally.
 
 The default suite does not require PostgreSQL or proprietary resources. To exercise
-embedded migrations, insert-only seed, Argon2 credentials, concurrent preference
+embedded migrations, dashboard provisioning, Argon2 credentials, concurrent preference
 writes, restart persistence and two isolated encrypted UDP clients:
 
 ```sh
@@ -59,8 +57,15 @@ docker compose up -d --wait
 export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
-cargo test --locked --test garage --test seeding -- --ignored
+cargo test --locked --lib exports_admin_http_request_inputs -- --ignored
+cargo test --locked -p wot-server --test garage -- --ignored
 ```
+
+The admin HTTP test sends requests through the authenticated router and inspects
+exported inputs, status and parent links for successful and rejected requests.
+It also authenticates a player created through the API, checks their persisted
+starter garage, and verifies that raw credentials and invalid input text stay
+out of spans.
 
 For an existing database, set `WG_TEST_DATABASE_URL` to the same connection
 URL used by the server. The test uses uniquely named temporary accounts and removes them after its network

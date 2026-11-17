@@ -1,7 +1,7 @@
 use super::GarageCatalog;
 use crate::{
     accounts::{AccountSnapshot, GrantError, PlayerGrant, ProgressionChange, ProgressionError},
-    client_formats::pickle::Value,
+    platform::client_formats::pickle::Value,
 };
 
 pub struct VehicleCatalogEntry<'a> {

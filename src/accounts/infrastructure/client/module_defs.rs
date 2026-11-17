@@ -8,7 +8,7 @@ use crate::{
         AmmunitionRules, ModuleDefinition, ModuleKind, ModuleLoadout, ModuleRules, ResearchStep,
         ShellPrice,
     },
-    client_formats::pxml::Element,
+    platform::client_formats::pxml::Element,
 };
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet};

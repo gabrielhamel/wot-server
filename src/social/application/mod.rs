@@ -96,7 +96,10 @@ impl<R: SocialRepository> Social<R> {
         peer: i64,
         change: ContactChange,
     ) -> anyhow::Result<Vec<Contact>> {
-        anyhow::ensure!(owner > 0 && peer > 0 && owner != peer, "Invalid contact");
+        anyhow::ensure!(
+            super::domain::distinct_accounts(owner, peer),
+            "Invalid contact"
+        );
         self.repository.change(owner, peer, change).await?;
         self.repository.roster(owner).await.inspect(|values| {
             tracing::Span::current().record("output.count", values.len());
@@ -110,7 +113,7 @@ impl<R: SocialRepository> Social<R> {
         action: FriendshipAction,
     ) -> anyhow::Result<bool> {
         anyhow::ensure!(
-            owner > 0 && peer > 0 && owner != peer,
+            super::domain::distinct_accounts(owner, peer),
             "Invalid friendship participants"
         );
         self.repository.friendship(owner, peer, action).await
@@ -142,7 +145,7 @@ impl<R: SocialRepository> Social<R> {
     #[tracing::instrument(name = "social.open", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner, input.peer = peer), err)]
     pub async fn open(&self, owner: i64, peer: i64) -> anyhow::Result<PrivateConversation> {
         anyhow::ensure!(
-            owner > 0 && peer > 0 && owner != peer,
+            super::domain::distinct_accounts(owner, peer),
             "Invalid private recipient"
         );
         self.repository.open(owner, peer).await

@@ -1,7 +1,7 @@
 # Tank module research and installation
 
 Accounts owns researched modules, vehicle experience, shared module depot counts,
-and installed module loadouts. Access translates the native garage commands and
+and installed module loadouts. Player Sessions translates the native garage commands and
 publishes cache changes only after a revision-checked PostgreSQL transaction.
 No client resource files are modified.
 
@@ -74,7 +74,7 @@ Decompiled source references under `docs/references/wot-src/sources/res/scripts/
   cache update contracts.
 
 Runtime definitions are read from the installed EU client, discoverable with
-`python3 tools/game-client.py path` (see [game client setup](game-client.md)), including
+`cargo game-client path` (see [game client setup](game-client.md)), including
 `scripts/item_defs/vehicles/germany/G12_Ltraktor.xml` and nation component files.
 The resource-backed test confirms research index 0 is the 35-XP gun `515604`
 (2 cm Breda (i) (LTr)), corresponding to the supplied screenshot. The older
@@ -98,4 +98,4 @@ Implementation ownership:
 | `src/accounts/infrastructure/client/module_defs.rs` | Versioned resource translation, research indices and gun-specific ammunition. |
 | `src/accounts/infrastructure/client/progression.rs` | Catalog-backed planning and client cache deltas. |
 | `src/accounts/infrastructure/postgres.rs` | Coherent reads and atomic persistence. |
-| `src/access/infrastructure/gateway/progression.rs` | Bounded command execution and completion responses. |
+| `src/player_sessions/infrastructure/gateway/progression.rs` | Bounded command execution and completion responses. |

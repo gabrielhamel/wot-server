@@ -27,8 +27,7 @@ establish compatibility with the current client.
 | Required operation spans, SQL tracing, queue propagation and verification | [Telemetry](telemetry.md) |
 | Complete span attribute inventory, meanings and emission conditions | [Span attributes](telemetry-attributes.md) |
 | Running the server, database and client configuration | [Server guide](server.md) |
-| Listing players, creating accounts and granting resources or tanks | [Admin dashboard](admin.md) |
-| Creating demo players and tier I garages | [Database seeding](seeding.md) |
+| Listing players, creating accounts and granting resources or tanks | [Player Administration dashboard](admin.md) |
 | Researching, buying and selling tanks, and buying garage slots | [Tank progression](vehicles.md) |
 | Researching, buying and installing tank modules | [Module progression](modules.md) |
 | Loading, unloading and buying tank shells | [Garage ammunition](ammunition.md) |
@@ -42,6 +41,7 @@ establish compatibility with the current client.
 | Installed game configuration and live garage validation | [Client validation](client-validation.md) |
 | Offline executable mapping and current findings | [Binary mapping](binary-mapping.md) |
 | Implemented context relationships | [Context map](../CONTEXT_MAP.md) |
+| Choosing context names from domain responsibilities and vocabulary | [Naming bounded contexts](bounded-contexts.md) |
 | Mapper verification and external-client checks | [Testing](testing.md) |
 | Packages, dependencies and responsibility ownership | [Workspace map](wg-toolkit/workspace.md) |
 | Networking, script ABI, entities and replication | [Protocol model](wg-toolkit/protocol.md) |
@@ -54,4 +54,7 @@ establish compatibility with the current client.
 
 Architecture rules and documentation maintenance requirements are in
 [AGENTS.md](../AGENTS.md). The toolkit map records its audit baseline; its future
-contexts remain planning material. wot-server currently implements Accounts, Social, Access, Admin plus offline Binary Mapping and Resource Extraction.
+contexts remain planning material. The runtime contexts are Accounts, Social,
+Player Sessions, and Player Administration. Shared Kernel and Platform support
+the runtime. Binary Mapping and Resource Extraction run offline as workspace
+packages under `tools/`.

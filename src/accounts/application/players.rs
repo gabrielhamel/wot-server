@@ -52,12 +52,12 @@ impl<R: PlayerRepository> PlayerAccounts<R> {
 }
 
 #[tracing::instrument(name = "accounts.players.hash_password", skip_all, fields(ddd.bounded_context.name = "accounts", input.algorithm = "argon2id"), err)]
-pub(in crate::accounts) async fn hash_password(password: String) -> anyhow::Result<String> {
+async fn hash_password(password: String) -> anyhow::Result<String> {
     use argon2::{
         Argon2, PasswordHasher,
         password_hash::{SaltString, rand_core::OsRng},
     };
-    tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+    tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
         Argon2::default()
             .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
             .map(|hash| hash.to_string())

@@ -62,12 +62,9 @@ machines must point to this computer's reachable address on port 20016.
 PostgreSQL is a separate service; start the existing Compose instance with
 `docker compose up -d --wait` if stopped. Embedded migrations run automatically,
 but startup never creates accounts or vehicles. Existing accounts and inventory
-remain untouched. Use the independent [demo seed command](seeding.md) to create
-Player_1 and Player_2 with complete tier I garages. The [admin API](admin.md)
-provisions individual accounts on demand. Integration tests also create
-their own temporary accounts.
-The removed `seed_username`, `seed_name`, `seed_password` and `seed_vehicle` fields
-must also be removed from older configuration files, since unknown fields are rejected.
+remain untouched. Create player accounts and their starter garages through
+the [dashboard or admin API](admin.md). Integration tests create their own
+temporary accounts.
 Passwords use salted Argon2id hashes. The Compose DB port is bound to loopback.
 The PostgreSQL volume survives `docker compose down`. The `--volumes` flag
 deletes it. Ctrl-C gracefully stops the gateway.
@@ -149,11 +146,11 @@ reports `v.2.4.1.1 #993`, executable SHA-256
 
 ## Protocol implementation
 
-The server owns its [Mercury adapter](../src/access/infrastructure/mercury) for
+The server owns its [Mercury adapter](../src/player_sessions/infrastructure/mercury) for
 UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish, session lifecycle
 and Account RPCs. The adapter loads the method tables and creation layout from
-the configured bundle. The [shared codecs](../src/client_formats/README.md)
-read packed resources and serialize Python values for Access and Accounts.
+the configured bundle. The [shared codecs](../src/platform/infrastructure/client_formats/README.md)
+read packed resources and serialize Python values for Player Sessions and Accounts.
 
 A standalone checkout builds with `cargo build --locked`. See the
 [resilience report](resilience-audit.md) for packet limits and regression
@@ -214,16 +211,16 @@ entities. Disconnect messages and silent client expiry reclaim capacity.
 
 Atomic JSONB merge and revision increments prevent concurrent preference writes
 from losing unrelated keys. Reads use a repeatable-read transaction to keep
-balances, ownership, settings, progression and ammunition coherent. The integration test fixture creates accounts and ownership in one transaction;
-simultaneous/repeated fixture seeds do not overwrite existing state.
+balances, ownership, settings, progression and ammunition coherent. Player
+creation persists the account and its starter garage in one transaction.
 Migrations are embedded and tracked by SQLx; no separate migration CLI is required.
 
 ## Evidence and limits
 
 The original research target was EU `2.4.1.5498`; the installed client has since
 updated to `2.4.1.5514` (`v.2.4.1.1 #993`). Confirmed locally: resource loading,
-Account schema binding, PostgreSQL migration/seed, encrypted UDP tests, and actual
-login and garage rendering with both seeded tanks in the carousel. See the
+Account schema binding, PostgreSQL migrations, encrypted UDP tests, and actual
+login and garage rendering with both test vehicles in the carousel. See the
 [live validation record](client-validation.md) for evidence, fixes and remaining
 ancillary UI errors.
 

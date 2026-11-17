@@ -61,7 +61,7 @@ See the [dashboard guide](docs/admin.md) for setup.
 ## Documentation
 
 For development and agent research, [register or install the compiled game
-client](docs/game-client.md), then run `python3 tools/game-client.py status`.
+client](docs/game-client.md), then run `cargo game-client status`.
 
 See the [documentation hub](docs/README.md) for setup, protocol research and
 implementation details.

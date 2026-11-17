@@ -33,7 +33,7 @@ impl SocialRepository for PostgresSocial {
         );
         let rows: Vec<(i64, String)> = {
             let statement = "SELECT id, display_name FROM account_directory WHERE lower(display_name) LIKE lower($1) AND ($2::bigint[] IS NULL OR id=ANY($2)) ORDER BY lower(display_name), id LIMIT 50";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_as(statement)
@@ -53,7 +53,7 @@ impl SocialRepository for PostgresSocial {
     async fn roster(&self, owner: i64) -> anyhow::Result<Vec<Contact>> {
         let rows: Vec<(i64, String, bool, i16)> = {
             let statement = "SELECT a.id, a.display_name, c.ignored, c.friendship FROM social_contacts c JOIN account_directory a ON a.id=c.peer_id WHERE c.owner_id=$1 ORDER BY a.id LIMIT 300";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_as(statement).bind(owner).fetch_all(&self.pool),
@@ -76,12 +76,13 @@ impl SocialRepository for PostgresSocial {
 
     #[tracing::instrument(name = "social.change", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner, input.peer = peer, input.change = ?change), err)]
     async fn change(&self, owner: i64, peer: i64, change: ContactChange) -> anyhow::Result<()> {
-        let mut tx = crate::observability::database("social", "BEGIN", self.pool.begin()).await?;
+        let mut tx =
+            crate::platform::observability::database("social", "BEGIN", self.pool.begin()).await?;
         if matches!(change, ContactChange::Ignore) {
             for id in [owner.min(peer), owner.max(peer)] {
                 {
                     let statement = "SELECT pg_advisory_xact_lock($1)";
-                    crate::observability::database(
+                    crate::platform::observability::database(
                         "social",
                         statement,
                         sqlx::query(statement).bind(id).execute(&mut *tx),
@@ -91,7 +92,7 @@ impl SocialRepository for PostgresSocial {
             }
             {
                 let statement = "UPDATE social_contacts SET friendship=0 WHERE owner_id=$1 AND peer_id=$2 AND NOT ignored";
-                crate::observability::database(
+                crate::platform::observability::database(
                     "social",
                     statement,
                     sqlx::query(statement)
@@ -104,7 +105,7 @@ impl SocialRepository for PostgresSocial {
         } else {
             {
                 let statement = "SELECT pg_advisory_xact_lock($1)";
-                crate::observability::database(
+                crate::platform::observability::database(
                     "social",
                     statement,
                     sqlx::query(statement).bind(owner).execute(&mut *tx),
@@ -117,7 +118,7 @@ impl SocialRepository for PostgresSocial {
             let count: i64 = {
                 let statement =
                     "SELECT count(*) FROM social_contacts WHERE owner_id=$1 AND peer_id<>$2";
-                crate::observability::database(
+                crate::platform::observability::database(
                     "social",
                     statement,
                     sqlx::query_scalar(statement)
@@ -130,7 +131,7 @@ impl SocialRepository for PostgresSocial {
             anyhow::ensure!(count < 300, "Contact limit reached");
             {
                 let statement = "INSERT INTO social_contacts(owner_id,peer_id,ignored) VALUES($1,$2,$3) ON CONFLICT(owner_id,peer_id) DO UPDATE SET ignored=EXCLUDED.ignored, friendship=EXCLUDED.friendship";
-                crate::observability::database(
+                crate::platform::observability::database(
                     "social",
                     statement,
                     sqlx::query(statement)
@@ -145,7 +146,7 @@ impl SocialRepository for PostgresSocial {
             {
                 let statement =
                     "DELETE FROM social_contacts WHERE owner_id=$1 AND peer_id=$2 AND ignored=$3";
-                crate::observability::database(
+                crate::platform::observability::database(
                     "social",
                     statement,
                     sqlx::query(statement)
@@ -157,7 +158,7 @@ impl SocialRepository for PostgresSocial {
                 .await
             }?;
         }
-        crate::observability::database("social", "COMMIT", tx.commit()).await?;
+        crate::platform::observability::database("social", "COMMIT", tx.commit()).await?;
         Ok(())
     }
     #[tracing::instrument(name = "social.friendship", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner, input.peer = peer, input.action = ?action), err)]
@@ -179,7 +180,7 @@ impl SocialRepository for PostgresSocial {
     async fn observers(&self, player: i64, online: &[i64]) -> anyhow::Result<Vec<i64>> {
         Ok({
             let statement = "SELECT owner_id FROM social_contacts WHERE peer_id=$1 AND NOT ignored AND friendship=2 AND owner_id=ANY($2) LIMIT 256";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_scalar(statement)
@@ -194,7 +195,7 @@ impl SocialRepository for PostgresSocial {
     async fn player(&self, id: i64) -> anyhow::Result<Option<Player>> {
         let row: Option<(i64, String)> = {
             let statement = "SELECT id,display_name FROM account_directory WHERE id=$1";
-            crate::observability::database(
+            crate::platform::observability::database(
                 "social",
                 statement,
                 sqlx::query_as(statement)

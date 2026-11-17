@@ -10,16 +10,24 @@ for endpoint configuration, resource attributes and console filtering.
 
 Each game command, XMPP stanza and admin request starts an operation trace.
 Spans below it represent meaningful boundaries and decisions in the owning
-bounded context. The custom attribute ddd.bounded_context.name identifies access, accounts,
-social, admin, or server composition. Omit architecture
+bounded context. The custom attribute `ddd.bounded_context.name` identifies
+`player_sessions`, `accounts`, `social`, `player_administration`, or `server`
+(server composition).
+Omit architecture
 layer segments (presentation, application, domain, infrastructure) from span names.
 Name spans after the operation and meaningful subsystem instead.
+
+Player Sessions traces use `player_sessions` as their context value and span
+prefix. Historical traces may use `access` or `client_gateway`.
+Player Administration traces use the context value `player_administration`
+in place of `admin`. The `admin.*`, `game.command`, and `xmpp.request`
+operation names remain stable.
 
 An online XMPP private message follows this hierarchy. Repository operations
 can contain several query and transaction spans.
 
-    xmpp.request                              [access]
-      access.xmpp.handle                      [access]
+    xmpp.request                              [player_sessions]
+      player_sessions.xmpp.handle              [player_sessions]
         social.open                           [social]
           social.open                         [social]
             social.conversations.open_conversation
@@ -28,8 +36,8 @@ can contain several query and transaction spans.
           social.send                         [social]
             social.conversations.send_message
               postgresql.query                [BEGIN / SELECT / INSERT / COMMIT]
-        access.enqueue                        [access]
-          xmpp.response                       [access]
+        player_sessions.enqueue                [player_sessions]
+          xmpp.response                       [player_sessions]
 
 The response may run on the recipient's connection task. It carries the
 originating request's parent through the bounded output queue. Offline
@@ -67,6 +75,16 @@ business outcomes where available. HTTP traces include method, path and
 response status. Business layer spans select the IDs, counts and values
 relevant to their operation.
 
+The root `admin.http.request` span carries route-specific inputs so a trace
+can be filtered without opening child spans. The player list exports supplied
+numeric pagination parameters. Garage routes export the parsed account ID,
+and grants export their kind and either currency and amount or vehicle type.
+Player creation exports the UTF-8 lengths of the login and display name.
+Handlers record these fields after authentication and typed decoding, before
+business validation where applicable. A rejected query or JSON body can still
+be debugged using the status and available size metadata. The raw query, raw
+JSON and credential headers are excluded.
+
 Passwords, hashes, auth tokens, private keys, database connection credentials
 and complete authentication envelopes are excluded. Message content and
 binary data are represented by sizes and identifiers. User identity
@@ -83,8 +101,9 @@ even when writing its protocol error response succeeds.
 
 ## PostgreSQL
 
-The shared database tracing adapter is in src/observability.rs. Application-issued queries and explicit transaction boundaries are awaited
-inside postgresql.query spans.
+The [Platform database tracing adapter](../src/platform/infrastructure/observability.rs)
+awaits application-issued queries and explicit transaction boundaries inside
+`postgresql.query` spans. It records the context of the caller.
 
 | Attribute | Meaning |
 | --- | --- |

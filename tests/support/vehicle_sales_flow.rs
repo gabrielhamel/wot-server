@@ -5,12 +5,12 @@ use super::{
     dict,
 };
 use wot_server::{
-    access::mercury::app::dispatch::ScriptDispatch,
     accounts::{
         AccountRepository, GarageCatalog, PostgresAccounts, ProgressionCommand, ProgressionError,
         VehiclePurchaseOptions, VehicleSaleRequest,
     },
     pickle,
+    player_sessions::mercury::app::dispatch::ScriptDispatch,
 };
 
 const AIMING: i32 = (101 << 8) | 0xf9;

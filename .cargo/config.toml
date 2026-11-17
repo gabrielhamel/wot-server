@@ -1,2 +1,3 @@
 [alias]
-seed = "run --bin seed --"
+context-maps = "run --quiet --locked -p wot-context-maps --"
+game-client = "run --quiet --locked -p wot-game-client --"

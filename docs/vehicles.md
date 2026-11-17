@@ -1,7 +1,7 @@
 # Tank research, vehicle purchases and sales, and garage slots
 
 Accounts owns vehicle research, purchases and sales through the same revision-checked
-progression use case as module research and installation. Access translates the
+progression use case as module research and installation. Player Sessions translates the
 native garage requests; the client resources supply research trees, prices,
 stock modules, ammunition and crew roles.
 
@@ -125,7 +125,7 @@ lock acquisition, and is limited to known resource keys. Owned starter vehicles
 are still validated during startup. Requests cannot supply a filesystem path.
 Research/purchase work and template loading run on bounded blocking workers,
 not the UDP event loop. A newly bought vehicle can be projected immediately;
-no restart or catalog reseed is needed.
+no restart or catalog reload is needed.
 
 The migration `0001_initial_schema.sql` defines the
 **`accounts.progression`** JSONB column. Its fields are `unlocks`, `vehicle_xp`, `depot` and `installed`;
@@ -189,7 +189,7 @@ Sources under `docs/references/wot-src/sources/res/scripts/`:
 
 Definitions and prices come from the configured installation, tested here with EU
 `2.4.1.5514` as recorded in the server guide. Discover the current installation
-with `python3 tools/game-client.py path` (see [game client setup](game-client.md)).
+with `cargo game-client path` (see [game client setup](game-client.md)).
 Decompiled source is supporting
 reference, not proof of compatibility with a different build.
 
@@ -222,4 +222,4 @@ reconnect, and inventory ID allocation after a sale.
 | `src/accounts/infrastructure/client/progression.rs` | Research/purchase coordination and cache deltas. |
 | `src/accounts/infrastructure/client/vehicle_sales.rs` | Resource-backed vehicle and fitting valuation, crew disposition and sale planning. |
 | `src/accounts/infrastructure/postgres.rs` | Atomic progression and ownership persistence. |
-| `src/access/infrastructure/gateway/progression.rs` | Native request decoding and bounded persistence jobs. |
+| `src/player_sessions/infrastructure/gateway/progression.rs` | Native request decoding and bounded persistence jobs. |

@@ -4,8 +4,8 @@
 !LICENSE
 !THIRD_PARTY_NOTICES.md
 !build.rs
-!crates/
-!crates/**
+!tools/
+!tools/**
 !src/
 !src/**
 !migrations/

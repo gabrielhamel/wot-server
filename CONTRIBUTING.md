@@ -50,7 +50,7 @@ Instrumentation coverage and trace verification are merge requirements.
 Manually verify every contribution against the proposed revision before merge.
 Use the entry point affected by the change. For game-facing behavior, use the
 compiled World of Tanks client against a development server running your change.
-Run `python3 tools/game-client.py status --json` before client-dependent work
+Run `cargo game-client status --json` before client-dependent work
 and record the client build and executable SHA-256. For other changes, exercise
 the affected CLI, dashboard, or workflow directly. For documentation-only
 changes, review the rendered pages, follow the affected links, and verify any

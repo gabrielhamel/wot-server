@@ -34,7 +34,7 @@ pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
     };
     assert!(spans.iter().any(|span| {
         span.name == "game.authenticate"
-            && has(span, "ddd.bounded_context.name", "access")
+            && has(span, "ddd.bounded_context.name", "player_sessions")
             && has(span, "user.id", &account.to_string())
             && has(span, "user.name", display_name)
             && if login.contains('@') {
@@ -51,7 +51,7 @@ pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
     }));
     assert!(spans.iter().any(|span| {
         span.name == "game.command"
-            && has(span, "ddd.bounded_context.name", "access")
+            && has(span, "ddd.bounded_context.name", "player_sessions")
             && has(span, "user.id", &account.to_string())
             && span
                 .attributes
@@ -113,9 +113,15 @@ pub fn assert_operation_traces(account: i64) {
     };
     assert!(
         spans.iter().all(|span| {
-            ["access", "accounts", "social", "admin", "server"]
-                .iter()
-                .any(|context| has(span, "ddd.bounded_context.name", context))
+            [
+                "player_sessions",
+                "accounts",
+                "social",
+                "player_administration",
+                "server",
+            ]
+            .iter()
+            .any(|context| has(span, "ddd.bounded_context.name", context))
         }),
         "every exported operation must identify its bounded context"
     );
@@ -128,7 +134,9 @@ pub fn assert_operation_traces(account: i64) {
                     .iter()
                     .any(|span| span.name == "accounts.modules.research" && descendant(span, root))
                 && spans.iter().any(|span| {
-                    span.name == "access.gateway.progression_response" && descendant(span, root)
+                    span.name == "player_sessions.gateway.progression_response"
+                        && has(span, "ddd.bounded_context.name", "player_sessions")
+                        && descendant(span, root)
                 })
                 && spans
                     .iter()
@@ -162,11 +170,25 @@ pub fn assert_operation_traces(account: i64) {
         }),
         "exported span names must omit architecture layer segments"
     );
-    let message = spans.iter().find(|root| {
-        root.name == "xmpp.request"
-            && spans.iter().any(|span| span.name == "social.send" && descendant(span, root))
-            && spans.iter().any(|span| span.name == "xmpp.response" && descendant(span, root))
-    }).expect("XMPP message must retain its parent through database persistence and outgoing delivery");
+    let message = spans
+        .iter()
+        .find(|root| {
+            root.name == "xmpp.request"
+                && has(root, "ddd.bounded_context.name", "player_sessions")
+                && spans.iter().any(|span| {
+                    span.name == "social.send" && descendant(span, root)
+                })
+                && ["player_sessions.xmpp.handle", "xmpp.response"]
+                    .iter()
+                    .all(|operation| {
+                        spans.iter().any(|span| {
+                            span.name == *operation
+                                && has(span, "ddd.bounded_context.name", "player_sessions")
+                                && descendant(span, root)
+                        })
+                    })
+        })
+        .expect("XMPP message must retain its parent through database persistence and outgoing delivery");
     assert_eq!(
         message.parent_span_id,
         opentelemetry::trace::SpanId::INVALID

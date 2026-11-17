@@ -158,7 +158,7 @@ server.
 
 ## Native endpoint and authentication
 
-Access binds TCP on the **same address/port as BaseApp UDP** (default TCP 20017).
+Player Sessions binds TCP on the **same address/port as BaseApp UDP** (default TCP 20017).
 The client receives the same route-selected or explicitly advertised endpoint,
 including the localhost shortcut. The XMPP virtual domain is `wot-server.local`;
 explicit connection settings supply its reachable IP, so DNS is not required.
@@ -193,7 +193,7 @@ saved-pair and retention limits, and commits before reporting success. Account
 names come from Accounts' published `account_directory` view. Supplied `from`
 attributes are never trusted as message authors.
 
-[Access](../src/access/README.md) owns XMPP framing, token admission, roster and WG
+[Player Sessions](../src/player_sessions/README.md) owns XMPP framing, token admission, roster and WG
 extension translation, presence fanout and live sockets. The TCP task limit equals
 `max_clients`; each session processes one stanza at a time. Incoming XML is bounded
 to 32 KiB, depth 16, and 64 socket reads per incomplete frame. DTDs are rejected.

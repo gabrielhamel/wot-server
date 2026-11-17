@@ -1,15 +1,17 @@
-use super::{Peer, Pickle, Value, ammunition_flow, dict};
+use super::{Peer, Pickle, Value, ammunition_flow, dict, player_fixture};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use wot_server::access::mercury::app::{dispatch::ScriptDispatch, login::element::LoginResponse};
+use wot_server::player_sessions::mercury::app::{
+    dispatch::ScriptDispatch, login::element::LoginResponse,
+};
 use wot_server::{
-    access::{Gateway, GatewayConfig, GrantDelivery, GrantRequestError},
     accounts::{
         Accounts, GarageCatalog, GrantCurrency, GrantError, PlayerGrant, PostgresAccounts,
         ProgressionError,
     },
+    player_sessions::{Gateway, GatewayConfig, GrantDelivery, GrantRequestError},
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -27,20 +29,15 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()
     );
     let starter = "usa:A01_T1_Cunningham".to_owned();
-    repository
-        .seed(
-            &username,
-            "Grant test",
-            "grants".into(),
-            std::slice::from_ref(&starter),
-        )
-        .await
-        .unwrap();
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM accounts WHERE username = $1")
-        .bind(&username)
-        .fetch_one(&repository.connection_pool())
-        .await
-        .unwrap();
+    let id = player_fixture::insert_player(
+        &repository,
+        &username,
+        "Grant test",
+        "grants",
+        std::slice::from_ref(&starter),
+    )
+    .await
+    .unwrap();
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[starter]).unwrap());
     let snapshot = accounts.snapshot(id).await.unwrap();
     for key in [
@@ -73,8 +70,9 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         .find(|tank| tank.key == "ussr:R111_ISU130")
         .unwrap()
         .id;
-    let script =
-        ScriptDispatch::new(wot_server::access::mercury::script::load(&resources).unwrap());
+    let script = ScriptDispatch::new(
+        wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
+    );
     let gateway = Gateway::bind(
         GatewayConfig {
             login_bind: "127.0.0.1:0".parse().unwrap(),

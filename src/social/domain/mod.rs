@@ -1,4 +1,12 @@
+use crate::shared_kernel::AccountId;
 use std::collections::{BTreeMap, BTreeSet};
+
+pub(super) fn distinct_accounts(first: i64, second: i64) -> bool {
+    matches!(
+        (AccountId::new(first), AccountId::new(second)),
+        (Some(first), Some(second)) if first != second
+    )
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Player {
@@ -65,7 +73,7 @@ impl Conversations {
     }
 
     pub fn open(&mut self, owner: i64, peer: i64) -> Option<Conversation> {
-        if owner == peer || owner <= 0 || peer <= 0 {
+        if !distinct_accounts(owner, peer) {
             return None;
         }
         if let Some(id) = self.between(owner, peer).map(|room| room.id) {

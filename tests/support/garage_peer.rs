@@ -6,20 +6,20 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use wot_server::access::mercury::app::{
+use wot_server::platform::client_formats::pickle;
+use wot_server::player_sessions::mercury::app::{
     base::element as base,
     client::element as client,
     dispatch::{MethodCall, MethodDef, ScriptDispatch},
     login::element::{LoginRequest, LoginResponse},
 };
-use wot_server::access::mercury::net::{
+use wot_server::player_sessions::mercury::net::{
     bundle::{Bundle, NextElementReader},
     element::{Element, ElementLength},
     proto::Protocol,
     socket::PacketSocket,
 };
-use wot_server::access::mercury::script::Value;
-use wot_server::client_formats::pickle;
+use wot_server::player_sessions::mercury::script::Value;
 
 struct Method<'a> {
     methods: &'a [MethodDef],
@@ -147,7 +147,7 @@ impl Peer {
 
     pub fn handoff(
         &mut self,
-        success: wot_server::access::mercury::app::login::element::LoginSuccess,
+        success: wot_server::player_sessions::mercury::app::login::element::LoginSuccess,
     ) {
         self.base = success.addr.addr.into();
         let mut bundle = Bundle::new();
@@ -263,7 +263,7 @@ impl Peer {
                                 panic!("Account creation properties")
                             };
                             let Value::Python(
-                                wot_server::access::mercury::script::PythonValue::Decoded(
+                                wot_server::player_sessions::mercury::script::PythonValue::Decoded(
                                     pickle::Value::Dict(settings),
                                 ),
                             ) = &properties["initialServerSettings"]

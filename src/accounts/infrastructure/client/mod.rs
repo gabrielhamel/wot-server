@@ -13,8 +13,8 @@ mod item_prices;
 mod items;
 mod module_defs;
 mod progression;
-mod seeding;
 mod shop;
+mod starter_garage;
 mod supply_slots;
 mod vehicle_defs;
 pub use grants::VehicleCatalogEntry;
@@ -24,8 +24,8 @@ use crate::accounts::{
     AccountSnapshot, AmmoError, AmmunitionChange, AmmunitionRules, ShellCurrency, ShellPrice,
     ShellSelection,
 };
-use crate::client_formats::pickle::Value;
-use crate::client_formats::pxml;
+use crate::platform::client_formats::pickle::Value;
+use crate::platform::client_formats::pxml;
 use anyhow::{Context, Result};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},

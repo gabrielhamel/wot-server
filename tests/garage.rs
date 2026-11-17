@@ -21,6 +21,8 @@ mod vehicle_sales_flow;
 #[path = "support/vehicles_flow.rs"]
 mod vehicles_flow;
 use garage_peer::Peer;
+#[path = "support/player_fixture.rs"]
+mod player_fixture;
 #[path = "support/social_flow.rs"]
 mod social_flow;
 #[path = "support/telemetry_capture.rs"]
@@ -34,15 +36,15 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use wot_server::access::mercury::app::{
+use wot_server::platform::client_formats::pickle::Value as Pickle;
+use wot_server::player_sessions::mercury::app::{
     dispatch::ScriptDispatch,
     login::element::{LoginError, LoginResponse},
 };
-use wot_server::access::mercury::script::Value;
-use wot_server::client_formats::pickle::Value as Pickle;
+use wot_server::player_sessions::mercury::script::Value;
 use wot_server::{
-    access::{Gateway, GatewayConfig},
     accounts::{AccountRepository, Accounts, GarageCatalog, PostgresAccounts},
+    player_sessions::{Gateway, GatewayConfig},
 };
 
 fn dict(value: &Pickle, name: &str) -> Pickle {
@@ -82,49 +84,40 @@ async fn exercise_garage(encrypted_login: bool) {
     let second = format!("{prefix}_b@example.test");
     let tank_a = "usa:A01_T1_Cunningham".to_string();
     let tank_b = "germany:G12_Ltraktor".to_string();
-    repository
-        .seed(
-            &first,
-            "TestPlayerA",
-            "password-a".into(),
-            std::slice::from_ref(&tank_a),
-        )
-        .await
-        .unwrap();
-    repository
-        .seed(
-            &second,
-            "TestPlayerB",
-            "password-b".into(),
-            std::slice::from_ref(&tank_b),
-        )
-        .await
-        .unwrap();
-    repository
-        .seed(
-            &first,
-            "ChangedName",
-            "changed".into(),
-            std::slice::from_ref(&tank_b),
-        )
-        .await
-        .unwrap();
+    player_fixture::insert_player(
+        &repository,
+        &first,
+        "TestPlayerA",
+        "password-a",
+        std::slice::from_ref(&tank_a),
+    )
+    .await
+    .unwrap();
+    player_fixture::insert_player(
+        &repository,
+        &second,
+        "TestPlayerB",
+        "password-b",
+        std::slice::from_ref(&tank_b),
+    )
+    .await
+    .unwrap();
     let equipment_player = format!("{prefix}_equipment@example.test");
-    repository
-        .seed(
-            &equipment_player,
-            "EquipmentPlayer",
-            "password-equipment".into(),
-            &[
-                "ussr:R04_T-34".into(),
-                tank_a.clone(),
-                "ussr:R111_ISU130".into(),
-                "poland:Pl14_4TP".into(),
-                "france:F01_RenaultFT".into(),
-            ],
-        )
-        .await
-        .unwrap();
+    player_fixture::insert_player(
+        &repository,
+        &equipment_player,
+        "EquipmentPlayer",
+        "password-equipment",
+        &[
+            "ussr:R04_T-34".into(),
+            tank_a.clone(),
+            "ussr:R111_ISU130".into(),
+            "poland:Pl14_4TP".into(),
+            "france:F01_RenaultFT".into(),
+        ],
+    )
+    .await
+    .unwrap();
     let accounts = Accounts::new(repository.clone());
     let equipment_account = accounts
         .authenticate(&equipment_player, "password-equipment".into())
@@ -134,7 +127,7 @@ async fn exercise_garage(encrypted_login: bool) {
         .id;
     assert!(
         accounts
-            .authenticate(&first, "changed".into())
+            .authenticate(&first, "wrong-password".into())
             .await
             .unwrap()
             .is_none()
@@ -205,8 +198,9 @@ async fn exercise_garage(encrypted_login: bool) {
         stored.settings
     );
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[tank_a, tank_b]).unwrap());
-    let script =
-        ScriptDispatch::new(wot_server::access::mercury::script::load(&resources).unwrap());
+    let script = ScriptDispatch::new(
+        wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
+    );
     let private_key = encrypted_login
         .then(|| Arc::new(rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).unwrap()));
     let public_key = private_key
