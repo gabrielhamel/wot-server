@@ -1,5 +1,11 @@
 # Project instructions
 
+## Git branches
+
+Choose descriptive Git branch names based on the work, such as
+`docs/public-server-setup`. Avoid the `codex/` prefix unless explicitly
+requested.
+
 ## Goal and workspace
 
 Build a complete, functional server for World of Tanks. This repository,
