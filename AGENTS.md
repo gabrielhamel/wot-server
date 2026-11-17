@@ -132,7 +132,7 @@ units, emission conditions, and supporting source locations.
 - Trace each incoming game command, XMPP stanza and admin request through its
   meaningful context and layer boundaries, database work and response or
   delivery. Use stable operation names. Set wot.context on each span. Omit
-  code.layer attributes and architecture layer names from span names. Instrument
+  architecture layer names from span names. Instrument
   domain decisions and use cases at useful granularity.
 - Emit user.name only from an available player display name and user.email only
   when the current payload supplies an email. Omit unavailable identity attributes;

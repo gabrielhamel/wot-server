@@ -32,7 +32,7 @@ its traces explain the request, context and layer transitions, persistence,
 outcome and response.
 
 Use stable operation names without architecture layers and set wot.context.
-Omit code.layer attributes. Use available display names for user.name and current
+Use available display names for user.name and current
 payload emails for user.email; omit unavailable values and never query solely
 to enrich telemetry. Attach explicit, bounded input attributes and useful result
 counts or outcomes. Preserve

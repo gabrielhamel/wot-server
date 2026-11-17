@@ -143,18 +143,14 @@ pub fn assert_operation_traces(account: i64) {
     }
     assert!(
         spans.iter().all(|span| {
-            !span
-                .attributes
-                .iter()
-                .any(|attribute| attribute.key.as_str() == "code.layer")
-                && !span.name.split('.').any(|segment| {
-                    matches!(
-                        segment,
-                        "application" | "domain" | "infrastructure" | "presentation"
-                    )
-                })
+            !span.name.split('.').any(|segment| {
+                matches!(
+                    segment,
+                    "application" | "domain" | "infrastructure" | "presentation"
+                )
+            })
         }),
-        "exported spans must omit layer attributes and layer name segments"
+        "exported span names must omit architecture layer segments"
     );
     let message = spans.iter().find(|root| {
         root.name == "xmpp.request"

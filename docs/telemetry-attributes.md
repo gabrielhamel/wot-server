@@ -23,8 +23,8 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 - Names and email addresses are recorded only when available as described below.
   No database queries are added solely to enrich telemetry. Credentials, password
   hashes, tokens, message bodies and raw authentication envelopes are excluded.
-- `code.layer` and architecture layer segments in span names are intentionally
-  absent. Source-location metadata from the tracing library is separate.
+- Architecture layer segments in span names are intentionally absent.
+  Source-location metadata from the tracing library is separate.
 
 Each attribute links to an emitting source file. Shared keys can have different
 meanings on different operations; those differences are listed explicitly.

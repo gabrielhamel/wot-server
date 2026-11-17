@@ -11,7 +11,7 @@ for endpoint configuration, resource attributes and console filtering.
 Each game command, XMPP stanza and admin request starts an operation trace.
 Spans below it represent meaningful boundaries and decisions in the owning
 bounded context. The custom attribute wot.context identifies access, accounts,
-social, admin, or server composition. Omit code.layer attributes and architecture
+social, admin, or server composition. Omit architecture
 layer segments (presentation, application, domain, infrastructure) from span names.
 Name spans after the operation and meaningful subsystem instead.
 
