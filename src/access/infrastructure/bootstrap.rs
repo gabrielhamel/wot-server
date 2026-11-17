@@ -17,6 +17,8 @@ pub fn server_settings() -> Pickle {
         "isCrewBooksPurchaseEnabled": true,
         "isCrewBooksSaleEnabled": true,
         "isJunkCrewConversionEnabled": true,
+        "rewardBookId": 62,
+        "XppToConvert": 100000,
         "ranked_config": {"isEnabled": false},
         "fun_random_config": {"isEnabled": false},
         "comp7_config": {"isEnabled": false},

@@ -284,6 +284,15 @@ impl Peer {
                                     "Missing startup/replay config: {name}"
                                 );
                             }
+                            for (name, expected) in
+                                [("rewardBookId", 62), ("XppToConvert", 100_000)]
+                            {
+                                assert_eq!(
+                                    settings.get(&pickle::Value::Bytes(name.as_bytes().to_vec())),
+                                    Some(&pickle::Value::I64(expected)),
+                                    "Crew post-progression setting: {name}"
+                                );
+                            }
                             let pickle::Value::Dict(epic) =
                                 &settings[&pickle::Value::Bytes(b"epic_config".to_vec())]
                             else {

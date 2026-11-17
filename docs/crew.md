@@ -28,8 +28,11 @@ member without a seat occupies one barracks berth. An empty seat is represented 
 - Convert free XP to crew XP at the advertised 1-to-5 rate. Choose major perks and
   eligible secondary-role bonus perks. Major perk selection can end with a perk
   at 0% when XP runs out. Each earlier major perk must reach 100% before the next
-  can be selected. Reset perks with the advertised credit, gold or free courses
-  and their corresponding XP refunds.
+  can be selected. Bonus perk slots unlock at zero, two and four full major
+  perks. The client derives bonus perk levels from major perk progress, so
+  with exactly two full major perks a member can select the 100% and 0%
+  bonus perks in the same command. Reset perks with the advertised credit,
+  gold or free courses and their corresponding XP refunds.
 - Toggle Accelerate Crew Training per owned Elite vehicle. Elite status is
   projected from the installed vehicle's research steps and the account's
   unlocks, including stock unlocks. Vehicles that earn Elite status through a
@@ -110,6 +113,18 @@ has reached the current training cap. Crew awards use the existing cap. The
 server still needs a battle settlement path to call this rule and commit the
 result. Veteran XP conversion to Crew Books also remains pending.
 
+Quick Training looks up the post-progression reward book if any crew member
+on the account has reached the skill XP cap. The server supplies `rewardBookId`
+(Universal Guide, raw book ID 62) and `XppToConvert` (100,000). Without the
+reward ID, the client defaults to ID 0 and fails to render the entire book
+list. The client defaults the unearned `stats.XPpp` balance to zero.
+The reward ID comes from `scripts/item_defs/crewBooks/crewBooks.xml` in the
+installed EU client (executable SHA-256
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`).
+The lookup and fallback are in the reference client's
+`gui/impl/lobby/crew/container_vews/quick_training/` components and
+`helpers/server_settings.py`.
+
 ## Evidence and verification
 
 - `docs/references/wot-src/sources/res/scripts/common/AccountCommands.py` and
@@ -123,6 +138,9 @@ result. Veteran XP conversion to Crew Books also remains pending.
 - `common/items/{tankmen,vehicles,crew_junk_convert_helper}.py` and
   `common/items/components/skills_constants.py` record descriptors, secondary
   roles, perk eligibility, XP curves and conversion previews.
+  `client/gui/shared/gui_items/Tankman.py` (`bonusSlotsLevels`) records the
+  inclusive bonus slot milestones, and `tankmen.py` derives the levels from
+  major perk progress.
 - `scripts/item_defs/{vehicles,tankmen,crewBooks,crewSkins}` from the installed EU
   resources supply catalog data. The directory name with `2.4.1.5498` is an
   alias to the installed EU game, as described in [client validation](client-validation.md).

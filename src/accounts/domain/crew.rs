@@ -546,20 +546,13 @@ impl CrewTraining {
                 let skill_role = skill_role
                     .filter(|&skill_role| secondary_roles.contains(&skill_role))
                     .ok_or(ProgressionError::InvalidRequest)?;
-                let full = self.full_perks();
-                let next_perk = full + 1;
-                let partial = usize::from(
-                    self.skill_xp()
-                        >= Self::level_cost(100, 1) * ((1 << full) - 1)
-                            + Self::level_cost(1, next_perk),
-                );
-                let available = (full + partial).div_ceil(2);
+                let available = (self.full_perks() / 2 + 1).min(3);
                 let selected = self
                     .bonus_perks
                     .iter()
                     .filter(|&&p| perk_role(p) == Some(Some(skill_role)))
                     .count();
-                if selected >= available.min(3) || self.bonus_perks.contains(&perk) {
+                if selected >= available || self.bonus_perks.contains(&perk) {
                     return Err(ProgressionError::InvalidRequest);
                 }
                 self.bonus_perks.push(perk);
