@@ -34,7 +34,7 @@ impl Gateway {
         let _request = parent.enter();
         let span = tracing::info_span!(
             "access.gateway.grant",
-            "bounded_context" = "access",
+            "ddd.bounded_context.name" = "access",
             "user.id" = account_id
         );
         let _grant = span.enter();
@@ -102,7 +102,7 @@ impl Gateway {
             }));
     }
 
-    #[tracing::instrument(name = "access.gateway.grant_response", skip_all, fields(bounded_context = "access", user.id = completion.account_id, output.success = completion.result.is_ok()))]
+    #[tracing::instrument(name = "access.gateway.grant_response", skip_all, fields(ddd.bounded_context.name = "access", user.id = completion.account_id, output.success = completion.result.is_ok()))]
     pub(super) fn complete_grant(&mut self, completion: Completion) {
         let Completion {
             account_id,

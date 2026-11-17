@@ -38,7 +38,7 @@ pub enum EquipmentPrice {
 }
 
 impl EquipmentPrice {
-    #[tracing::instrument(name = "accounts.equipment.charge", skip_all, fields(bounded_context = "accounts", input.count = count), err)]
+    #[tracing::instrument(name = "accounts.equipment.charge", skip_all, fields(ddd.bounded_context.name = "accounts", input.count = count), err)]
     pub fn charge(self, balances: &mut Balances, count: u32) -> Result<(), ProgressionError> {
         let (balance, unit_price) = match self {
             Self::Credits(price) => (&mut balances.credits, price),
@@ -88,7 +88,7 @@ impl EquipmentVehicleFilter {
 }
 
 impl EquipmentRules {
-    #[tracing::instrument(name = "accounts.equipment.buy", skip_all, fields(bounded_context = "accounts", input.item = item, input.count = count), err)]
+    #[tracing::instrument(name = "accounts.equipment.buy", skip_all, fields(ddd.bounded_context.name = "accounts", input.item = item, input.count = count), err)]
     pub fn buy(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -108,7 +108,7 @@ impl EquipmentRules {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.equipment.apply", skip_all, fields(bounded_context = "accounts", input.inventory_id = inventory_id), err)]
+    #[tracing::instrument(name = "accounts.equipment.apply", skip_all, fields(ddd.bounded_context.name = "accounts", input.inventory_id = inventory_id), err)]
     pub fn apply(
         &self,
         snapshot: &mut AccountSnapshot,

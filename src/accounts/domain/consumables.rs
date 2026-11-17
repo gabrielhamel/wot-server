@@ -47,7 +47,7 @@ pub struct ConsumableRules {
 }
 
 impl ConsumableRules {
-    #[tracing::instrument(name = "accounts.consumables.buy_for_vehicle", skip_all, fields(bounded_context = "accounts", input.inventory_id = inventory_id, input.slots = slots), err)]
+    #[tracing::instrument(name = "accounts.consumables.buy_for_vehicle", skip_all, fields(ddd.bounded_context.name = "accounts", input.inventory_id = inventory_id, input.slots = slots), err)]
     pub(crate) fn buy_for_vehicle(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -77,7 +77,7 @@ impl ConsumableRules {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.consumables.buy", skip_all, fields(bounded_context = "accounts", input.item = item, input.count = count), err)]
+    #[tracing::instrument(name = "accounts.consumables.buy", skip_all, fields(ddd.bounded_context.name = "accounts", input.item = item, input.count = count), err)]
     pub fn buy(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -101,7 +101,7 @@ impl ConsumableRules {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.consumables.fill", skip_all, fields(bounded_context = "accounts", input.inventory_id = inventory_id, input.slots = slots), err)]
+    #[tracing::instrument(name = "accounts.consumables.fill", skip_all, fields(ddd.bounded_context.name = "accounts", input.inventory_id = inventory_id, input.slots = slots), err)]
     pub fn fill(
         &self,
         snapshot: &mut AccountSnapshot,

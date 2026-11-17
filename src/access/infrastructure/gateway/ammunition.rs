@@ -177,7 +177,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "access.gateway.ammunition_response", skip_all, fields(bounded_context = "access", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty))]
+    #[tracing::instrument(name = "access.gateway.ammunition_response", skip_all, fields(ddd.bounded_context.name = "access", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty))]
     pub(super) fn complete_ammunition(&mut self, completion: Completion) {
         let Completion {
             client,

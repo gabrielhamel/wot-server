@@ -13,7 +13,7 @@ pub enum DepotStock {
 }
 
 impl AccountSnapshot {
-    #[tracing::instrument(name = "accounts.depot.sell_depot_stock", skip_all, fields(bounded_context = "accounts", user.id = self.id, input.stock.shell_types = self.depot_shells.len(), input.stock.fitting_types = self.progression.depot.len()), err)]
+    #[tracing::instrument(name = "accounts.depot.sell_depot_stock", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = self.id, input.stock.shell_types = self.depot_shells.len(), input.stock.fitting_types = self.progression.depot.len()), err)]
     pub fn sell_depot_stock(
         &mut self,
         sales: impl IntoIterator<Item = DepotSale>,
