@@ -125,6 +125,9 @@ findings, contributor guidance, and testing details in their relevant guides.
 Telemetry is part of every server feature and fix. Instrumentation and trace
 verification are required implementation work and merge criteria. Maintain the
 [telemetry contract](docs/telemetry.md) together with the code.
+Keep the [span attribute reference](docs/telemetry-attributes.md) complete when
+adding, removing, renaming, or changing the meaning of span fields. Record their
+units, emission conditions, and supporting source locations.
 
 - Trace each incoming game command, XMPP stanza and admin request through its
   meaningful context and layer boundaries, database work and response or

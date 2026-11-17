@@ -50,6 +50,10 @@ spans. Cross-context calls retain their own context attributes.
 ## Attributes and outcomes
 
 Use tracing::instrument with skip_all and an explicit field allowlist.
+The [span attribute reference](telemetry-attributes.md) records every declared
+span field, its meaning and emission conditions, along with library metadata
+and resource attributes. Update it in the same change whenever fields or their
+semantics change.
 Include account IDs, command/request IDs, revisions, scalar command arguments,
 enum choices, pagination, item counts, payload byte lengths, message
 recipients and stanza IDs where relevant. Record output counts, response
