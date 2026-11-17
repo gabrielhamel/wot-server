@@ -1,6 +1,6 @@
 # Offline binary structure mapping
 
-`wg-binary-map` is an independent executable in the `wot-server` package. It reads
+`wg-binary-map` is an independent executable in the `wot-binary-map` package. It reads
 an installed game directory (selecting `win64/WorldOfTanks.exe`) or an explicit
 AMD64 executable and emits a new directory containing:
 
@@ -11,7 +11,7 @@ AMD64 executable and emits a new directory containing:
   native descriptors, base displacements and vtable pointer runs.
 
 ```sh
-cargo run --release --bin wg-binary-map -- /path/to/game --output artifacts/client-map
+cargo run --release -p wot-binary-map -- /path/to/game --output artifacts/client-map
 rustc --edition=2024 --crate-type=lib artifacts/client-map/structures.rs --out-dir /tmp
 ```
 

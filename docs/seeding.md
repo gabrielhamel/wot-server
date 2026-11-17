@@ -7,7 +7,7 @@ docker compose up -d --wait
 cargo seed --config target/release/server.json
 ```
 
-The alias runs `cargo run --bin seed --`. It opens no game/chat sockets and
+The alias runs `cargo run -p wot-seed --`. It opens no game/chat sockets and
 runs embedded migrations. PostgreSQL and an [extracted resource bundle](resources.md) must be available.
 No server startup is required.
 
@@ -87,7 +87,7 @@ repairing missing ownership:
 ```sh
 WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server' \
 WG_RESOURCE_DIR='/path/to/resources' \
-cargo test --test seeding -- --ignored --nocapture
+cargo test -p wot-seed --test seeding -- --ignored --nocapture
 ```
 
 The test user needs CREATE DATABASE permission. The temporary database is removed

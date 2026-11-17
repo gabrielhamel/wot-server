@@ -3278,6 +3278,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
+name = "wot-binary-map"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "iced-x86",
+ "msvc-demangler",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+]
+
+[[package]]
 name = "wot-extract"
 version = "0.1.0"
 dependencies = [
@@ -3294,6 +3307,21 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "wot-seed"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "flate2",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "wot-resources",
+ "wot-server",
 ]
 
 [[package]]
@@ -3314,9 +3342,7 @@ dependencies = [
  "glam",
  "hyper",
  "hyper-util",
- "iced-x86",
  "indexmap",
- "msvc-demangler",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",

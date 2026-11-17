@@ -11,6 +11,4 @@ pub use infrastructure::client::{GarageCatalog, PreparedAccount, VehicleCatalogE
 pub use infrastructure::players::PostgresPlayers;
 pub use infrastructure::postgres::PostgresAccounts;
 
-mod presentation;
 pub use infrastructure::seeding::{DEMO_PLAYERS, DemoSeedReport};
-pub use presentation::run_seed;

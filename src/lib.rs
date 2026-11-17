@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 
 pub mod accounts;
-pub mod binary_mapping;
 pub(crate) mod player_administration;
 pub mod player_sessions;
 pub mod server;

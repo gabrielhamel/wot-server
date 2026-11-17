@@ -1,9 +1,9 @@
-use crate::accounts::{GarageCatalog, PostgresAccounts};
 use anyhow::{Context, Result, ensure};
 use clap::Parser;
 use serde::Deserialize;
 use std::path::PathBuf;
 use wot_resources::ResourceBundle;
+use wot_server::accounts::{GarageCatalog, PostgresAccounts};
 
 #[derive(Parser)]
 #[command(about = "Seed Player_1 and Player_2 with tier I tech tree garages; no server is started")]
@@ -30,7 +30,7 @@ fn default_resource_dir() -> PathBuf {
     "resources".into()
 }
 
-pub async fn run_seed() -> Result<()> {
+pub(crate) async fn run() -> Result<()> {
     let command = SeedCommand::parse();
     let explicit_config = command.config.is_some();
     let path = match command.config {

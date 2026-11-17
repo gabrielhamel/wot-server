@@ -22,7 +22,7 @@ inputs and output overwrite rejection. Fixtures contain no game binary bytes.
 To validate the supplied client explicitly:
 
 ```sh
-WG_GAME_FOLDER=/path/to/game cargo test --test supplied_client -- --ignored
+WG_GAME_FOLDER=/path/to/game cargo test -p wot-binary-map --test supplied_client -- --ignored
 ```
 
 This opt-in test checks the documented executable hash, interface sizes and
@@ -60,7 +60,8 @@ export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
 cargo test --locked --lib exports_admin_http_request_inputs -- --ignored
-cargo test --locked --test garage --test seeding -- --ignored
+cargo test --locked -p wot-server --test garage -- --ignored
+cargo test --locked -p wot-seed --test seeding -- --ignored
 ```
 
 The admin HTTP test sends requests through the authenticated router and inspects

@@ -106,6 +106,9 @@ packages for real responsibilities rather than making every context a crate.
 Keep executable bootstrapping small, use focused modules with clear ownership,
 and expose context entry points instead of reaching into another context's
 internals. Keep protocol wire representations separate from domain models.
+Keep the root `src/` for server contexts, their shared support, and server
+composition. Give standalone tools their own workspace packages under
+`crates/`.
 
 ### Context maps
 

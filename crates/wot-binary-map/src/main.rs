@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod binary_mapping;
+
 fn main() -> anyhow::Result<()> {
-    wot_server::binary_mapping::run()
+    binary_mapping::run()
 }

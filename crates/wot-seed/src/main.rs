@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
+mod command;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    wot_server::accounts::run_seed().await
+    command::run().await
 }

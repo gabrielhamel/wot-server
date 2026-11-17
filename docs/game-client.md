@@ -83,7 +83,7 @@ Use the same location with existing tools:
 
 ```sh
 export WOT_GAME_DIR="$(python3 tools/game-client.py path)"
-cargo run --locked --bin wg-binary-map -- "$WOT_GAME_DIR" --output artifacts/client-map
+cargo run --locked -p wot-binary-map -- "$WOT_GAME_DIR" --output artifacts/client-map
 cargo run --locked -p wot-extract -- "$WOT_GAME_DIR" --output artifacts/client-resources
 ```
 
@@ -91,7 +91,7 @@ Ensure `artifacts/` exists and output directories are new where required by thos
 tools. The historical ignored mapper test uses `WG_GAME_FOLDER` instead:
 
 ```sh
-WG_GAME_FOLDER="$WOT_GAME_DIR" cargo test --test supplied_client -- --ignored
+WG_GAME_FOLDER="$WOT_GAME_DIR" cargo test -p wot-binary-map --test supplied_client -- --ignored
 ```
 
 That test pins a historical executable hash and structural counts; a newer

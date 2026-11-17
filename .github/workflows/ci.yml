@@ -76,7 +76,8 @@ jobs:
           WG_TEST_DATABASE_URL: postgresql://wot_test:ci-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/wot_test
         run: |
           cargo +stable test --locked --lib exports_admin_http_request_inputs -- --ignored
-          cargo +stable test --locked --test garage --test seeding -- --ignored
+          cargo +stable test --locked -p wot-server --test garage -- --ignored
+          cargo +stable test --locked -p wot-seed --test seeding -- --ignored
 
   dashboard:
     name: Dashboard build

@@ -11,7 +11,9 @@ Player Sessions. It does not own transport sessions, entities, battles or matchm
 | `infrastructure/postgres.rs` | SQLx pool, embedded migrations, transactional insert-only test fixture seed (not called at server startup), coherent snapshot reads, atomic preference updates and revision-checked inventory transactions. |
 | `infrastructure/players.rs` | PostgreSQL player directory pages and atomic creation with tier I garage provisioning. |
 | `infrastructure/seeding.rs` | Atomic two-player demo seed with locked existing-account reconciliation and shared starter garage persistence. |
-| `presentation/` | Standalone seed CLI configuration and result output. |
+
+The [standalone seeder](../../crates/wot-seed/README.md) calls the Accounts
+provisioning operation.
 | `infrastructure/client/` | Anti-corruption layer adapting the versioned [resource bundle](../../docs/resources.md), garage catalog and account/shop cache formats. These wire models are not account domain models. |
 
 Player Sessions consumes `Accounts<R>`, `AccountSnapshot`, and the `GarageCatalog` encoder

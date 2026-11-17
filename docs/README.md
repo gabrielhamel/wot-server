@@ -57,4 +57,5 @@ Architecture rules and documentation maintenance requirements are in
 [AGENTS.md](../AGENTS.md). The toolkit map records its audit baseline; its future
 contexts remain planning material. The runtime contexts are Accounts, Social,
 Player Sessions, and Player Administration. Shared Kernel and Platform support
-the runtime. Binary Mapping and Resource Extraction run offline.
+the runtime. Binary Mapping and Resource Extraction run offline as workspace
+packages under `crates/`, alongside the standalone demo seeder.

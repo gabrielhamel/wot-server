@@ -18,12 +18,13 @@ transport, server gameplay, game-resource schema loading or client execution.
 | `infrastructure/rtti.rs` | Validated MSVC complete-object locators, type descriptors, inheritance and vtable pointer runs. |
 | `infrastructure/rust.rs` | Rust source rendering from investigation models. |
 | `presentation/mod.rs` | CLI arguments, input selection, output publication and summary. |
-| `../bin/wg-binary-map.rs` | Minimal executable bootstrap. |
+| `../main.rs` | Minimal executable bootstrap for `wg-binary-map`. |
 
 The application defines a port; the static implementation depends on that port
 and the domain. Presentation composes the implementation and use case. Other
 future contexts must consume an explicit exported contract rather than PE or
-instruction internals. Only the CLI entry point is currently public.
+instruction internals. The executable lives in `wot-binary-map` and builds
+independently of the server.
 
 The external game client is upstream; Binary Mapping acts as an anti-corruption
 layer translating implementation-specific metadata into investigation concepts.
@@ -46,5 +47,5 @@ wg-toolkit are research inputs, not runtime dependencies or implemented contexts
 | Initializer slot | A pointer to a startup function; ordering these slots determines registration order in the supported build. |
 | Opaque declaration | A Rust name/identity placeholder with no claim about C++ layout, size or ABI compatibility. |
 
-See [algorithm and findings](../../docs/binary-mapping.md),
-[tests](../../docs/testing.md) and the [context map](../../CONTEXT_MAP.md).
+See [algorithm and findings](../../../../docs/binary-mapping.md),
+[tests](../../../../docs/testing.md) and the [context map](../../../../CONTEXT_MAP.md).
