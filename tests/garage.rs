@@ -74,7 +74,11 @@ async fn exercise_garage(encrypted_login: bool) {
             .unwrap()
             .as_nanos()
     );
-    let first = format!("{prefix}_a@example.test");
+    let first = if encrypted_login {
+        format!("{prefix}_a")
+    } else {
+        format!("{prefix}_a@example.test")
+    };
     let second = format!("{prefix}_b@example.test");
     let tank_a = "usa:A01_T1_Cunningham".to_string();
     let tank_b = "germany:G12_Ltraktor".to_string();
@@ -388,8 +392,8 @@ async fn exercise_garage(encrypted_login: bool) {
     stop.store(true, Ordering::Relaxed);
     worker.await.unwrap().unwrap();
     if result.is_ok() {
-        telemetry_capture::assert_player_spans(a.id, &first);
-        telemetry_capture::assert_layered_traces(b.id);
+        telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
+        telemetry_capture::assert_operation_traces(b.id);
     }
     let fresh_social = wot_server::social::Social::new(wot_server::social::PostgresSocial::new(
         PostgresAccounts::connect(&url, 2)

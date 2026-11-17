@@ -18,8 +18,7 @@ pub(crate) async fn database<T, E: Display>(
 ) -> Result<T, E> {
     let span = tracing::info_span!(
         "postgresql.query",
-        "code.layer" = "infrastructure",
-        "wot.context" = context,
+        "ddd.bounded_context.name" = context,
         "otel.kind" = "client",
         "db.system.name" = "postgresql",
         "db.operation.name" = statement.split_whitespace().next().unwrap_or("QUERY"),

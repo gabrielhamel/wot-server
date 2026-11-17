@@ -47,7 +47,7 @@ impl GarageCatalog {
         Ok(unlocks)
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.progression.plan_progression", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
+    #[tracing::instrument(name = "accounts.progression.plan_progression", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
     pub fn plan_progression(
         &self,
         mut snapshot: AccountSnapshot,
@@ -393,7 +393,7 @@ impl GarageCatalog {
             .map_err(Self::catalog_failure)
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.progression.progression_diff", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
+    #[tracing::instrument(name = "accounts.progression.progression_diff", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
     pub fn progression_diff(
         &self,
         previous: &AccountSnapshot,

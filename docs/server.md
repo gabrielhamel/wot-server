@@ -122,13 +122,16 @@ Authentication spans include `outcome`, `network.protocol.name`,
 `wot.client.protocol_version`, the optional `wot.client.resource_digest`,
 and `wot.client.language` from the login context when present.
 Successful authentication adds the local account ID as `user.id` and the
-login as `user.name`. Email-shaped logins also populate `user.email`;
+available player display name as `user.name`. An unavailable or empty display
+name is omitted. Email-shaped logins in the current request populate `user.email`;
 this identifies the supplied login and does not establish email ownership.
+Other requests omit email when it is absent from their payload. Telemetry never
+queries the database solely to obtain a name or email.
 Account IDs and email addresses are span attributes, so operators can search
 individual player traces. They are not added to metric labels.
 
 Game command spans retain their parent through worker execution and queued
-completion handling. Child spans identify context, code layer, selected inputs,
+completion handling. Child spans identify context, selected inputs,
 domain decisions, database commands and response outcomes. XMPP traces retain
 the same parent through application services, repositories and outgoing
 delivery. The [telemetry contract](telemetry.md) defines the required hierarchy,

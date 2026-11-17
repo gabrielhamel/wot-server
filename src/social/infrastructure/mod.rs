@@ -18,7 +18,7 @@ impl PostgresSocial {
 }
 
 impl SocialRepository for PostgresSocial {
-    #[tracing::instrument(name = "social.infrastructure.search", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.prefix.bytes = prefix.len()), err)]
+    #[tracing::instrument(name = "social.search", skip_all, fields(ddd.bounded_context.name = "social", input.prefix.bytes = prefix.len()), err)]
     async fn search(
         &self,
         prefix: &str,
@@ -49,7 +49,7 @@ impl SocialRepository for PostgresSocial {
             .collect())
     }
 
-    #[tracing::instrument(name = "social.infrastructure.roster", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner), err)]
+    #[tracing::instrument(name = "social.roster", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner), err)]
     async fn roster(&self, owner: i64) -> anyhow::Result<Vec<Contact>> {
         let rows: Vec<(i64, String, bool, i16)> = {
             let statement = "SELECT a.id, a.display_name, c.ignored, c.friendship FROM social_contacts c JOIN account_directory a ON a.id=c.peer_id WHERE c.owner_id=$1 ORDER BY a.id LIMIT 300";
@@ -74,7 +74,7 @@ impl SocialRepository for PostgresSocial {
             .collect())
     }
 
-    #[tracing::instrument(name = "social.infrastructure.change", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.peer = peer, input.change = ?change), err)]
+    #[tracing::instrument(name = "social.change", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner, input.peer = peer, input.change = ?change), err)]
     async fn change(&self, owner: i64, peer: i64, change: ContactChange) -> anyhow::Result<()> {
         let mut tx = crate::observability::database("social", "BEGIN", self.pool.begin()).await?;
         if matches!(change, ContactChange::Ignore) {
@@ -160,7 +160,7 @@ impl SocialRepository for PostgresSocial {
         crate::observability::database("social", "COMMIT", tx.commit()).await?;
         Ok(())
     }
-    #[tracing::instrument(name = "social.infrastructure.friendship", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.peer = peer, input.action = ?action), err)]
+    #[tracing::instrument(name = "social.friendship", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner, input.peer = peer, input.action = ?action), err)]
     async fn friendship(
         &self,
         owner: i64,
@@ -170,12 +170,12 @@ impl SocialRepository for PostgresSocial {
         self.change_friendship(owner, peer, action).await
     }
 
-    #[tracing::instrument(name = "social.infrastructure.inbound_requests", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner), err)]
+    #[tracing::instrument(name = "social.inbound_requests", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner), err)]
     async fn inbound_requests(&self, owner: i64) -> anyhow::Result<Vec<Player>> {
         self.pending_inbound(owner).await
     }
 
-    #[tracing::instrument(name = "social.infrastructure.observers", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.player = player), err)]
+    #[tracing::instrument(name = "social.observers", skip_all, fields(ddd.bounded_context.name = "social", input.player = player), err)]
     async fn observers(&self, player: i64, online: &[i64]) -> anyhow::Result<Vec<i64>> {
         Ok({
             let statement = "SELECT owner_id FROM social_contacts WHERE peer_id=$1 AND NOT ignored AND friendship=2 AND owner_id=ANY($2) LIMIT 256";
@@ -190,7 +190,7 @@ impl SocialRepository for PostgresSocial {
             .await
         }?)
     }
-    #[tracing::instrument(name = "social.infrastructure.player", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.id = id), err)]
+    #[tracing::instrument(name = "social.player", skip_all, fields(ddd.bounded_context.name = "social", input.id = id), err)]
     async fn player(&self, id: i64) -> anyhow::Result<Option<Player>> {
         let row: Option<(i64, String)> = {
             let statement = "SELECT id,display_name FROM account_directory WHERE id=$1";
@@ -205,11 +205,11 @@ impl SocialRepository for PostgresSocial {
         }?;
         Ok(row.map(|(id, name)| Player { id, name }))
     }
-    #[tracing::instrument(name = "social.infrastructure.open", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.peer = peer), err)]
+    #[tracing::instrument(name = "social.open", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner, input.peer = peer), err)]
     async fn open(&self, owner: i64, peer: i64) -> anyhow::Result<PrivateConversation> {
         self.open_conversation(owner, peer).await
     }
-    #[tracing::instrument(name = "social.infrastructure.send", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.conversation = conversation, input.text.bytes = text.len()), err)]
+    #[tracing::instrument(name = "social.send", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner, input.conversation = conversation, input.text.bytes = text.len()), err)]
     async fn send(
         &self,
         owner: i64,
@@ -218,11 +218,11 @@ impl SocialRepository for PostgresSocial {
     ) -> anyhow::Result<PrivateConversation> {
         self.send_message(owner, conversation, text).await
     }
-    #[tracing::instrument(name = "social.infrastructure.close", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.conversation = conversation), err)]
+    #[tracing::instrument(name = "social.close", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner, input.conversation = conversation), err)]
     async fn close(&self, owner: i64, conversation: u32) -> anyhow::Result<()> {
         self.close_conversation(owner, conversation).await
     }
-    #[tracing::instrument(name = "social.infrastructure.restore", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner), err)]
+    #[tracing::instrument(name = "social.restore", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner), err)]
     async fn restore(&self, owner: i64) -> anyhow::Result<Vec<PrivateConversation>> {
         self.restore_conversations(owner).await
     }

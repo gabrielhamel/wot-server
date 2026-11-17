@@ -41,7 +41,7 @@ impl GrantCurrency {
         }
     }
 
-    #[tracing::instrument(name = "accounts.domain.grants.grant", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.amount = amount), err)]
+    #[tracing::instrument(name = "accounts.grants.grant", skip_all, fields(ddd.bounded_context.name = "accounts", input.amount = amount), err)]
     pub(crate) fn grant(self, balances: &mut Balances, amount: i64) -> Result<(), GrantError> {
         if amount <= 0 {
             return Err(GrantError::InvalidAmount);

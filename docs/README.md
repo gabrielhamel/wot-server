@@ -24,7 +24,8 @@ establish compatibility with the current client.
 | Discovering, installing and updating the compiled research client | [Game client setup](game-client.md) |
 | Preparing runtime game data | [Resource extraction](resources.md) |
 | Publishing and running the Docker image | [Container image](container.md) |
-| Required layer spans, SQL tracing, queue propagation and verification | [Telemetry](telemetry.md) |
+| Required operation spans, SQL tracing, queue propagation and verification | [Telemetry](telemetry.md) |
+| Complete span attribute inventory, meanings and emission conditions | [Span attributes](telemetry-attributes.md) |
 | Running the server, database and client configuration | [Server guide](server.md) |
 | Listing players, creating accounts and granting resources or tanks | [Admin dashboard](admin.md) |
 | Creating demo players and tier I garages | [Database seeding](seeding.md) |

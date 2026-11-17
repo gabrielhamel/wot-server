@@ -257,8 +257,7 @@ impl Gateway {
                         self.sessions.get(&event.client).map(|session| {
                             tracing::info_span!(
                                 parent: None, "game.command",
-                                "code.layer" = "infrastructure",
-                                "wot.context" = "access",
+                                "ddd.bounded_context.name" = "access",
                                 "user.id" = %session.account.snapshot.id,
                                 "rpc.method" = %name,
                                 "network.protocol.name" = "mercury",
@@ -345,8 +344,7 @@ impl Gateway {
         });
         let span = tracing::info_span!(
             parent: None, "game.authenticate",
-            "code.layer" = "infrastructure",
-            "wot.context" = "access",
+            "ddd.bounded_context.name" = "access",
             outcome = tracing::field::Empty,
             "user.id" = tracing::field::Empty,
             "user.name" = tracing::field::Empty,
@@ -367,7 +365,9 @@ impl Gateway {
                     };
                     let span = tracing::Span::current();
                     span.record("user.id", snapshot.id.to_string());
-                    span.record("user.name", username.as_str());
+                    if !snapshot.display_name.is_empty() {
+                        span.record("user.name", snapshot.display_name.as_str());
+                    }
                     if let Some((local, domain)) = username.split_once('@')
                         && !local.is_empty()
                         && domain.contains('.')
@@ -586,7 +586,7 @@ impl Gateway {
         }
     }
 
-    #[tracing::instrument(name = "access.infrastructure.enable", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.client.address = %client), err)]
+    #[tracing::instrument(name = "access.enable", skip_all, fields(ddd.bounded_context.name = "access", input.client.address = %client), err)]
     fn enable(&mut self, client: ClientKey) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());

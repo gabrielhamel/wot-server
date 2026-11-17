@@ -1,7 +1,7 @@
 use super::*;
 
 impl Gateway {
-    #[tracing::instrument(name = "mercury.response.resource", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.request_id = request_id, output.bytes = data.len()), err)]
+    #[tracing::instrument(name = "mercury.response.resource", skip_all, fields(ddd.bounded_context.name = "access", input.request_id = request_id, output.bytes = data.len()), err)]
     fn stream(
         &mut self,
         client: ClientKey,
@@ -22,7 +22,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "access.infrastructure.commands.command", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.request_id = tracing::field::Empty, input.command_id = tracing::field::Empty, input.arg0 = tracing::field::Empty, input.arg1 = tracing::field::Empty, input.arg2 = tracing::field::Empty, input.arg3 = tracing::field::Empty, input.args.count = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "access.commands.command", skip_all, fields(ddd.bounded_context.name = "access", input.request_id = tracing::field::Empty, input.command_id = tracing::field::Empty, input.arg0 = tracing::field::Empty, input.arg1 = tracing::field::Empty, input.arg2 = tracing::field::Empty, input.arg3 = tracing::field::Empty, input.args.count = tracing::field::Empty), err)]
     pub(super) fn command(
         &mut self,
         client: ClientKey,

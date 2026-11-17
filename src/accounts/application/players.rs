@@ -33,12 +33,12 @@ impl<R: PlayerRepository> PlayerAccounts<R> {
         Self { repository }
     }
 
-    #[tracing::instrument(name = "accounts.application.players.list", skip_all, fields(code.layer = "application", wot.context = "accounts", input.offset = pagination.offset(), input.limit = pagination.limit()), err)]
+    #[tracing::instrument(name = "accounts.players.list", skip_all, fields(ddd.bounded_context.name = "accounts", input.offset = pagination.offset(), input.limit = pagination.limit()), err)]
     pub async fn list(&self, pagination: PlayerPagination) -> anyhow::Result<PlayerPage> {
         self.repository.list(pagination).await
     }
 
-    #[tracing::instrument(name = "accounts.application.players.create", skip_all, fields(code.layer = "application", wot.context = "accounts", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "accounts.players.create", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
     pub async fn create(&self, player: NewPlayer) -> Result<PlayerAccount, CreatePlayerError> {
         let (username, display_name, password) = player.into_parts();
         tracing::Span::current().record("input.username.bytes", username.len());
@@ -51,7 +51,7 @@ impl<R: PlayerRepository> PlayerAccounts<R> {
     }
 }
 
-#[tracing::instrument(name = "accounts.application.players.hash_password", skip_all, fields(code.layer = "application", wot.context = "accounts", input.algorithm = "argon2id"), err)]
+#[tracing::instrument(name = "accounts.players.hash_password", skip_all, fields(ddd.bounded_context.name = "accounts", input.algorithm = "argon2id"), err)]
 pub(in crate::accounts) async fn hash_password(password: String) -> anyhow::Result<String> {
     use argon2::{
         Argon2, PasswordHasher,

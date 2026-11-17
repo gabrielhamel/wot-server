@@ -31,8 +31,11 @@ Telemetry is a required part of each server change. Follow the
 its traces explain the request, context and layer transitions, persistence,
 outcome and response.
 
-Use stable span names and set wot.context and code.layer. Attach explicit,
-bounded input attributes and useful result counts or outcomes. Preserve
+Use stable operation names without architecture layers and set ddd.bounded_context.name.
+Use available display names for user.name and current
+payload emails for user.email; omit unavailable values and never query solely
+to enrich telemetry. Attach explicit, bounded input attributes and useful result
+counts or outcomes. Preserve
 parents across async/blocking tasks, queued work and outgoing delivery. Include
 complete parameterized SQL text, transaction boundaries and error status for
 database operations. Keep secret credentials out of telemetry.

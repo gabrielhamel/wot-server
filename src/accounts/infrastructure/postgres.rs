@@ -16,7 +16,7 @@ impl PostgresAccounts {
         self.pool.clone()
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.postgres.connect", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.connections = connections), err)]
+    #[tracing::instrument(name = "accounts.postgres.connect", skip_all, fields(ddd.bounded_context.name = "accounts", input.connections = connections), err)]
     pub async fn connect(url: &str, connections: u32) -> Result<Self> {
         let pool = PgPoolOptions::new()
             .max_connections(connections)
@@ -31,7 +31,7 @@ impl PostgresAccounts {
         Ok(Self { pool })
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.postgres.seed", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.username.bytes = username.len()), err)]
+    #[tracing::instrument(name = "accounts.postgres.seed", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = username.len()), err)]
     pub async fn seed(
         &self,
         username: &str,
@@ -75,7 +75,7 @@ impl PostgresAccounts {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.postgres.catalog_keys", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.collection = "account_vehicles"), err)]
+    #[tracing::instrument(name = "accounts.postgres.catalog_keys", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "account_vehicles"), err)]
     pub async fn catalog_keys(&self) -> Result<Vec<String>> {
         Ok({
             let statement = "SELECT DISTINCT catalog_key FROM owned_vehicles ORDER BY catalog_key";
@@ -90,7 +90,7 @@ impl PostgresAccounts {
 }
 
 impl AccountRepository for PostgresAccounts {
-    #[tracing::instrument(name = "accounts.infrastructure.postgres.credentials", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.username.bytes = username.len()), err)]
+    #[tracing::instrument(name = "accounts.postgres.credentials", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = username.len()), err)]
     async fn credentials(&self, username: &str) -> Result<Option<(i64, String)>> {
         Ok({
             let statement = "SELECT id,password_hash FROM accounts WHERE username=$1";
@@ -105,7 +105,7 @@ impl AccountRepository for PostgresAccounts {
         }?)
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.postgres.snapshot", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.id = id), err)]
+    #[tracing::instrument(name = "accounts.postgres.snapshot", skip_all, fields(ddd.bounded_context.name = "accounts", input.id = id), err)]
     async fn snapshot(&self, id: i64) -> Result<AccountSnapshot> {
         let mut tx = crate::observability::database("accounts", "BEGIN", self.pool.begin()).await?;
         {
@@ -122,7 +122,7 @@ impl AccountRepository for PostgresAccounts {
         Ok(snapshot)
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.postgres.save_progression", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
+    #[tracing::instrument(name = "accounts.postgres.save_progression", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
     async fn save_progression(&self, change: &ProgressionChange) -> Result<bool> {
         let snapshot = &change.snapshot;
         let mut tx = crate::observability::database("accounts", "BEGIN", self.pool.begin()).await?;
@@ -212,7 +212,7 @@ impl AccountRepository for PostgresAccounts {
         Ok(true)
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.postgres.save_ammunition", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
+    #[tracing::instrument(name = "accounts.postgres.save_ammunition", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
     async fn save_ammunition(&self, change: &AmmunitionChange) -> Result<bool> {
         let snapshot = &change.snapshot;
         let ammunition = change
@@ -261,7 +261,7 @@ impl AccountRepository for PostgresAccounts {
         Ok(true)
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.postgres.save_settings", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.id = id, input.settings.count = settings.len()), err)]
+    #[tracing::instrument(name = "accounts.postgres.save_settings", skip_all, fields(ddd.bounded_context.name = "accounts", input.id = id, input.settings.count = settings.len()), err)]
     async fn save_settings(&self, id: i64, settings: BTreeMap<i32, i32>) -> Result<i64> {
         Ok({
             let statement = "UPDATE accounts SET settings=settings || $2::jsonb, revision=revision+1 WHERE id=$1 RETURNING revision";
@@ -278,7 +278,7 @@ impl AccountRepository for PostgresAccounts {
     }
 }
 
-#[tracing::instrument(name = "accounts.infrastructure.postgres.read_snapshot", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.id = id), err)]
+#[tracing::instrument(name = "accounts.postgres.read_snapshot", skip_all, fields(ddd.bounded_context.name = "accounts", input.id = id), err)]
 pub(super) async fn read_snapshot(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     id: i64,

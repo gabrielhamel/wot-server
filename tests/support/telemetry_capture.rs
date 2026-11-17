@@ -25,7 +25,7 @@ pub fn exporter() -> &'static InMemorySpanExporter {
     })
 }
 
-pub fn assert_player_spans(account: i64, login: &str) {
+pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
     let spans = exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
         span.attributes.iter().any(|attribute| {
@@ -34,21 +34,42 @@ pub fn assert_player_spans(account: i64, login: &str) {
     };
     assert!(spans.iter().any(|span| {
         span.name == "game.authenticate"
+            && has(span, "ddd.bounded_context.name", "access")
             && has(span, "user.id", &account.to_string())
-            && has(span, "user.name", login)
-            && has(span, "user.email", login)
+            && has(span, "user.name", display_name)
+            && if login.contains('@') {
+                has(span, "user.email", login)
+            } else {
+                !span
+                    .attributes
+                    .iter()
+                    .any(|attribute| attribute.key.as_str() == "user.email")
+            }
             && has(span, "outcome", "authenticated")
             && has(span, "wot.client.language", "en")
             && has(span, "wot.client.protocol_version", "0")
     }));
     assert!(spans.iter().any(|span| {
         span.name == "game.command"
+            && has(span, "ddd.bounded_context.name", "access")
             && has(span, "user.id", &account.to_string())
             && span
                 .attributes
                 .iter()
                 .any(|attribute| attribute.key.as_str() == "rpc.method")
     }));
+    assert!(
+        spans
+            .iter()
+            .filter(|span| span.name == "game.command" || span.name == "xmpp.request")
+            .all(|span| {
+                !span
+                    .attributes
+                    .iter()
+                    .any(|attribute| matches!(attribute.key.as_str(), "user.name" | "user.email"))
+            }),
+        "requests without identity payloads must not inherit names or emails"
+    );
     assert!(spans.iter().any(|span| has(span, "outcome", "rejected")));
     assert!(
         spans
@@ -63,7 +84,7 @@ pub fn assert_player_spans(account: i64, login: &str) {
     );
 }
 
-pub fn assert_layered_traces(account: i64) {
+pub fn assert_operation_traces(account: i64) {
     let spans = exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
         span.attributes.iter().any(|attribute| {
@@ -90,14 +111,24 @@ pub fn assert_layered_traces(account: i64) {
         }
         false
     };
+    assert!(
+        spans.iter().all(|span| {
+            ["access", "accounts", "social", "admin", "server"]
+                .iter()
+                .any(|context| has(span, "ddd.bounded_context.name", context))
+        }),
+        "every exported operation must identify its bounded context"
+    );
     let command = spans
         .iter()
         .find(|root| {
             root.name == "game.command"
                 && has(root, "user.id", &account.to_string())
+                && spans
+                    .iter()
+                    .any(|span| span.name == "accounts.modules.research" && descendant(span, root))
                 && spans.iter().any(|span| {
-                    span.name == "access.infrastructure.gateway.progression_response"
-                        && descendant(span, root)
+                    span.name == "access.gateway.progression_response" && descendant(span, root)
                 })
                 && spans
                     .iter()
@@ -108,17 +139,32 @@ pub fn assert_layered_traces(account: i64) {
         command.parent_span_id,
         opentelemetry::trace::SpanId::INVALID
     );
-    for layer in ["application", "domain", "infrastructure"] {
+    for operation in [
+        "accounts.save_progression",
+        "accounts.postgres.save_progression",
+        "accounts.modules.research",
+    ] {
         assert!(
             spans
                 .iter()
-                .any(|span| has(span, "code.layer", layer) && descendant(span, command)),
-            "missing {layer} under command"
+                .any(|span| span.name == operation && descendant(span, command)),
+            "missing {operation} under command"
         );
     }
+    assert!(
+        spans.iter().all(|span| {
+            !span.name.split('.').any(|segment| {
+                matches!(
+                    segment,
+                    "application" | "domain" | "infrastructure" | "presentation"
+                )
+            })
+        }),
+        "exported span names must omit architecture layer segments"
+    );
     let message = spans.iter().find(|root| {
         root.name == "xmpp.request"
-            && spans.iter().any(|span| span.name == "social.application.send" && descendant(span, root))
+            && spans.iter().any(|span| span.name == "social.send" && descendant(span, root))
             && spans.iter().any(|span| span.name == "xmpp.response" && descendant(span, root))
     }).expect("XMPP message must retain its parent through database persistence and outgoing delivery");
     assert_eq!(
@@ -128,6 +174,7 @@ pub fn assert_layered_traces(account: i64) {
     assert!(spans.iter().any(|span| {
         span.name == "postgresql.query"
             && descendant(span, message)
+            && has(span, "ddd.bounded_context.name", "social")
             && has(
                 span,
                 "db.query.text",
@@ -138,7 +185,8 @@ pub fn assert_layered_traces(account: i64) {
     assert!(
         spans
             .iter()
-            .any(|span| span.name == "social.infrastructure.send" && descendant(span, message))
+            .any(|span| span.name == "social.conversations.send_message"
+                && descendant(span, message))
     );
     assert!(
         spans

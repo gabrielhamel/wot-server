@@ -168,7 +168,7 @@ pub enum CrewCommand {
 }
 
 impl CrewRoster {
-    #[tracing::instrument(name = "accounts.domain.crew.insert", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.roster.count = self.members.len()), err)]
+    #[tracing::instrument(name = "accounts.crew.insert", skip_all, fields(ddd.bounded_context.name = "accounts", input.roster.count = self.members.len()), err)]
     pub fn insert(&mut self, member: CrewMember) -> Result<i64, ProgressionError> {
         if self.members.len() >= MAX_CREW_MEMBERS {
             return Err(ProgressionError::InvalidRequest);
@@ -199,7 +199,7 @@ impl CrewRoster {
         crew
     }
 
-    #[tracing::instrument(name = "accounts.domain.crew.validate_berths", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.berths = berths), err)]
+    #[tracing::instrument(name = "accounts.crew.validate_berths", skip_all, fields(ddd.bounded_context.name = "accounts", input.berths = berths), err)]
     pub fn validate_berths(&self, berths: i64) -> Result<(), ProgressionError> {
         let in_barracks = self
             .members
@@ -212,7 +212,7 @@ impl CrewRoster {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.domain.crew.dismiss", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.id = id, input.at = at), err)]
+    #[tracing::instrument(name = "accounts.crew.dismiss", skip_all, fields(ddd.bounded_context.name = "accounts", input.id = id, input.at = at), err)]
     pub fn dismiss(&mut self, id: i64, at: u64) -> Result<(), ProgressionError> {
         self.active(id)?;
         self.members.retain(|_, member| {
@@ -235,7 +235,7 @@ impl CrewRoster {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.domain.crew.restore", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.id = id, input.at = at), err)]
+    #[tracing::instrument(name = "accounts.crew.restore", skip_all, fields(ddd.bounded_context.name = "accounts", input.id = id, input.at = at), err)]
     pub fn restore(
         &mut self,
         id: i64,
@@ -283,7 +283,7 @@ impl CrewRoster {
             .ok_or(ProgressionError::CrewMemberNotFound)
     }
 
-    #[tracing::instrument(name = "accounts.domain.crew.assign", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.slot = slot, input.member = member), err)]
+    #[tracing::instrument(name = "accounts.crew.assign", skip_all, fields(ddd.bounded_context.name = "accounts", input.slot = slot, input.member = member), err)]
     pub fn assign(
         &mut self,
         vehicle: &CrewVehicle,
@@ -364,7 +364,7 @@ impl CrewRecruitment {
 
 impl AccountSnapshot {
     /// Applies an award using the crew in seat order and the training flag captured for the battle.
-    #[tracing::instrument(name = "accounts.domain.crew.award_battle_experience", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.vehicle_type = vehicle_type, input.accelerated_training = accelerated_training, input.combat_xp = combat_xp, input.crew_xp = crew_xp), err)]
+    #[tracing::instrument(name = "accounts.crew.award_battle_experience", skip_all, fields(ddd.bounded_context.name = "accounts", input.vehicle_type = vehicle_type, input.accelerated_training = accelerated_training, input.combat_xp = combat_xp, input.crew_xp = crew_xp), err)]
     pub fn award_battle_experience(
         &mut self,
         vehicle_type: i32,
@@ -422,7 +422,7 @@ impl AccountSnapshot {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.domain.crew.buy_berths", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.packs = packs), err)]
+    #[tracing::instrument(name = "accounts.crew.buy_berths", skip_all, fields(ddd.bounded_context.name = "accounts", input.packs = packs), err)]
     pub fn buy_berths(&mut self, packs: u32) -> Result<(), ProgressionError> {
         let count = i64::from(packs) * BERTH_PACK_SIZE;
         let new_total = self
@@ -441,7 +441,7 @@ impl AccountSnapshot {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.domain.crew.spend_crew_free_xp", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.requested = requested), err)]
+    #[tracing::instrument(name = "accounts.crew.spend_crew_free_xp", skip_all, fields(ddd.bounded_context.name = "accounts", input.requested = requested), err)]
     pub fn spend_crew_free_xp(&mut self, requested: u32) -> Result<u32, ProgressionError> {
         if requested == 0 || i64::from(requested) > self.balances.free_xp {
             return Err(ProgressionError::NotEnoughMoney);
@@ -466,7 +466,7 @@ pub fn perk_role(perk: u8) -> Option<Option<u8>> {
     })
 }
 
-#[tracing::instrument(name = "accounts.domain.crew.reset_perk_terms", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.course = course), err)]
+#[tracing::instrument(name = "accounts.crew.reset_perk_terms", skip_all, fields(ddd.bounded_context.name = "accounts", input.course = course), err)]
 pub fn reset_perk_terms(course: u8) -> Result<(VehicleCost, u32), ProgressionError> {
     match course {
         0 => Ok((VehicleCost::default(), 80)),
@@ -539,7 +539,7 @@ impl CrewTraining {
         self.level_up();
     }
 
-    #[tracing::instrument(name = "accounts.domain.crew.learn", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.role = role, input.bonus = bonus), err)]
+    #[tracing::instrument(name = "accounts.crew.learn", skip_all, fields(ddd.bounded_context.name = "accounts", input.role = role, input.bonus = bonus), err)]
     pub fn learn(
         &mut self,
         role: u8,
@@ -612,7 +612,7 @@ impl CrewTraining {
         self.level_up();
     }
 
-    #[tracing::instrument(name = "accounts.domain.crew.reset", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.reuse_percent = reuse_percent), err)]
+    #[tracing::instrument(name = "accounts.crew.reset", skip_all, fields(ddd.bounded_context.name = "accounts", input.reuse_percent = reuse_percent), err)]
     pub fn reset(&mut self, reuse_percent: u32) -> Result<(), ProgressionError> {
         if self.perks.is_empty() && self.bonus_perks.is_empty() {
             return Err(ProgressionError::InvalidRequest);

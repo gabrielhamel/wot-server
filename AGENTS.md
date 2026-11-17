@@ -125,12 +125,18 @@ findings, contributor guidance, and testing details in their relevant guides.
 Telemetry is part of every server feature and fix. Instrumentation and trace
 verification are required implementation work and merge criteria. Maintain the
 [telemetry contract](docs/telemetry.md) together with the code.
+Keep the [span attribute reference](docs/telemetry-attributes.md) complete when
+adding, removing, renaming, or changing the meaning of span fields. Record their
+units, emission conditions, and supporting source locations.
 
 - Trace each incoming game command, XMPP stanza and admin request through its
   meaningful context and layer boundaries, database work and response or
-  delivery. Use stable operation names. Set wot.context and code.layer
-  (presentation, application, domain, infrastructure) on each span. Instrument
+  delivery. Use stable operation names. Set ddd.bounded_context.name on each span. Omit
+  architecture layer names from span names. Instrument
   domain decisions and use cases at useful granularity.
+- Emit user.name only from an available player display name and user.email only
+  when the current payload supplies an email. Omit unavailable identity attributes;
+  never query the database solely to enrich telemetry.
 - Each operation span must carry bounded, explicit input or payload attributes
   explaining what it processed, such as account/entity IDs, command/request IDs,
   revisions, enum choices, counts and byte lengths. Record useful output counts,

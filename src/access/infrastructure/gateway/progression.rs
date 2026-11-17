@@ -38,7 +38,7 @@ enum Outcome {
 }
 
 impl Gateway {
-    #[tracing::instrument(name = "access.infrastructure.gateway.change_progression", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.request_id = request_id, input.has_command = command.is_some()), err)]
+    #[tracing::instrument(name = "access.gateway.change_progression", skip_all, fields(ddd.bounded_context.name = "access", input.request_id = request_id, input.has_command = command.is_some()), err)]
     pub(super) fn change_progression(
         &mut self,
         client: ClientKey,
@@ -145,7 +145,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "access.infrastructure.gateway.progression_response", skip_all, fields(code.layer = "infrastructure", wot.context = "access", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty))]
+    #[tracing::instrument(name = "access.gateway.progression_response", skip_all, fields(ddd.bounded_context.name = "access", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty))]
     pub(super) fn complete_progression(&mut self, completion: Completion) {
         let Completion {
             client,

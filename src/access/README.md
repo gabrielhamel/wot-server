@@ -27,8 +27,8 @@ delivers committed native messages over XMPP and legacy events through Account. 
 
 Access traces game commands, XMPP requests, worker scheduling, completion
 handling and response delivery. It retains request parents across the grant,
-crew, completion and XMPP output queues. Infrastructure spans identify
-code.layer and wot.context. See the [telemetry contract](../../docs/telemetry.md).
+crew, completion and XMPP output queues. Spans identify operations and
+ddd.bounded_context.name without architecture layer labels. See the [telemetry contract](../../docs/telemetry.md).
 
 The [server composition](../server/mod.rs) runs LoginApp and BaseApp together. Access owns the UDP protocol
 implementation and shares the [client format codecs](../client_formats/README.md)

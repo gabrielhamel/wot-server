@@ -138,12 +138,12 @@ impl Shared {
             })
         })
     }
-    #[tracing::instrument(name = "access.infrastructure.push", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.id = id, input.stanza.bytes = stanza.len()))]
+    #[tracing::instrument(name = "access.push", skip_all, fields(ddd.bounded_context.name = "access", input.id = id, input.stanza.bytes = stanza.len()))]
     async fn push(&self, id: i64, stanza: String) {
         self.enqueue(id, Outbound::Stanza(stanza)).await;
     }
 
-    #[tracing::instrument(name = "access.infrastructure.enqueue", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.id = id))]
+    #[tracing::instrument(name = "access.enqueue", skip_all, fields(ddd.bounded_context.name = "access", input.id = id))]
     async fn enqueue(&self, id: i64, outbound: Outbound) {
         let mut online = self.online.lock().await;
         if let Some(peer) = online.get(&id)
@@ -158,7 +158,7 @@ impl Shared {
             online.remove(&id);
         }
     }
-    #[tracing::instrument(name = "access.infrastructure.push_available", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.id = id, input.stanza.bytes = stanza.len()))]
+    #[tracing::instrument(name = "access.push_available", skip_all, fields(ddd.bounded_context.name = "access", input.id = id, input.stanza.bytes = stanza.len()))]
     async fn push_available(&self, id: i64, stanza: String) {
         let available = self
             .online
@@ -181,7 +181,7 @@ impl Shared {
         protocol::presence(player, available, host)
     }
 
-    #[tracing::instrument(name = "access.infrastructure.presence", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.id = id, input.available = available), err)]
+    #[tracing::instrument(name = "access.presence", skip_all, fields(ddd.bounded_context.name = "access", input.id = id, input.available = available), err)]
     async fn presence(&self, id: i64, available: bool) -> Result<()> {
         let player = self
             .social
@@ -209,7 +209,7 @@ impl Shared {
     }
 }
 
-#[tracing::instrument(name = "access.infrastructure.serve", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.client.address = %address), err)]
+#[tracing::instrument(name = "access.serve", skip_all, fields(ddd.bounded_context.name = "access", input.client.address = %address), err)]
 async fn serve(
     socket: TcpStream,
     address: SocketAddr,
@@ -254,7 +254,7 @@ async fn serve(
                             anyhow::ensure!(connection.budget.admit(Instant::now()),"XMPP request budget exceeded");
                             tracing::debug!(%address, account=?connection.identity.as_ref().map(|(id,_)|id),bytes=stanza.len(),"XMPP stanza received");
                             let span = tracing::info_span!(
-                                parent: None, "xmpp.request", "code.layer" = "infrastructure", "wot.context" = "access",
+                                parent: None, "xmpp.request", "ddd.bounded_context.name" = "access",
                                 "input.bytes" = stanza.len(), "network.protocol.name" = "xmpp",
                                 "user.id" = connection.identity.as_ref().map(|(id, _)| id.to_string()),
                                 "output.stanza_count" = tracing::field::Empty,
@@ -296,7 +296,7 @@ async fn serve(
     result
 }
 
-#[tracing::instrument(name = "xmpp.response", skip_all, fields(code.layer = "infrastructure", wot.context = "access", output.bytes = stanza.len()), err)]
+#[tracing::instrument(name = "xmpp.response", skip_all, fields(ddd.bounded_context.name = "access", output.bytes = stanza.len()), err)]
 async fn write_stanza(write: &mut tokio::net::tcp::OwnedWriteHalf, stanza: &str) -> Result<()> {
     tokio::time::timeout(Duration::from_secs(10), write.write_all(stanza.as_bytes())).await??;
     Ok(())
