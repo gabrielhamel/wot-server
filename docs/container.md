@@ -25,8 +25,7 @@ For a complete Docker walkthrough with PostgreSQL, port mappings and game
 server-list registration, follow the
 [Docker quickstart](docker-quickstart.md).
 
-Authenticate to the private package with `docker login ghcr.io` using a
-classic GitHub token with `read:packages` and access to the package. Set
+The package is public and can be pulled without signing in. Set
 `IMAGE` to a published image name from the workflow summary. The image bundles
 the release binary, `/opt/wot-server/resources` and
 `/opt/wot-server/dashboard`. The server creates `server.json` beside the
