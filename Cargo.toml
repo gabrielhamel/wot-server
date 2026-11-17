@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/wot-binary-map", "crates/wot-extract", "crates/wot-resources", "crates/wot-seed"]
+members = ["crates/wot-binary-map", "crates/wot-extract", "crates/wot-resources"]
 resolver = "3"
 
 [package]

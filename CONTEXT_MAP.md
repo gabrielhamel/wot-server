@@ -40,9 +40,7 @@ listing and creation contract to HTTP and the React Admin dashboard.
 
 [Binary Mapping](crates/wot-binary-map/src/binary_mapping/README.md) runs in its
 own workspace package. It reads the external executable and produces offline
-research artifacts. The [standalone seeder](crates/wot-seed/README.md) invokes
-the Accounts provisioning contract without starting the server. Catalog, Battles
-and Battle Allocation are future candidate
+research artifacts. Catalog, Battles and Battle Allocation are future candidate
 boundaries and do not appear as implemented contexts.
 
 Editable models and the deterministic, checksummed renderer live in

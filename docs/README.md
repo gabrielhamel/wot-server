@@ -28,7 +28,6 @@ establish compatibility with the current client.
 | Complete span attribute inventory, meanings and emission conditions | [Span attributes](telemetry-attributes.md) |
 | Running the server, database and client configuration | [Server guide](server.md) |
 | Listing players, creating accounts and granting resources or tanks | [Player Administration dashboard](admin.md) |
-| Creating demo players and tier I garages | [Database seeding](seeding.md) |
 | Researching, buying and selling tanks, and buying garage slots | [Tank progression](vehicles.md) |
 | Researching, buying and installing tank modules | [Module progression](modules.md) |
 | Loading, unloading and buying tank shells | [Garage ammunition](ammunition.md) |
@@ -58,4 +57,4 @@ Architecture rules and documentation maintenance requirements are in
 contexts remain planning material. The runtime contexts are Accounts, Social,
 Player Sessions, and Player Administration. Shared Kernel and Platform support
 the runtime. Binary Mapping and Resource Extraction run offline as workspace
-packages under `crates/`, alongside the standalone demo seeder.
+packages under `crates/`.

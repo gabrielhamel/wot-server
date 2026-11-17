@@ -8,18 +8,16 @@ Player Sessions. It does not own transport sessions, entities, battles or matchm
 | --- | --- |
 | `domain/` | Account snapshots, balances, owned vehicles and ammunition, progression, equipment, consumables, directives, depot sales, crew rosters, training and vehicle purchase rules; no SQL or protocol types. |
 | `application/` | Repository ports, credential verification, paginated player listing and provisioning, snapshot queries, preferences and ammunition/progression proposals/commit use cases. |
-| `infrastructure/postgres.rs` | SQLx pool, embedded migrations, transactional insert-only test fixture seed (not called at server startup), coherent snapshot reads, atomic preference updates and revision-checked inventory transactions. |
+| `infrastructure/postgres.rs` | SQLx pool, embedded migrations, coherent snapshot reads, atomic preference updates and revision-checked inventory transactions. |
 | `infrastructure/players.rs` | PostgreSQL player directory pages and atomic creation with tier I garage provisioning. |
-| `infrastructure/seeding.rs` | Atomic two-player demo seed with locked existing-account reconciliation and shared starter garage persistence. |
-
-The [standalone seeder](../../crates/wot-seed/README.md) calls the Accounts
-provisioning operation.
 | `infrastructure/client/` | Anti-corruption layer adapting the versioned [resource bundle](../../docs/resources.md), garage catalog and account/shop cache formats. These wire models are not account domain models. |
 
 Player Sessions consumes `Accounts<R>`, `AccountSnapshot`, and the `GarageCatalog` encoder
 through this context's entry point (`mod.rs`). Catalog loading and garage cache
 encoding remain infrastructure of Accounts for this milestone and use the shared
-[client formats](../platform/infrastructure/client_formats/README.md) codecs. Its catalog adapter also discovers tier I demo vehicles from the tech tree and prepares durable initial loadouts; see [database seeding](../../docs/seeding.md). A separate Catalog
+[client formats](../platform/infrastructure/client_formats/README.md) codecs. The
+catalog adapter discovers tier I tech tree vehicles and prepares starter
+loadouts for [player creation](../../docs/admin.md). A separate Catalog
 context is a possible future boundary, not an implemented one.
 
 | Term | Meaning |
@@ -35,7 +33,6 @@ context is a possible future boundary, not an implemented one.
 | Equipment components | Balance used for paid demounting of level 2 and 3 Experimental equipment. The client calls it `equipCoin`. |
 | Ammunition proposal | Validated next snapshot and purchase receipt, committed against its source revision. |
 | Garage projection | Compressed Python cache derived from a snapshot and client definitions. |
-| Seed | An explicit database fixture grant. The basic test fixture is insert-only; the demo seed fills missing tier I garage state without resetting existing choices. |
 | Research | An account-wide tank or module unlock bought with vehicle XP and free XP. |
 | Vehicle purchase | An atomic debit and permanent ownership grant, with optional crew, ammunition and consumables. |
 | Player grant | An operator-authorized resource addition or permanent tank with stock modules, ammunition and basic crew, committed as an account revision. |

@@ -10,5 +10,3 @@ pub use domain::*;
 pub use infrastructure::client::{GarageCatalog, PreparedAccount, VehicleCatalogEntry};
 pub use infrastructure::players::PostgresPlayers;
 pub use infrastructure::postgres::PostgresAccounts;
-
-pub use infrastructure::seeding::{DEMO_PLAYERS, DemoSeedReport};

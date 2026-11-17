@@ -31,52 +31,6 @@ impl PostgresAccounts {
         Ok(Self { pool })
     }
 
-    #[tracing::instrument(name = "accounts.postgres.seed", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = username.len()), err)]
-    pub async fn seed(
-        &self,
-        username: &str,
-        display_name: &str,
-        password: String,
-        vehicles: &[String],
-    ) -> Result<()> {
-        let hash = super::super::application::players::hash_password(password).await?;
-        let mut tx =
-            crate::platform::observability::database("accounts", "BEGIN", self.pool.begin())
-                .await?;
-        let id: Option<i64> = {
-            let statement = "INSERT INTO accounts(username, display_name, password_hash) VALUES($1, $2, $3) ON CONFLICT(username) DO NOTHING RETURNING id";
-            crate::platform::observability::database(
-                "accounts",
-                statement,
-                sqlx::query_scalar(statement)
-                    .bind(username)
-                    .bind(display_name)
-                    .bind(hash)
-                    .fetch_optional(&mut *tx),
-            )
-            .await
-        }?;
-        if let Some(id) = id {
-            for (index, key) in vehicles.iter().enumerate() {
-                {
-                    let statement = "INSERT INTO owned_vehicles(account_id, inventory_id, catalog_key) VALUES($1,$2,$3)";
-                    crate::platform::observability::database(
-                        "accounts",
-                        statement,
-                        sqlx::query(statement)
-                            .bind(id)
-                            .bind(index as i64 + 1)
-                            .bind(key)
-                            .execute(&mut *tx),
-                    )
-                    .await
-                }?;
-            }
-        }
-        crate::platform::observability::database("accounts", "COMMIT", tx.commit()).await?;
-        Ok(())
-    }
-
     #[tracing::instrument(name = "accounts.postgres.catalog_keys", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "account_vehicles"), err)]
     pub async fn catalog_keys(&self) -> Result<Vec<String>> {
         Ok({

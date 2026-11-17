@@ -125,7 +125,7 @@ lock acquisition, and is limited to known resource keys. Owned starter vehicles
 are still validated during startup. Requests cannot supply a filesystem path.
 Research/purchase work and template loading run on bounded blocking workers,
 not the UDP event loop. A newly bought vehicle can be projected immediately;
-no restart or catalog reseed is needed.
+no restart or catalog reload is needed.
 
 The migration `0001_initial_schema.sql` defines the
 **`accounts.progression`** JSONB column. Its fields are `unlocks`, `vehicle_xp`, `depot` and `installed`;

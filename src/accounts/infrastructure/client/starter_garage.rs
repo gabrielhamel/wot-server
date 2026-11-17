@@ -34,7 +34,7 @@ impl GarageCatalog {
         Ok(keys)
     }
 
-    pub(in crate::accounts::infrastructure) fn seed_tier_one_garage(
+    pub(in crate::accounts::infrastructure) fn prepare_starter_garage(
         &self,
         snapshot: &mut AccountSnapshot,
         keys: &[String],
@@ -48,74 +48,38 @@ impl GarageCatalog {
                 .progression
                 .unlocks
                 .extend(template.modules.rules.stock.values());
-            let index = match snapshot
-                .vehicles
-                .iter()
-                .position(|owned| owned.catalog_key == *key)
-            {
-                Some(index) => index,
-                None => {
-                    ensure!(
-                        snapshot.vehicles.len() < 1024,
-                        "Garage vehicle limit reached"
-                    );
-                    let inventory_id = snapshot.next_vehicle_id()?;
-                    snapshot.vehicles.push(OwnedVehicle {
-                        inventory_id,
-                        catalog_key: key.clone(),
-                        ammunition: None,
-                        has_crew: true,
-                    });
-                    snapshot.vehicles.len() - 1
-                }
-            };
-            let owned = snapshot
-                .vehicles
-                .get(index)
-                .context("Missing seeded vehicle")?;
-            let inventory_id = owned.inventory_id;
-            let loadout = template.modules.rules.loadout(snapshot, inventory_id);
+            ensure!(
+                snapshot.vehicles.len() < 1024,
+                "Garage vehicle limit reached"
+            );
+            let inventory_id = snapshot.next_vehicle_id()?;
+            let loadout = template.modules.rules.stock.clone();
             let ammunition = template
                 .ammunition_rules(&loadout)
                 .context("Missing gun ammunition")?;
-            let owned = snapshot
-                .vehicles
-                .get_mut(index)
-                .context("Missing seeded vehicle")?;
-            if owned
-                .ammunition
-                .as_ref()
-                .is_none_or(|ammo| !ammo.loaded.iter().any(|&(_, count)| count > 0))
-            {
-                ensure!(
-                    ammunition.defaults.iter().any(|&(_, count)| count > 0),
-                    "Empty default ammunition"
-                );
-                owned.ammunition = Some(VehicleAmmunition {
+            ensure!(
+                ammunition.defaults.iter().any(|&(_, count)| count > 0),
+                "Empty default ammunition"
+            );
+            snapshot.vehicles.push(OwnedVehicle {
+                inventory_id,
+                catalog_key: key.clone(),
+                ammunition: Some(VehicleAmmunition {
                     loaded: ammunition.defaults.clone(),
-                });
-            }
-            owned.has_crew = true;
-            snapshot
-                .progression
-                .installed
-                .entry(inventory_id)
-                .or_insert(loadout);
-            let vehicle = self.owned_crew_vehicle(snapshot, inventory_id)?;
-            let seats = roster.seats(inventory_id, vehicle.roles.len());
-            let mut assignment = vehicle.clone();
-            assignment.crew_locked = false;
+                }),
+                has_crew: true,
+            });
+            snapshot.progression.installed.insert(inventory_id, loadout);
+            let mut vehicle = self.owned_crew_vehicle(snapshot, inventory_id)?;
+            vehicle.crew_locked = false;
             for (slot, roles) in vehicle.roles.iter().enumerate() {
-                if seats.get(slot).is_some_and(Option::is_some) {
-                    continue;
-                }
                 let role = *roles.first().context("Missing crew role")?;
                 let member = roster.insert(self.new_crew_member(
                     &vehicle,
                     role,
                     roster.next_passport_index(),
                 )?)?;
-                roster.assign(&assignment, Some(slot), Some(member))?;
+                roster.assign(&vehicle, Some(slot), Some(member))?;
             }
         }
         snapshot.balances.slots = snapshot
@@ -123,7 +87,7 @@ impl GarageCatalog {
             .slots
             .max(i64::try_from(snapshot.vehicles.len())?);
         let defaults: std::collections::BTreeMap<i32, i32> =
-            serde_json::from_str(include_str!("demo_settings.json"))?;
+            serde_json::from_str(include_str!("starter_settings.json"))?;
         for (key, value) in defaults {
             snapshot.settings.entry(key).or_insert(value);
         }

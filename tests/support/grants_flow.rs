@@ -1,4 +1,4 @@
-use super::{Peer, Pickle, Value, ammunition_flow, dict};
+use super::{Peer, Pickle, Value, ammunition_flow, dict, player_fixture};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -29,20 +29,15 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()
     );
     let starter = "usa:A01_T1_Cunningham".to_owned();
-    repository
-        .seed(
-            &username,
-            "Grant test",
-            "grants".into(),
-            std::slice::from_ref(&starter),
-        )
-        .await
-        .unwrap();
-    let (id,): (i64,) = sqlx::query_as("SELECT id FROM accounts WHERE username = $1")
-        .bind(&username)
-        .fetch_one(&repository.connection_pool())
-        .await
-        .unwrap();
+    let id = player_fixture::insert_player(
+        &repository,
+        &username,
+        "Grant test",
+        "grants",
+        std::slice::from_ref(&starter),
+    )
+    .await
+    .unwrap();
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[starter]).unwrap());
     let snapshot = accounts.snapshot(id).await.unwrap();
     for key in [

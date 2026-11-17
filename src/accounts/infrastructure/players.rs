@@ -1,9 +1,10 @@
 use super::{
     client::GarageCatalog,
     postgres::{PostgresAccounts, read_snapshot},
-    seeding::persist_starter_garage,
 };
-use crate::accounts::{PlayerAccount, PlayerPage, PlayerPagination, PlayerRepository};
+use crate::accounts::{
+    AccountSnapshot, PlayerAccount, PlayerPage, PlayerPagination, PlayerRepository,
+};
 use anyhow::Result;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -124,7 +125,7 @@ impl PlayerRepository for PostgresPlayers {
         let keys = self.starter_keys.clone();
         let snapshot = tokio::task::spawn_blocking(
             crate::platform::observability::in_current_span(move || {
-                catalog.seed_tier_one_garage(&mut snapshot, &keys)?;
+                catalog.prepare_starter_garage(&mut snapshot, &keys)?;
                 Ok::<_, anyhow::Error>(snapshot)
             }),
         )
@@ -137,4 +138,46 @@ impl PlayerRepository for PostgresPlayers {
             display_name,
         }))
     }
+}
+
+#[tracing::instrument(name = "accounts.players.persist_starter_garage", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = next.id, input.vehicle_count = next.vehicles.len()), err)]
+async fn persist_starter_garage(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    next: &AccountSnapshot,
+) -> Result<()> {
+    let id = next.id;
+    {
+        let statement = "UPDATE accounts SET revision=$2, settings=$3, progression=$4, crew_roster=$5, slots=$6 WHERE id=$1";
+        crate::platform::observability::database(
+            "accounts",
+            statement,
+            sqlx::query(statement)
+                .bind(id)
+                .bind(next.revision)
+                .bind(sqlx::types::Json(&next.settings))
+                .bind(sqlx::types::Json(&next.progression))
+                .bind(sqlx::types::Json(&next.crew))
+                .bind(next.balances.slots)
+                .execute(&mut **tx),
+        )
+        .await
+    }?;
+    for owned in &next.vehicles {
+        {
+            let statement = "INSERT INTO owned_vehicles(account_id,inventory_id,catalog_key,ammunition,has_crew) VALUES($1,$2,$3,$4,$5)";
+            crate::platform::observability::database(
+                "accounts",
+                statement,
+                sqlx::query(statement)
+                    .bind(id)
+                    .bind(owned.inventory_id)
+                    .bind(&owned.catalog_key)
+                    .bind(owned.ammunition.as_ref().map(sqlx::types::Json))
+                    .bind(owned.has_crew)
+                    .execute(&mut **tx),
+            )
+            .await
+        }?;
+    }
+    Ok(())
 }

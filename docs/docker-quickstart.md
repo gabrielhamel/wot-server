@@ -174,7 +174,7 @@ export IMAGE=wot-server:local
 ```
 
 Then follow the Docker configuration and startup steps above, skipping registry
-login/pull. For native Rust builds, resource extraction, demo seeding and the
+login/pull. For native Rust builds, resource extraction and the
 offline executable mapper, see the [documentation hub](README.md).
 Research submodules are optional for server builds; see
 [research references](references/README.md).

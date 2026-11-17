@@ -13,8 +13,7 @@ The output directory must be new and its parent must already exist. After
 successful extraction, copy the entire output directory to the server host.
 The default location is `resources/` beside the server executable. To use
 another location, set `resource_dir` in `server.json`. Replace the old
-`game_dir` field when upgrading an existing configuration. The
-[demo seeder](seeding.md) uses the same bundle.
+`game_dir` field when upgrading an existing configuration.
 
 The [published container image](container.md) includes the bundle. To use a
 different bundle, mount it read-only and set `resource_dir` to its absolute
@@ -36,7 +35,7 @@ server. Older manifests without the field remain supported.
 - **Player Sessions** uses Packed XML aliases, entity and component lists and definitions,
   interface definitions and extension descriptors for the protocol ABI.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
-  item definitions, regular tech trees for demo seeding and available vehicle
+  item definitions, regular tech trees for starter garages and available vehicle
   name catalogs for admin labels.
 
 The extractor copies selected definition files as complete files and preserves

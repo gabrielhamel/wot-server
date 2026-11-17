@@ -105,7 +105,7 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`input.username.bytes`](../src/player_sessions/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, seeding, or player creation. Recorded on the root HTTP span after successful player-creation JSON decoding. |
+| [`input.username.bytes`](../src/player_sessions/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, or player creation. Recorded on the root HTTP span after successful player-creation JSON decoding. |
 | [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. |
 | [`input.algorithm`](../src/accounts/application/players.rs) | Password hashing algorithm on `accounts.players.hash_password`, currently `argon2id`. Password and hash are omitted. |
 | [`input.previous_revision`](../src/player_sessions/application/mod.rs) | Expected persisted revision for an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
@@ -131,8 +131,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.depot.count`](../src/accounts/domain/ammunition.rs) | Number of distinct shell types in the depot passed to ammunition validation; not total shell units. |
 | [`input.stock.shell_types`](../src/accounts/domain/depot.rs) | Number of distinct shell types currently held in depot stock at the start of a depot sale. |
 | [`input.stock.fitting_types`](../src/accounts/domain/depot.rs) | Number of distinct fitting/item descriptors currently held in depot stock at the start of a depot sale. |
-| [`input.player_count`](../src/accounts/infrastructure/seeding.rs) | Number of predefined demo players in the seeding operation. |
-| [`input.vehicle_count`](../src/accounts/infrastructure/seeding.rs) | Number of owned vehicles being persisted in a starter garage. |
+| [`input.vehicle_count`](../src/accounts/infrastructure/players.rs) | Number of vehicles persisted on `accounts.players.persist_starter_garage` during player creation. |
 
 ## Crew inputs
 

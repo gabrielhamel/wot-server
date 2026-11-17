@@ -46,12 +46,10 @@ and uses the image only to read the resource files. It needs no registry
 credentials, so it also works for fork pull requests. Update the image digest
 and fixture build together when the tests need a new resource bundle.
 
-The database-dependent tests are opt-in when running Cargo locally. The independent demo seeder
-test creates and drops a fresh database using the configured test role; see
-[seeding verification](seeding.md#verification).
+The database-dependent tests are opt-in when running Cargo locally.
 
 The default suite does not require PostgreSQL or proprietary resources. To exercise
-embedded migrations, insert-only seed, Argon2 credentials, concurrent preference
+embedded migrations, dashboard provisioning, Argon2 credentials, concurrent preference
 writes, restart persistence and two isolated encrypted UDP clients:
 
 ```sh
@@ -61,12 +59,13 @@ cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
 cargo test --locked --lib exports_admin_http_request_inputs -- --ignored
 cargo test --locked -p wot-server --test garage -- --ignored
-cargo test --locked -p wot-seed --test seeding -- --ignored
 ```
 
 The admin HTTP test sends requests through the authenticated router and inspects
 exported inputs, status and parent links for successful and rejected requests.
-It checks that raw credentials and invalid input text stay out of spans.
+It also authenticates a player created through the API, checks their persisted
+starter garage, and verifies that raw credentials and invalid input text stay
+out of spans.
 
 For an existing database, set `WG_TEST_DATABASE_URL` to the same connection
 URL used by the server. The test uses uniquely named temporary accounts and removes them after its network
