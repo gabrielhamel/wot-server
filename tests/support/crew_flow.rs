@@ -153,14 +153,22 @@ pub(super) fn exercise(peer: &mut Peer, dispatch: &ScriptDispatch, initial: &Pic
         panic!("Trained crew descriptor missing");
     };
     assert_eq!(&trained[6..11], &[3, 6, 8, 9, 0]);
-    int(peer, 689, 151, &[hired.into(), 2, 39]);
-    wait(peer, 689, 0);
+    // Two full major perks yield bonus slots at 100% and 0% for the secondary role.
+    array(peer, 713, 156, &[hired, 2, 39, 40, 41]);
+    wait(peer, 713, -1);
+    array(peer, 689, 156, &[hired, 2, 39, 40]);
+    peer.until(dispatch, |p| p.responses.iter().any(|&(id, _)| id == 689));
+    assert!(
+        peer.responses.contains(&(689, 0)),
+        "Bonus perk batch failed"
+    );
     let update = super::ammunition_flow::update(peer, 16);
     let descriptors = dict(&row(&dict(&update, "inventory"), 8), "compDescr");
     let Pickle::Bytes(trained) = row(&descriptors, hired.into()) else {
         panic!("Trained crew descriptor missing");
     };
-    assert_eq!(&trained[6..13], &[3, 6, 8, 9, 0, 1, 39]);
+    assert_eq!(dict(&update, "prevRev"), Pickle::from(15));
+    assert_eq!(&trained[6..14], &[3, 6, 8, 9, 0, 2, 39, 40]);
 
     const BOOK: i32 = 42 * 256 + 16 + 14;
     int(peer, 690, 302, &[1, BOOK.into(), 1, 0]);
