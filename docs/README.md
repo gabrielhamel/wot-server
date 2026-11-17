@@ -19,6 +19,7 @@ establish compatibility with the current client.
 
 | Topic | Guide |
 | --- | --- |
+| Contribution scope, manual verification, and regression tests | [Contributing](../CONTRIBUTING.md) |
 | Docker startup and game server-list setup | [Docker quickstart](docker-quickstart.md) |
 | Discovering, installing and updating the compiled research client | [Game client setup](game-client.md) |
 | Preparing runtime game data | [Resource extraction](resources.md) |
