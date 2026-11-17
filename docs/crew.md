@@ -113,6 +113,18 @@ has reached the current training cap. Crew awards use the existing cap. The
 server still needs a battle settlement path to call this rule and commit the
 result. Veteran XP conversion to Crew Books also remains pending.
 
+Quick Training looks up the post-progression reward book if any crew member
+on the account has reached the skill XP cap. The server supplies `rewardBookId`
+(Universal Guide, raw book ID 62) and `XppToConvert` (100,000). Without the
+reward ID, the client defaults to ID 0 and fails to render the entire book
+list. The client defaults the unearned `stats.XPpp` balance to zero.
+The reward ID comes from `scripts/item_defs/crewBooks/crewBooks.xml` in the
+installed EU client (executable SHA-256
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`).
+The lookup and fallback are in the reference client's
+`gui/impl/lobby/crew/container_vews/quick_training/` components and
+`helpers/server_settings.py`.
+
 ## Evidence and verification
 
 - `docs/references/wot-src/sources/res/scripts/common/AccountCommands.py` and
