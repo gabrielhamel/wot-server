@@ -2,8 +2,8 @@ mod garage;
 mod players;
 
 use crate::{
-    access::PlayerGrants,
     accounts::{Accounts, GarageCatalog, PlayerAccounts, PostgresAccounts, PostgresPlayers},
+    client_gateway::PlayerGrants,
 };
 use axum::{
     Router,

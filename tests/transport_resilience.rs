@@ -3,8 +3,8 @@ use std::{
     io::Write,
     time::{Duration, Instant},
 };
-use wot_server::access::mercury::app::login::element::Ping;
-use wot_server::access::mercury::net::{
+use wot_server::client_gateway::mercury::app::login::element::Ping;
+use wot_server::client_gateway::mercury::net::{
     bundle::NextElementReader,
     filter::BlowfishWriter,
     packet::{Packet, flags},
@@ -167,7 +167,8 @@ fn every_encrypted_padding_value_is_checked_before_setting_packet_length() {
     let mut original = Packet::new();
     original.grow(2).copy_from_slice(&[2, 7]);
     let encrypted =
-        wot_server::access::mercury::net::socket::encrypt_packet(&original, &cipher).unwrap();
+        wot_server::client_gateway::mercury::net::socket::encrypt_packet(&original, &cipher)
+            .unwrap();
     assert_eq!(
         decrypt_packet(encrypted, &cipher).unwrap().slice(),
         original.slice()
@@ -238,8 +239,8 @@ fn peer_and_reliable_buffer_limits_reject_excess_then_recover() {
 
 #[test]
 fn login_rate_limit_is_checked_before_decoding_and_ping_still_works() {
-    use wot_server::access::mercury::app::login::{App, Event, element::LoginRequest};
-    use wot_server::access::mercury::net::{bundle::Bundle, socket::PacketSocket};
+    use wot_server::client_gateway::mercury::app::login::{App, Event, element::LoginRequest};
+    use wot_server::client_gateway::mercury::net::{bundle::Bundle, socket::PacketSocket};
     let mut server = App::new("127.0.0.1:0".parse().unwrap()).unwrap();
     let address = server.addr().unwrap();
     let socket = PacketSocket::bind("127.0.0.1:0".parse().unwrap()).unwrap();
@@ -282,7 +283,7 @@ fn login_rate_limit_is_checked_before_decoding_and_ping_still_works() {
 
 #[test]
 fn outgoing_reliable_budget_applies_backpressure_and_expires() {
-    use wot_server::access::mercury::net::bundle::Bundle;
+    use wot_server::client_gateway::mercury::net::bundle::Bundle;
     let mut protocol = Protocol::new();
     let mut bundle = Bundle::new();
     bundle

@@ -5,11 +5,11 @@ use super::{
     dict,
 };
 use wot_server::{
-    access::mercury::app::dispatch::ScriptDispatch,
     accounts::{
         AccountRepository, GarageCatalog, PostgresAccounts, ProgressionCommand, ProgressionError,
         VehiclePurchaseOptions, VehicleSaleRequest,
     },
+    client_gateway::mercury::app::dispatch::ScriptDispatch,
     pickle,
 };
 

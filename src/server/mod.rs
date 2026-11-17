@@ -1,7 +1,7 @@
 use crate::{
-    access::{Gateway, GatewayConfig},
     accounts::{Accounts, GarageCatalog, PlayerAccounts, PostgresAccounts, PostgresPlayers},
     admin,
+    client_gateway::{Gateway, GatewayConfig},
 };
 use anyhow::{Context, Result};
 use clap::Parser;

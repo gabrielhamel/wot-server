@@ -5,9 +5,9 @@ use std::{
     net::{SocketAddr, TcpStream},
     time::Duration,
 };
-use wot_server::access::mercury::app::dispatch::ScriptDispatch;
-use wot_server::access::mercury::script::{PythonValue, StringValue, Value};
 use wot_server::client_formats::pickle;
+use wot_server::client_gateway::mercury::app::dispatch::ScriptDispatch;
+use wot_server::client_gateway::mercury::script::{PythonValue, StringValue, Value};
 
 struct Chat {
     stream: TcpStream,

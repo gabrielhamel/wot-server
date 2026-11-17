@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, Value, dict};
-use wot_server::access::mercury::{
+use wot_server::client_gateway::mercury::{
     app::dispatch::ScriptDispatch,
     script::{PythonValue, StringValue},
 };

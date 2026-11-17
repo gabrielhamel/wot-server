@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, Value, dict};
-use wot_server::{access::mercury::app::dispatch::ScriptDispatch, pickle};
+use wot_server::{client_gateway::mercury::app::dispatch::ScriptDispatch, pickle};
 
 fn row(value: &Pickle, id: i64) -> Pickle {
     let Pickle::Dict(rows) = value else {

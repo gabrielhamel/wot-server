@@ -149,11 +149,11 @@ reports `v.2.4.1.1 #993`, executable SHA-256
 
 ## Protocol implementation
 
-The server owns its [Mercury adapter](../src/access/infrastructure/mercury) for
+The server owns its [Mercury adapter](../src/client_gateway/infrastructure/mercury) for
 UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish, session lifecycle
 and Account RPCs. The adapter loads the method tables and creation layout from
 the configured bundle. The [shared codecs](../src/client_formats/README.md)
-read packed resources and serialize Python values for Access and Accounts.
+read packed resources and serialize Python values for Client Gateway and Accounts.
 
 A standalone checkout builds with `cargo build --locked`. See the
 [resilience report](resilience-audit.md) for packet limits and regression

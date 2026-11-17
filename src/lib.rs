@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
-pub mod access;
 pub mod accounts;
 pub(crate) mod admin;
 pub mod binary_mapping;
+pub mod client_gateway;
 pub(crate) mod observability;
 pub mod server;
 

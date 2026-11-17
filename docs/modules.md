@@ -1,7 +1,7 @@
 # Tank module research and installation
 
 Accounts owns researched modules, vehicle experience, shared module depot counts,
-and installed module loadouts. Access translates the native garage commands and
+and installed module loadouts. Client Gateway translates the native garage commands and
 publishes cache changes only after a revision-checked PostgreSQL transaction.
 No client resource files are modified.
 
@@ -98,4 +98,4 @@ Implementation ownership:
 | `src/accounts/infrastructure/client/module_defs.rs` | Versioned resource translation, research indices and gun-specific ammunition. |
 | `src/accounts/infrastructure/client/progression.rs` | Catalog-backed planning and client cache deltas. |
 | `src/accounts/infrastructure/postgres.rs` | Coherent reads and atomic persistence. |
-| `src/access/infrastructure/gateway/progression.rs` | Bounded command execution and completion responses. |
+| `src/client_gateway/infrastructure/gateway/progression.rs` | Bounded command execution and completion responses. |

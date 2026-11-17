@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, Value, dict};
-use wot_server::access::mercury::app::dispatch::ScriptDispatch;
+use wot_server::client_gateway::mercury::app::dispatch::ScriptDispatch;
 
 pub fn exercise(peer: &mut Peer, dispatch: &ScriptDispatch) -> Pickle {
     let command = |peer: &mut Peer, id, cmd, a, b, c| {

@@ -2,7 +2,7 @@
 
 Accounts owns durable player identity, password hashes, balances, vehicle ownership,
 integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes immutable snapshots to
-Access. It does not own transport sessions, entities, battles or matchmaking.
+Client Gateway. It does not own transport sessions, entities, battles or matchmaking.
 
 | Layer | Responsibilities |
 | --- | --- |
@@ -14,7 +14,7 @@ Access. It does not own transport sessions, entities, battles or matchmaking.
 | `presentation/` | Standalone seed CLI configuration and result output. |
 | `infrastructure/client/` | Anti-corruption layer adapting the versioned [resource bundle](../../docs/resources.md), garage catalog and account/shop cache formats. These wire models are not account domain models. |
 
-Access consumes `Accounts<R>`, `AccountSnapshot`, and the `GarageCatalog` encoder
+Client Gateway consumes `Accounts<R>`, `AccountSnapshot`, and the `GarageCatalog` encoder
 through this context's entry point (`mod.rs`). Catalog loading and garage cache
 encoding remain infrastructure of Accounts for this milestone and use the shared
 [client formats](../client_formats/README.md) codecs. Its catalog adapter also discovers tier I demo vehicles from the tech tree and prepares durable initial loadouts; see [database seeding](../../docs/seeding.md). A separate Catalog
@@ -74,7 +74,7 @@ inventory and revisions are not part of this directory contract.
 context entry point. It receives account IDs, logins and display names. Account
 creation hashes the password with Argon2id and commits the identity and starter
 garage in one PostgreSQL transaction.
-Admin also reads snapshots and vehicle catalog entries. Access uses the same
+Admin also reads snapshots and vehicle catalog entries. Client Gateway uses the same
 revision-checked progression transaction for player grants and garage purchases.
 
 Accounts emits application, domain decision, catalog and repository spans.

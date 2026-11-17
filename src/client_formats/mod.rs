@@ -1,4 +1,4 @@
-//! Binary formats shared by the Access and Accounts infrastructure.
+//! Binary formats shared by the Client Gateway and Accounts infrastructure.
 
 pub mod pickle;
 pub mod pxml;

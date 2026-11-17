@@ -5,7 +5,7 @@
 ## Current state versus target
 
 The original toolkit audit predates the runtime implementation. wot-server now has
-Accounts and Access contexts and a PostgreSQL-backed login/garage slice alongside
+Accounts and Client Gateway contexts and a PostgreSQL-backed login/garage slice alongside
 offline Binary Mapping. See [current server behavior](../server.md) and the
 [implemented context map](../../CONTEXT_MAP.md). The broader plan below remains
 a roadmap; real-client login and garage rendering now pass for the installed `2.4.1.5514`
@@ -41,7 +41,7 @@ implementation, not a mandate to create one crate per row or empty directories.
 
 | Candidate context | Domain responsibilities | Inbound/outbound contracts |
 | --- | --- | --- |
-| Access and Sessions | Admission, authenticated identity, session state and handoff | Login wire adapter; account identity lookup; battle destination/session transfer |
+| Client Gateway | Admission, authenticated identity, session state and handoff | Login wire adapter; account identity lookup; battle destination/session transfer |
 | Accounts | Owned vehicles/crew/items, balances, settings and account revisions | Sync/query/update use cases; durable repository; battle loadout snapshot and results application |
 | Catalog | Supported client version, vehicle/module/map definitions and rules data | Validated catalog snapshots consumed by Accounts and Battles; resource loading adapters |
 | Battle Allocation | Queue membership, match formation, teams and battle placement | Account/loadout eligibility; session destination; battle creation request |

@@ -1,10 +1,10 @@
 use super::{AdminState, players::ApiError};
 use crate::{
-    access::{GrantDelivery, GrantRequestError},
     accounts::{
         AccountNotFound, AccountSnapshot, GarageCatalog, GrantCurrency, GrantError, PlayerGrant,
         ProgressionError, VehicleCatalogEntry,
     },
+    client_gateway::{GrantDelivery, GrantRequestError},
 };
 use axum::{
     Json,

@@ -54,4 +54,4 @@ establish compatibility with the current client.
 
 Architecture rules and documentation maintenance requirements are in
 [AGENTS.md](../AGENTS.md). The toolkit map records its audit baseline; its future
-contexts remain planning material. wot-server currently implements Accounts, Social, Access, Admin plus offline Binary Mapping and Resource Extraction.
+contexts remain planning material. wot-server currently implements Accounts, Social, Client Gateway, Admin plus offline Binary Mapping and Resource Extraction.

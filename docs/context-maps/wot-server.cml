@@ -1,7 +1,7 @@
 ContextMap Server {
   type = SYSTEM_LANDSCAPE
   state = AS_IS
-  contains GameClient, ResourceExtraction, BinaryMapping, Accounts, Social, Access, Admin
+  contains GameClient, ResourceExtraction, BinaryMapping, Accounts, Social, ClientGateway, Admin
   GameClient [U] -> [D,ACL] BinaryMapping {
     implementationTechnology = "Read-only AMD64 PE; evidence-bearing offline investigation models"
   }
@@ -11,26 +11,26 @@ ContextMap Server {
   ResourceExtraction [U,PL] -> [D,ACL] Accounts {
     implementationTechnology = "Versioned resource bundle containing garage definitions, regular tech trees and vehicle labels"
   }
-  ResourceExtraction [U,PL] -> [D,ACL] Access {
+  ResourceExtraction [U,PL] -> [D,ACL] ClientGateway {
     implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
   }
-  GameClient [U] -> [D,ACL] Access {
+  GameClient [U] -> [D,ACL] ClientGateway {
     implementationTechnology = "Mercury UDP wire messages translated into login, handoff, and garage RPCs"
   }
   Accounts [U,OHS,PL] -> [D,ACL] Admin {
     implementationTechnology = "PlayerAccounts API for identity listing and provisioning, plus account snapshots and the vehicle catalog for the operator garage"
   }
-  Access [U,OHS,PL] -> [D,ACL] Admin {
+  ClientGateway [U,OHS,PL] -> [D,ACL] Admin {
     implementationTechnology = "Bounded PlayerGrants application API coordinates resource and tank grants with garage writes and publishes committed updates to game sessions"
   }
   Accounts [U,OHS,PL] -> [D,ACL] Social {
     implementationTechnology = "Read-only account_directory SQL identity projection and account-ID foreign keys; shared SQLx pool"
   }
-  Social [U,OHS,PL] -> [D,ACL] Access {
-    implementationTechnology = "Published contacts/search and durable private message APIs; Access adapts native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
+  Social [U,OHS,PL] -> [D,ACL] ClientGateway {
+    implementationTechnology = "Published contacts/search and durable private message APIs; the Client Gateway adapts native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
   }
-  Accounts [U,OHS,PL] -> [D,ACL] Access {
-    implementationTechnology = "Published account application API and immutable snapshots; Access adapts credentials, preferences, revision-checked ammunition, equipment, consumables, directives, depot sales, crew management and tank/module progression commits and garage projections to client sessions"
+  Accounts [U,OHS,PL] -> [D,ACL] ClientGateway {
+    implementationTechnology = "Published account application API and immutable snapshots; the Client Gateway adapts credentials, preferences, revision-checked ammunition, equipment, consumables, directives, depot sales, crew management and tank/module progression commits and garage projections to client sessions"
   }
 }
 BoundedContext GameClient {
@@ -45,7 +45,7 @@ BoundedContext BinaryMapping {
 BoundedContext Accounts {
   domainVisionStatement = "Own durable identity, password hashes, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, crew rosters and training, and revisions in PostgreSQL; project snapshots into versioned garage caches."
 }
-BoundedContext Access {
+BoundedContext ClientGateway {
   domainVisionStatement = "Admit authenticated clients, manage expiring handoff tickets and sessions, and adapt login and garage commands through the server-owned Mercury UDP transport."
 }
 

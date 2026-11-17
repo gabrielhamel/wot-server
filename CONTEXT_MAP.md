@@ -5,24 +5,24 @@
 ![wot-server context map](docs/context-maps/generated/wot-server.svg)
 
 [Accounts](src/accounts/README.md) publishes its application API and immutable
-snapshots upstream of [Access](src/access/README.md), which adapts them into login
+snapshots upstream of [Client Gateway](src/client_gateway/README.md), which adapts them into login
 and garage sessions. Both translate external client data through anti-corruption
 layers. Accounts' PostgreSQL adapter persists user state, including revision-checked
 ammunition, tank/module research, vehicle purchases and module, equipment, consumable and directive loadouts, shared depot stock and balance updates; its resource adapter builds
-the garage projection. Access adapts shell, equipment, consumable, directive, module and tank progression requests and publishes committed
-inventory/balance changes and purchase receipts. Access owns the Mercury UDP adapter and binds
+the garage projection. Client Gateway adapts shell, equipment, consumable, directive, module and tank progression requests and publishes committed
+inventory/balance changes and purchase receipts. Client Gateway owns the Mercury UDP adapter and binds
 garage RPCs to the extracted script definitions. Both contexts use the shared
 [client formats](src/client_formats/README.md) infrastructure.
 
 [Resource Extraction](crates/wot-extract/README.md) runs offline and publishes
-the [bundle contract](crates/wot-resources/README.md) to Accounts and Access. The
+the [bundle contract](crates/wot-resources/README.md) to Accounts and Client Gateway. The
 extractor reads installed client packages and loose files. Accounts loads the
-garage catalog from the bundle, and Access loads its ABI definitions and
+garage catalog from the bundle, and Client Gateway loads its ABI definitions and
 component class metadata.
 
 [Social](src/social/README.md) owns directed contacts and private conversation
 membership, durable history and legacy per-player subscriptions. Accounts publishes a read-only SQL directory; Social owns its contact
-table and consumes that directory through an anti-corruption adapter. Access
+table and consumes that directory through an anti-corruption adapter. Client Gateway
 consumes Social application operations and adapts native XMPP, both legacy
 messenger RPC versions, presence and committed participant delivery. See [social protocol](docs/social.md).
 
