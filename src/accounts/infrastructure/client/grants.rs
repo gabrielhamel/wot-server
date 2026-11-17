@@ -35,7 +35,7 @@ impl GarageCatalog {
         })
     }
 
-    #[tracing::instrument(name = "accounts.grants.plan_grant", skip_all, fields(wot.context = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
+    #[tracing::instrument(name = "accounts.grants.plan_grant", skip_all, fields(bounded_context = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
     pub fn plan_grant(
         &self,
         mut snapshot: AccountSnapshot,

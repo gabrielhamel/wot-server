@@ -52,7 +52,7 @@ pub(super) struct CreatePlayerRequest {
     password: String,
 }
 
-#[tracing::instrument(name = "admin.players.list", skip_all, fields(wot.context = "admin", input.page = tracing::field::Empty, input.per_page = tracing::field::Empty), err)]
+#[tracing::instrument(name = "admin.players.list", skip_all, fields(bounded_context = "admin", input.page = tracing::field::Empty, input.per_page = tracing::field::Empty), err)]
 pub(super) async fn list(
     State(state): State<AdminState>,
     query: Result<Query<PaginationQuery>, QueryRejection>,
@@ -73,7 +73,7 @@ pub(super) async fn list(
     }))
 }
 
-#[tracing::instrument(name = "admin.players.create", skip_all, fields(wot.context = "admin", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
+#[tracing::instrument(name = "admin.players.create", skip_all, fields(bounded_context = "admin", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
 pub(super) async fn create(
     State(state): State<AdminState>,
     body: Result<Json<CreatePlayerRequest>, JsonRejection>,

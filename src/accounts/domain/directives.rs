@@ -39,7 +39,7 @@ pub struct DirectiveRules {
 }
 
 impl DirectiveRules {
-    #[tracing::instrument(name = "accounts.directives.buy", skip_all, fields(wot.context = "accounts", input.item = item, input.count = count), err)]
+    #[tracing::instrument(name = "accounts.directives.buy", skip_all, fields(bounded_context = "accounts", input.item = item, input.count = count), err)]
     pub fn buy(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -58,7 +58,7 @@ impl DirectiveRules {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.directives.install", skip_all, fields(wot.context = "accounts", input.vehicle = vehicle), err)]
+    #[tracing::instrument(name = "accounts.directives.install", skip_all, fields(bounded_context = "accounts", input.vehicle = vehicle), err)]
     pub fn install(
         &self,
         snapshot: &mut AccountSnapshot,

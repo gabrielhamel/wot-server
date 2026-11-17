@@ -4,7 +4,7 @@ use sqlx::{Postgres, Transaction};
 
 type Tx<'a> = Transaction<'a, Postgres>;
 
-#[tracing::instrument(name = "social.friendships.save", skip_all, fields(wot.context = "social", input.owner = owner, input.peer = peer), err)]
+#[tracing::instrument(name = "social.friendships.save", skip_all, fields(bounded_context = "social", input.owner = owner, input.peer = peer), err)]
 async fn save(tx: &mut Tx<'_>, owner: i64, peer: i64, state: Friendship) -> anyhow::Result<bool> {
     let count: i64 = {
         let statement = "SELECT count(*) FROM social_contacts WHERE owner_id=$1 AND peer_id<>$2";
@@ -36,7 +36,7 @@ async fn save(tx: &mut Tx<'_>, owner: i64, peer: i64, state: Friendship) -> anyh
 }
 
 impl PostgresSocial {
-    #[tracing::instrument(name = "social.friendships.change_friendship", skip_all, fields(wot.context = "social", input.owner = owner, input.peer = peer, input.action = ?action), err)]
+    #[tracing::instrument(name = "social.friendships.change_friendship", skip_all, fields(bounded_context = "social", input.owner = owner, input.peer = peer, input.action = ?action), err)]
     pub(super) async fn change_friendship(
         &self,
         owner: i64,
@@ -159,7 +159,7 @@ impl PostgresSocial {
         Ok(changed)
     }
 
-    #[tracing::instrument(name = "social.friendships.pending_inbound", skip_all, fields(wot.context = "social", input.owner = owner), err)]
+    #[tracing::instrument(name = "social.friendships.pending_inbound", skip_all, fields(bounded_context = "social", input.owner = owner), err)]
     pub(super) async fn pending_inbound(&self, owner: i64) -> anyhow::Result<Vec<Player>> {
         let rows: Vec<(i64, String)> = {
             let statement = "SELECT a.id, a.display_name FROM social_contacts c JOIN account_directory a ON a.id=c.owner_id WHERE c.peer_id=$1 AND c.friendship=1 AND NOT c.ignored AND NOT EXISTS (SELECT 1 FROM social_contacts b WHERE b.owner_id=$1 AND b.peer_id=c.owner_id AND b.ignored) ORDER BY a.id LIMIT 100";

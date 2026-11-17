@@ -10,7 +10,7 @@ for endpoint configuration, resource attributes and console filtering.
 
 Each game command, XMPP stanza and admin request starts an operation trace.
 Spans below it represent meaningful boundaries and decisions in the owning
-bounded context. The custom attribute wot.context identifies access, accounts,
+bounded context. The custom attribute bounded_context identifies access, accounts,
 social, admin, or server composition. Omit architecture
 layer segments (presentation, application, domain, infrastructure) from span names.
 Name spans after the operation and meaningful subsystem instead.
@@ -88,7 +88,7 @@ inside postgresql.query spans.
 
 | Attribute | Meaning |
 | --- | --- |
-| wot.context | Owning context |
+| bounded_context | Owning context |
 | db.system.name | postgresql |
 | db.operation.name | SQL operation such as SELECT, UPDATE, BEGIN or COMMIT |
 | db.query.text | Complete SQL command with parameter placeholders |

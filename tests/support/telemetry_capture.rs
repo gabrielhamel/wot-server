@@ -34,6 +34,7 @@ pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
     };
     assert!(spans.iter().any(|span| {
         span.name == "game.authenticate"
+            && has(span, "bounded_context", "access")
             && has(span, "user.id", &account.to_string())
             && has(span, "user.name", display_name)
             && if login.contains('@') {
@@ -50,6 +51,7 @@ pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
     }));
     assert!(spans.iter().any(|span| {
         span.name == "game.command"
+            && has(span, "bounded_context", "access")
             && has(span, "user.id", &account.to_string())
             && span
                 .attributes
@@ -109,6 +111,14 @@ pub fn assert_operation_traces(account: i64) {
         }
         false
     };
+    assert!(
+        spans.iter().all(|span| {
+            ["access", "accounts", "social", "admin", "server"]
+                .iter()
+                .any(|context| has(span, "bounded_context", context))
+        }),
+        "every exported operation must identify its bounded context"
+    );
     let command = spans
         .iter()
         .find(|root| {
@@ -164,6 +174,7 @@ pub fn assert_operation_traces(account: i64) {
     assert!(spans.iter().any(|span| {
         span.name == "postgresql.query"
             && descendant(span, message)
+            && has(span, "bounded_context", "social")
             && has(
                 span,
                 "db.query.text",

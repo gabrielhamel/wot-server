@@ -31,7 +31,7 @@ Telemetry is a required part of each server change. Follow the
 its traces explain the request, context and layer transitions, persistence,
 outcome and response.
 
-Use stable operation names without architecture layers and set wot.context.
+Use stable operation names without architecture layers and set bounded_context.
 Use available display names for user.name and current
 payload emails for user.email; omit unavailable values and never query solely
 to enrich telemetry. Attach explicit, bounded input attributes and useful result

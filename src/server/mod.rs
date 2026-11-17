@@ -60,12 +60,12 @@ pub async fn run() -> Result<()> {
 
 async fn serve(config: Configuration) -> Result<()> {
     let shutdown = shutdown_signal().context("Listen for shutdown signals")?;
-    let resources = tracing::info_span!("server.load_resources", "wot.context" = "server", "input.resource_dir" = %config.resource_dir.display())
+    let resources = tracing::info_span!("server.load_resources", "bounded_context" = "server", "input.resource_dir" = %config.resource_dir.display())
         .in_scope(|| ResourceBundle::open(&config.resource_dir))?;
     let repository = PostgresAccounts::connect(&config.database_url, config.db_connections)
         .instrument(tracing::info_span!(
             "server.connect_database",
-            "wot.context" = "server",
+            "bounded_context" = "server",
             "input.pool.max_connections" = config.db_connections
         ))
         .await?;

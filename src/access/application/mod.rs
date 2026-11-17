@@ -15,7 +15,7 @@ impl<R: AccountRepository> AccountAccess<R> {
         Self { accounts }
     }
 
-    #[tracing::instrument(name = "access.authenticate", skip_all, fields(wot.context = "access", input.username.bytes = username.len()), err)]
+    #[tracing::instrument(name = "access.authenticate", skip_all, fields(bounded_context = "access", input.username.bytes = username.len()), err)]
     pub async fn authenticate(
         &self,
         username: &str,
@@ -31,22 +31,22 @@ impl<R: AccountRepository> AccountAccess<R> {
         self.accounts.authenticate(username, password).await
     }
 
-    #[tracing::instrument(name = "access.commit_progression", skip_all, fields(wot.context = "access", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
+    #[tracing::instrument(name = "access.commit_progression", skip_all, fields(bounded_context = "access", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
     pub async fn commit_progression(&self, change: &ProgressionChange) -> anyhow::Result<bool> {
         self.accounts.save_progression(change).await
     }
 
-    #[tracing::instrument(name = "access.commit_ammunition", skip_all, fields(wot.context = "access", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
+    #[tracing::instrument(name = "access.commit_ammunition", skip_all, fields(bounded_context = "access", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
     pub async fn commit_ammunition(&self, change: &AmmunitionChange) -> anyhow::Result<bool> {
         self.accounts.save_ammunition(change).await
     }
 
-    #[tracing::instrument(name = "access.snapshot", skip_all, fields(wot.context = "access", input.id = id), err)]
+    #[tracing::instrument(name = "access.snapshot", skip_all, fields(bounded_context = "access", input.id = id), err)]
     pub async fn snapshot(&self, id: i64) -> anyhow::Result<AccountSnapshot> {
         self.accounts.snapshot(id).await
     }
 
-    #[tracing::instrument(name = "access.change_settings", skip_all, fields(wot.context = "access", input.id = id, input.changes.count = changes.len()), err)]
+    #[tracing::instrument(name = "access.change_settings", skip_all, fields(bounded_context = "access", input.id = id, input.changes.count = changes.len()), err)]
     pub async fn change_settings(
         &self,
         id: i64,

@@ -78,7 +78,7 @@ pub(crate) fn router(
     router.layer(middleware::from_fn(set_browser_headers))
 }
 
-#[tracing::instrument(name = "admin.authenticate", skip_all, fields(wot.context = "admin", input.method = request.method().as_str()))]
+#[tracing::instrument(name = "admin.authenticate", skip_all, fields(bounded_context = "admin", input.method = request.method().as_str()))]
 async fn authenticate(State(token): State<AdminToken>, request: Request, next: Next) -> Response {
     let authenticated = request
         .headers()
@@ -103,7 +103,7 @@ async fn prevent_caching(request: Request, next: Next) -> Response {
     response
 }
 
-#[tracing::instrument(name = "admin.http.request", parent = None, skip_all, fields(wot.context = "admin", http.request.method = request.method().as_str(), url.path = request.uri().path(), http.response.status_code = tracing::field::Empty))]
+#[tracing::instrument(name = "admin.http.request", parent = None, skip_all, fields(bounded_context = "admin", http.request.method = request.method().as_str(), url.path = request.uri().path(), http.response.status_code = tracing::field::Empty))]
 async fn set_browser_headers(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
     tracing::Span::current().record(

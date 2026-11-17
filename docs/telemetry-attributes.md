@@ -33,7 +33,7 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`wot.context`](../src/access/application/grants.rs) | Owning bounded context: `access`, `accounts`, `social`, `admin`, or `server`. |
+| [`bounded_context`](../src/access/application/grants.rs) | Owning bounded context: `access`, `accounts`, `social`, `admin`, or `server`. |
 | [`user.id`](../src/access/application/mod.rs) | Local account ID when known: authenticated login, session, account operation, or authenticated XMPP handler. It identifies the affected account, not necessarily an admin caller. Login records it only after authentication succeeds. |
 | [`user.name`](../src/access/infrastructure/gateway/mod.rs) | Nonempty player display name from the account snapshot already returned by successful game authentication. Never copied from the login email; omitted if unavailable. No extra database query. |
 | [`user.email`](../src/access/infrastructure/gateway/mod.rs) | Email-shaped login supplied by the current game authentication payload, recorded after authentication succeeds. Requires nonempty local part, a dot in the domain, and no whitespace; this is a shape check, not proof of ownership. Omitted for non-email logins and requests without an email payload. |

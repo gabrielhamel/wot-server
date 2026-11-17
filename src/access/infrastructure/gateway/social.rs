@@ -62,13 +62,13 @@ fn action(request: i64, action: u8, channel: u32, data: Value) -> ChatActionData
 }
 
 impl Gateway {
-    #[tracing::instrument(name = "access.social.send_chat", skip_all, fields(wot.context = "access", input.request_id = data.requestID, input.action = data.action, output.response = data.actionResponse), err)]
+    #[tracing::instrument(name = "access.social.send_chat", skip_all, fields(bounded_context = "access", input.request_id = data.requestID, input.action = data.action, output.response = data.actionResponse), err)]
     fn send_chat(&mut self, entity: EntityKey<Account>, data: ChatActionData) -> Result<()> {
         self.base.entity(entity)?.onChatAction(data)?;
         Ok(())
     }
 
-    #[tracing::instrument(name = "access.social.social_error", skip_all, fields(wot.context = "access", input.request = request, input.event = event, input.channel = channel, input.response = response), err)]
+    #[tracing::instrument(name = "access.social.social_error", skip_all, fields(bounded_context = "access", input.request = request, input.event = event, input.channel = channel, input.response = response), err)]
     fn social_error(
         &mut self,
         entity: EntityKey<Account>,
@@ -109,7 +109,7 @@ impl Gateway {
             })
     }
 
-    #[tracing::instrument(name = "access.social.social_command", skip_all, fields(wot.context = "access", input.client.address = %client), err)]
+    #[tracing::instrument(name = "access.social.social_command", skip_all, fields(bounded_context = "access", input.client.address = %client), err)]
     pub(super) fn social_command(
         &mut self,
         client: ClientKey,
@@ -313,7 +313,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "access.social.social_job", skip_all, fields(wot.context = "access", input.client.address = %client), err)]
+    #[tracing::instrument(name = "access.social.social_job", skip_all, fields(bounded_context = "access", input.client.address = %client), err)]
     fn social_job(
         &mut self,
         client: ClientKey,
@@ -372,7 +372,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "access.social.social_complete", skip_all, fields(wot.context = "access", input.client.address = %client, output.success = result.is_ok()), err)]
+    #[tracing::instrument(name = "access.social.social_complete", skip_all, fields(bounded_context = "access", input.client.address = %client, output.success = result.is_ok()), err)]
     pub(super) fn social_complete(
         &mut self,
         client: ClientKey,
