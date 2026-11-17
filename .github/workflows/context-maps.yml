@@ -9,6 +9,9 @@ on:
       - 'docs/context-maps/**'
       - '!docs/context-maps/generated/**'
       - 'CONTEXT_MAP.md'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/config.toml'
       - '.github/workflows/context-maps.yml'
   workflow_dispatch:
 
@@ -36,13 +39,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: actions/setup-python@v6
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          python-version: '3.12'
+          cache-bin: false
       - name: Install Graphviz
         run: sudo apt-get update && sudo apt-get install --yes graphviz
       - name: Validate and render context maps
-        run: python docs/context-maps/generate.py
+        run: cargo +stable context-maps
       - uses: actions/upload-artifact@v4
         with:
           name: context-maps

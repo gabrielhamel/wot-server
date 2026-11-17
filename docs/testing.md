@@ -31,7 +31,7 @@ runs for determinism and compiles generated Rust. It is not run in CI because
 the game executable is an external input. See [findings](binary-mapping.md) for
 version boundaries and expected evidence.
 
-Context maps use `python3 docs/context-maps/generate.py` with Java 17+ and
+Context maps use `cargo context-maps` with Java 17+ and
 Graphviz on PATH. The renderer validates CML, checks the pinned Context Mapper
 archive's SHA-256, normalizes randomized graph attributes and publishes SVGs
 only after all models render. The workflow regenerates them on `main`.

@@ -1,5 +1,11 @@
 [workspace]
-members = ["tools/wot-binary-map", "tools/wot-extract", "tools/wot-game-client", "tools/wot-resources"]
+members = [
+    "tools/wot-binary-map",
+    "tools/wot-context-maps",
+    "tools/wot-extract",
+    "tools/wot-game-client",
+    "tools/wot-resources",
+]
 resolver = "3"
 
 [workspace.package]

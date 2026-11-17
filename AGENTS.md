@@ -118,10 +118,9 @@ Follow the context-map system in `docs/references/wg-launcher`:
 - Maintain a root `CONTEXT_MAP.md` displaying maps for production crates.
 - Keep editable Context Mapper CML models in `docs/context-maps/` and rendered
   SVG diagrams in `docs/context-maps/generated/`.
-- Reuse and adapt `docs/context-maps/generate.py` and
-  `.github/workflows/context-maps.yml` from the reference project when setting
-  up rendering and automation. Preserve model validation, pinned tooling with
-  checksum verification, and deterministic rendering.
+- Use `cargo context-maps` to render context maps. The Rust tool and
+  `.github/workflows/context-maps.yml` preserve the reference project's model
+  validation, pinned tooling with checksum verification, and deterministic rendering.
 - Describe actual context responsibilities, upstream/downstream relationships,
   integration contracts, and applicable DDD integration patterns. Distinguish
   implemented boundaries from planned ones; do not present a target design as

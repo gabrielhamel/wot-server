@@ -43,7 +43,8 @@ own workspace package. It reads the external executable and produces offline
 research artifacts. Catalog, Battles and Battle Allocation are future candidate
 boundaries and do not appear as implemented contexts.
 
-Editable models and the deterministic, checksummed renderer live in
-[docs/context-maps](docs/context-maps). Each context README documents its actual
+Editable models live in [docs/context-maps](docs/context-maps). Run
+`cargo context-maps` to render them with the
+[checksummed Rust tool](tools/wot-context-maps/README.md). Each context README documents its actual
 layers and ubiquitous language; [server guide](docs/server.md) maps runtime sources
 and integration contracts. The existing workflow validates and regenerates SVGs.
