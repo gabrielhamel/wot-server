@@ -29,6 +29,7 @@ const HIRE_AND_SEAT: i16 = 309;
 const RESTORE: i16 = 10015;
 
 pub(super) struct QueuedCrewCommand {
+    pub parent: tracing::Span,
     pub request_id: i16,
     pub command: ProgressionCommand,
     pub shop_revision: Option<i64>,

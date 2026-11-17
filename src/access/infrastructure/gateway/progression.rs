@@ -38,6 +38,7 @@ enum Outcome {
 }
 
 impl Gateway {
+    #[tracing::instrument(name = "access.infrastructure.gateway.change_progression", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.request_id = request_id, input.has_command = command.is_some()), err)]
     pub(super) fn change_progression(
         &mut self,
         client: ClientKey,
@@ -75,6 +76,7 @@ impl Gateway {
             session
                 .crew_queue
                 .push_back(super::crew::QueuedCrewCommand {
+                    parent: tracing::Span::current(),
                     request_id,
                     command,
                     shop_revision,
@@ -98,9 +100,9 @@ impl Gateway {
         let catalog = self.catalog.clone();
         let accounts = self.accounts.clone();
         let sender = self.sender.clone();
-        self.runtime.spawn(async move {
+        self.runtime.spawn(tracing::Instrument::in_current_span(async move {
             let result = async {
-                let projection = tokio::task::spawn_blocking(move || {
+                let projection = tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
                     let change = match catalog.plan_progression(previous.clone(), command.clone()) {
                         Ok(change) => change,
                         Err(error) => {
@@ -115,7 +117,7 @@ impl Gateway {
                     let response = catalog.progression_response(&previous, &change, &command);
                     let prepared = catalog.prepare(change.snapshot.clone())?;
                     Ok::<_, anyhow::Error>(Ok(Some((change, prepared, diff, response))))
-                })
+                }))
                 .await??;
                 let (change, prepared, diff, response) = match projection {
                     Ok(Some(values)) => values,
@@ -128,21 +130,22 @@ impl Gateway {
                 Ok(Outcome::Committed {prepared:Box::new(prepared),diff,response})
             }
             .await;
-            tokio::task::spawn_blocking(move || {
+            tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
                 let _permit = permit;
-                let _ = sender.send(super::Completion::Progression(Completion {
+                let _ = sender.send(super::TracedCompletion::new(super::Completion::Progression(Completion {
                     client,
                     account_id,
                     request_id,
                     result,
-                }));
-            })
+                })));
+            }))
             .await
             .ok();
-        });
+        }));
         Ok(())
     }
 
+    #[tracing::instrument(name = "access.infrastructure.gateway.progression_response", skip_all, fields(code.layer = "infrastructure", wot.context = "access", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty))]
     pub(super) fn complete_progression(&mut self, completion: Completion) {
         let Completion {
             client,
@@ -150,6 +153,16 @@ impl Gateway {
             request_id,
             result,
         } = completion;
+        tracing::Span::current().record(
+            "output.outcome",
+            match &result {
+                Ok(Outcome::Committed { .. }) => "committed",
+                Ok(Outcome::Unchanged) => "unchanged",
+                Ok(Outcome::Rejected(_)) => "rejected",
+                Ok(Outcome::Stale) => "stale",
+                Err(_) => "error",
+            },
+        );
         self.pending_writes.remove(&account_id);
         let Some(session) = self.sessions.get_mut(&client) else {
             return;
@@ -198,13 +211,15 @@ impl Gateway {
             }
             session.crew_queue.pop_front()
         }) {
-            if let Err(error) = self.change_progression(
-                client,
-                entity,
-                queued.request_id,
-                Some(queued.command),
-                queued.shop_revision,
-            ) {
+            if let Err(error) = queued.parent.in_scope(|| {
+                self.change_progression(
+                    client,
+                    entity,
+                    queued.request_id,
+                    Some(queued.command),
+                    queued.shop_revision,
+                )
+            }) {
                 tracing::error!(%error, account_id, "Start queued crew command failed");
             }
         }

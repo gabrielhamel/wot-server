@@ -39,6 +39,7 @@ pub struct DirectiveRules {
 }
 
 impl DirectiveRules {
+    #[tracing::instrument(name = "accounts.domain.directives.buy", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.item = item, input.count = count), err)]
     pub fn buy(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -57,6 +58,7 @@ impl DirectiveRules {
         Ok(())
     }
 
+    #[tracing::instrument(name = "accounts.domain.directives.install", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.vehicle = vehicle), err)]
     pub fn install(
         &self,
         snapshot: &mut AccountSnapshot,

@@ -1,6 +1,7 @@
 use super::*;
 
 impl Gateway {
+    #[tracing::instrument(name = "mercury.response.resource", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.request_id = request_id, output.bytes = data.len()), err)]
     fn stream(
         &mut self,
         client: ClientKey,
@@ -21,6 +22,7 @@ impl Gateway {
         Ok(())
     }
 
+    #[tracing::instrument(name = "access.infrastructure.commands.command", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.request_id = tracing::field::Empty, input.command_id = tracing::field::Empty, input.arg0 = tracing::field::Empty, input.arg1 = tracing::field::Empty, input.arg2 = tracing::field::Empty, input.arg3 = tracing::field::Empty, input.args.count = tracing::field::Empty), err)]
     pub(super) fn command(
         &mut self,
         client: ClientKey,
@@ -30,6 +32,56 @@ impl Gateway {
         let Some(session) = self.sessions.get(&client) else {
             return Ok(());
         };
+        let span = tracing::Span::current();
+        match &request {
+            AccountBase::DoCmdInt3 {
+                request_id,
+                cmd,
+                arg0,
+                arg1,
+                arg2,
+            } => {
+                span.record("input.request_id", request_id);
+                span.record("input.command_id", cmd);
+                span.record("input.arg0", arg0);
+                span.record("input.arg1", arg1);
+                span.record("input.arg2", arg2);
+            }
+            AccountBase::DoCmdInt4 {
+                request_id,
+                cmd,
+                arg0,
+                arg1,
+                arg2,
+                arg3,
+            } => {
+                span.record("input.request_id", request_id);
+                span.record("input.command_id", cmd);
+                span.record("input.arg0", arg0);
+                span.record("input.arg1", arg1);
+                span.record("input.arg2", arg2);
+                span.record("input.arg3", arg3);
+            }
+            AccountBase::DoCmdInt {
+                request_id,
+                cmd,
+                arg,
+            } => {
+                span.record("input.request_id", request_id);
+                span.record("input.command_id", cmd);
+                span.record("input.arg0", arg);
+            }
+            AccountBase::DoCmdIntArr {
+                request_id,
+                cmd,
+                args,
+            } => {
+                span.record("input.request_id", request_id);
+                span.record("input.command_id", cmd);
+                span.record("input.args.count", args.len());
+            }
+            _ => {}
+        }
         let current_revision = session.account.snapshot.revision;
         let account_id = session.account.snapshot.id;
         let cache = session.account.cache.clone();
@@ -311,24 +363,32 @@ impl Gateway {
                 let accounts = self.accounts.clone();
                 let sender = self.sender.clone();
                 let catalog = self.catalog.clone();
-                self.runtime.spawn(async move {
-                    let result = async {
-                        let snapshot = accounts.change_settings(id, changes.clone()).await?;
-                        tokio::task::spawn_blocking(move || catalog.prepare(snapshot)).await?
-                    }
-                    .await;
-                    tokio::task::spawn_blocking(move || {
-                        let _ = sender.send(Completion::Settings {
-                            client,
-                            account_id: id,
-                            request_id,
-                            changes,
-                            result,
-                        });
-                    })
-                    .await
-                    .ok();
-                });
+                self.runtime
+                    .spawn(tracing::Instrument::in_current_span(async move {
+                        let result = async {
+                            let snapshot = accounts.change_settings(id, changes.clone()).await?;
+                            tokio::task::spawn_blocking(crate::observability::in_current_span(
+                                move || catalog.prepare(snapshot),
+                            ))
+                            .await?
+                        }
+                        .await;
+                        tokio::task::spawn_blocking(crate::observability::in_current_span(
+                            move || {
+                                let _ = sender.send(super::TracedCompletion::new(
+                                    Completion::Settings {
+                                        client,
+                                        account_id: id,
+                                        request_id,
+                                        changes,
+                                        result,
+                                    },
+                                ));
+                            },
+                        ))
+                        .await
+                        .ok();
+                    }));
             }
             AccountBase::DoCmdInt2 {
                 request_id,

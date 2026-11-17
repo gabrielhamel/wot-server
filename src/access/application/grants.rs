@@ -24,6 +24,7 @@ pub enum GrantRequestError {
 pub(crate) type GrantResult = Result<(AccountSnapshot, GrantDelivery), GrantRequestError>;
 
 pub(crate) struct GrantRequest {
+    pub parent: tracing::Span,
     pub account_id: i64,
     pub grant: PlayerGrant,
     pub reply: oneshot::Sender<GrantResult>,
@@ -40,10 +41,12 @@ impl PlayerGrants {
         (Self { sender }, receiver)
     }
 
+    #[tracing::instrument(name = "access.application.grants.grant", skip_all, fields(code.layer = "application", wot.context = "access", input.account_id = account_id, input.grant = ?grant), err)]
     pub async fn grant(&self, account_id: i64, grant: PlayerGrant) -> GrantResult {
         let (reply, result) = oneshot::channel();
         self.sender
             .try_send(GrantRequest {
+                parent: tracing::Span::current(),
                 account_id,
                 grant,
                 reply,

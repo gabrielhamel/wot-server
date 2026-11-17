@@ -25,9 +25,10 @@ delivers committed native messages over XMPP and legacy events through Account. 
 | `infrastructure/bootstrap.rs` | Client bootstrap settings, account-specific GUI context and placeholder web-service token responses. |
 | `infrastructure/endpoint.rs` | Resolve the BaseApp handoff: loopback for local peers when bound, then the configured destination or route to each client. |
 
-The gateway emits authentication spans with verified account identity and
-bounded client metadata, plus Account RPC dispatch spans. See the
-[telemetry attribute contract](../../docs/server.md#logging-and-telemetry).
+Access traces game commands, XMPP requests, worker scheduling, completion
+handling and response delivery. It retains request parents across the grant,
+crew, completion and XMPP output queues. Infrastructure spans identify
+code.layer and wot.context. See the [telemetry contract](../../docs/telemetry.md).
 
 The [server composition](../server/mod.rs) runs LoginApp and BaseApp together. Access owns the UDP protocol
 implementation and shares the [client format codecs](../client_formats/README.md)

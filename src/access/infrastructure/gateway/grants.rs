@@ -26,10 +26,19 @@ struct CommittedGrant {
 impl Gateway {
     pub(super) fn start_grant(&mut self, request: GrantRequest) {
         let GrantRequest {
+            parent,
             account_id,
             grant,
             reply,
         } = request;
+        let _request = parent.enter();
+        let span = tracing::info_span!(
+            "access.infrastructure.gateway.grant",
+            "code.layer" = "infrastructure",
+            "wot.context" = "access",
+            "user.id" = account_id
+        );
+        let _grant = span.enter();
         if self.pending_writes.contains(&account_id) {
             let _ = reply.send(Err(GrantRequestError::Busy));
             return;
@@ -49,46 +58,52 @@ impl Gateway {
         let accounts = self.accounts.clone();
         let catalog = self.catalog.clone();
         let sender = self.sender.clone();
-        self.runtime.spawn(async move {
-            let result = async {
-                let previous = accounts.snapshot(account_id).await.map_err(|error| {
-                    if error.is::<AccountNotFound>() {
-                        GrantRequestError::NotFound
-                    } else {
-                        error.into()
+        self.runtime
+            .spawn(tracing::Instrument::in_current_span(async move {
+                let result = async {
+                    let previous = accounts.snapshot(account_id).await.map_err(|error| {
+                        if error.is::<AccountNotFound>() {
+                            GrantRequestError::NotFound
+                        } else {
+                            error.into()
+                        }
+                    })?;
+                    let (change, prepared, diff) = tokio::task::spawn_blocking(
+                        crate::observability::in_current_span(move || {
+                            let change = catalog.plan_grant(previous.clone(), grant)?;
+                            let diff = catalog.grant_diff(&previous, &change, grant)?;
+                            let prepared = catalog.prepare(change.snapshot.clone())?;
+                            Ok::<_, GrantRequestError>((change, prepared, diff))
+                        }),
+                    )
+                    .await
+                    .map_err(anyhow::Error::from)??;
+                    if !accounts.commit_progression(&change).await? {
+                        return Err(GrantRequestError::Busy);
                     }
-                })?;
-                let (change, prepared, diff) = tokio::task::spawn_blocking(move || {
-                    let change = catalog.plan_grant(previous.clone(), grant)?;
-                    let diff = catalog.grant_diff(&previous, &change, grant)?;
-                    let prepared = catalog.prepare(change.snapshot.clone())?;
-                    Ok::<_, GrantRequestError>((change, prepared, diff))
-                })
-                .await
-                .map_err(anyhow::Error::from)??;
-                if !accounts.commit_progression(&change).await? {
-                    return Err(GrantRequestError::Busy);
+                    Ok(CommittedGrant {
+                        previous_revision: change.previous_revision,
+                        prepared,
+                        diff,
+                    })
                 }
-                Ok(CommittedGrant {
-                    previous_revision: change.previous_revision,
-                    prepared,
-                    diff,
-                })
-            }
-            .await;
-            tokio::task::spawn_blocking(move || {
-                let _permit = permit;
-                let _ = sender.send(GatewayCompletion::Grant(Completion {
-                    account_id,
-                    reply,
-                    result,
-                }));
-            })
-            .await
-            .ok();
-        });
+                .await;
+                tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+                    let _permit = permit;
+                    let _ = sender.send(super::TracedCompletion::new(GatewayCompletion::Grant(
+                        Completion {
+                            account_id,
+                            reply,
+                            result,
+                        },
+                    )));
+                }))
+                .await
+                .ok();
+            }));
     }
 
+    #[tracing::instrument(name = "access.infrastructure.gateway.grant_response", skip_all, fields(code.layer = "infrastructure", wot.context = "access", user.id = completion.account_id, output.success = completion.result.is_ok()))]
     pub(super) fn complete_grant(&mut self, completion: Completion) {
         let Completion {
             account_id,
@@ -151,22 +166,25 @@ impl Gateway {
         let accounts = self.accounts.clone();
         let catalog = self.catalog.clone();
         let sender = self.sender.clone();
-        self.runtime.spawn(async move {
-            let _permit = permit;
-            let result = async {
-                let snapshot = accounts.snapshot(account_id).await?;
-                tokio::task::spawn_blocking(move || catalog.prepare(snapshot))
+        self.runtime
+            .spawn(tracing::Instrument::in_current_span(async move {
+                let _permit = permit;
+                let result = async {
+                    let snapshot = accounts.snapshot(account_id).await?;
+                    tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+                        catalog.prepare(snapshot)
+                    }))
                     .await?
                     .map(Some)
-            }
-            .await;
-            let _ = sender.try_send(GatewayCompletion::Login {
-                addr,
-                generation,
-                grant_epoch,
-                blowfish,
-                result,
-            });
-        });
+                }
+                .await;
+                let _ = sender.try_send(super::TracedCompletion::new(GatewayCompletion::Login {
+                    addr,
+                    generation,
+                    grant_epoch,
+                    blowfish,
+                    result,
+                }));
+            }));
     }
 }

@@ -18,6 +18,7 @@ impl PostgresSocial {
 }
 
 impl SocialRepository for PostgresSocial {
+    #[tracing::instrument(name = "social.infrastructure.search", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.prefix.bytes = prefix.len()), err)]
     async fn search(
         &self,
         prefix: &str,
@@ -30,17 +31,35 @@ impl SocialRepository for PostgresSocial {
                 .replace('%', "\\%")
                 .replace('_', "\\_")
         );
-        let rows: Vec<(i64, String)> = sqlx::query_as("SELECT id, display_name FROM account_directory WHERE lower(display_name) LIKE lower($1) AND ($2::bigint[] IS NULL OR id=ANY($2)) ORDER BY lower(display_name), id LIMIT 50")
-            .bind(pattern).bind(online_ids).fetch_all(&self.pool).await?;
+        let rows: Vec<(i64, String)> = {
+            let statement = "SELECT id, display_name FROM account_directory WHERE lower(display_name) LIKE lower($1) AND ($2::bigint[] IS NULL OR id=ANY($2)) ORDER BY lower(display_name), id LIMIT 50";
+            crate::observability::database(
+                "social",
+                statement,
+                sqlx::query_as(statement)
+                    .bind(pattern)
+                    .bind(online_ids)
+                    .fetch_all(&self.pool),
+            )
+            .await
+        }?;
         Ok(rows
             .into_iter()
             .map(|(id, name)| Player { id, name })
             .collect())
     }
 
+    #[tracing::instrument(name = "social.infrastructure.roster", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner), err)]
     async fn roster(&self, owner: i64) -> anyhow::Result<Vec<Contact>> {
-        let rows: Vec<(i64, String, bool, i16)> = sqlx::query_as("SELECT a.id, a.display_name, c.ignored, c.friendship FROM social_contacts c JOIN account_directory a ON a.id=c.peer_id WHERE c.owner_id=$1 ORDER BY a.id LIMIT 300")
-            .bind(owner).fetch_all(&self.pool).await?;
+        let rows: Vec<(i64, String, bool, i16)> = {
+            let statement = "SELECT a.id, a.display_name, c.ignored, c.friendship FROM social_contacts c JOIN account_directory a ON a.id=c.peer_id WHERE c.owner_id=$1 ORDER BY a.id LIMIT 300";
+            crate::observability::database(
+                "social",
+                statement,
+                sqlx::query_as(statement).bind(owner).fetch_all(&self.pool),
+            )
+            .await
+        }?;
         Ok(rows
             .into_iter()
             .map(|(id, name, ignored, friendship)| Contact {
@@ -55,48 +74,93 @@ impl SocialRepository for PostgresSocial {
             .collect())
     }
 
+    #[tracing::instrument(name = "social.infrastructure.change", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.peer = peer, input.change = ?change), err)]
     async fn change(&self, owner: i64, peer: i64, change: ContactChange) -> anyhow::Result<()> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = crate::observability::database("social", "BEGIN", self.pool.begin()).await?;
         if matches!(change, ContactChange::Ignore) {
             for id in [owner.min(peer), owner.max(peer)] {
-                sqlx::query("SELECT pg_advisory_xact_lock($1)")
-                    .bind(id)
-                    .execute(&mut *tx)
-                    .await?;
+                {
+                    let statement = "SELECT pg_advisory_xact_lock($1)";
+                    crate::observability::database(
+                        "social",
+                        statement,
+                        sqlx::query(statement).bind(id).execute(&mut *tx),
+                    )
+                    .await
+                }?;
             }
-            sqlx::query("UPDATE social_contacts SET friendship=0 WHERE owner_id=$1 AND peer_id=$2 AND NOT ignored")
-                .bind(peer).bind(owner).execute(&mut *tx).await?;
+            {
+                let statement = "UPDATE social_contacts SET friendship=0 WHERE owner_id=$1 AND peer_id=$2 AND NOT ignored";
+                crate::observability::database(
+                    "social",
+                    statement,
+                    sqlx::query(statement)
+                        .bind(peer)
+                        .bind(owner)
+                        .execute(&mut *tx),
+                )
+                .await
+            }?;
         } else {
-            sqlx::query("SELECT pg_advisory_xact_lock($1)")
-                .bind(owner)
-                .execute(&mut *tx)
-                .await?;
+            {
+                let statement = "SELECT pg_advisory_xact_lock($1)";
+                crate::observability::database(
+                    "social",
+                    statement,
+                    sqlx::query(statement).bind(owner).execute(&mut *tx),
+                )
+                .await
+            }?;
         }
         if matches!(change, ContactChange::Friend | ContactChange::Ignore) {
             let ignored = matches!(change, ContactChange::Ignore);
-            let count: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM social_contacts WHERE owner_id=$1 AND peer_id<>$2",
-            )
-            .bind(owner)
-            .bind(peer)
-            .fetch_one(&mut *tx)
-            .await?;
+            let count: i64 = {
+                let statement =
+                    "SELECT count(*) FROM social_contacts WHERE owner_id=$1 AND peer_id<>$2";
+                crate::observability::database(
+                    "social",
+                    statement,
+                    sqlx::query_scalar(statement)
+                        .bind(owner)
+                        .bind(peer)
+                        .fetch_one(&mut *tx),
+                )
+                .await
+            }?;
             anyhow::ensure!(count < 300, "Contact limit reached");
-            sqlx::query("INSERT INTO social_contacts(owner_id,peer_id,ignored) VALUES($1,$2,$3) ON CONFLICT(owner_id,peer_id) DO UPDATE SET ignored=EXCLUDED.ignored, friendship=EXCLUDED.friendship")
-                .bind(owner).bind(peer).bind(ignored).execute(&mut *tx).await?;
+            {
+                let statement = "INSERT INTO social_contacts(owner_id,peer_id,ignored) VALUES($1,$2,$3) ON CONFLICT(owner_id,peer_id) DO UPDATE SET ignored=EXCLUDED.ignored, friendship=EXCLUDED.friendship";
+                crate::observability::database(
+                    "social",
+                    statement,
+                    sqlx::query(statement)
+                        .bind(owner)
+                        .bind(peer)
+                        .bind(ignored)
+                        .execute(&mut *tx),
+                )
+                .await
+            }?;
         } else {
-            sqlx::query(
-                "DELETE FROM social_contacts WHERE owner_id=$1 AND peer_id=$2 AND ignored=$3",
-            )
-            .bind(owner)
-            .bind(peer)
-            .bind(matches!(change, ContactChange::RemoveIgnored))
-            .execute(&mut *tx)
-            .await?;
+            {
+                let statement =
+                    "DELETE FROM social_contacts WHERE owner_id=$1 AND peer_id=$2 AND ignored=$3";
+                crate::observability::database(
+                    "social",
+                    statement,
+                    sqlx::query(statement)
+                        .bind(owner)
+                        .bind(peer)
+                        .bind(matches!(change, ContactChange::RemoveIgnored))
+                        .execute(&mut *tx),
+                )
+                .await
+            }?;
         }
-        tx.commit().await?;
+        crate::observability::database("social", "COMMIT", tx.commit()).await?;
         Ok(())
     }
+    #[tracing::instrument(name = "social.infrastructure.friendship", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.peer = peer, input.action = ?action), err)]
     async fn friendship(
         &self,
         owner: i64,
@@ -106,24 +170,46 @@ impl SocialRepository for PostgresSocial {
         self.change_friendship(owner, peer, action).await
     }
 
+    #[tracing::instrument(name = "social.infrastructure.inbound_requests", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner), err)]
     async fn inbound_requests(&self, owner: i64) -> anyhow::Result<Vec<Player>> {
         self.pending_inbound(owner).await
     }
 
+    #[tracing::instrument(name = "social.infrastructure.observers", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.player = player), err)]
     async fn observers(&self, player: i64, online: &[i64]) -> anyhow::Result<Vec<i64>> {
-        Ok(sqlx::query_scalar("SELECT owner_id FROM social_contacts WHERE peer_id=$1 AND NOT ignored AND friendship=2 AND owner_id=ANY($2) LIMIT 256").bind(player).bind(online).fetch_all(&self.pool).await?)
+        Ok({
+            let statement = "SELECT owner_id FROM social_contacts WHERE peer_id=$1 AND NOT ignored AND friendship=2 AND owner_id=ANY($2) LIMIT 256";
+            crate::observability::database(
+                "social",
+                statement,
+                sqlx::query_scalar(statement)
+                    .bind(player)
+                    .bind(online)
+                    .fetch_all(&self.pool),
+            )
+            .await
+        }?)
     }
+    #[tracing::instrument(name = "social.infrastructure.player", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.id = id), err)]
     async fn player(&self, id: i64) -> anyhow::Result<Option<Player>> {
-        let row: Option<(i64, String)> =
-            sqlx::query_as("SELECT id,display_name FROM account_directory WHERE id=$1")
-                .bind(id)
-                .fetch_optional(&self.pool)
-                .await?;
+        let row: Option<(i64, String)> = {
+            let statement = "SELECT id,display_name FROM account_directory WHERE id=$1";
+            crate::observability::database(
+                "social",
+                statement,
+                sqlx::query_as(statement)
+                    .bind(id)
+                    .fetch_optional(&self.pool),
+            )
+            .await
+        }?;
         Ok(row.map(|(id, name)| Player { id, name }))
     }
+    #[tracing::instrument(name = "social.infrastructure.open", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.peer = peer), err)]
     async fn open(&self, owner: i64, peer: i64) -> anyhow::Result<PrivateConversation> {
         self.open_conversation(owner, peer).await
     }
+    #[tracing::instrument(name = "social.infrastructure.send", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.conversation = conversation, input.text.bytes = text.len()), err)]
     async fn send(
         &self,
         owner: i64,
@@ -132,9 +218,11 @@ impl SocialRepository for PostgresSocial {
     ) -> anyhow::Result<PrivateConversation> {
         self.send_message(owner, conversation, text).await
     }
+    #[tracing::instrument(name = "social.infrastructure.close", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.conversation = conversation), err)]
     async fn close(&self, owner: i64, conversation: u32) -> anyhow::Result<()> {
         self.close_conversation(owner, conversation).await
     }
+    #[tracing::instrument(name = "social.infrastructure.restore", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner), err)]
     async fn restore(&self, owner: i64) -> anyhow::Result<Vec<PrivateConversation>> {
         self.restore_conversations(owner).await
     }

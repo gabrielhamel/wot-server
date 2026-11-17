@@ -86,6 +86,20 @@ struct Session {
     message_next: Instant,
 }
 
+struct TracedCompletion {
+    parent: tracing::Span,
+    value: Completion,
+}
+
+impl TracedCompletion {
+    fn new(value: Completion) -> Self {
+        Self {
+            parent: tracing::Span::current(),
+            value,
+        }
+    }
+}
+
 enum Completion {
     Social {
         client: ClientKey,
@@ -128,8 +142,8 @@ pub struct Gateway {
     grant_epoch: u64,
     grants: tokio::sync::mpsc::Receiver<crate::access::application::grants::GrantRequest>,
     grant_handle: crate::access::PlayerGrants,
-    completions: mpsc::Receiver<Completion>,
-    sender: mpsc::SyncSender<Completion>,
+    completions: mpsc::Receiver<TracedCompletion>,
+    sender: mpsc::SyncSender<TracedCompletion>,
     workers: Arc<Semaphore>,
     runtime: Handle,
 }
@@ -210,7 +224,8 @@ impl Gateway {
         let mut tick = Instant::now() + Duration::from_millis(100);
         while !stop.load(Ordering::Relaxed) {
             while let Ok(completion) = self.completions.try_recv() {
-                self.complete(completion);
+                let TracedCompletion { parent, value } = completion;
+                parent.in_scope(|| self.complete(value));
             }
             if let Ok(request) = self.grants.try_recv() {
                 self.start_grant(request);
@@ -241,7 +256,9 @@ impl Gateway {
                     let command_span = if let MethodCall::Known { name, .. } = &event.call {
                         self.sessions.get(&event.client).map(|session| {
                             tracing::info_span!(
-                                "game.command",
+                                parent: None, "game.command",
+                                "code.layer" = "infrastructure",
+                                "wot.context" = "access",
                                 "user.id" = %session.account.snapshot.id,
                                 "rpc.method" = %name,
                                 "network.protocol.name" = "mercury",
@@ -327,7 +344,9 @@ impl Gateway {
                 .collect::<String>()
         });
         let span = tracing::info_span!(
-            "game.authenticate",
+            parent: None, "game.authenticate",
+            "code.layer" = "infrastructure",
+            "wot.context" = "access",
             outcome = tracing::field::Empty,
             "user.id" = tracing::field::Empty,
             "user.name" = tracing::field::Empty,
@@ -356,9 +375,11 @@ impl Gateway {
                     {
                         span.record("user.email", username.as_str());
                     }
-                    tokio::task::spawn_blocking(move || catalog.prepare(snapshot))
-                        .await?
-                        .map(Some)
+                    tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+                        catalog.prepare(snapshot)
+                    }))
+                    .await?
+                    .map(Some)
                 }
                 .await;
                 tracing::Span::current().record(
@@ -369,13 +390,13 @@ impl Gateway {
                         Err(_) => "error",
                     },
                 );
-                let _ = sender.try_send(Completion::Login {
+                let _ = sender.try_send(TracedCompletion::new(Completion::Login {
                     addr,
                     generation,
                     grant_epoch,
                     blowfish: Arc::new(blowfish),
                     result,
-                });
+                }));
                 drop(permit);
             }
             .instrument(span),
@@ -565,6 +586,7 @@ impl Gateway {
         }
     }
 
+    #[tracing::instrument(name = "access.infrastructure.enable", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.client.address = %client), err)]
     fn enable(&mut self, client: ClientKey) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());

@@ -120,6 +120,40 @@ Keep the root README focused on getting started and use `docs/README.md` as the
 documentation navigation hub. Keep architectural explanations, protocol
 findings, contributor guidance, and testing details in their relevant guides.
 
+## Required telemetry
+
+Telemetry is part of every server feature and fix. Instrumentation and trace
+verification are required implementation work and merge criteria. Maintain the
+[telemetry contract](docs/telemetry.md) together with the code.
+
+- Trace each incoming game command, XMPP stanza and admin request through its
+  meaningful context and layer boundaries, database work and response or
+  delivery. Use stable operation names. Set wot.context and code.layer
+  (presentation, application, domain, infrastructure) on each span. Instrument
+  domain decisions and use cases at useful granularity.
+- Each operation span must carry bounded, explicit input or payload attributes
+  explaining what it processed, such as account/entity IDs, command/request IDs,
+  revisions, enum choices, counts and byte lengths. Record useful output counts,
+  rejection reasons and delivery outcomes. Use skip_all and select fields explicitly.
+- Keep one causal trace across async calls, Tokio tasks, blocking work, worker
+  queues, completion channels and outgoing delivery queues. Capture the current
+  span before crossing a boundary and retain it until work and response complete.
+  Instrument futures rather than holding entered guards across awaits.
+  Queued operation durations must include outstanding work.
+- Wrap every runtime PostgreSQL command and transaction boundary with the shared
+  database tracing adapter. Record complete SQL text in db.query.text, plus
+  database system, operation, owning context and error status. Preserve parameter
+  placeholders. Keep passwords, hashes, keys, auth tokens, connection credentials
+  and raw credential envelopes out of attributes. Represent message and binary
+  payloads with sizes and identifiers through an explicit allowlist.
+- Mark failed operations with span error status and a diagnostic event. Record
+  expected rejections, conflicts and successful no-op outcomes distinctly.
+  Correlate logs with their current span. Console severity must not suppress
+  operational traces sent to the collector.
+- Add regression coverage inspecting exported parent IDs and attributes through
+  the affected entry point, including relevant failures. Verify a complete
+  request-to-response trace for changed workflows and record evidence in the PR.
+
 ## Rust safety and server resilience
 
 The server's Rust code must be 100% safe Rust: do not introduce `unsafe` code.

@@ -20,3 +20,8 @@ published account and catalog data and submits grants through the
 
 The [admin guide](../../docs/admin.md) describes configuration and the HTTP
 contract.
+
+Admin HTTP traces cover method/path/status, presentation handlers, Accounts
+application/repository operations and Access grant delivery. The grant queue
+preserves the HTTP parent through gateway execution and response. See the
+[telemetry contract](../../docs/telemetry.md).

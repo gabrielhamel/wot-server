@@ -76,3 +76,9 @@ creation hashes the password with Argon2id and commits the identity and starter
 garage in one PostgreSQL transaction.
 Admin also reads snapshots and vehicle catalog entries. Access uses the same
 revision-checked progression transaction for player grants and garage purchases.
+
+Accounts emits application, domain decision, catalog and repository spans.
+Repository queries and transaction boundaries use the shared database tracing
+adapter with complete parameterized SQL and error status. Catalog work retains
+the caller's parent across blocking tasks. See the
+[telemetry contract](../../docs/telemetry.md).

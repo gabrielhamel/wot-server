@@ -389,6 +389,7 @@ async fn exercise_garage(encrypted_login: bool) {
     worker.await.unwrap().unwrap();
     if result.is_ok() {
         telemetry_capture::assert_player_spans(a.id, &first);
+        telemetry_capture::assert_layered_traces(b.id);
     }
     let fresh_social = wot_server::social::Social::new(wot_server::social::PostgresSocial::new(
         PostgresAccounts::connect(&url, 2)
@@ -676,4 +677,12 @@ async fn exercise_garage(encrypted_login: bool) {
         .await
         .unwrap();
     result.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "Requires WG_TEST_DATABASE_URL; closes an isolated pool to verify database error telemetry"]
+async fn database_failure_records_sql_and_error_status() {
+    telemetry_capture::exporter();
+    telemetry_capture::assert_database_failure(&std::env::var("WG_TEST_DATABASE_URL").unwrap())
+        .await;
 }

@@ -36,16 +36,22 @@ pub async fn run() -> Result<()> {
     let config = Configuration::load(&path).with_context(|| format!("Load {}", path.display()))?;
     let level = options.log_level.unwrap_or(config.log_level);
     let resource_dir = config.resource_dir.clone();
-    let telemetry = tokio::task::spawn_blocking(move || logging::initialize(level, &resource_dir))
-        .await
-        .context("Join logging initialization")??;
+    let telemetry = tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+        logging::initialize(level, &resource_dir)
+    }))
+    .await
+    .context("Join logging initialization")??;
     tracing::info!(configuration = %path.display(), "Starting server");
     let result = serve(config).await;
     if let Err(error) = &result {
         tracing::error!(error = %format!("{error:#}"), "Server stopped with an error");
     }
     if let Some(telemetry) = telemetry
-        && let Err(error) = tokio::task::spawn_blocking(move || telemetry.shutdown()).await
+        && let Err(error) =
+            tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+                telemetry.shutdown()
+            }))
+            .await
     {
         tracing::warn!(%error, "OpenTelemetry shutdown task failed");
     }
@@ -54,20 +60,30 @@ pub async fn run() -> Result<()> {
 
 async fn serve(config: Configuration) -> Result<()> {
     let shutdown = shutdown_signal().context("Listen for shutdown signals")?;
-    let resources = tracing::info_span!("server.load_resources")
+    let resources = tracing::info_span!("server.load_resources", "code.layer" = "infrastructure", "wot.context" = "server", "input.resource_dir" = %config.resource_dir.display())
         .in_scope(|| ResourceBundle::open(&config.resource_dir))?;
     let repository = PostgresAccounts::connect(&config.database_url, config.db_connections)
-        .instrument(tracing::info_span!("server.connect_database"))
+        .instrument(tracing::info_span!(
+            "server.connect_database",
+            "code.layer" = "infrastructure",
+            "wot.context" = "server",
+            "input.pool.max_connections" = config.db_connections
+        ))
         .await?;
     let keys = repository.catalog_keys().await?;
     let catalog_resources = resources.clone();
     let catalog = Arc::new(
-        tokio::task::spawn_blocking(move || GarageCatalog::load(catalog_resources, &keys))
-            .await??,
+        tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+            GarageCatalog::load(catalog_resources, &keys)
+        }))
+        .await??,
     );
     let key_path = config.private_key.clone();
     let private_key =
-        tokio::task::spawn_blocking(move || login_key::load_login_key(&key_path)).await??;
+        tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+            login_key::load_login_key(&key_path)
+        }))
+        .await??;
     let accounts = Accounts::new(repository.clone());
     let gateway = Gateway::bind(
         GatewayConfig {
@@ -98,10 +114,11 @@ async fn serve(config: Configuration) -> Result<()> {
             .with_context(|| format!("Bind admin HTTP listener at {}", settings.bind))?;
         let player_catalog = catalog.clone();
         let player_repository = repository.clone();
-        let players = tokio::task::spawn_blocking(move || {
-            PostgresPlayers::new(&player_repository, player_catalog)
-        })
-        .await??;
+        let players =
+            tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+                PostgresPlayers::new(&player_repository, player_catalog)
+            }))
+            .await??;
         let router = admin::router(
             PlayerAccounts::new(players),
             accounts,
@@ -122,7 +139,10 @@ async fn serve(config: Configuration) -> Result<()> {
     } else {
         None
     };
-    let mut worker = tokio::task::spawn_blocking(move || gateway.run(worker_stop));
+    let mut worker =
+        tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+            gateway.run(worker_stop)
+        }));
     let result = tokio::select! {
         result = &mut worker => result.context("Join game gateway").and_then(|result| result),
         signal = shutdown => {

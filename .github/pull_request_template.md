@@ -10,12 +10,17 @@
 
 <!-- Record the revision, setup, steps, expected outcome, and actual result. For game-facing changes, include the client build and executable SHA-256. For a fix, record whether the bug reproduced before the change. -->
 
+## Telemetry
+
+<!-- Describe the request-to-response hierarchy, context/layer and input/output attributes, SQL coverage, and propagation across task/queue boundaries. Record successful and relevant failed traces verified through the affected entry point. -->
+
 ## Regression tests
 
 <!-- List the files and cases added or updated under tests/. For a fix, give the before/after test results. Include the commands and results for CI checks and affected opt-in tests. If behavior is unchanged, explain why regression coverage is inapplicable. -->
 
 - [ ] I manually verified the affected workflow and recorded the results above.
 - [ ] I added or updated regression tests in `tests/` for changed behavior or explained why they are inapplicable.
+- [ ] I verified complete traces, their parent-child relationships and input/output attributes for the affected workflow.
 - [ ] I updated the affected documentation and context maps where applicable.
 
 See the [contribution guide](https://github.com/gabrielhamel/wot-server/blob/main/CONTRIBUTING.md) for merge requirements.

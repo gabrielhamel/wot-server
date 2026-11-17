@@ -62,11 +62,13 @@ fn action(request: i64, action: u8, channel: u32, data: Value) -> ChatActionData
 }
 
 impl Gateway {
+    #[tracing::instrument(name = "access.infrastructure.social.send_chat", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.request_id = data.requestID, input.action = data.action, output.response = data.actionResponse), err)]
     fn send_chat(&mut self, entity: EntityKey<Account>, data: ChatActionData) -> Result<()> {
         self.base.entity(entity)?.onChatAction(data)?;
         Ok(())
     }
 
+    #[tracing::instrument(name = "access.infrastructure.social.social_error", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.request = request, input.event = event, input.channel = channel, input.response = response), err)]
     fn social_error(
         &mut self,
         entity: EntityKey<Account>,
@@ -107,6 +109,7 @@ impl Gateway {
             })
     }
 
+    #[tracing::instrument(name = "access.infrastructure.social.social_command", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.client.address = %client), err)]
     pub(super) fn social_command(
         &mut self,
         client: ClientKey,
@@ -310,6 +313,7 @@ impl Gateway {
         Ok(())
     }
 
+    #[tracing::instrument(name = "access.infrastructure.social.social_job", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.client.address = %client), err)]
     fn social_job(
         &mut self,
         client: ClientKey,
@@ -340,33 +344,35 @@ impl Gateway {
             .collect();
         let social = self.social.clone();
         let sender = self.sender.clone();
-        self.runtime.spawn(async move {
-            let _permit = permit;
-            let result = tokio::time::timeout(Duration::from_secs(10), async {
-                match &request {
-                    Request::Search { prefix, online, .. } => social
-                        .search(prefix, online.then_some(online_ids.as_slice()))
-                        .await
-                        .map(Reply::Players),
-                    Request::Roster { .. } => social.roster(owner).await.map(Reply::Contacts),
-                    Request::Change { peer, change, .. } => social
-                        .change(owner, *peer, *change)
-                        .await
-                        .map(Reply::Contacts),
-                }
-            })
-            .await
-            .unwrap_or_else(|_| Err(anyhow::anyhow!("Social operation timed out")));
-            let _ = sender.try_send(Completion::Social {
-                client,
-                entity,
-                request,
-                result,
-            });
-        });
+        self.runtime
+            .spawn(tracing::Instrument::in_current_span(async move {
+                let _permit = permit;
+                let result = tokio::time::timeout(Duration::from_secs(10), async {
+                    match &request {
+                        Request::Search { prefix, online, .. } => social
+                            .search(prefix, online.then_some(online_ids.as_slice()))
+                            .await
+                            .map(Reply::Players),
+                        Request::Roster { .. } => social.roster(owner).await.map(Reply::Contacts),
+                        Request::Change { peer, change, .. } => social
+                            .change(owner, *peer, *change)
+                            .await
+                            .map(Reply::Contacts),
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("Social operation timed out")));
+                let _ = sender.try_send(super::TracedCompletion::new(Completion::Social {
+                    client,
+                    entity,
+                    request,
+                    result,
+                }));
+            }));
         Ok(())
     }
 
+    #[tracing::instrument(name = "access.infrastructure.social.social_complete", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.client.address = %client, output.success = result.is_ok()), err)]
     pub(super) fn social_complete(
         &mut self,
         client: ClientKey,
