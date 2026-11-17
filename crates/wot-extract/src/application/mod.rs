@@ -12,6 +12,7 @@ pub struct Summary {
 }
 
 pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
+    let game_version = crate::infrastructure::game_version(game_dir)?;
     let mut client = ClientResources::open(game_dir)?;
     let extensions: BTreeSet<_> = client
         .paths()
@@ -50,7 +51,8 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
         for path in &files {
             bytes += client.copy(path, &output.join("res").join(path))?;
         }
-        ResourceBundle::write_manifest(output, classes).context("Write bundle manifest")?;
+        ResourceBundle::write_manifest_with_version(output, classes, game_version)
+            .context("Write bundle manifest")?;
         Ok(Summary {
             files: files.len(),
             bytes,

@@ -28,7 +28,10 @@ The version 1 bundle contains `manifest.json` and a `res/` tree of selected
 definitions. The manifest records which component client classes exist so
 Access can reconstruct the network replication component IDs. The extractor
 reads the original package file indexes for class presence and copies zero
-Python bytecode.
+Python bytecode. When the installation has `version.xml`, the extractor
+also records its trimmed `version` text in the optional `game_version`
+manifest field. This travels with the bundle when it is moved to another
+server. Older manifests without the field remain supported.
 
 - **Access** uses Packed XML aliases, entity and component lists and definitions,
   interface definitions and extension descriptors for the protocol ABI.

@@ -107,6 +107,7 @@ impl Peer {
             })
             .to_string(),
             password: password.into(),
+            context: r#"{"lang_id":"en"}"#.into(),
             blowfish_key: vec![42; 56],
             ..Default::default()
         };

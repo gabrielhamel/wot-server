@@ -20,6 +20,8 @@ COPY --from=extractor-build /build/wot-extract /wot-extract
 ENTRYPOINT ["/wot-extract"]
 
 FROM rust-source AS server-build
+ARG WOT_SERVER_VERSION
+ARG WOT_GAME_VERSION
 RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=wot-release-target,target=/build/target,sharing=locked \
     cargo clean --release -p wot-server -p wot-resources && \
