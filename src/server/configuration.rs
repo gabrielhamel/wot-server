@@ -6,21 +6,25 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub(super) enum LogLevel {
     Error,
     #[default]
+    Warn,
     Info,
     Debug,
+    Trace,
 }
 
 impl LogLevel {
     pub(super) fn filter(self) -> tracing::level_filters::LevelFilter {
         match self {
             Self::Error => tracing::level_filters::LevelFilter::ERROR,
+            Self::Warn => tracing::level_filters::LevelFilter::WARN,
             Self::Info => tracing::level_filters::LevelFilter::INFO,
             Self::Debug => tracing::level_filters::LevelFilter::DEBUG,
+            Self::Trace => tracing::level_filters::LevelFilter::TRACE,
         }
     }
 }
@@ -51,7 +55,8 @@ pub(super) struct Configuration {
     pub max_clients: usize,
     pub max_pending: usize,
     pub log_level: LogLevel,
-    pub log_file: PathBuf,
+    #[serde(rename = "log_file", skip_serializing)]
+    _legacy_log_file: serde::de::IgnoredAny,
     pub admin: Option<AdminConfiguration>,
 }
 
@@ -68,8 +73,8 @@ impl Default for Configuration {
             db_connections: 16,
             max_clients: 256,
             max_pending: 32,
-            log_level: LogLevel::Info,
-            log_file: "logs/server.log".into(),
+            log_level: LogLevel::default(),
+            _legacy_log_file: serde::de::IgnoredAny,
             admin: None,
         }
     }
@@ -112,7 +117,7 @@ impl Configuration {
             (1..=256).contains(&config.max_clients) && (1..=256).contains(&config.max_pending),
             "max_clients and max_pending must be between 1 and 256"
         );
-        for value in [&config.resource_dir, &config.private_key, &config.log_file] {
+        for value in [&config.resource_dir, &config.private_key] {
             ensure!(
                 !value.as_os_str().is_empty(),
                 "Configured paths must be nonempty"
@@ -125,19 +130,11 @@ impl Configuration {
             );
         }
         let directory = path.parent().context("Configuration has no directory")?;
-        for value in [
-            &mut config.resource_dir,
-            &mut config.private_key,
-            &mut config.log_file,
-        ] {
+        for value in [&mut config.resource_dir, &mut config.private_key] {
             if value.is_relative() {
                 *value = directory.join(&*value);
             }
         }
-        ensure!(
-            config.log_file != config.private_key && config.log_file != path,
-            "Log file must differ from the configuration and private key"
-        );
         if let Some(admin) = &mut config.admin {
             ensure!(
                 (32..=256).contains(&admin.token.len())
@@ -180,17 +177,22 @@ mod tests {
         assert_eq!(defaults.base_bind, "0.0.0.0:20017".parse().unwrap());
         assert_eq!(defaults.resource_dir, directory.join("resources"));
         assert_eq!(defaults.private_key, directory.join("login.pem"));
-        assert_eq!(defaults.log_file, directory.join("logs/server.log"));
+        assert_eq!(
+            defaults.log_level.filter(),
+            tracing::level_filters::LevelFilter::WARN
+        );
         let mut settings: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        settings["log_level"] = "debug".into();
+        assert!(settings.get("log_file").is_none());
+        settings["log_file"] = "old/server.log".into();
+        settings["log_level"] = "trace".into();
         settings["max_clients"] = 7.into();
         let edited = serde_json::to_vec_pretty(&settings).unwrap();
         std::fs::write(&path, &edited).unwrap();
         assert_eq!(Configuration::load(&path).unwrap().max_clients, 7);
         assert_eq!(std::fs::read(&path).unwrap(), edited);
         for (field, value) in [
-            ("log_level", serde_json::json!("trace")),
+            ("log_level", serde_json::json!("verbose")),
             ("db_connections", serde_json::json!(0)),
             ("max_pending", serde_json::json!(0)),
             ("unexpected", serde_json::json!(true)),

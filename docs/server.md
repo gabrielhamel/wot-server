@@ -10,13 +10,13 @@ Offline binary mapping remains available as a separate development tool.
 
 Generate a bundle with [wot-extract](resources.md) and place it under
 `target/release/resources` or set `resource_dir` to its location. From the
-repository root, start the server with no arguments:
+repository root, start the server:
 
 ```sh
 cargo run --release
 ```
 
-The built binary also starts directly with no arguments:
+The built binary also starts directly:
 
 ```sh
 ./target/release/wot-server
@@ -25,12 +25,12 @@ The built binary also starts directly with no arguments:
 On first start, the server creates **`server.json` beside the executable**, then
 starts using its defaults. Existing configuration files are never overwritten.
 With Cargo the file is `target/release/server.json`; moving the binary to its own
-folder makes that folder the server's home. Relative resource, key and log paths resolve
+folder makes that folder the server's home. Relative resource and key paths resolve
 against this folder, independently of the shell's working directory. Restart after
-editing the file. There are no CLI options or environment-variable overrides,
-including `RUST_LOG`; the offline mapper's CLI is independent.
+editing the file. See [logging and telemetry](#logging-and-telemetry) for the
+console option and the OpenTelemetry environment variables.
 
-The generated JSON contains every supported startup setting:
+The generated JSON contains the following settings:
 
 | Field | Default / meaning |
 | --- | --- |
@@ -43,8 +43,7 @@ The generated JSON contains every supported startup setting:
 | `db_connections` | `16`, allowed range 1–256 |
 | `max_clients` | `256`, admitted/pending handoff capacity, allowed range 1–256 |
 | `max_pending` | `32`, authentication worker capacity, allowed range 1–256 |
-| `log_level` | `"info"`; accepts `"error"`, `"info"`, `"debug"` |
-| `log_file` | `logs/server.log`, appended across restarts |
+| `log_level` | `"warn"`; also accepts `"error"`, `"info"`, `"debug"`, `"trace"` |
 | `admin` | `null`; set an [admin configuration object](admin.md) to enable HTTP |
 
 Unknown fields, invalid types and invalid limits stop startup with a diagnostic.
@@ -77,18 +76,38 @@ The migration `migrations/0001_initial_schema.sql` creates the complete database
 schema. Start with an empty PostgreSQL database; the server applies the migration
 automatically and tracks it in `_sqlx_migrations`.
 
-### Logging
+### Logging and telemetry
 
-`error` records failures, `info` adds startup/shutdown and account sessions, and
-`debug` adds protocol method names and resource transfer sizes. Levels are cumulative.
-Server events use those three severities; dependency errors are also included.
-Console and file contain timestamps, severity, module and structured event fields,
-without terminal color codes. Logs append; rotation is currently manual. File writes
-are synchronous, so debug logging can reduce throughput under load. The server does
-not intentionally log passwords, private keys or decoded login payloads.
-Configuration errors before logging initializes appear on stderr; subsequent startup
-and runtime failures also go to the log file. For troubleshooting, set
-`"log_level": "debug"`, restart, reproduce the problem and inspect the file.
+The server writes warnings and errors to stderr by default. To include startup
+and session events use `info`; use `debug` for protocol method names and
+transfer sizes, or `trace` for packet diagnostics. The CLI overrides
+`log_level` in `server.json`; `RUST_LOG` is not read.
+
+```sh
+cargo run --release -- --log-level debug
+```
+
+The server no longer writes log files. It ignores legacy `log_file` settings,
+so they can be removed when convenient. Logs from earlier runs stay on disk.
+
+To export logs, traces and metrics, set the collector's OTLP/HTTP base URL:
+
+```sh
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 ./target/release/wot-server
+```
+
+Use the ingestion endpoint, not the Grafana URL. The server uses
+[OTLP over HTTP with protobuf](https://opentelemetry.io/docs/specs/otel/protocol/exporter/)
+and defaults to the service name `wot-server`; set `OTEL_SERVICE_NAME` to
+override it. The exporter appends the signal paths and supports standard OTLP
+headers and timeouts. With the endpoint unset, the server does not export.
+
+The collector receives server events and spans at `info` and above,
+independently of the console level. Traces cover resource loading, database
+startup and game authentication; the metric `wot.server.uptime` measures
+process uptime in seconds. Exports run in the background with bounded
+queues. Collector outages do not stop the game server, but telemetry can be
+lost. On SIGINT or SIGTERM, the server shuts down and flushes pending exports.
 
 ## Protocol implementation
 
