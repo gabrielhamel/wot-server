@@ -6,16 +6,25 @@ COPY crates/ crates/
 COPY src/ src/
 COPY migrations/ migrations/
 
+# A reused source layer can have older timestamps than the shared Cargo cache.
 FROM rust-source AS extractor-build
-RUN cargo build --locked --release -p wot-extract
+RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=wot-release-target,target=/build/target,sharing=locked \
+    cargo clean --release -p wot-extract -p wot-resources && \
+    cargo build --locked --release -p wot-extract && \
+    cp target/release/wot-extract /build/wot-extract
 
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS extractor
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/licenses/wot-server/
-COPY --from=extractor-build /build/target/release/wot-extract /wot-extract
+COPY --from=extractor-build /build/wot-extract /wot-extract
 ENTRYPOINT ["/wot-extract"]
 
 FROM rust-source AS server-build
-RUN cargo build --locked --release --bin wot-server
+RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=wot-release-target,target=/build/target,sharing=locked \
+    cargo clean --release -p wot-server -p wot-resources && \
+    cargo build --locked --release --bin wot-server && \
+    cp target/release/wot-server /build/wot-server
 
 FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS dashboard-build
 WORKDIR /build
@@ -28,7 +37,7 @@ FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f0
 WORKDIR /opt/wot-server
 RUN chown 10001:10001 .
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/licenses/wot-server/
-COPY --from=server-build /build/target/release/wot-server ./
+COPY --from=server-build /build/wot-server ./
 COPY --from=dashboard-build /build/dist/ ./dashboard/
 COPY resources/ ./resources/
 USER 10001:10001

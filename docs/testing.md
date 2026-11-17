@@ -1,9 +1,11 @@
 # Testing
 
-The CI workflow runs Rust formatting, Clippy and workspace tests, plus the
-dashboard build, on pushes to `main` and on pull requests. It does not require
-a database, game resources or research submodules. Container builds and
-publishing run only when a Git tag is created; see the [container guide](container.md).
+The CI workflow runs Rust formatting, Clippy, workspace tests, the dashboard
+build, and E2E Tests on pushes to `main` and on pull requests. Both Rust jobs
+cache Cargo downloads and compiled dependencies between runs. CI does not need
+the research submodules or a game installation.
+Container builds and publishing run only when a Git tag is created; see the
+[container guide](container.md).
 
 ```sh
 cargo fmt --all --check
@@ -34,11 +36,19 @@ Graphviz on PATH. The renderer validates CML, checks the pinned Context Mapper
 archive's SHA-256, normalizes randomized graph attributes and publishes SVGs
 only after all models render. The workflow regenerates them on `main`.
 
+## E2E Tests
 
-The independent demo seeder has an opt-in fresh-database integration test; see
+The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL 18 service
+and copies the EU SD English `2.4.1.5514` resource bundle from the public
+`2.4.1.5514-0.1.1` server image. It pins the image by digest so later releases
+do not change the fixture. The job builds and tests the checked-out Rust code
+and uses the image only to read the resource files. It needs no registry
+credentials, so it also works for fork pull requests. Update the image digest
+and fixture build together when the tests need a new resource bundle.
+
+Both targets are opt-in when running Cargo locally. The independent demo seeder
+test creates and drops a fresh database using the configured test role; see
 [seeding verification](seeding.md#verification).
-
-## PostgreSQL garage integration
 
 The default suite does not require PostgreSQL or proprietary resources. To exercise
 embedded migrations, insert-only seed, Argon2 credentials, concurrent preference
@@ -49,7 +59,7 @@ docker compose up -d --wait
 export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
-cargo test --test garage -- --ignored --nocapture
+cargo test --locked --test garage --test seeding -- --ignored
 ```
 
 For an existing database, set `WG_TEST_DATABASE_URL` to the same connection

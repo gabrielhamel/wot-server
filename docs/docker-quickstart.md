@@ -15,13 +15,11 @@ macOS or WSL). Set `IMAGE` to a published tag from the
 
 ```sh
 export IMAGE=ghcr.io/gabrielhamel/wot-server:REPLACE_WITH_PUBLISHED_TAG
-docker login ghcr.io
 docker pull "$IMAGE"
 docker compose up -d --wait postgres
 ```
 
-The package currently requires a GitHub token with `read:packages` and package
-access. The repository's `compose.yaml` starts **PostgreSQL only**, on the Docker
+The repository's `compose.yaml` starts **PostgreSQL only**, on the Docker
 network `wot-server_default`. The commands below start the game server on that
 same network. This example uses the Compose database's default credentials;
 if you override them, update `database_url` accordingly.

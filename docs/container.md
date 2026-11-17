@@ -19,14 +19,17 @@ image's game version from the installed state after the update succeeds. The
 extractor and server build come from the same checkout. The full client stays
 on the runner.
 
+The extractor and server builds share BuildKit caches for the Cargo registry
+and compiled dependencies. They reuse these caches while the runner's Docker
+storage is available and rebuild the workspace crates when source layers change.
+
 ## Run an image
 
 For a complete Docker walkthrough with PostgreSQL, port mappings and game
 server-list registration, follow the
 [Docker quickstart](docker-quickstart.md).
 
-Authenticate to the private package with `docker login ghcr.io` using a
-classic GitHub token with `read:packages` and access to the package. Set
+The package is public and can be pulled without signing in. Set
 `IMAGE` to a published image name from the workflow summary. The image bundles
 the release binary, `/opt/wot-server/resources` and
 `/opt/wot-server/dashboard`. The server creates `server.json` beside the
