@@ -4,7 +4,7 @@ use sqlx::{Postgres, Transaction};
 
 type Tx<'a> = Transaction<'a, Postgres>;
 
-#[tracing::instrument(name = "social.infrastructure.conversations.lock_pair", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.first = first, input.second = second), err)]
+#[tracing::instrument(name = "social.conversations.lock_pair", skip_all, fields(wot.context = "social", input.first = first, input.second = second), err)]
 async fn lock_pair(tx: &mut Tx<'_>, first: i64, second: i64) -> anyhow::Result<()> {
     for id in [first, second] {
         {
@@ -35,7 +35,7 @@ async fn lock_pair(tx: &mut Tx<'_>, first: i64, second: i64) -> anyhow::Result<(
     Ok(())
 }
 
-#[tracing::instrument(name = "social.infrastructure.conversations.retain_recent", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.conversation = conversation), err)]
+#[tracing::instrument(name = "social.conversations.retain_recent", skip_all, fields(wot.context = "social", input.owner = owner, input.conversation = conversation), err)]
 async fn retain_recent(tx: &mut Tx<'_>, owner: i64, conversation: i32) -> anyhow::Result<()> {
     {
         let statement = "UPDATE private_conversations SET first_open=CASE WHEN first_id=$1 THEN FALSE ELSE first_open END, second_open=CASE WHEN second_id=$1 THEN FALSE ELSE second_open END WHERE id IN (SELECT id FROM private_conversations WHERE id<>$2 AND ((first_id=$1 AND first_open) OR (second_id=$1 AND second_open)) ORDER BY last_used DESC,id DESC OFFSET 15)";
@@ -52,7 +52,7 @@ async fn retain_recent(tx: &mut Tx<'_>, owner: i64, conversation: i32) -> anyhow
     Ok(())
 }
 
-#[tracing::instrument(name = "social.infrastructure.conversations.load", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.id = id), err)]
+#[tracing::instrument(name = "social.conversations.load", skip_all, fields(wot.context = "social", input.id = id), err)]
 async fn load(tx: &mut Tx<'_>, id: i32) -> anyhow::Result<PrivateConversation> {
     let (first, first_name, second, second_name): (i64, String, i64, String) = {
         let statement = "SELECT c.first_id,a.display_name,c.second_id,b.display_name FROM private_conversations c JOIN account_directory a ON a.id=c.first_id JOIN account_directory b ON b.id=c.second_id WHERE c.id=$1";
@@ -98,7 +98,7 @@ async fn load(tx: &mut Tx<'_>, id: i32) -> anyhow::Result<PrivateConversation> {
 }
 
 impl PostgresSocial {
-    #[tracing::instrument(name = "social.infrastructure.conversations.open_conversation", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.peer = peer), err)]
+    #[tracing::instrument(name = "social.conversations.open_conversation", skip_all, fields(wot.context = "social", input.owner = owner, input.peer = peer), err)]
     pub(super) async fn open_conversation(
         &self,
         owner: i64,
@@ -153,7 +153,7 @@ impl PostgresSocial {
         Ok(room)
     }
 
-    #[tracing::instrument(name = "social.infrastructure.conversations.send_message", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.conversation = conversation, input.text.bytes = text.len()), err)]
+    #[tracing::instrument(name = "social.conversations.send_message", skip_all, fields(wot.context = "social", input.owner = owner, input.conversation = conversation, input.text.bytes = text.len()), err)]
     pub(super) async fn send_message(
         &self,
         owner: i64,
@@ -228,7 +228,7 @@ impl PostgresSocial {
         Ok(room)
     }
 
-    #[tracing::instrument(name = "social.infrastructure.conversations.close_conversation", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner, input.conversation = conversation), err)]
+    #[tracing::instrument(name = "social.conversations.close_conversation", skip_all, fields(wot.context = "social", input.owner = owner, input.conversation = conversation), err)]
     pub(super) async fn close_conversation(
         &self,
         owner: i64,
@@ -261,7 +261,7 @@ impl PostgresSocial {
         Ok(())
     }
 
-    #[tracing::instrument(name = "social.infrastructure.conversations.restore_conversations", skip_all, fields(code.layer = "infrastructure", wot.context = "social", input.owner = owner), err)]
+    #[tracing::instrument(name = "social.conversations.restore_conversations", skip_all, fields(wot.context = "social", input.owner = owner), err)]
     pub(super) async fn restore_conversations(
         &self,
         owner: i64,

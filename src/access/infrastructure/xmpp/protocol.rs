@@ -211,7 +211,7 @@ impl Connection {
     pub fn bound(&self) -> bool {
         self.bound
     }
-    #[tracing::instrument(name = "access.infrastructure.xmpp.handle", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.stanza.bytes = stanza.len(), xmpp.stanza.name = tracing::field::Empty, xmpp.stanza.id = tracing::field::Empty, user.id = tracing::field::Empty, messaging.message.body.size = tracing::field::Empty, messaging.destination.id = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "access.xmpp.handle", skip_all, fields(wot.context = "access", input.stanza.bytes = stanza.len(), xmpp.stanza.name = tracing::field::Empty, xmpp.stanza.id = tracing::field::Empty, user.id = tracing::field::Empty, messaging.message.body.size = tracing::field::Empty, messaging.destination.id = tracing::field::Empty), err)]
     pub async fn handle(&mut self, stanza: &str) -> Result<Vec<String>> {
         let wrapped = format!(
             "<root xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>{stanza}</root>"
@@ -417,7 +417,7 @@ impl Connection {
         )
     }
 
-    #[tracing::instrument(name = "access.infrastructure.xmpp.roster_state", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.owner = owner, input.peer = peer), err)]
+    #[tracing::instrument(name = "access.xmpp.roster_state", skip_all, fields(wot.context = "access", input.owner = owner, input.peer = peer), err)]
     async fn roster_state(&self, owner: i64, peer: i64) -> Result<Option<Friendship>> {
         Ok(self
             .shared
@@ -496,7 +496,7 @@ impl Connection {
         }
     }
 
-    #[tracing::instrument(name = "access.infrastructure.xmpp.iq", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.owner = owner), err)]
+    #[tracing::instrument(name = "access.xmpp.iq", skip_all, fields(wot.context = "access", input.owner = owner), err)]
     async fn iq(&mut self, owner: i64, node: roxmltree::Node<'_, '_>) -> Result<Vec<String>> {
         let id = node.attribute("id").unwrap_or_default();
         let kind = node.attribute("type").unwrap_or_default();

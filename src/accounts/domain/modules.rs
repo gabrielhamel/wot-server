@@ -98,7 +98,7 @@ impl ModuleRules {
             .unwrap_or_else(|| self.stock.clone())
     }
 
-    #[tracing::instrument(name = "accounts.domain.modules.research", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.index = index), err)]
+    #[tracing::instrument(name = "accounts.modules.research", skip_all, fields(wot.context = "accounts", input.index = index), err)]
     pub fn research(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -142,7 +142,7 @@ impl ModuleRules {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.domain.modules.equip", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.inventory_id = inventory_id, input.item = item, input.gun = gun, input.buy = buy), err)]
+    #[tracing::instrument(name = "accounts.modules.equip", skip_all, fields(wot.context = "accounts", input.inventory_id = inventory_id, input.item = item, input.gun = gun, input.buy = buy), err)]
     pub fn equip(
         &self,
         snapshot: &mut AccountSnapshot,

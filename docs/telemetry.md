@@ -1,7 +1,7 @@
 # Telemetry contract
 
 Telemetry is required for server behavior. Every changed workflow must be
-understandable through its trace, including its context and layer transitions,
+understandable through its trace, including its context transitions,
 input, database work, result and response. Production sends traces to the
 configured OTLP collector. See the [server guide](server.md#logging-and-telemetry)
 for endpoint configuration, resource attributes and console filtering.
@@ -11,24 +11,25 @@ for endpoint configuration, resource attributes and console filtering.
 Each game command, XMPP stanza and admin request starts an operation trace.
 Spans below it represent meaningful boundaries and decisions in the owning
 bounded context. The custom attribute wot.context identifies access, accounts,
-social, admin, or server composition. The custom attribute code.layer identifies presentation,
-application, domain, or infrastructure.
+social, admin, or server composition. Omit code.layer attributes and architecture
+layer segments (presentation, application, domain, infrastructure) from span names.
+Name spans after the operation and meaningful subsystem instead.
 
 An online XMPP private message follows this hierarchy. Repository operations
 can contain several query and transaction spans.
 
-    xmpp.request                              [access / infrastructure]
-      access.infrastructure.xmpp.handle       [access / infrastructure]
-        social.application.open               [social / application]
-          social.infrastructure.open          [social / infrastructure]
-            social.infrastructure.conversations.open_conversation
+    xmpp.request                              [access]
+      access.xmpp.handle                      [access]
+        social.open                           [social]
+          social.open                         [social]
+            social.conversations.open_conversation
               postgresql.query                [BEGIN / SELECT / INSERT / COMMIT]
-        social.application.send               [social / application]
-          social.infrastructure.send          [social / infrastructure]
-            social.infrastructure.conversations.send_message
+        social.send                           [social]
+          social.send                         [social]
+            social.conversations.send_message
               postgresql.query                [BEGIN / SELECT / INSERT / COMMIT]
-        access.infrastructure.enqueue         [access / infrastructure]
-          xmpp.response                       [access / infrastructure]
+        access.enqueue                        [access]
+          xmpp.response                       [access]
 
 The response may run on the recipient's connection task. It carries the
 originating request's parent through the bounded output queue. Offline
@@ -44,8 +45,7 @@ request parent into the gateway's bounded queue.
 
 Spans describe actual calls and work. An operation using only cached state
 can have fewer children. Pure accessors and mechanical helpers do not need
-spans. Layer names describe code ownership within this process. Cross-context
-calls retain their own context and layer attributes.
+spans. Cross-context calls retain their own context attributes.
 
 ## Attributes and outcomes
 
@@ -66,7 +66,10 @@ relevant to their operation.
 Passwords, hashes, auth tokens, private keys, database connection credentials
 and complete authentication envelopes are excluded. Message content and
 binary data are represented by sizes and identifiers. User identity
-attributes follow the [server guide](server.md#logging-and-telemetry).
+attributes follow the [server guide](server.md#logging-and-telemetry). Emit
+user.name from an available, nonempty player display name, never by copying an
+email login. Emit user.email only when supplied by the current payload. Omit
+unavailable attributes and never query the database solely for telemetry enrichment.
 
 Failed operations emit diagnostic error events inside their span. The
 OpenTelemetry layer uses these events to mark error status. Expected business
@@ -81,7 +84,6 @@ inside postgresql.query spans.
 
 | Attribute | Meaning |
 | --- | --- |
-| code.layer | infrastructure |
 | wot.context | Owning context |
 | db.system.name | postgresql |
 | db.operation.name | SQL operation such as SELECT, UPDATE, BEGIN or COMMIT |

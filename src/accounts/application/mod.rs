@@ -45,7 +45,7 @@ impl<R: AccountRepository> Accounts<R> {
         Self { repository }
     }
 
-    #[tracing::instrument(name = "accounts.application.authenticate", skip_all, fields(code.layer = "application", wot.context = "accounts", input.username.bytes = username.len()), err)]
+    #[tracing::instrument(name = "accounts.authenticate", skip_all, fields(wot.context = "accounts", input.username.bytes = username.len()), err)]
     pub async fn authenticate(
         &self,
         username: &str,
@@ -71,22 +71,22 @@ impl<R: AccountRepository> Accounts<R> {
         self.repository.snapshot(id).await.map(Some)
     }
 
-    #[tracing::instrument(name = "accounts.application.snapshot", skip_all, fields(code.layer = "application", wot.context = "accounts", input.id = id), err)]
+    #[tracing::instrument(name = "accounts.snapshot", skip_all, fields(wot.context = "accounts", input.id = id), err)]
     pub async fn snapshot(&self, id: i64) -> anyhow::Result<AccountSnapshot> {
         self.repository.snapshot(id).await
     }
 
-    #[tracing::instrument(name = "accounts.application.save_progression", skip_all, fields(code.layer = "application", wot.context = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
+    #[tracing::instrument(name = "accounts.save_progression", skip_all, fields(wot.context = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
     pub async fn save_progression(&self, change: &ProgressionChange) -> anyhow::Result<bool> {
         self.repository.save_progression(change).await
     }
 
-    #[tracing::instrument(name = "accounts.application.save_ammunition", skip_all, fields(code.layer = "application", wot.context = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
+    #[tracing::instrument(name = "accounts.save_ammunition", skip_all, fields(wot.context = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
     pub async fn save_ammunition(&self, change: &AmmunitionChange) -> anyhow::Result<bool> {
         self.repository.save_ammunition(change).await
     }
 
-    #[tracing::instrument(name = "accounts.application.save_settings", skip_all, fields(code.layer = "application", wot.context = "accounts", input.id = id, input.settings.count = settings.len()), err)]
+    #[tracing::instrument(name = "accounts.save_settings", skip_all, fields(wot.context = "accounts", input.id = id, input.settings.count = settings.len()), err)]
     pub async fn save_settings(
         &self,
         id: i64,
@@ -105,7 +105,7 @@ pub struct AmmunitionChange {
 }
 
 impl AmmunitionChange {
-    #[tracing::instrument(name = "accounts.application.plan", skip_all, fields(code.layer = "application", wot.context = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, input.inventory_id = inventory_id), err)]
+    #[tracing::instrument(name = "accounts.plan", skip_all, fields(wot.context = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, input.inventory_id = inventory_id), err)]
     pub fn plan(
         mut snapshot: AccountSnapshot,
         inventory_id: i64,

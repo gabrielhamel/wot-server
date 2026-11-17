@@ -62,7 +62,7 @@ impl<R: SocialRepository> Social<R> {
         Self { repository }
     }
 
-    #[tracing::instrument(name = "social.application.search", skip_all, fields(code.layer = "application", wot.context = "social", output.count = tracing::field::Empty, input.prefix.bytes = prefix.len()), err)]
+    #[tracing::instrument(name = "social.search", skip_all, fields(wot.context = "social", output.count = tracing::field::Empty, input.prefix.bytes = prefix.len()), err)]
     pub async fn search(
         &self,
         prefix: &str,
@@ -82,14 +82,14 @@ impl<R: SocialRepository> Social<R> {
             })
     }
 
-    #[tracing::instrument(name = "social.application.roster", skip_all, fields(code.layer = "application", wot.context = "social", output.count = tracing::field::Empty, input.owner = owner), err)]
+    #[tracing::instrument(name = "social.roster", skip_all, fields(wot.context = "social", output.count = tracing::field::Empty, input.owner = owner), err)]
     pub async fn roster(&self, owner: i64) -> anyhow::Result<Vec<Contact>> {
         self.repository.roster(owner).await.inspect(|values| {
             tracing::Span::current().record("output.count", values.len());
         })
     }
 
-    #[tracing::instrument(name = "social.application.change", skip_all, fields(code.layer = "application", wot.context = "social", output.count = tracing::field::Empty, input.owner = owner, input.peer = peer, input.change = ?change), err)]
+    #[tracing::instrument(name = "social.change", skip_all, fields(wot.context = "social", output.count = tracing::field::Empty, input.owner = owner, input.peer = peer, input.change = ?change), err)]
     pub async fn change(
         &self,
         owner: i64,
@@ -102,7 +102,7 @@ impl<R: SocialRepository> Social<R> {
             tracing::Span::current().record("output.count", values.len());
         })
     }
-    #[tracing::instrument(name = "social.application.friendship", skip_all, fields(code.layer = "application", wot.context = "social", input.owner = owner, input.peer = peer, input.action = ?action), err)]
+    #[tracing::instrument(name = "social.friendship", skip_all, fields(wot.context = "social", input.owner = owner, input.peer = peer, input.action = ?action), err)]
     pub async fn friendship(
         &self,
         owner: i64,
@@ -116,7 +116,7 @@ impl<R: SocialRepository> Social<R> {
         self.repository.friendship(owner, peer, action).await
     }
 
-    #[tracing::instrument(name = "social.application.inbound_requests", skip_all, fields(code.layer = "application", wot.context = "social", output.count = tracing::field::Empty, input.owner = owner), err)]
+    #[tracing::instrument(name = "social.inbound_requests", skip_all, fields(wot.context = "social", output.count = tracing::field::Empty, input.owner = owner), err)]
     pub async fn inbound_requests(&self, owner: i64) -> anyhow::Result<Vec<Player>> {
         self.repository
             .inbound_requests(owner)
@@ -126,7 +126,7 @@ impl<R: SocialRepository> Social<R> {
             })
     }
 
-    #[tracing::instrument(name = "social.application.observers", skip_all, fields(code.layer = "application", wot.context = "social", output.count = tracing::field::Empty, input.player = player), err)]
+    #[tracing::instrument(name = "social.observers", skip_all, fields(wot.context = "social", output.count = tracing::field::Empty, input.player = player), err)]
     pub async fn observers(&self, player: i64, online: &[i64]) -> anyhow::Result<Vec<i64>> {
         self.repository
             .observers(player, online)
@@ -135,11 +135,11 @@ impl<R: SocialRepository> Social<R> {
                 tracing::Span::current().record("output.count", values.len());
             })
     }
-    #[tracing::instrument(name = "social.application.player", skip_all, fields(code.layer = "application", wot.context = "social", input.id = id), err)]
+    #[tracing::instrument(name = "social.player", skip_all, fields(wot.context = "social", input.id = id), err)]
     pub async fn player(&self, id: i64) -> anyhow::Result<Option<Player>> {
         self.repository.player(id).await
     }
-    #[tracing::instrument(name = "social.application.open", skip_all, fields(code.layer = "application", wot.context = "social", input.owner = owner, input.peer = peer), err)]
+    #[tracing::instrument(name = "social.open", skip_all, fields(wot.context = "social", input.owner = owner, input.peer = peer), err)]
     pub async fn open(&self, owner: i64, peer: i64) -> anyhow::Result<PrivateConversation> {
         anyhow::ensure!(
             owner > 0 && peer > 0 && owner != peer,
@@ -147,7 +147,7 @@ impl<R: SocialRepository> Social<R> {
         );
         self.repository.open(owner, peer).await
     }
-    #[tracing::instrument(name = "social.application.send", skip_all, fields(code.layer = "application", wot.context = "social", input.owner = owner, input.conversation = conversation, input.text.bytes = text.len()), err)]
+    #[tracing::instrument(name = "social.send", skip_all, fields(wot.context = "social", input.owner = owner, input.conversation = conversation, input.text.bytes = text.len()), err)]
     pub async fn send(
         &self,
         owner: i64,
@@ -162,11 +162,11 @@ impl<R: SocialRepository> Social<R> {
         );
         self.repository.send(owner, conversation, text).await
     }
-    #[tracing::instrument(name = "social.application.close", skip_all, fields(code.layer = "application", wot.context = "social", input.owner = owner, input.conversation = conversation), err)]
+    #[tracing::instrument(name = "social.close", skip_all, fields(wot.context = "social", input.owner = owner, input.conversation = conversation), err)]
     pub async fn close(&self, owner: i64, conversation: u32) -> anyhow::Result<()> {
         self.repository.close(owner, conversation).await
     }
-    #[tracing::instrument(name = "social.application.restore", skip_all, fields(code.layer = "application", wot.context = "social", output.count = tracing::field::Empty, input.owner = owner), err)]
+    #[tracing::instrument(name = "social.restore", skip_all, fields(wot.context = "social", output.count = tracing::field::Empty, input.owner = owner), err)]
     pub async fn restore(&self, owner: i64) -> anyhow::Result<Vec<PrivateConversation>> {
         self.repository.restore(owner).await.inspect(|values| {
             tracing::Span::current().record("output.count", values.len());

@@ -41,7 +41,7 @@ impl PlayerGrants {
         (Self { sender }, receiver)
     }
 
-    #[tracing::instrument(name = "access.application.grants.grant", skip_all, fields(code.layer = "application", wot.context = "access", input.account_id = account_id, input.grant = ?grant), err)]
+    #[tracing::instrument(name = "access.grants.grant", skip_all, fields(wot.context = "access", input.account_id = account_id, input.grant = ?grant), err)]
     pub async fn grant(&self, account_id: i64, grant: PlayerGrant) -> GrantResult {
         let (reply, result) = oneshot::channel();
         self.sender

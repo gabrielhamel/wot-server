@@ -27,7 +27,7 @@ impl PostgresPlayers {
 }
 
 impl PlayerRepository for PostgresPlayers {
-    #[tracing::instrument(name = "accounts.infrastructure.players.list", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.offset = pagination.offset(), input.limit = pagination.limit()), err)]
+    #[tracing::instrument(name = "accounts.players.list", skip_all, fields(wot.context = "accounts", input.offset = pagination.offset(), input.limit = pagination.limit()), err)]
     async fn list(&self, pagination: PlayerPagination) -> Result<PlayerPage> {
         let mut tx = crate::observability::database("accounts", "BEGIN", self.pool.begin()).await?;
         {
@@ -81,7 +81,7 @@ impl PlayerRepository for PostgresPlayers {
         Ok(PlayerPage { accounts, total })
     }
 
-    #[tracing::instrument(name = "accounts.infrastructure.players.provision", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.username.bytes = username.len()), err)]
+    #[tracing::instrument(name = "accounts.players.provision", skip_all, fields(wot.context = "accounts", input.username.bytes = username.len()), err)]
     async fn provision(
         &self,
         username: String,

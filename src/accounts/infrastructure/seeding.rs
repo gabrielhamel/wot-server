@@ -22,7 +22,7 @@ pub struct DemoSeedReport {
 }
 
 impl PostgresAccounts {
-    #[tracing::instrument(name = "accounts.infrastructure.seeding.seed_demo_players", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", input.player_count = DEMO_PLAYERS.len()), err)]
+    #[tracing::instrument(name = "accounts.seeding.seed_demo_players", skip_all, fields(wot.context = "accounts", input.player_count = DEMO_PLAYERS.len()), err)]
     pub async fn seed_demo_players(&self, catalog: &GarageCatalog) -> Result<Vec<DemoSeedReport>> {
         let keys = catalog.tier_one_keys()?;
         let pool = self.connection_pool();
@@ -100,7 +100,7 @@ fn garage_changed(before: &AccountSnapshot, next: &AccountSnapshot) -> bool {
         || before.balances.slots != next.balances.slots
 }
 
-#[tracing::instrument(name = "accounts.infrastructure.seeding.persist_starter_garage", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", user.id = next.id, input.vehicle_count = next.vehicles.len()), err)]
+#[tracing::instrument(name = "accounts.seeding.persist_starter_garage", skip_all, fields(wot.context = "accounts", user.id = next.id, input.vehicle_count = next.vehicles.len()), err)]
 pub(super) async fn persist_starter_garage(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     next: &AccountSnapshot,
