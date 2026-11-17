@@ -1,8 +1,9 @@
 # Testing
 
 The CI workflow runs Rust formatting, Clippy, workspace tests, the dashboard
-build, and the garage and seeding E2E tests on pushes to `main` and on pull
-requests. CI does not need the research submodules or a game installation.
+build, and E2E Tests on pushes to `main` and on pull requests. Both Rust jobs
+cache Cargo downloads and compiled dependencies between runs. CI does not need
+the research submodules or a game installation.
 Container builds and publishing run only when a Git tag is created; see the
 [container guide](container.md).
 
@@ -35,9 +36,9 @@ Graphviz on PATH. The renderer validates CML, checks the pinned Context Mapper
 archive's SHA-256, normalizes randomized graph attributes and publishes SVGs
 only after all models render. The workflow regenerates them on `main`.
 
-## PostgreSQL garage and seeding E2E
+## E2E Tests
 
-The [E2E job](../.github/workflows/ci.yml) starts a fresh PostgreSQL 18 service
+The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL 18 service
 and copies the EU SD English `2.4.1.5514` resource bundle from the public
 `2.4.1.5514-0.1.1` server image. It pins the image by digest so later releases
 do not change the fixture. The job builds and tests the checked-out Rust code

@@ -19,6 +19,10 @@ image's game version from the installed state after the update succeeds. The
 extractor and server build come from the same checkout. The full client stays
 on the runner.
 
+The extractor and server builds share BuildKit caches for the Cargo registry
+and compiled dependencies. They reuse these caches while the runner's Docker
+storage is available and rebuild the workspace crates when source layers change.
+
 ## Run an image
 
 For a complete Docker walkthrough with PostgreSQL, port mappings and game

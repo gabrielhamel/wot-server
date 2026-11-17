@@ -23,6 +23,10 @@ jobs:
           persist-credentials: false
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-bin: false
       - name: Check formatting
         run: cargo +stable fmt --all --check
       - name: Clippy
@@ -31,7 +35,7 @@ jobs:
         run: cargo +stable test --locked --workspace --all-targets
 
   e2e:
-    name: Garage and seeding E2E
+    name: E2E Tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -54,6 +58,10 @@ jobs:
           persist-credentials: false
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-bin: false
       - name: Copy the EU 2.4.1.5514 resource fixture
         env:
           RESOURCE_IMAGE: ghcr.io/gabrielhamel/wot-server@sha256:8c0aa7fbbb85d06684595c3dc52be2944f39f6d1d8f42d08b6f4e5c10c6c8778
