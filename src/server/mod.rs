@@ -4,41 +4,60 @@ use crate::{
     admin,
 };
 use anyhow::{Context, Result};
+use clap::Parser;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use tracing::Instrument;
 use wot_resources::ResourceBundle;
 
 mod configuration;
 mod logging;
 mod login_key;
-use configuration::Configuration;
+mod telemetry;
+use configuration::{Configuration, LogLevel};
+
+#[derive(Parser)]
+#[command(version, about = "World of Tanks game server")]
+struct Options {
+    /// Console log level (defaults to server.json, then warn)
+    #[arg(long, value_enum)]
+    log_level: Option<LogLevel>,
+}
 
 pub async fn run() -> Result<()> {
+    let options = Options::parse();
     let executable = std::env::current_exe().context("Locate server executable")?;
     let path = executable
         .parent()
         .context("Locate executable directory")?
         .join("server.json");
-    anyhow::ensure!(
-        std::env::args_os().len() == 1,
-        "The server takes no arguments; edit {}",
-        path.display()
-    );
     let config = Configuration::load(&path).with_context(|| format!("Load {}", path.display()))?;
-    logging::initialize(config.log_level, &config.log_file)?;
+    let level = options.log_level.unwrap_or(config.log_level);
+    let telemetry = tokio::task::spawn_blocking(move || logging::initialize(level))
+        .await
+        .context("Join logging initialization")??;
     tracing::info!(configuration = %path.display(), "Starting server");
     let result = serve(config).await;
     if let Err(error) = &result {
         tracing::error!(error = %format!("{error:#}"), "Server stopped with an error");
     }
+    if let Some(telemetry) = telemetry
+        && let Err(error) = tokio::task::spawn_blocking(move || telemetry.shutdown()).await
+    {
+        tracing::warn!(%error, "OpenTelemetry shutdown task failed");
+    }
     result
 }
 
 async fn serve(config: Configuration) -> Result<()> {
-    let resources = ResourceBundle::open(&config.resource_dir)?;
-    let repository = PostgresAccounts::connect(&config.database_url, config.db_connections).await?;
+    let shutdown = shutdown_signal().context("Listen for shutdown signals")?;
+    let resources = tracing::info_span!("server.load_resources")
+        .in_scope(|| ResourceBundle::open(&config.resource_dir))?;
+    let repository = PostgresAccounts::connect(&config.database_url, config.db_connections)
+        .instrument(tracing::info_span!("server.connect_database"))
+        .await?;
     let keys = repository.catalog_keys().await?;
     let catalog_resources = resources.clone();
     let catalog = Arc::new(
@@ -105,7 +124,7 @@ async fn serve(config: Configuration) -> Result<()> {
     let mut worker = tokio::task::spawn_blocking(move || gateway.run(worker_stop));
     let result = tokio::select! {
         result = &mut worker => result.context("Join game gateway").and_then(|result| result),
-        signal = tokio::signal::ctrl_c() => {
+        signal = shutdown => {
             stop.store(true, Ordering::Relaxed);
             let result = worker.await.context("Join game gateway").and_then(|result| result);
             signal.context("Wait for shutdown signal").and(result)
@@ -116,4 +135,23 @@ async fn serve(config: Configuration) -> Result<()> {
         admin_worker.await.context("Join admin HTTP listener")?;
     }
     result
+}
+
+#[cfg(unix)]
+fn shutdown_signal() -> std::io::Result<impl Future<Output = std::io::Result<()>>> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut terminate = signal(SignalKind::terminate())?;
+    let mut interrupt = signal(SignalKind::interrupt())?;
+    Ok(async move {
+        tokio::select! {
+            _ = interrupt.recv() => Ok(()),
+            _ = terminate.recv() => Ok(()),
+        }
+    })
+}
+
+#[cfg(not(unix))]
+fn shutdown_signal() -> std::io::Result<impl Future<Output = std::io::Result<()>>> {
+    Ok(tokio::signal::ctrl_c())
 }

@@ -1,69 +1,41 @@
-use super::configuration::LogLevel;
+use super::{configuration::LogLevel, telemetry::Telemetry};
 use anyhow::{Context, Result};
-use std::{path::Path, sync::Mutex};
-use tracing_subscriber::{filter::Targets, fmt::writer::MakeWriterExt};
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::{filter::Targets, prelude::*};
 
-pub(super) fn initialize(level: LogLevel, path: &Path) -> Result<()> {
-    use tracing_subscriber::util::SubscriberInitExt;
-    subscriber(level, path)?
-        .try_init()
-        .map_err(|error| anyhow::anyhow!("Initialize logging: {error}"))
-}
-
-fn subscriber(level: LogLevel, path: &Path) -> Result<impl tracing::Subscriber + Send + Sync> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).context("Create log directory")?;
-    }
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .context("Open server log")?;
-    use tracing_subscriber::layer::SubscriberExt;
-    Ok(tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+pub(super) fn initialize(level: LogLevel) -> Result<Option<Telemetry>> {
+    let (telemetry, export_error) = match Telemetry::from_environment() {
+        Ok(telemetry) => (telemetry, None),
+        Err(error) => (None, Some(error)),
+    };
+    let console = tracing_subscriber::fmt::layer()
         .with_ansi(false)
-        .with_writer(std::io::stdout.and(Mutex::new(file)))
-        .finish()
-        .with(
+        .with_writer(std::io::stderr)
+        .with_filter(
             Targets::new()
-                .with_default(tracing::Level::ERROR)
+                .with_default(level.filter().min(LevelFilter::WARN))
                 .with_target("wot_server", level.filter()),
-        ))
-}
+        );
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    let export_filter = || Targets::new().with_target("wot_server", LevelFilter::INFO);
+    let traces = telemetry.as_ref().map(|telemetry| {
+        tracing_opentelemetry::layer()
+            .with_tracer(telemetry.tracer())
+            .with_filter(export_filter())
+    });
+    let logs = telemetry.as_ref().map(|telemetry| {
+        opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(telemetry.logger())
+            .with_filter(export_filter())
+    });
 
-    #[test]
-    fn three_levels_filter_events_and_preserve_previous_log_contents() {
-        for level in [LogLevel::Error, LogLevel::Info, LogLevel::Debug] {
-            let path = std::env::temp_dir().join(format!(
-                "wg-log-{}-{:?}.log",
-                std::process::id(),
-                level.filter()
-            ));
-            std::fs::write(&path, "previous run\n").unwrap();
-            tracing::subscriber::with_default(subscriber(level, &path).unwrap(), || {
-                tracing::error!("error marker");
-                tracing::info!("info marker");
-                tracing::debug!("debug marker");
-                tracing::trace!("trace marker");
-            });
-            let contents = std::fs::read_to_string(&path).unwrap();
-            assert!(contents.starts_with("previous run\n"));
-            assert!(contents.contains("ERROR") && contents.contains("error marker"));
-            assert_eq!(
-                contents.contains("info marker"),
-                !matches!(level, LogLevel::Error)
-            );
-            assert_eq!(
-                contents.contains("debug marker"),
-                matches!(level, LogLevel::Debug)
-            );
-            assert!(!contents.contains("trace marker"));
-            std::fs::remove_file(path).unwrap();
-        }
+    tracing_subscriber::registry()
+        .with(console)
+        .with(traces)
+        .with(logs)
+        .try_init()
+        .context("Initialize logging")?;
+    if let Some(error) = export_error {
+        tracing::warn!(%error, "OpenTelemetry export disabled");
     }
+    Ok(telemetry)
 }

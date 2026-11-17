@@ -244,7 +244,7 @@ impl Protocol {
         // Immediately process any piggyback packet, because they must have been
         // initially sent way before the current packet we are decoding.
         for piggyback in std::mem::take(packet.piggybacks_mut()) {
-            trace!("Processing piggyback packet: {piggyback:?}");
+            trace!(bytes = piggyback.len(), "Processing piggyback packet");
             let _span = trace_span!("pigb").entered();
             // Ignore any error on channel decoding.
             let _ = self.accept_inner(piggyback, addr, depth + 1);

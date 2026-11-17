@@ -40,7 +40,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{runtime::Handle, sync::Semaphore};
-use tracing::{error, info};
+use tracing::{Instrument, error, info};
 use wot_resources::ResourceBundle;
 
 const SYNC_DATA: i16 = 100;
@@ -298,28 +298,42 @@ impl Gateway {
         let catalog = self.catalog.clone();
         let sender = self.sender.clone();
         let grant_epoch = self.grant_epoch;
-        self.runtime.spawn(async move {
-            let result = async {
-                let Some(snapshot) = accounts
-                    .authenticate(&username, event.request.password)
-                    .await?
-                else {
-                    return Ok(None);
-                };
-                tokio::task::spawn_blocking(move || catalog.prepare(snapshot))
-                    .await?
-                    .map(Some)
+        self.runtime.spawn(
+            async move {
+                let result = async {
+                    let Some(snapshot) = accounts
+                        .authenticate(&username, event.request.password)
+                        .await?
+                    else {
+                        return Ok(None);
+                    };
+                    tokio::task::spawn_blocking(move || catalog.prepare(snapshot))
+                        .await?
+                        .map(Some)
+                }
+                .await;
+                tracing::Span::current().record(
+                    "outcome",
+                    match &result {
+                        Ok(Some(_)) => "authenticated",
+                        Ok(None) => "rejected",
+                        Err(_) => "error",
+                    },
+                );
+                let _ = sender.try_send(Completion::Login {
+                    addr,
+                    generation,
+                    grant_epoch,
+                    blowfish: Arc::new(blowfish),
+                    result,
+                });
+                drop(permit);
             }
-            .await;
-            let _ = sender.try_send(Completion::Login {
-                addr,
-                generation,
-                grant_epoch,
-                blowfish: Arc::new(blowfish),
-                result,
-            });
-            drop(permit);
-        });
+            .instrument(tracing::info_span!(
+                "game.authenticate",
+                outcome = tracing::field::Empty
+            )),
+        );
     }
 
     fn complete(&mut self, completion: Completion) {
