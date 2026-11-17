@@ -271,6 +271,7 @@ impl GarageCatalog {
         shop::SHOP_REVISION
     }
 
+    #[tracing::instrument(name = "accounts.infrastructure.plan_ammunition", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, input.inventory_id = inventory_id), err)]
     pub fn plan_ammunition(
         &self,
         snapshot: AccountSnapshot,
@@ -297,6 +298,7 @@ impl GarageCatalog {
         crate::pickle!({"shells": (account::shell_purchases_value(&change.purchases))})
     }
 
+    #[tracing::instrument(name = "accounts.infrastructure.ammunition_diff", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
     pub fn ammunition_diff(
         &self,
         previous: &AccountSnapshot,
@@ -358,6 +360,7 @@ impl GarageCatalog {
         })
     }
 
+    #[tracing::instrument(name = "accounts.infrastructure.prepare", skip_all, fields(code.layer = "infrastructure", wot.context = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
     pub fn prepare(&self, snapshot: AccountSnapshot) -> Result<PreparedAccount> {
         let data = self.project_account(&snapshot)?;
         let cache = account::compress(&data.data(snapshot.revision))?;

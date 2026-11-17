@@ -121,57 +121,63 @@ impl Gateway {
         let catalog = self.catalog.clone();
         let accounts = self.accounts.clone();
         let sender = self.sender.clone();
-        self.runtime.spawn(async move {
-            let result = async {
-                let projection = tokio::task::spawn_blocking(move || {
-                    let change = match catalog.plan_ammunition(
-                        previous.clone(),
-                        request.inventory_id,
-                        &request.shells,
-                    ) {
-                        Ok(change) => change,
-                        Err(error) => return Ok(Err(error)),
+        self.runtime
+            .spawn(tracing::Instrument::in_current_span(async move {
+                let result = async {
+                    let projection = tokio::task::spawn_blocking(
+                        crate::observability::in_current_span(move || {
+                            let change = match catalog.plan_ammunition(
+                                previous.clone(),
+                                request.inventory_id,
+                                &request.shells,
+                            ) {
+                                Ok(change) => change,
+                                Err(error) => return Ok(Err(error)),
+                            };
+                            if !change.changed() {
+                                return Ok(Ok(None));
+                            }
+                            let diff = catalog.ammunition_diff(&previous, &change)?;
+                            let prepared = catalog.prepare(change.snapshot.clone())?;
+                            let receipt = catalog.ammunition_response(&change);
+                            Ok::<_, anyhow::Error>(Ok(Some((change, prepared, diff, receipt))))
+                        }),
+                    )
+                    .await??;
+                    let (change, prepared, diff, receipt) = match projection {
+                        Ok(Some(values)) => values,
+                        Ok(None) => return Ok(Outcome::Unchanged),
+                        Err(error) => return Ok(Outcome::Rejected(error)),
                     };
-                    if !change.changed() {
-                        return Ok(Ok(None));
+                    if !accounts.commit_ammunition(&change).await? {
+                        return Ok(Outcome::StaleAccount);
                     }
-                    let diff = catalog.ammunition_diff(&previous, &change)?;
-                    let prepared = catalog.prepare(change.snapshot.clone())?;
-                    let receipt = catalog.ammunition_response(&change);
-                    Ok::<_, anyhow::Error>(Ok(Some((change, prepared, diff, receipt))))
-                })
-                .await??;
-                let (change, prepared, diff, receipt) = match projection {
-                    Ok(Some(values)) => values,
-                    Ok(None) => return Ok(Outcome::Unchanged),
-                    Err(error) => return Ok(Outcome::Rejected(error)),
-                };
-                if !accounts.commit_ammunition(&change).await? {
-                    return Ok(Outcome::StaleAccount);
+                    Ok(Outcome::Committed {
+                        prepared: Box::new(prepared),
+                        diff,
+                        receipt,
+                    })
                 }
-                Ok(Outcome::Committed {
-                    prepared: Box::new(prepared),
-                    diff,
-                    receipt,
-                })
-            }
-            .await;
-            // Hold the worker permit until the completion is queued, even after disconnect.
-            tokio::task::spawn_blocking(move || {
-                let _permit = permit;
-                let _ = sender.send(super::Completion::Ammunition(Completion {
-                    client,
-                    account_id,
-                    request_id,
-                    result,
-                }));
-            })
-            .await
-            .ok();
-        });
+                .await;
+                // Hold the worker permit until the completion is queued, even after disconnect.
+                tokio::task::spawn_blocking(crate::observability::in_current_span(move || {
+                    let _permit = permit;
+                    let _ = sender.send(super::TracedCompletion::new(
+                        super::Completion::Ammunition(Completion {
+                            client,
+                            account_id,
+                            request_id,
+                            result,
+                        }),
+                    ));
+                }))
+                .await
+                .ok();
+            }));
         Ok(())
     }
 
+    #[tracing::instrument(name = "access.infrastructure.gateway.ammunition_response", skip_all, fields(code.layer = "infrastructure", wot.context = "access", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty))]
     pub(super) fn complete_ammunition(&mut self, completion: Completion) {
         let Completion {
             client,
@@ -179,6 +185,16 @@ impl Gateway {
             request_id,
             result,
         } = completion;
+        tracing::Span::current().record(
+            "output.outcome",
+            match &result {
+                Ok(Outcome::Committed { .. }) => "committed",
+                Ok(Outcome::Unchanged) => "unchanged",
+                Ok(Outcome::Rejected(_)) => "rejected",
+                Ok(Outcome::StaleAccount) => "stale",
+                Err(_) => "error",
+            },
+        );
         self.pending_writes.remove(&account_id);
         let Some(session) = self.sessions.get_mut(&client) else {
             return;

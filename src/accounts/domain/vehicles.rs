@@ -3,6 +3,7 @@ use super::{AccountSnapshot, OwnedVehicle, ProgressionError, ShellLayout, Vehicl
 const MAX_OWNED_VEHICLES: usize = 1024;
 
 impl AccountSnapshot {
+    #[tracing::instrument(name = "accounts.domain.vehicles.buy_vehicle_slot", skip_all, fields(code.layer = "domain", wot.context = "accounts", user.id = self.id, input.slots = self.balances.slots), err)]
     pub(crate) fn buy_vehicle_slot(&mut self, cost: VehicleCost) -> Result<(), ProgressionError> {
         let slots = self
             .balances
@@ -27,6 +28,7 @@ impl AccountSnapshot {
             .ok_or(ProgressionError::InvalidRequest)
     }
 
+    #[tracing::instrument(name = "accounts.domain.vehicles.check_vehicle_capacity", skip_all, fields(code.layer = "domain", wot.context = "accounts", user.id = self.id, input.catalog_key.bytes = catalog_key.len()), err)]
     pub(crate) fn check_vehicle_capacity(&self, catalog_key: &str) -> Result<(), ProgressionError> {
         if self
             .vehicles
@@ -99,6 +101,7 @@ impl VehicleCost {
         })
     }
 
+    #[tracing::instrument(name = "accounts.domain.vehicles.checked_mul", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.count = count), err)]
     pub(super) fn checked_mul(self, count: u32) -> Result<Self, ProgressionError> {
         let count = i64::from(count);
         Ok(Self {
@@ -113,6 +116,7 @@ impl VehicleCost {
         })
     }
 
+    #[tracing::instrument(name = "accounts.domain.vehicles.charge", skip_all, fields(code.layer = "domain", wot.context = "accounts", user.id = snapshot.id, input.gold = self.gold, input.credits = self.credits), err)]
     pub(crate) fn charge(self, snapshot: &mut AccountSnapshot) -> Result<(), ProgressionError> {
         if self.credits < 0 || self.gold < 0 {
             return Err(ProgressionError::NotForSale);
@@ -150,6 +154,7 @@ pub struct VehiclePurchaseRules {
 }
 
 impl VehiclePurchaseRules {
+    #[tracing::instrument(name = "accounts.domain.vehicles.buy", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.researched = researched), err)]
     pub fn buy(
         &self,
         snapshot: &mut AccountSnapshot,

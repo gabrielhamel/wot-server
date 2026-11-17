@@ -25,6 +25,11 @@ struct Token {
     ip: IpAddr,
     issued: Instant,
 }
+struct TracedOutbound {
+    parent: tracing::Span,
+    value: Outbound,
+}
+
 enum Outbound {
     Stanza(String),
     Direct(ChatMessage),
@@ -32,7 +37,7 @@ enum Outbound {
 #[derive(Clone)]
 struct Online {
     generation: u64,
-    sender: mpsc::Sender<Outbound>,
+    sender: mpsc::Sender<TracedOutbound>,
     present: bool,
     game_host: Option<String>,
 }
@@ -65,7 +70,7 @@ impl XmppServer {
         let (shutdown, mut stop) = watch::channel(false);
         let state = shared.clone();
         let permits = Arc::new(Semaphore::new(capacity));
-        let task=runtime.spawn(async move {
+        let task=runtime.spawn(tracing::Instrument::in_current_span(async move {
             loop {
                 tokio::select! {
                     _=stop.changed()=>break,
@@ -80,7 +85,7 @@ impl XmppServer {
                     }
                 }
             }
-        });
+        }));
         tracing::info!(%address,"Native XMPP listener ready");
         Ok(Self {
             shared,
@@ -133,18 +138,27 @@ impl Shared {
             })
         })
     }
+    #[tracing::instrument(name = "access.infrastructure.push", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.id = id, input.stanza.bytes = stanza.len()))]
     async fn push(&self, id: i64, stanza: String) {
         self.enqueue(id, Outbound::Stanza(stanza)).await;
     }
 
+    #[tracing::instrument(name = "access.infrastructure.enqueue", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.id = id))]
     async fn enqueue(&self, id: i64, outbound: Outbound) {
         let mut online = self.online.lock().await;
         if let Some(peer) = online.get(&id)
-            && peer.sender.try_send(outbound).is_err()
+            && peer
+                .sender
+                .try_send(TracedOutbound {
+                    parent: tracing::Span::current(),
+                    value: outbound,
+                })
+                .is_err()
         {
             online.remove(&id);
         }
     }
+    #[tracing::instrument(name = "access.infrastructure.push_available", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.id = id, input.stanza.bytes = stanza.len()))]
     async fn push_available(&self, id: i64, stanza: String) {
         let available = self
             .online
@@ -167,6 +181,7 @@ impl Shared {
         protocol::presence(player, available, host)
     }
 
+    #[tracing::instrument(name = "access.infrastructure.presence", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.id = id, input.available = available), err)]
     async fn presence(&self, id: i64, available: bool) -> Result<()> {
         let player = self
             .social
@@ -194,6 +209,7 @@ impl Shared {
     }
 }
 
+#[tracing::instrument(name = "access.infrastructure.serve", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.client.address = %address), err)]
 async fn serve(
     socket: TcpStream,
     address: SocketAddr,
@@ -219,8 +235,9 @@ async fn serve(
                 }
                 stanza=receiver.recv()=>{
                     let Some(stanza)=stanza else {break;};
-                    if let Some(stanza) = connection.outbound(stanza) {
-                        tokio::time::timeout(Duration::from_secs(10),write.write_all(stanza.as_bytes())).await??;
+                    let TracedOutbound { parent, value } = stanza;
+                    if let Some(stanza) = parent.in_scope(|| connection.outbound(value)) {
+                        tracing::Instrument::instrument(write_stanza(&mut write, &stanza), parent).await?;
                     }
                 }
                 frame=framing.next(&mut read)=>{
@@ -231,13 +248,31 @@ async fn serve(
                             anyhow::ensure!(connection.budget.admit(Instant::now()),"XMPP request budget exceeded");
                             let features=if connection.identity.is_some() {"<bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'/><session xmlns='urn:ietf:params:xml:ns:xmpp-session'/>"} else {"<mechanisms xmlns='urn:ietf:params:xml:ns:xmpp-sasl'><mechanism>PLAIN</mechanism></mechanisms>"};
                             let response=format!("<stream:stream from='{DOMAIN}' id='wot-local' version='1.0' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'><stream:features>{features}</stream:features>");
-                            tokio::time::timeout(Duration::from_secs(10),write.write_all(response.as_bytes())).await??;
+                            write_stanza(&mut write, &response).await?;
                         }
                         Frame::Stanza(stanza)=>{
                             anyhow::ensure!(connection.budget.admit(Instant::now()),"XMPP request budget exceeded");
                             tracing::debug!(%address, account=?connection.identity.as_ref().map(|(id,_)|id),bytes=stanza.len(),"XMPP stanza received");
-                            let replies=tokio::time::timeout(Duration::from_secs(10),connection.handle(&stanza)).await??;
-                            for response in replies {tokio::time::timeout(Duration::from_secs(10),write.write_all(response.as_bytes())).await??;}
+                            let span = tracing::info_span!(
+                                parent: None, "xmpp.request", "code.layer" = "infrastructure", "wot.context" = "access",
+                                "input.bytes" = stanza.len(), "network.protocol.name" = "xmpp",
+                                "user.id" = connection.identity.as_ref().map(|(id, _)| id.to_string()),
+                                "output.stanza_count" = tracing::field::Empty,
+                            );
+                            tracing::Instrument::instrument(async {
+                                let result = async {
+                                let replies=tokio::time::timeout(Duration::from_secs(10),connection.handle(&stanza)).await??;
+                                tracing::Span::current().record("output.stanza_count", replies.len());
+                                for response in replies {
+                                    write_stanza(&mut write, &response).await?;
+                                }
+                                Ok::<(), anyhow::Error>(())
+                                }.await;
+                                if let Err(error) = &result {
+                                    tracing::error!(%error, "XMPP request failed");
+                                }
+                                result
+                            }, span).await?;
                         }
                     }
                 }
@@ -259,4 +294,10 @@ async fn serve(
         }
     }
     result
+}
+
+#[tracing::instrument(name = "xmpp.response", skip_all, fields(code.layer = "infrastructure", wot.context = "access", output.bytes = stanza.len()), err)]
+async fn write_stanza(write: &mut tokio::net::tcp::OwnedWriteHalf, stanza: &str) -> Result<()> {
+    tokio::time::timeout(Duration::from_secs(10), write.write_all(stanza.as_bytes())).await??;
+    Ok(())
 }

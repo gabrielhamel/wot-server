@@ -23,6 +23,25 @@ cover local setup and test fixtures.
   terminology, integration contracts, or file organization change. Follow the
   [testing guide](docs/testing.md) for context-map generation and verification.
 
+## Required telemetry
+
+Telemetry is a required part of each server change. Follow the
+[telemetry contract](docs/telemetry.md) and the
+[agent instructions](AGENTS.md#required-telemetry). A feature is complete when
+its traces explain the request, context and layer transitions, persistence,
+outcome and response.
+
+Use stable span names and set wot.context and code.layer. Attach explicit,
+bounded input attributes and useful result counts or outcomes. Preserve
+parents across async/blocking tasks, queued work and outgoing delivery. Include
+complete parameterized SQL text, transaction boundaries and error status for
+database operations. Keep secret credentials out of telemetry.
+
+Review a complete trace through the affected entry point. Regression tests must
+assert parent-child relationships and meaningful attributes, including relevant
+failure paths. Record the trace shape, setup and results in the PR.
+Instrumentation coverage and trace verification are merge requirements.
+
 ## Required manual testing
 
 Manually verify every contribution against the proposed revision before merge.
@@ -61,4 +80,4 @@ that leave behavior unchanged, explain why regression coverage is inapplicable.
 Link the related issue when one exists and fill out the pull request template.
 Reviewers must verify the owning context and domain terminology, the recorded
 manual results, and the required regression tests in `tests/` before merging.
-Passing CI and manual verification are both required.
+Passing CI, manual verification and required telemetry coverage are all required.

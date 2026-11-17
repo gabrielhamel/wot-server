@@ -38,6 +38,7 @@ pub enum EquipmentPrice {
 }
 
 impl EquipmentPrice {
+    #[tracing::instrument(name = "accounts.domain.equipment.charge", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.count = count), err)]
     pub fn charge(self, balances: &mut Balances, count: u32) -> Result<(), ProgressionError> {
         let (balance, unit_price) = match self {
             Self::Credits(price) => (&mut balances.credits, price),
@@ -87,6 +88,7 @@ impl EquipmentVehicleFilter {
 }
 
 impl EquipmentRules {
+    #[tracing::instrument(name = "accounts.domain.equipment.buy", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.item = item, input.count = count), err)]
     pub fn buy(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -106,6 +108,7 @@ impl EquipmentRules {
         Ok(())
     }
 
+    #[tracing::instrument(name = "accounts.domain.equipment.apply", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.inventory_id = inventory_id), err)]
     pub fn apply(
         &self,
         snapshot: &mut AccountSnapshot,

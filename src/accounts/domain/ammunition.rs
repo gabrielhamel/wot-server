@@ -57,6 +57,7 @@ pub struct AmmunitionRules {
 }
 
 impl AmmunitionRules {
+    #[tracing::instrument(name = "accounts.domain.ammunition.apply", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.requested.count = requested.len(), input.depot.count = depot.len()), err)]
     pub(crate) fn apply(
         &self,
         current: &ShellLayout,

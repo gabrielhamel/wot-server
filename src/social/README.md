@@ -42,3 +42,9 @@ rotation preserves the pair's retained history. Offline delivery uses the same
 committed history; it does not allocate an unbounded mailbox. Legacy rooms remain
 capped at 16 per player. See [protocol findings](../../docs/social.md) for client
 sources, endpoint/authentication contracts and validation limits.
+
+Social application and PostgreSQL repository spans preserve the calling XMPP
+or garage command trace. Inputs include participant IDs, conversation IDs,
+message sizes and bounded operation metadata. Query spans carry complete
+parameterized SQL and transaction boundaries. See the
+[telemetry contract](../../docs/telemetry.md).

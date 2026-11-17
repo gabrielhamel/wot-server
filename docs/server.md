@@ -104,7 +104,7 @@ headers and timeouts. With the endpoint unset, the server does not export.
 
 The collector receives server events and spans at `info` and above,
 independently of the console level. Traces cover resource loading, database
-startup and game authentication; the metric `wot.server.uptime` measures
+startup and the [layered request workflows](telemetry.md); the metric `wot.server.uptime` measures
 process uptime in seconds. Exports run in the background with bounded
 queues. Collector outages do not stop the game server, but telemetry can be
 lost. On SIGINT or SIGTERM, the server shuts down and flushes pending exports.
@@ -127,10 +127,12 @@ this identifies the supplied login and does not establish email ownership.
 Account IDs and email addresses are span attributes, so operators can search
 individual player traces. They are not added to metric labels.
 
-`game.command` spans cover synchronous dispatch for known Account RPCs
-from admitted sessions and include `user.id` and `rpc.method`.
-Their duration covers dispatch, including scheduling asynchronous work, rather
-than the completion of queued database operations.
+Game command spans retain their parent through worker execution and queued
+completion handling. Child spans identify context, code layer, selected inputs,
+domain decisions, database commands and response outcomes. XMPP traces retain
+the same parent through application services, repositories and outgoing
+delivery. The [telemetry contract](telemetry.md) defines the required hierarchy,
+fields and verification for contributions.
 
 The login packet does not provide a confirmed client release version or a
 persistent installation ID. The protocol number and resource digest describe

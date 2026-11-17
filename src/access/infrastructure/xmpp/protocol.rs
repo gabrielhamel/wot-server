@@ -149,7 +149,7 @@ fn message_error(
 pub(super) struct Connection {
     shared: Arc<Shared>,
     ip: IpAddr,
-    sender: mpsc::Sender<Outbound>,
+    sender: mpsc::Sender<super::TracedOutbound>,
     pub identity: Option<(i64, String)>,
     pub generation: u64,
     pub budget: RequestBudget,
@@ -161,7 +161,11 @@ pub(super) struct Connection {
     delivered_order: VecDeque<i64>,
 }
 impl Connection {
-    pub fn new(shared: Arc<Shared>, ip: IpAddr, sender: mpsc::Sender<Outbound>) -> Self {
+    pub fn new(
+        shared: Arc<Shared>,
+        ip: IpAddr,
+        sender: mpsc::Sender<super::TracedOutbound>,
+    ) -> Self {
         Self {
             shared,
             ip,
@@ -207,6 +211,7 @@ impl Connection {
     pub fn bound(&self) -> bool {
         self.bound
     }
+    #[tracing::instrument(name = "access.infrastructure.xmpp.handle", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.stanza.bytes = stanza.len(), xmpp.stanza.name = tracing::field::Empty, xmpp.stanza.id = tracing::field::Empty, user.id = tracing::field::Empty, messaging.message.body.size = tracing::field::Empty, messaging.destination.id = tracing::field::Empty), err)]
     pub async fn handle(&mut self, stanza: &str) -> Result<Vec<String>> {
         let wrapped = format!(
             "<root xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>{stanza}</root>"
@@ -216,6 +221,14 @@ impl Connection {
             .root_element()
             .first_element_child()
             .context("Empty XMPP stanza")?;
+        let span = tracing::Span::current();
+        span.record("xmpp.stanza.name", node.tag_name().name());
+        if let Some(id) = node.attribute("id").filter(|id| id.len() <= 128) {
+            span.record("xmpp.stanza.id", id);
+        }
+        if let Some((owner, _)) = &self.identity {
+            span.record("user.id", owner.to_string());
+        }
         tracing::debug!(element = node.tag_name().name(), "Handling XMPP element");
         if node.tag_name().name() == "auth" {
             anyhow::ensure!(self.identity.is_none(), "Repeated authentication");
@@ -351,6 +364,8 @@ impl Connection {
                     return Ok(Vec::new());
                 };
                 let peer = player_id(node.attribute("to").context("Missing message recipient")?)?;
+                tracing::Span::current().record("messaging.message.body.size", body.len());
+                tracing::Span::current().record("messaging.destination.id", peer.to_string());
                 if Instant::now() < self.next_message {
                     return Ok(message_error(
                         owner,
@@ -402,6 +417,7 @@ impl Connection {
         )
     }
 
+    #[tracing::instrument(name = "access.infrastructure.xmpp.roster_state", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.owner = owner, input.peer = peer), err)]
     async fn roster_state(&self, owner: i64, peer: i64) -> Result<Option<Friendship>> {
         Ok(self
             .shared
@@ -480,6 +496,7 @@ impl Connection {
         }
     }
 
+    #[tracing::instrument(name = "access.infrastructure.xmpp.iq", skip_all, fields(code.layer = "infrastructure", wot.context = "access", input.owner = owner), err)]
     async fn iq(&mut self, owner: i64, node: roxmltree::Node<'_, '_>) -> Result<Vec<String>> {
         let id = node.attribute("id").unwrap_or_default();
         let kind = node.attribute("type").unwrap_or_default();

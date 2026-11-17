@@ -47,6 +47,7 @@ pub struct ConsumableRules {
 }
 
 impl ConsumableRules {
+    #[tracing::instrument(name = "accounts.domain.consumables.buy_for_vehicle", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.inventory_id = inventory_id, input.slots = slots), err)]
     pub(crate) fn buy_for_vehicle(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -76,6 +77,7 @@ impl ConsumableRules {
         Ok(())
     }
 
+    #[tracing::instrument(name = "accounts.domain.consumables.buy", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.item = item, input.count = count), err)]
     pub fn buy(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -99,6 +101,7 @@ impl ConsumableRules {
         Ok(())
     }
 
+    #[tracing::instrument(name = "accounts.domain.consumables.fill", skip_all, fields(code.layer = "domain", wot.context = "accounts", input.inventory_id = inventory_id, input.slots = slots), err)]
     pub fn fill(
         &self,
         snapshot: &mut AccountSnapshot,

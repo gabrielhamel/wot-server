@@ -110,6 +110,7 @@ fn player_id(id: &str) -> Result<i64, ApiError> {
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "Player not found."))
 }
 
+#[tracing::instrument(name = "admin.presentation.garage.show", skip_all, fields(code.layer = "presentation", wot.context = "admin", input.id.bytes = id.len()), err)]
 pub(super) async fn show(
     State(state): State<AdminState>,
     Path(id): Path<String>,
@@ -128,6 +129,7 @@ pub(super) async fn show(
     Ok(Json(Garage::from_snapshot(snapshot, &state.catalog)))
 }
 
+#[tracing::instrument(name = "admin.presentation.garage.catalog", skip_all, fields(code.layer = "presentation", wot.context = "admin", input.collection = "vehicles"))]
 pub(super) async fn catalog(State(state): State<AdminState>) -> Json<Vec<VehicleRecord>> {
     let mut vehicles: Vec<_> = state
         .catalog
@@ -138,6 +140,7 @@ pub(super) async fn catalog(State(state): State<AdminState>) -> Json<Vec<Vehicle
     Json(vehicles)
 }
 
+#[tracing::instrument(name = "admin.presentation.garage.grant", skip_all, fields(code.layer = "presentation", wot.context = "admin", input.id.bytes = id.len(), input.grant = tracing::field::Empty), err)]
 pub(super) async fn grant(
     State(state): State<AdminState>,
     Path(id): Path<String>,
@@ -166,6 +169,7 @@ pub(super) async fn grant(
         }
         GrantBody::Vehicle { vehicle } => PlayerGrant::Vehicle { vehicle },
     };
+    tracing::Span::current().record("input.grant", tracing::field::debug(grant));
     let (snapshot, delivery) = state.grants.grant(id, grant).await.map_err(grant_error)?;
     Ok(Json(GrantResponse {
         garage: Garage::from_snapshot(snapshot, &state.catalog),
