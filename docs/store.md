@@ -7,24 +7,32 @@ shows the credit balance and Depot quantity for each offer.
 
 ## Configuration
 
-Add an optional `store` object to the server's `server.json`. For a game
-client on the same computer, use a loopback listener and origin.
+Build the shared React project with `npm --prefix web ci` and
+`npm --prefix web run build`. Configure the same HTTP listener used by the
+[admin dashboard](admin.md). The Store can be enabled on its own.
 
 ```json
 {
+  "web": {
+    "bind": "127.0.0.1:8080",
+    "ui_dir": "../../web/dist"
+  },
   "store": {
-    "bind": "127.0.0.1:8081",
-    "origin": "http://127.0.0.1:8081"
+    "origin": "http://127.0.0.1:8080"
   }
 }
 ```
 
-For remote clients, set `origin` to a reachable HTTPS origin and route
-`/store/*` on that origin to the Store listener through your TLS reverse proxy.
-Keep the listener reachable only by the proxy. Serve the Store at the advertised
-origin without redirects and isolate it from unrelated web applications.
-The Store listener is independent of the optional admin listener.
-Reconnect the game after enabling the Store so it receives its URL.
+The client opens `/shop/` and sends requests to `/api/shop/`.
+For remote clients, set `store.origin` to a reachable HTTPS origin and route
+`/shop`, `/shop/*`, `/assets/*` and `/api/shop/*` to the shared listener
+through your TLS reverse proxy. Keep admin routes on the access policy used
+by your deployment. The container ships the compiled web UI in `web/`
+beside the server binary.
+
+If upgrading a development configuration that used a separate Store bind,
+move the shared address to `web.bind` and update `store.origin` to match the
+shared listener or its reverse proxy. Reconnect after changing the Store URL.
 
 ## Client and checkout protocol
 
@@ -62,10 +70,10 @@ Redact authorization headers when logging proxy traffic. The game may log
 its Store URL locally, including the fragment. Disconnect before sharing game
 logs to invalidate the token.
 
-- `GET /store/catalog` returns the offers, balance, Depot quantities and
+- `GET /api/shop/catalog` returns the offers, balance, Depot quantities and
   account revision. Offer selection excludes items with `notInShop` or
   `notForSale` restrictions and uses the equipment rules' established price.
-- `POST /store/orders` accepts an item descriptor, the displayed price in
+- `POST /api/shop/orders` accepts an item descriptor, the displayed price in
   credits, and the displayed account revision as a decimal string. The gateway
   holds the account's write slot and reloads its persisted snapshot. Accounts
   checks the quote and applies the existing equipment purchase rules. PostgreSQL

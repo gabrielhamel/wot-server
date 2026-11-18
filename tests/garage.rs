@@ -33,6 +33,8 @@ mod social_flow;
 mod store_flow;
 #[path = "support/telemetry_capture.rs"]
 mod telemetry_capture;
+#[path = "support/web_flow.rs"]
+mod web_flow;
 #[path = "support/xmpp_flow.rs"]
 mod xmpp_flow;
 use std::{

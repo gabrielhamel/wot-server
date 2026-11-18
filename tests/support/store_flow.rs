@@ -97,7 +97,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
                 .shop_url
                 .as_ref()
                 .unwrap()
-                .strip_prefix("http://127.0.0.1:8081/store/#")
+                .strip_prefix("http://127.0.0.1:8081/shop/#")
                 .unwrap()
                 .to_owned();
             (peer, token, state)
@@ -198,9 +198,9 @@ async fn store_request(
     order: Option<&Value>,
 ) -> (StatusCode, Value) {
     let mut request = Request::builder().uri(if order.is_some() {
-        "/store/orders"
+        "/api/shop/orders"
     } else {
-        "/store/catalog"
+        "/api/shop/catalog"
     });
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
@@ -265,7 +265,7 @@ fn assert_store_traces(account_id: i64, item: i64, credits: i64) {
             .find(|span| span.span_context.span_id() == operation.parent_span_id)
             .expect("Missing Store HTTP request parent");
         assert_eq!(root.name, "store.http.request");
-        assert!(has(root, "http.route", "/store/orders"));
+        assert!(has(root, "http.route", "/api/shop/orders"));
         assert!(has(root, "http.response.status_code", status));
     }
     let child = |parent: &opentelemetry_sdk::trace::SpanData, name| {

@@ -10,7 +10,7 @@ a review of the names used in this map.
 [Shared Kernel](src/shared_kernel/README.md) supplies the account ID model to
 Player Administration, Player Sessions, and Social.
 [Platform](src/platform/README.md) supplies shared codecs to Accounts and
-Player Sessions, bounded HTTP serving to the Admin and Store listeners, and
+Player Sessions, bounded HTTP serving to the shared web listener, and
 tracing adapters to runtime infrastructure and server composition. Both support boundaries are independent of their consumers.
 
 [Accounts](src/accounts/README.md) publishes its application API and immutable

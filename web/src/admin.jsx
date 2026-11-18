@@ -1,5 +1,4 @@
 import '@fontsource-variable/inter/wght.css';
-import { createRoot } from 'react-dom/client';
 import GroupOutlined from '@mui/icons-material/GroupOutlined';
 import ShieldOutlined from '@mui/icons-material/ShieldOutlined';
 import { Box, Button, Typography } from '@mui/material';
@@ -101,10 +100,12 @@ function TokenLogin() {
   );
 }
 
-createRoot(document.getElementById('root')).render(
-  <Admin title="World of Tanks Server" dataProvider={dataProvider} authProvider={authProvider}
-    loginPage={TokenLogin} layout={ServerLayout} theme={theme} darkTheme={null} disableTelemetry>
-    <Resource name="players" options={{ label: 'Player accounts' }}
-      icon={GroupOutlined} list={PlayerList} create={PlayerCreate} show={PlayerGarage} />
-  </Admin>,
-);
+export default function AdminApp() {
+  return (
+    <Admin title="World of Tanks Server" dataProvider={dataProvider} authProvider={authProvider}
+      loginPage={TokenLogin} layout={ServerLayout} theme={theme} darkTheme={null} disableTelemetry>
+      <Resource name="players" options={{ label: 'Player accounts' }}
+        icon={GroupOutlined} list={PlayerList} create={PlayerCreate} show={PlayerGarage} />
+    </Admin>
+  );
+}

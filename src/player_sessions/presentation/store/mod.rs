@@ -7,18 +7,15 @@ use axum::{
     extract::{DefaultBodyLimit, MatchedPath, Request, State, rejection::JsonRejection},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     middleware::{Next, from_fn},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use std::net::SocketAddr;
 
 pub(crate) fn router(requests: StoreRequests) -> Router {
     Router::new()
-        .route("/store/", get(page))
-        .route("/store/store.js", get(script))
-        .route("/store/store.css", get(styles))
-        .route("/store/catalog", get(catalog))
-        .route("/store/orders", post(purchase))
+        .route("/api/shop/catalog", get(catalog))
+        .route("/api/shop/orders", post(purchase))
         .layer(DefaultBodyLimit::max(1024))
         .layer(from_fn(serve_request))
         .with_state(requests)
@@ -56,28 +53,7 @@ async fn serve_request(request: Request, next: Next) -> Response {
     response
 }
 
-async fn page() -> Html<&'static str> {
-    Html(include_str!("store.html"))
-}
-
-async fn script() -> impl IntoResponse {
-    (
-        [(
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        )],
-        include_str!("store.js"),
-    )
-}
-
-async fn styles() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
-        include_str!("store.css"),
-    )
-}
-
-#[tracing::instrument(name = "player_sessions.store.catalog_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = "/store/catalog", user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
+#[tracing::instrument(name = "player_sessions.store.catalog_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = "/api/shop/catalog", user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
 async fn catalog(State(store): State<StoreRequests>, headers: HeaderMap) -> Response {
     respond(&store, &headers, None).await
 }
@@ -100,7 +76,7 @@ impl OrderPayload {
     }
 }
 
-#[tracing::instrument(name = "player_sessions.store.purchase_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = "/store/orders", input.item = tracing::field::Empty, user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
+#[tracing::instrument(name = "player_sessions.store.purchase_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = "/api/shop/orders", input.item = tracing::field::Empty, user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
 async fn purchase(
     State(store): State<StoreRequests>,
     headers: HeaderMap,

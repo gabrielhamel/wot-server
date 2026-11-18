@@ -44,8 +44,9 @@ The generated JSON contains the following settings:
 | `max_clients` | `256`, admitted/pending handoff capacity, allowed range 1–256 |
 | `max_pending` | `32`, authentication worker capacity, allowed range 1–256 |
 | `log_level` | `"warn"`; also accepts `"error"`, `"info"`, `"debug"`, `"trace"` |
-| `admin` | `null`; set an [admin configuration object](admin.md) to enable HTTP |
-| `store` | `null`; set a [Store listener and origin](store.md#configuration) to enable the in-game Store |
+| `web` | `null`; shared HTTP bind and compiled UI directory for `/admin/` and `/shop/` |
+| `admin` | `null`; set an [admin token](admin.md) to enable the admin API |
+| `store` | `null`; set a [Store origin](store.md#configuration) to enable the in-game Store |
 
 Unknown fields, invalid types and invalid limits stop startup with a diagnostic.
 Missing fields use defaults. In an existing configuration, replace `game_dir`

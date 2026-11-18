@@ -18,7 +18,7 @@ ContextMap Server {
     implementationTechnology = "Common client-format codecs, bounded HTTP connection serving and blocking-work span propagation"
   }
   Platform [U] -> [D] PlayerAdministration {
-    implementationTechnology = "Shared bounded HTTP connection serving"
+    implementationTechnology = "Bounded HTTP serving for the admin API and shared web UI"
   }
   Platform [U] -> [D] Social {
     implementationTechnology = "Common PostgreSQL span adapter"
@@ -36,7 +36,7 @@ ContextMap Server {
     implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
   }
   GameClient [U] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Mercury UDP login, handoff, session replacement notices and garage RPCs; session-authorized HTTP Store with the configured host in the embedded browser allowlist"
+    implementationTechnology = "Mercury UDP login, handoff, session replacement notices and garage RPCs; session-authorized Store API on the shared listener with the configured host in the browser allowlist"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccounts API for identity listing and provisioning, plus account snapshots and the vehicle catalog for the operator garage"

@@ -22,7 +22,7 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | `application/store.rs` | Store session tokens and the bounded request channel between HTTP and the gateway. |
 | `infrastructure/gateway/store.rs` | Look up live Store sessions and coordinate catalog reads and account writes. |
 | `infrastructure/gateway/account_updates.rs` | Update handoff and session snapshots and deliver committed cache diffs for external account writes. |
-| `presentation/store/` | In-game Store page and HTTP catalog and checkout endpoints. |
+| `presentation/store/` | In-game Store HTTP catalog and checkout endpoints consumed by the [shared web UI](../../web/). |
 | `infrastructure/gateway/cosmetics.rs` | Decode native cosmetic stock purchases and binary seasonal and common outfits for the shared progression transaction. |
 | `infrastructure/gateway/expendables.rs` | Decode consumable and directive layouts and auto-resupply settings for the shared progression transaction. |
 | `infrastructure/gateway/social.rs` | Messenger wire translation, bounded async Social requests, presence and private delivery. |

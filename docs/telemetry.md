@@ -35,10 +35,14 @@ same authentication trace.
           mercury.response                      [onKickedFromServer, sent]
         mercury.login.response                  [success, sent]
 
+The shared web listener composes the admin and Store APIs. Page shells and
+shared assets emit `web.ui.request` with their matched route and HTTP status.
+Admin and Store API requests keep their own request spans.
+
 A Store checkout joins the HTTP request to the account transaction and garage
 delivery even though they run on separate workers.
 
-    store.http.request                            [POST /store/orders, 200]
+    store.http.request                            [POST /api/shop/orders, 200]
       player_sessions.store.purchase_request
         player_sessions.store.purchase
           accounts.store.plan_purchase

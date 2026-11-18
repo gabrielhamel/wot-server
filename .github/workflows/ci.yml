@@ -78,13 +78,13 @@ jobs:
           cargo +stable test --locked --lib exports_admin_http_request_inputs -- --ignored
           cargo +stable test --locked -p wot-server --test garage -- --ignored
 
-  dashboard:
-    name: Dashboard build
+  web:
+    name: Web UI build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: dashboard
+        working-directory: web
     steps:
       - uses: actions/checkout@v6
         with:
@@ -93,6 +93,6 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: dashboard/package-lock.json
+          cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run build
