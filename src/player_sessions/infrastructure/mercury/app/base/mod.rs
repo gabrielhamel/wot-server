@@ -368,11 +368,55 @@ impl App {
             return self.skip::<SkippedEntityMethod>(reader);
         };
 
-        let call = reader
-            .read::<element::BaseEntityMethod, _>(&dispatch.base_methods)?
-            .element
-            .call;
+        let addr = client.addr();
+        let span = tracing::info_span!(
+            parent: None, "game.command",
+            "ddd.bounded_context.name" = "player_sessions",
+            "user.id" = tracing::field::Empty,
+            "rpc.method" = tracing::field::Empty,
+            "input.method_id" = tracing::field::Empty,
+            "input.entity_id" = %entity.id(),
+            "input.args.count" = tracing::field::Empty,
+            "input.bytes" = tracing::field::Empty,
+            "input.command_id" = tracing::field::Empty,
+            "input.request_id" = tracing::field::Empty,
+            "output.outcome" = tracing::field::Empty,
+            "client.address" = %addr.ip(),
+            "client.port" = addr.port(),
+            "network.peer.address" = %addr.ip(),
+            "network.peer.port" = addr.port(),
+            "network.transport" = "udp",
+            "network.protocol.name" = "mercury",
+        );
+        let call = span.in_scope(|| {
+            let call = reader
+                .read::<element::BaseEntityMethod, _>(&dispatch.base_methods)
+                .map_err(|error| {
+                    span.record("output.outcome", "wire_decode_failed");
+                    tracing::error!(%error, "Could not decode Mercury base method");
+                    error
+                })?
+                .element
+                .call;
+            match &call {
+                MethodCall::Known {
+                    exposed_id,
+                    name,
+                    args,
+                } => {
+                    span.record("input.method_id", exposed_id);
+                    span.record("rpc.method", name.as_ref());
+                    span.record("input.args.count", args.len());
+                }
+                MethodCall::Unknown { exposed_id, data } => {
+                    span.record("input.method_id", exposed_id);
+                    span.record("input.bytes", data.len());
+                }
+            }
+            Ok::<_, io::Error>(call)
+        })?;
         self.events.push_back(Event::BaseMethod(BaseMethodEvent {
+            span,
             client,
             entity,
             call,
@@ -834,6 +878,7 @@ pub struct EnableEntitiesEvent {
 /// A client called a method on its current base-player entity.
 #[derive(Debug)]
 pub struct BaseMethodEvent {
+    pub(crate) span: tracing::Span,
     pub client: ClientKey,
     pub entity: EntityKey<AnyEntity>,
     /// The decoded call, resolved dynamically against the entity's own base-method

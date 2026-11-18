@@ -54,11 +54,11 @@ meanings on different operations; those differences are listed explicitly.
 | [`user.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | Nonempty player display name from the account snapshot already returned by successful game authentication. Never copied from the login email; omitted if unavailable. No extra database query. |
 | [`user.email`](../src/player_sessions/infrastructure/gateway/mod.rs) | Email-shaped login supplied by the current game authentication payload, recorded after authentication succeeds. Requires nonempty local part, a dot in the domain, and no whitespace; this is a shape check, not proof of ownership. Omitted for non-email logins and requests without an email payload. |
 | [`network.protocol.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | `mercury` for game authentication/commands, `xmpp` for incoming XMPP requests. |
-| [`rpc.method`](../src/player_sessions/infrastructure/gateway/mod.rs) | Known incoming game entity method name on `game.command`. |
+| [`rpc.method`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Known incoming entity method on `game.command` or outbound entity method on `mercury.response`. |
 | [`wot.client.protocol_version`](../src/player_sessions/infrastructure/gateway/mod.rs) | Protocol number supplied by the game login request; not a confirmed game release version. |
 | [`wot.client.resource_digest`](../src/player_sessions/infrastructure/gateway/mod.rs) | Optional login digest encoded as hexadecimal. Omitted when the request does not supply a digest. |
 | [`wot.client.language`](../src/player_sessions/infrastructure/gateway/mod.rs) | Login context `lang_id`, when valid JSON provides a string of at most 32 bytes; otherwise omitted. |
-| [`outcome`](../src/player_sessions/infrastructure/gateway/mod.rs) | Game authentication result: `authenticated`, `rejected` (credentials did not authenticate), or `error` (operation failed). |
+| [`outcome`](../src/player_sessions/infrastructure/gateway/mod.rs) | Game authentication result: `authenticated`, `rejected` or `error` after credential work. Early exits record `invalid_username`, `malformed_request`, `rate_limited`, `admission_unavailable`, `admission_expired` or `completion_unavailable`. |
 
 ## HTTP and XMPP
 
@@ -83,7 +83,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`xmpp.stanza.id`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Optional XML stanza `id` when at most 128 bytes; omitted when absent or longer. |
 | [`messaging.destination.id`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Resolved recipient account ID on an XMPP private-message handler; recorded after recipient resolution. |
 | [`messaging.message.body.size`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | UTF-8 byte length of the private-message body. The body text is not recorded. |
-| [`input.bytes`](../src/player_sessions/infrastructure/xmpp/mod.rs) | Incoming XMPP stanza byte length on `xmpp.request`. |
+| [`input.bytes`](../src/player_sessions/infrastructure/xmpp/mod.rs) | Incoming XMPP stanza byte length on `xmpp.request`. On `game.command`, undecoded argument bytes for an unknown Mercury method. |
 | [`input.stanza.bytes`](../src/player_sessions/infrastructure/xmpp/mod.rs) | XMPP stanza byte length on handling or push operations. |
 | [`input.available`](../src/player_sessions/infrastructure/xmpp/mod.rs) | Presence availability boolean requested by `player_sessions.presence`. |
 
@@ -92,16 +92,22 @@ meanings on different operations; those differences are listed explicitly.
 | Attribute | Meaning and emission |
 | --- | --- |
 | [`input.client.address`](../src/player_sessions/infrastructure/gateway/mod.rs) | Client socket address (IP and port) for connection, gateway enable, or social dispatch/work/completion operations. |
-| [`input.request_id`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Decoded Mercury command or legacy chat request correlation ID; also retained by resource responses and garage completions. Unused fields remain absent if decoding fails. |
-| [`input.command_id`](../src/player_sessions/infrastructure/gateway/commands.rs) | Decoded account command number on `player_sessions.commands.command`. |
+| [`input.request_id`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Decoded Mercury command or legacy chat request correlation ID; also recorded by operation, resource, LoginApp reply and garage completion spans. Mercury client method spans record it for `onCmdResponse`, `onCmdResponseExt` and `onTokenReceived`. Omitted when the operation has no decoded correlation ID. |
+| [`input.command_id`](../src/player_sessions/infrastructure/gateway/commands.rs) | Decoded account command number on `game.command` and `player_sessions.commands.command`. |
+| [`input.method_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Numeric exposed Mercury method ID after wire decoding. |
+| [`input.entity_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Protocol entity ID of the player's target entity. |
+| [`input.string.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | UTF-8 byte length of the `doCmdStr` argument. |
+| [`input.cache.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Cached shop length in bytes reported by the client. |
+| [`input.cache.crc`](../src/player_sessions/infrastructure/gateway/commands.rs) | Signed CRC32 of the shop cache reported by the client. |
+| [`input.token_type`](../src/player_sessions/infrastructure/gateway/commands.rs) | Numeric token kind from the Mercury request. Credential material stays out of telemetry. |
 | [`input.arg0`](../src/player_sessions/infrastructure/gateway/commands.rs) | First decoded scalar argument on supported scalar command forms; absent for array-only forms. |
 | [`input.arg1`](../src/player_sessions/infrastructure/gateway/commands.rs) | Second decoded scalar argument, when the command form supplies it. |
 | [`input.arg2`](../src/player_sessions/infrastructure/gateway/commands.rs) | Third decoded scalar argument, when the command form supplies it. |
 | [`input.arg3`](../src/player_sessions/infrastructure/gateway/commands.rs) | Fourth decoded scalar argument, when the command form supplies it. |
-| [`input.args.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Decoded array argument length on array command forms; array contents are not recorded. |
+| [`input.args.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of wire method arguments on `game.command`; number of integers on decoded array commands, settings and ammunition spans. Array contents stay out of telemetry. |
 | [`input.outfits.count`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Number of outfit descriptors in a decoded array command, including empty descriptors. |
 | [`input.outfit.bytes`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Total length in bytes of all outfit descriptors passed to the Exterior adapter. Descriptor contents are omitted. |
-| [`input.shop_revision`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Requested shop revision on a cosmetic purchase or apply command when the first integer is present. |
+| [`input.shop_revision`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Requested shop revision on a cosmetic purchase or apply command, or on progression and ammunition dispatch when supplied. |
 | [`input.has_command`](../src/player_sessions/infrastructure/gateway/progression.rs) | Whether progression dispatch received a parsed progression command. |
 | [`input.id`](../src/player_sessions/application/mod.rs) | Operation-specific ID: account ID for account snapshot/settings and Social player lookup; target account for XMPP pushes/presence; crew member ID for crew dismissal/restoration; conversation ID for `social.conversations.load`. Interpret with the span name. |
 | [`input.account_id`](../src/player_sessions/application/grants.rs) | Target account ID passed to the Player Sessions admin-grant use case. Also recorded on the root HTTP span after an authenticated garage or grant route parses a positive account ID. |
@@ -111,14 +117,14 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.first`](../src/social/infrastructure/conversations.rs) | First account ID used to acquire a private-conversation pair lock. |
 | [`input.second`](../src/social/infrastructure/conversations.rs) | Second account ID used to acquire a private-conversation pair lock. |
 | [`input.conversation`](../src/social/application/mod.rs) | Private-conversation ID for send, close, history loading, or retention operations. |
-| [`input.action`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat action number on `player_sessions.social.send_chat`; debug-form friendship action (`Save`, `Request`, `Accept`, `Decline`, `Cancel`, `Remove`) on Social friendship operations. Interpret with the span name. |
+| [`input.action`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat action number on Mercury dispatch and `player_sessions.social.send_chat`; debug-form friendship action (`Save`, `Request`, `Accept`, `Decline`, `Cancel`, `Remove`) on Social friendship operations. Interpret with the span name. |
 | [`input.change`](../src/social/application/mod.rs) | Debug-form contact change (`Friend`, `Ignore`, `RemoveFriend`, `RemoveIgnored`) requested through the Social use case/repository. |
 | [`input.request`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat correlation ID passed to the protocol error-response builder. |
 | [`input.event`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat event/action byte passed to the protocol error-response builder. |
-| [`input.channel`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat channel ID passed to the protocol error-response builder. |
+| [`input.channel`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat channel ID on Mercury dispatch and protocol error responses. |
 | [`input.response`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat response code passed to the protocol error-response builder. |
 | [`input.prefix.bytes`](../src/social/application/mod.rs) | UTF-8 byte length of a player-search prefix; prefix text is omitted. |
-| [`input.text.bytes`](../src/social/application/mod.rs) | UTF-8 byte length of a private message passed to Social; message text is omitted. |
+| [`input.text.bytes`](../src/social/application/mod.rs) | UTF-8 byte length of a private message passed to Social or of the primary Mercury legacy chat string argument. Message text is omitted. |
 
 ## Account, inventory and progression inputs
 
@@ -128,11 +134,11 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. |
 | [`input.algorithm`](../src/accounts/application/players.rs) | Password hashing algorithm on `accounts.players.hash_password`, currently `argon2id`. Password and hash are omitted. |
 | [`input.previous_revision`](../src/player_sessions/application/mod.rs) | Expected persisted revision for an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
-| [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input account snapshot used for catalog preparation or mutation planning. |
-| [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case. |
+| [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input snapshot used for catalog preparation or mutation planning. On garage sync, the revision requested by the client. |
+| [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case or completion, after deduplication by key. |
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
 | [`input.inventory_id`](../src/accounts/application/mod.rs) | Owned vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables, outfit changes or a bound stat tracker grant. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
-| [`input.operation`](../src/accounts/domain/cosmetics.rs) | Exterior action on the ownership decision span, `buy` or `apply`. |
+| [`input.operation`](../src/accounts/domain/cosmetics.rs) | Exterior action on the ownership decision span, `buy` or `apply`. On progression planning, a server-defined operation label such as `research`, `buy_vehicle` or `crew`. |
 | [`input.items.count`](../src/accounts/domain/cosmetics.rs) | Number of purchase lines or requested placements across the supplied seasons. Each painted region counts as one placement. |
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
 | [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor for a bound stat tracker grant or vehicle-specific outfit change, and on the root HTTP span for a decoded vehicle grant. |
@@ -150,11 +156,11 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.stat_tracker_id`](../src/accounts/domain/cosmetics.rs) | Numeric catalog ID of the granted tracker. Recorded on the root HTTP span and on the account grant operation. |
 | [`input.amount`](../src/accounts/domain/grants.rs) | Requested amount of currency or number of cosmetic copies in a grant, before count and ownership checks. Also recorded on the root HTTP span after decoding the grant. |
 | [`input.slots`](../src/accounts/domain/consumables.rs) | Current garage slot balance on `accounts.vehicles.buy_vehicle_slot`; available consumable-slot count on consumable purchase/fill operations. |
-| [`input.requested.count`](../src/accounts/domain/ammunition.rs) | Number of requested shell selections passed to ammunition validation. |
+| [`input.requested.count`](../src/accounts/domain/ammunition.rs) | Number of requested shell selections passed to ammunition planning or validation. |
 | [`input.depot.count`](../src/accounts/domain/ammunition.rs) | Number of distinct shell types in the depot passed to ammunition validation; not total shell units. |
 | [`input.stock.shell_types`](../src/accounts/domain/depot.rs) | Number of distinct shell types currently held in depot stock at the start of a depot sale. |
 | [`input.stock.fitting_types`](../src/accounts/domain/depot.rs) | Number of distinct fitting/item descriptors currently held in depot stock at the start of a depot sale. |
-| [`input.vehicle_count`](../src/accounts/infrastructure/players.rs) | Number of vehicles persisted on `accounts.players.persist_starter_garage` during player creation. |
+| [`input.vehicle_count`](../src/accounts/infrastructure/players.rs) | Number of vehicles persisted during starter garage creation or projected for the account cache. |
 
 ## Crew inputs
 
@@ -179,10 +185,16 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Encoded outgoing XMPP stanza or Mercury resource response byte length; excludes transport framing added later. |
+| [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Encoded outgoing XMPP stanza, compressed garage cache or Mercury resource response byte length. Excludes transport framing. |
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
-| [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage progression/ammunition completion result: `committed`, `unchanged`, `rejected`, `stale`, or `error`. The Exterior decision also records `changed`, `unchanged` or `rejected`. Progression dispatch records `invalid_request`, `stale_shop`, `busy` or `queued` when it returns before work is scheduled. |
-| [`output.delivery`](../src/player_sessions/infrastructure/gateway/progression.rs) | Progression completion handed to the reliable transport queue (`queued`), absent session or entity (`unavailable`), or response enqueue failure (`failed`). |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/commands.rs) | Mercury dispatch records `dispatched`, `wire_decode_failed`, `decode_failed`, `unknown_method`, `entity_unavailable` or `dispatch_failed` on the root. Unsupported or compatibility commands record `unimplemented`, `ignored` or `acknowledged_without_change` on the decoded command span. Garage and shop sync record `up_to_date`, `cache_hit` or `stream` as applicable. |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage completions record `committed`, `unchanged`, `rejected`, `stale` or `error`. The Exterior decision records `changed`, `unchanged` or `rejected`. Mutation dispatch records `invalid_request`, `stale_shop`, `busy`, `queued` or `started` as applicable. |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/social.rs) | Mercury Social dispatch records early rejection reasons. Its worker records `busy`, `started` or `completion_unavailable`. XMPP roots record `handled`, `rate_limited` or `failed`. Admin token checks record `authorized` or `rejected`. |
+| [`output.delivery`](../src/player_sessions/infrastructure/gateway/progression.rs) | Garage completion reports response enqueue (`queued`), absent session or entity (`unavailable`), or failure to enqueue (`failed`). XMPP enqueue reports `queued`, `offline` or `enqueue_failed`. |
+| [`output.delivery`](../src/player_sessions/infrastructure/mercury/app/outbox.rs) | Mercury transport records `sent` on a successful socket write, `send_failed` on write failure, `enqueue_failed` on method encoding or enqueue failure, or `discarded` on removal of an unsent bundle. Login responses record `sent` or `send_failed`. |
+| [`output.response_code`](../src/player_sessions/infrastructure/mercury/app/entity.rs) | On-wire result from `onCmdResponse`, `onCmdResponseExt`, or the LoginApp reply. |
+| [`output.players.online`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of current gateway sessions returned as cluster and region CCU by command 501. |
+| [`output.revision`](../src/player_sessions/infrastructure/gateway/commands.rs) | Current in-memory garage revision returned by the sync check. |
 | [`output.items.count`](../src/player_administration/presentation/garage.rs) | Number of grantable 3D attachments or stat trackers returned by the admin catalog endpoint. |
 | [`output.owned.count`](../src/accounts/domain/cosmetics.rs) | Total copies of the granted cosmetic, including fitted copies, after successful planning. |
 | [`output.purchases.count`](../src/accounts/domain/cosmetics.rs) | Number of cosmetic units to purchase after using owned stock. For paint, a region uses the number of units specified by the catalog. Zero for a successful change that spends only owned stock or leaves the layout as it was. |

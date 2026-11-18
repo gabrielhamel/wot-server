@@ -354,6 +354,7 @@ impl GarageCatalog {
         }))
     }
 
+    #[tracing::instrument(name = "accounts.project_garage", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, input.vehicle_count = snapshot.vehicles.len()), err)]
     fn project_account(&self, snapshot: &AccountSnapshot) -> Result<account::AccountData> {
         let default_unlocks = self.default_unlocks(snapshot)?;
         let vehicles = snapshot
@@ -377,10 +378,17 @@ impl GarageCatalog {
     #[tracing::instrument(name = "accounts.prepare", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
     pub fn prepare(&self, snapshot: AccountSnapshot) -> Result<PreparedAccount> {
         let data = self.project_account(&snapshot)?;
-        let cache = account::compress(&data.data(snapshot.revision))?;
+        let cache = Self::encode_garage(snapshot.revision, &data)?;
         Ok(PreparedAccount {
             snapshot,
             cache: Arc::new(cache),
         })
+    }
+
+    #[tracing::instrument(name = "accounts.encode_garage", skip_all, fields(ddd.bounded_context.name = "accounts", input.revision = revision, output.bytes = tracing::field::Empty), err)]
+    fn encode_garage(revision: i64, data: &account::AccountData) -> Result<Vec<u8>> {
+        let cache = account::compress(&data.data(revision))?;
+        tracing::Span::current().record("output.bytes", cache.len());
+        Ok(cache)
     }
 }

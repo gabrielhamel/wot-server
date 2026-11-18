@@ -85,6 +85,7 @@ impl Outbox {
 #[derive(Debug)]
 pub struct ClientOutbox {
     bundle: Bundle,
+    deliveries: Vec<tracing::Span>,
     /// The entity the client will have selected once it has read the bundle so far, when
     /// known: any element written with [`Self::write`] may select another.
     player_selected: bool,
@@ -94,6 +95,7 @@ impl ClientOutbox {
     fn new() -> Self {
         Self {
             bundle: Bundle::new(),
+            deliveries: Vec::new(),
             player_selected: false,
         }
     }
@@ -131,6 +133,10 @@ impl ClientOutbox {
         self.write(element, &())
     }
 
+    pub(super) fn trace_delivery(&mut self, span: tracing::Span) {
+        self.deliveries.push(span);
+    }
+
     fn flush(
         &mut self,
         addr: SocketAddr,
@@ -150,7 +156,26 @@ impl ClientOutbox {
         protocol.channel(addr, None).prepare(&mut self.bundle, true);
         let result = socket.send_bundle(&self.bundle, addr);
         self.bundle.clear();
+        for span in self.deliveries.drain(..) {
+            span.in_scope(|| match &result {
+                Ok(_) => {
+                    span.record("output.delivery", "sent");
+                }
+                Err(error) => {
+                    span.record("output.delivery", "send_failed");
+                    tracing::error!(%error, "Could not send Mercury response bundle");
+                }
+            });
+        }
         result.map(|_| ())
+    }
+}
+
+impl Drop for ClientOutbox {
+    fn drop(&mut self) {
+        for span in self.deliveries.drain(..) {
+            span.record("output.delivery", "discarded");
+        }
     }
 }
 

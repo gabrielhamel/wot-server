@@ -336,7 +336,24 @@ impl App {
 
         let bf = Arc::clone(&request.blowfish);
 
+        let parent = tracing::Span::current();
+        let span = if parent.is_disabled() {
+            tracing::Span::none()
+        } else {
+            tracing::info_span!(
+                parent: &parent, "mercury.login.response",
+                "ddd.bounded_context.name" = "player_sessions",
+                "input.request_id" = request.request_id,
+                "output.response_code" = match &response {
+                    LoginResponse::Success(_) => 1_u8,
+                    LoginResponse::Error(code, _) => *code as u8,
+                    LoginResponse::Unknown(code) => *code,
+                },
+                "output.delivery" = tracing::field::Empty,
+            )
+        };
         self.pending_responses.push_back(PendingResponse {
+            span,
             request,
             addr,
             inner: response,
@@ -347,6 +364,23 @@ impl App {
 
     /// Send a challenge to the given client, this only works if a tracker exists.
     fn send_response(&mut self, response: PendingResponse) -> io::Result<()> {
+        let span = response.span.clone();
+        span.in_scope(|| {
+            let result = self.write_response(response);
+            match &result {
+                Ok(()) => {
+                    span.record("output.delivery", "sent");
+                }
+                Err(error) => {
+                    span.record("output.delivery", "send_failed");
+                    tracing::error!(%error, "Could not send Mercury login response");
+                }
+            }
+            result
+        })
+    }
+
+    fn write_response(&mut self, response: PendingResponse) -> io::Result<()> {
         self.bundle.clear();
         self.bundle.element_writer().write_reply(
             response.inner,
@@ -377,6 +411,7 @@ struct PendingRequest {
 /// Describe a response pending to be sent to an address.
 #[derive(Debug)]
 struct PendingResponse {
+    span: tracing::Span,
     /// Initial request leading to this response.
     request: PendingRequest,
     /// The address of the client.

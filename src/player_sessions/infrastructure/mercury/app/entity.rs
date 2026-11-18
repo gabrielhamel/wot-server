@@ -681,14 +681,47 @@ impl RawEntity<'_> {
             .client_methods
             .get(exposed_id as usize)
             .ok_or_else(|| io_invalid_data(format_args!("unknown client method {exposed_id}")))?;
+        let args = args.into_values(&method.args);
+        let parent = tracing::Span::current();
+        let span = if parent.is_disabled() {
+            tracing::Span::none()
+        } else {
+            let (request_id, result) = match (method.name.as_ref(), args.as_slice()) {
+                (
+                    "onCmdResponse" | "onCmdResponseExt",
+                    [Value::Int16(id), Value::Int16(code), ..],
+                ) => (Some(i64::from(*id)), Some(*code)),
+                ("onTokenReceived", [Value::UInt16(id), ..]) => (Some(i64::from(*id)), None),
+                _ => (None, None),
+            };
+            tracing::info_span!(
+                parent: &parent, "mercury.response",
+                "ddd.bounded_context.name" = "player_sessions",
+                "rpc.method" = method.name.as_ref(),
+                "input.request_id" = request_id,
+                "output.response_code" = result,
+                "output.delivery" = tracing::field::Empty,
+            )
+        };
         let call = MethodCall::Known {
             exposed_id,
             name: method.name.clone(),
-            args: args.into_values(&method.args),
+            args,
         };
-        self.outbox.select_player()?;
-        self.outbox
-            .write_selected(EntityMethod { call }, &self.dispatch.client_methods)
+        let result = span.in_scope(|| {
+            self.outbox.select_player()?;
+            self.outbox
+                .write_selected(EntityMethod { call }, &self.dispatch.client_methods)
+        });
+        match &result {
+            Ok(()) if !span.is_disabled() => self.outbox.trace_delivery(span),
+            Err(error) => span.in_scope(|| {
+                span.record("output.delivery", "enqueue_failed");
+                tracing::error!(%error, "Could not enqueue Mercury response");
+            }),
+            Ok(()) => {}
+        }
+        result
     }
 }
 

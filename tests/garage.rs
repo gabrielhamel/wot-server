@@ -444,7 +444,7 @@ async fn exercise_garage(encrypted_login: bool) {
     worker.await.unwrap().unwrap();
     if result.is_ok() {
         telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
-        telemetry_capture::assert_operation_traces(b.id);
+        telemetry_capture::assert_operation_traces(a.id, b.id);
         if has_camouflage {
             camouflage_flow::assert_traces(a.id, cosmetic_fixtures);
         }

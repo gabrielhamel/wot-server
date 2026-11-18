@@ -399,11 +399,15 @@ async fn exports_admin_http_request_inputs() {
                 && span.parent_span_id == roots[12].span_context.span_id()
         })
         .unwrap();
+    assert_eq!(
+        attribute(auth_span, "output.outcome").as_deref(),
+        Some("authorized")
+    );
     let attachments_span = spans
         .iter()
         .find(|span| {
             span.name == "admin.garage.catalog"
-                && span.parent_span_id == auth_span.span_context.span_id()
+                && span.parent_span_id == roots[12].span_context.span_id()
         })
         .unwrap();
     assert_eq!(

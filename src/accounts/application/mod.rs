@@ -221,6 +221,27 @@ pub enum ProgressionCommand {
     },
 }
 
+impl ProgressionCommand {
+    pub(crate) fn operation(&self) -> &'static str {
+        match self {
+            Self::Crew(_) => "crew",
+            Self::BuyVehicleSlot => "buy_vehicle_slot",
+            Self::Cosmetics { .. } => "cosmetics",
+            Self::BuyVehicle { .. } => "buy_vehicle",
+            Self::SellVehicle(_) => "sell_vehicle",
+            Self::Buy { .. } => "buy_item",
+            Self::Sell(_) => "sell_items",
+            Self::Equipment { .. } => "change_equipment",
+            Self::FillConsumables { .. } => "fill_consumables",
+            Self::ConsumableAutoResupply { .. } => "consumable_auto_resupply",
+            Self::InstallDirective { .. } => "install_directive",
+            Self::DirectiveAutoResupply { .. } => "directive_auto_resupply",
+            Self::Research { .. } => "research",
+            Self::Equip { .. } => "equip_module",
+        }
+    }
+}
+
 pub const MAX_DEPOT_SALE_LINES: usize = 80;
 
 #[derive(Debug, Clone)]
