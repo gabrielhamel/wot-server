@@ -168,11 +168,17 @@ The host moves between Team 1, Team 2 and the unassigned list through
 [`CMD_PRB_ASSIGN`](../references/wot-src/sources/res/scripts/client/Account.py#L809)
 (`404`). The arguments are the host's Account entity ID, the destination roster
 slot and group `0`. Assigned slots are `1` and `2`. Unassigned slots retain the
-previous team in `17` or `18`. The server sends roster update `5` with
-`(player_entity_id, previous_slot, next_slot, actor_entity_id)`, then acknowledges
-the command to close the assignment overlay. The room uses the current slot in
-subsequent readiness messages and when replaying its roster. A same-slot retry
-succeeds without moving the player again.
+previous team in `17` or `18`. The center button sends
+[`CMD_PRB_SWAP_TEAM`](../references/wot-src/sources/res/scripts/client/Account.py#L819)
+(`405`) with three zeros. It moves an assigned host to the opposite team and
+leaves an unassigned host in the unassigned list.
+
+Both commands send a full roster update (`1`) before acknowledging success.
+The [client replaces its roster cache](../references/wot-src/sources/res/scripts/client_common/ClientPrebattle.py#L69)
+and refreshes both team lists from this update. Earlier assignments sent an
+incremental move (`5`), which depends on the previous slot being in sync.
+A same-slot retry refreshes the lists with the current slot. Team moves preserve
+the room ID, readiness and the selected tank or observer descriptor.
 
 **Modify Room** sends one [account command](../references/wot-src/sources/res/scripts/client/Account.py#L834)
 per changed field. The map (`406`), duration (`407`) and open flag (`408`) use

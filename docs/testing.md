@@ -103,7 +103,8 @@ unsupported-command failure, duplicate-login refusal and disconnect/reconnect wi
 capacity reclamation. A fresh connection pool also reads committed preferences.
 With a freshly extracted bundle containing `scripts/arena_defs/`, the suite also
 verifies Training Room creation for Studzianki, the host roster, the owned-vehicle
-ready response, switching to Observer and back, moves between team slots, room settings and voice-chat changes,
+ready response, switching to Observer and back, repeated team assignments and
+swaps, room settings and voice-chat changes,
 leave and recreation, and parent links for successful and rejected requests. Older bundles
 exercise the unavailable response.
 The same peers exercise [garage ammunition](ammunition.md): rejected requests

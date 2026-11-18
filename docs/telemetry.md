@@ -123,9 +123,10 @@ cached catalog descriptor. Returning to Player traces the owned-vehicle lookup a
           mercury.response                        [updatePrebattle, sent]
 
 Training Room roster assignment records the requested player entity, slot and
-group. The roster update and command acknowledgement retain the originating
-command as their ancestor. An invalid assignment or a retry to the same slot
-sends an acknowledgement with its result and no roster update.
+group. A team swap records the previous and resulting slots. A valid request,
+including an unchanged assignment or swap, sends a full roster and a command
+acknowledgement under the originating trace. Invalid requests send a failed
+acknowledgement without a roster update.
 
 Each Modify Room command and voice-chat mode change retains its own `game.command`
 trace. The decoded command span carries the numeric input or the comment's byte length. The

@@ -121,16 +121,27 @@ pub fn exercise(
         );
         peer.until(script, |peer| peer.responses.contains(&(id, result)));
     };
-    let assert_move = |peer: &Peer, before, previous, next| {
+    let assert_move = |peer: &Peer, before, next, vehicle: &Pickle| {
         let [(method, args), (ack, _)] = &peer.methods[before..] else {
             panic!("Expected roster update followed by acknowledgement")
         };
         assert_eq!(method, "updatePrebattle");
-        assert_eq!(args[0], Value::UInt8(5));
+        assert_eq!(args[0], Value::UInt8(1));
+        let Pickle::List(rows) = pickle_value(&args[1]) else {
+            panic!("Missing roster snapshot")
+        };
+        let [Pickle::Tuple(player)] = rows.as_slice() else {
+            panic!("Expected exactly one roster entry")
+        };
+        assert_eq!(player[0], Pickle::I64(player_entity));
+        assert_eq!(player[2], Pickle::I64(account_id));
+        assert_eq!(player[4], Pickle::I64(next));
         assert_eq!(
-            pickle_value(&args[1]),
-            wot_server::pickle!(((player_entity), (previous), (next), (player_entity)))
+            player[5],
+            Pickle::I64(if *vehicle == Pickle::I64(0) { 1 } else { 4 })
         );
+        assert_eq!(&player[7], vehicle);
+        assert_eq!(player[13], Pickle::I64(0xfe7f));
         assert_eq!(ack, "onCmdResponse");
     };
     let before = peer.methods.len();
@@ -144,10 +155,10 @@ pub fn exercise(
     );
     let before = peer.methods.len();
     assign(peer, 3263, player_entity, 1, 0, 0);
-    assert_move(peer, before, 17_i64, 1_i64);
+    assert_move(peer, before, 1, &ready[3]);
     let before = peer.methods.len();
     assign(peer, 3264, player_entity, 1, 0, 0);
-    assert_eq!(peer.methods.len(), before + 1);
+    assert_move(peer, before, 1, &ready[3]);
 
     exercise_settings(peer, script, &mut settings);
 
@@ -202,6 +213,22 @@ pub fn exercise(
     assert_eq!(host[5], Pickle::I64(4));
     assert_eq!(host[7], observer);
 
+    for (id, slot) in [(3292, 2), (3293, 1)] {
+        let before = peer.methods.len();
+        assign(peer, id, player_entity, slot, 0, 0);
+        assert_move(peer, before, slot, &observer);
+    }
+    let before = peer.methods.len();
+    request(peer, 3294, 405, 1);
+    peer.until(script, |peer| peer.responses.contains(&(3294, -1)));
+    assert_eq!(peer.methods.len(), before + 1);
+    for (id, slot) in [(3295, 2), (3296, 1)] {
+        let before = peer.methods.len();
+        request(peer, id, 405, 0);
+        peer.until(script, |peer| peer.responses.contains(&(id, 0)));
+        assert_move(peer, before, slot, &observer);
+    }
+
     let before = peer.methods.len();
     request(peer, 3291, 402, vehicle_id);
     peer.until(script, |peer| peer.responses.contains(&(3291, 0)));
@@ -209,7 +236,7 @@ pub fn exercise(
 
     let before = peer.methods.len();
     assign(peer, 3265, player_entity, 2, 0, 0);
-    assert_move(peer, before, 1_i64, 2_i64);
+    assert_move(peer, before, 2, &ready[3]);
 
     request(peer, 3254, 403, 1);
     peer.until(script, |peer| peer.responses.contains(&(3254, 0)));
@@ -228,7 +255,11 @@ pub fn exercise(
 
     let before = peer.methods.len();
     assign(peer, 3266, player_entity, 18, 0, 0);
-    assert_move(peer, before, 2_i64, 18_i64);
+    assert_move(peer, before, 18, &Pickle::I64(0));
+    let before = peer.methods.len();
+    request(peer, 3297, 405, 0);
+    peer.until(script, |peer| peer.responses.contains(&(3297, 0)));
+    assert_move(peer, before, 18, &Pickle::I64(0));
 
     request(peer, 3252, 401, 0);
     peer.until(script, |peer| peer.responses.contains(&(3252, 0)));
@@ -490,7 +521,28 @@ pub fn assert_traces(account_id: i64, available: bool) {
         assert_delivery(
             "player_sessions.assign_training_roster",
             "unchanged",
+            "updatePrebattle",
+        );
+        let swapped = assert_delivery(
+            "player_sessions.swap_training_teams",
+            "swapped",
+            "updatePrebattle",
+        );
+        assert!(has(swapped, "output.roster.previous_slot", "1"));
+        assert!(has(swapped, "output.roster.slot", "2"));
+        assert!(traces.iter().any(|span| span.name == "mercury.response"
+            && child_of(span, swapped)
+            && has(span, "rpc.method", "onCmdResponse")
+            && has(span, "output.delivery", "sent")));
+        assert_delivery(
+            "player_sessions.swap_training_teams",
+            "invalid_request",
             "onCmdResponse",
+        );
+        assert_delivery(
+            "player_sessions.swap_training_teams",
+            "unchanged",
+            "updatePrebattle",
         );
         let changed = assert_delivery(
             "player_sessions.change_training_setting",
