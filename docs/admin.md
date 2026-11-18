@@ -3,16 +3,13 @@
 The game server can serve a React Admin dashboard to list and create player
 accounts and grant resources, tanks, 3D attachments and stat trackers. Accounts
 creates the player with 500 gold, 200,000 credits, and a starter garage in one
-transaction. The garage contains the regular Tech Tree tier I tanks and the T2
-Light Tank, all with stock modules, basic crew and default ammunition. Players
-can use their new credentials in the game client's basic login flow immediately
-after creation.
+transaction. The garage contains the regular Tech Tree tier I tanks with stock
+modules, basic crew and default ammunition. Players can use their new
+credentials in the game client's basic login flow immediately after creation.
 
 The catalog selects the tier I starters from regular nation tech trees and
-excludes collector vehicles. The T2 Light Tank uses `usa:A19_T2_lt` from the
-EU 2.4.1.5514 client vehicle definitions in `scripts/item_defs/vehicles/usa/`.
-The initial settings are a client-compatible baseline recorded with those
-resources. See the
+excludes collector vehicles. The initial settings are a client-compatible
+baseline recorded with the EU 2.4.1.5514 resources. See the
 [starter settings](../src/accounts/infrastructure/client/starter_settings.json).
 
 ## Enable the dashboard

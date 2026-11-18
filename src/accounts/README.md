@@ -26,7 +26,7 @@ context is a possible future boundary, not an implemented one.
 | Account | A durable identity selected by a unique, case-sensitive username. |
 | Player role | The account's Player or Administrator access level. |
 | Dashboard session | A 60-day administrator credential backed by a revocable PostgreSQL record. |
-| Starter garage | Tier I regular tech tree tanks and the T2 Light Tank with stock modules, ammunition, and trained crew. |
+| Starter garage | Tier I regular tech tree tanks with stock modules, ammunition, and trained crew. |
 | Owned vehicle | A stable inventory ID and catalog key attached to one account. |
 | Catalog key | A resource identifier such as `usa:A01_T1_Cunningham`. |
 | Snapshot | A coherent read of an account and its vehicle ownership. |

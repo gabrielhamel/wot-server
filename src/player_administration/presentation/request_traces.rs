@@ -30,9 +30,7 @@ async fn exports_admin_http_request_inputs() {
     let catalog = Arc::new(GarageCatalog::load(resources, &[]).unwrap());
     let attachment_count = catalog.grantable_attachments().count();
     let tracker_count = catalog.grantable_stat_trackers().count();
-    let mut starter_keys = catalog.tier_one_keys().unwrap();
-    starter_keys.push("usa:A19_T2_lt".to_owned());
-    starter_keys.sort_unstable();
+    let starter_keys = catalog.tier_one_keys().unwrap();
     let repository = PostgresAccounts::connect(&url, 2).await.unwrap();
     let accounts = Accounts::new(repository.clone());
     let players = PostgresPlayers::new(&repository, catalog.clone()).unwrap();

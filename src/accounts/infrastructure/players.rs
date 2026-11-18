@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 const STARTING_CREDITS: i64 = 200_000;
 const STARTING_GOLD: i64 = 500;
-const T2_LIGHT_TANK: &str = "usa:A19_T2_lt";
 
 #[derive(Clone)]
 pub struct PostgresPlayers {
@@ -22,12 +21,11 @@ pub struct PostgresPlayers {
 
 impl PostgresPlayers {
     pub fn new(repository: &PostgresAccounts, catalog: Arc<GarageCatalog>) -> Result<Self> {
-        let mut starter_keys = catalog.tier_one_keys()?;
-        starter_keys.push(T2_LIGHT_TANK.to_owned());
+        let starter_keys = catalog.tier_one_keys()?.into();
         Ok(Self {
             pool: repository.connection_pool(),
             catalog,
-            starter_keys: starter_keys.into(),
+            starter_keys,
         })
     }
 }
