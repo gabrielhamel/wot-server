@@ -5,8 +5,9 @@ use super::{
 };
 use crate::{
     accounts::{
-        AmmunitionRules, InscriptionSlot, ModuleDefinition, ModuleKind, ModuleLoadout, ModuleRules,
-        PaintRegion, ProjectionDecalSlot, ResearchStep, ShellPrice, VehicleSurface,
+        AmmunitionRules, AttachmentSlot, InscriptionSlot, ModuleDefinition, ModuleKind,
+        ModuleLoadout, ModuleRules, PaintRegion, ProjectionDecalSlot, ResearchStep, ShellPrice,
+        VehicleCosmeticSlots, VehicleSurface,
     },
     platform::client_formats::pxml::Element,
 };
@@ -17,7 +18,7 @@ use wot_resources::ResourceBundle;
 pub(super) struct VehicleModules {
     pub rules: ModuleRules,
     pub ammunition: BTreeMap<(i32, i32), AmmunitionRules>,
-    exterior_slots: BTreeMap<(i32, i32), ExteriorSlots>,
+    exterior_slots: BTreeMap<(i32, i32), VehicleCosmeticSlots>,
     chassis_exteriors: BTreeMap<i32, ChassisExterior>,
 }
 
@@ -25,19 +26,11 @@ struct ChassisExterior {
     paintable: bool,
     effect_slot: bool,
     projection_slots: BTreeMap<u16, ProjectionDecalSlot>,
-}
-
-#[derive(Clone)]
-pub(super) struct ExteriorSlots {
-    pub camouflage: BTreeSet<VehicleSurface>,
-    pub paints: BTreeSet<PaintRegion>,
-    pub inscriptions: BTreeSet<InscriptionSlot>,
-    pub effect_slot: bool,
-    pub projection_slots: BTreeMap<u16, ProjectionDecalSlot>,
+    attachment_slots: BTreeMap<u16, AttachmentSlot>,
 }
 
 impl VehicleModules {
-    pub(super) fn exterior_slots(&self, modules: &ModuleLoadout) -> Option<ExteriorSlots> {
+    pub(super) fn exterior_slots(&self, modules: &ModuleLoadout) -> Option<VehicleCosmeticSlots> {
         let mut exterior = self
             .exterior_slots
             .get(&(
@@ -56,6 +49,12 @@ impl VehicleModules {
             exterior.projection_slots.extend(
                 chassis
                     .projection_slots
+                    .iter()
+                    .map(|(&id, slot)| (id, slot.clone())),
+            );
+            exterior.attachment_slots.extend(
+                chassis
+                    .attachment_slots
                     .iter()
                     .map(|(&id, slot)| (id, slot.clone())),
             );
@@ -141,6 +140,8 @@ impl VehicleModules {
         let hull_paints: BTreeSet<_> = paint_regions(vehicle.get_child_element("hull")).collect();
         let hull_projection_slots =
             projection_decal_slots(vehicle.get_child_element("hull")).collect::<BTreeMap<_, _>>();
+        let hull_attachment_slots =
+            attachment_slots(vehicle.get_child_element("hull")).collect::<BTreeMap<_, _>>();
         let hull_effect_slot = has_effect_slot(vehicle.get_child_element("hull"));
         let hull_inscriptions = inscription_slots(vehicle.get_child_element("hull"));
         let hull_camouflage = vehicle
@@ -196,6 +197,7 @@ impl VehicleModules {
                                 .any(|region| region == PaintRegion::Chassis),
                             effect_slot: has_effect_slot(Some(base)),
                             projection_slots: projection_decal_slots(Some(base)).collect(),
+                            attachment_slots: attachment_slots(Some(base)).collect(),
                         },
                     );
                 }
@@ -251,7 +253,7 @@ impl VehicleModules {
                         ];
                         exterior_slots.insert(
                             (id, gun),
-                            ExteriorSlots {
+                            VehicleCosmeticSlots {
                                 paints: hull_paints
                                     .iter()
                                     .copied()
@@ -265,6 +267,14 @@ impl VehicleModules {
                                     .chain(projection_decal_slots(Some(base)))
                                     .chain(
                                         hull_projection_slots
+                                            .iter()
+                                            .map(|(&id, slot)| (id, slot.clone())),
+                                    )
+                                    .collect(),
+                                attachment_slots: attachment_slots(Some(gun_slot_definition))
+                                    .chain(attachment_slots(Some(base)))
+                                    .chain(
+                                        hull_attachment_slots
                                             .iter()
                                             .map(|(&id, slot)| (id, slot.clone())),
                                     )
@@ -432,6 +442,33 @@ fn has_effect_slot(part: Option<&Element>) -> bool {
         .any(|(_, slot)| matches!(slot.get_child_string("slotType"), Some("style" | "effect")))
 }
 
+fn attachment_slots(part: Option<&Element>) -> impl Iterator<Item = (u16, AttachmentSlot)> {
+    part.and_then(|part| part.get_child_element("customizationSlots"))
+        .into_iter()
+        .flat_map(Element::iter_child_elements)
+        .filter_map(|(_, slot)| {
+            if slot.get_child_string("slotType") != Some("attachment")
+                || !user_customization_slot(slot)
+            {
+                return None;
+            }
+            let id = u16::try_from(slot.get_child_integer("slotId")?).ok()?;
+            let apply_type = slot
+                .get_child_string("applyType")
+                .unwrap_or_default()
+                .to_owned();
+            let scale = super::cosmetic_catalog::attachment_scale(slot.get_child_string("size"))?;
+            Some((id, AttachmentSlot { apply_type, scale }))
+        })
+}
+
+fn user_customization_slot(slot: &Element) -> bool {
+    !item_defs::xml_flag(slot, "hiddenForUser")
+        && slot
+            .get_child_string("compatibleModels")
+            .is_none_or(|models| models.split_whitespace().any(|model| model == "default"))
+}
+
 fn projection_decal_slots(
     part: Option<&Element>,
 ) -> impl Iterator<Item = (u16, ProjectionDecalSlot)> {
@@ -440,12 +477,7 @@ fn projection_decal_slots(
         .flat_map(Element::iter_child_elements)
         .filter_map(|(_, slot)| {
             if slot.get_child_string("slotType") != Some("projectionDecal")
-                || item_defs::xml_flag(slot, "hiddenForUser")
-                || slot
-                    .get_child_string("compatibleModels")
-                    .is_some_and(|models| {
-                        !models.split_whitespace().any(|model| model == "default")
-                    })
+                || !user_customization_slot(slot)
             {
                 return None;
             }

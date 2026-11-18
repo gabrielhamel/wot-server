@@ -19,6 +19,10 @@ pub enum PlayerGrant {
     Vehicle {
         vehicle: i32,
     },
+    Attachment {
+        id: u16,
+        count: u32,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +31,10 @@ pub enum GrantError {
     InvalidAmount,
     #[error("The grant would exceed the supported balance limit.")]
     BalanceLimit,
+    #[error("Select an attachment from the installed catalog.")]
+    UnknownAttachment,
+    #[error("The grant would exceed the attachment ownership limit.")]
+    AttachmentLimit,
     #[error(transparent)]
     Vehicle(#[from] super::ProgressionError),
 }

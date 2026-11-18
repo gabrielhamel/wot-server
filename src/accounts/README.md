@@ -37,7 +37,7 @@ context is a possible future boundary, not an implemented one.
 | Garage projection | Compressed Python cache derived from a snapshot and client definitions. |
 | Research | An account-wide tank or module unlock bought with vehicle XP and free XP. |
 | Vehicle purchase | An atomic debit and permanent ownership grant, with optional crew, ammunition and consumables. |
-| Player grant | An operator-authorized resource addition or permanent tank with stock modules, ammunition and basic crew, committed as an account revision. |
+| Player grant | An operator-authorized addition of currency, attachment copies, or a permanent tank with stock modules, ammunition and basic crew, committed as an account revision. |
 | Garage slot | One unit of total vehicle capacity. A slot purchase adds one unit and charges the shop price in the same revision. |
 | Vehicle sale | An atomic ownership removal that settles the vehicle and fitting value, returns retained fittings to the Depot, and transfers or dismisses its crew. |
 | Module loadout | The six module descriptors installed on an owned tank. |

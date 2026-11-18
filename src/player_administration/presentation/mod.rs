@@ -145,6 +145,7 @@ async fn prevent_caching(request: Request, next: Next) -> Response {
         input.grant.currency = tracing::field::Empty,
         input.amount = tracing::field::Empty,
         input.vehicle_type = tracing::field::Empty,
+        input.attachment_id = tracing::field::Empty,
         http.response.status_code = tracing::field::Empty,
     )
 )]

@@ -95,6 +95,8 @@ async fn exercise_garage(encrypted_login: bool) {
         && resources.has_file("scripts/item_defs/customization/projection_decals/list.xml");
     let has_paints =
         has_decals && resources.has_file("scripts/item_defs/customization/paints/list.xml");
+    let has_attachments = has_extension_styles
+        && resources.has_file("scripts/item_defs/customization/attachments/list.xml");
     let cosmetic_fixtures = camouflage_flow::CosmeticFixtures {
         has_exterior_styles,
         has_extension_styles,
@@ -102,6 +104,7 @@ async fn exercise_garage(encrypted_login: bool) {
         has_effects,
         has_decals,
         has_paints,
+        has_attachments,
     };
     let tank_a = "usa:A01_T1_Cunningham".to_string();
     let tank_b = "germany:G12_Ltraktor".to_string();
@@ -251,6 +254,8 @@ async fn exercise_garage(encrypted_login: bool) {
     )
     .unwrap();
     let (login, base) = gateway.addresses().unwrap();
+    let grants = gateway.player_grants();
+    let runtime = tokio::runtime::Handle::current();
     let chat_address = std::net::SocketAddr::new("127.0.0.1".parse().unwrap(), base.port());
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
@@ -369,6 +374,14 @@ async fn exercise_garage(encrypted_login: bool) {
             last_cache =
                 camouflage_flow::exercise(&mut first_peer, &script, &last_cache, cosmetic_fixtures);
         }
+        if has_attachments {
+            last_cache = camouflage_flow::exercise_attachments(
+                &mut first_peer,
+                &script,
+                &last_cache,
+                |grant| runtime.block_on(grants.grant(a.id, grant)),
+            );
+        }
         first_peer.disconnect();
         social_flow::wait_presence(&mut second_peer, &script, a.id, false);
         std::thread::sleep(std::time::Duration::from_millis(250));
@@ -442,6 +455,7 @@ async fn exercise_garage(encrypted_login: bool) {
                     + 3 * i64::from(has_effects)
                     + 4 * i64::from(has_decals)
                     + 3 * i64::from(has_paints)
+                    + 4 * i64::from(has_attachments)
             } else {
                 7
             }

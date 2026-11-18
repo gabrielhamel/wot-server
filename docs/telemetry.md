@@ -84,7 +84,8 @@ relevant to their operation.
 The root `admin.http.request` span carries route-specific inputs so a trace
 can be filtered without opening child spans. The player list exports supplied
 numeric pagination parameters. Garage routes export the parsed account ID,
-and grants export their kind and either currency and amount or vehicle type.
+and grants export their kind with the currency and amount, vehicle type, or
+attachment ID and count.
 Player creation exports the UTF-8 lengths of the login and display name.
 Handlers record these fields after authentication and typed decoding, before
 business validation where applicable. A rejected query or JSON body can still

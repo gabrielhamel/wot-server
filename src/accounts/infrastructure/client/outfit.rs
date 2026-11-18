@@ -1,8 +1,8 @@
 use crate::accounts::{
-    Camouflage, Inscription, InscriptionSlot, MAX_PROJECTION_DECALS, OutfitSeason, Paint,
-    PaintRegion, ProjectionDecal, VehicleOutfit, VehicleSurface,
+    Attachment, Camouflage, Inscription, InscriptionSlot, MAX_ATTACHMENTS, MAX_PROJECTION_DECALS,
+    OutfitSeason, Paint, PaintRegion, ProjectionDecal, VehicleOutfit, VehicleSurface,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const OUTFIT: u16 = 4;
 const EFFECTS: u16 = 1;
@@ -11,10 +11,10 @@ const CAMOUFLAGES: u16 = 1 << 2;
 const DECALS: u16 = 1 << 3;
 const PROJECTION_DECALS: u16 = 1 << 5;
 const DEFAULT_DECAL_SCALE: u16 = 3;
+const ATTACHMENTS: u16 = 1 << 9;
 const PERSONAL_NUMBERS: u16 = 1 << 7;
 const MAX_NUMBER_DIGITS: usize = 8;
 const EMPTY_ITEM: u16 = 22222;
-const ALL_SEASONS: i64 = 15;
 const MAX_OUTFIT_BYTES: usize = 224;
 
 const SURFACES: [(u16, VehicleSurface); 3] = [
@@ -48,6 +48,7 @@ pub(super) fn season_code(season: OutfitSeason) -> i32 {
         OutfitSeason::Winter => 1,
         OutfitSeason::Summer => 2,
         OutfitSeason::Desert => 4,
+        OutfitSeason::Common => 15,
     }
 }
 
@@ -60,20 +61,16 @@ pub fn decode_outfits<'a>(
         return None;
     }
     let mut layouts = BTreeMap::new();
-    let mut common_seen = false;
     for (&season, bytes) in seasons.iter().zip(outfits) {
         let layout = decode(bytes, default_emblem)?;
         let season = match season {
             1 => OutfitSeason::Winter,
             2 => OutfitSeason::Summer,
             4 => OutfitSeason::Desert,
-            ALL_SEASONS if !common_seen && layout.is_empty() => {
-                common_seen = true;
-                continue;
-            }
+            15 => OutfitSeason::Common,
             _ => return None,
         };
-        if layouts.insert(season, layout).is_some() {
+        if !layout.supports_season(season) || layouts.insert(season, layout).is_some() {
             return None;
         }
     }
@@ -90,7 +87,15 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
         return None;
     }
     let mask = read_varint(&mut bytes)?;
-    if mask & !(EFFECTS | PAINTS | CAMOUFLAGES | DECALS | PROJECTION_DECALS | PERSONAL_NUMBERS) != 0
+    if mask
+        & !(EFFECTS
+            | PAINTS
+            | CAMOUFLAGES
+            | DECALS
+            | PROJECTION_DECALS
+            | PERSONAL_NUMBERS
+            | ATTACHMENTS)
+        != 0
     {
         return None;
     }
@@ -271,6 +276,36 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
             }
         }
     }
+    if mask & ATTACHMENTS != 0 {
+        let count = usize::from(read_varint(&mut bytes)?);
+        if count > MAX_ATTACHMENTS {
+            return None;
+        }
+        let mut occupied = BTreeSet::new();
+        for _ in 0..count {
+            let fields = read_varint(&mut bytes)?;
+            if fields & !0xF != 0 || fields & 3 != 3 {
+                return None;
+            }
+            let id = read_varint(&mut bytes)?;
+            let slot_id = read_varint(&mut bytes)?;
+            let scale = u8::try_from(read_field(&mut bytes, fields, 4, 0)?).ok()?;
+            let rotated = read_field(&mut bytes, fields, 8, 0)?;
+            if id == 0 || slot_id == 0 || scale > 3 || rotated > 1 || !occupied.insert(slot_id) {
+                return None;
+            }
+            if id != EMPTY_ITEM {
+                layout.attachments.insert(
+                    slot_id,
+                    Attachment {
+                        id,
+                        scale,
+                        rotated: rotated == 1,
+                    },
+                );
+            }
+        }
+    }
     bytes.is_empty().then_some(layout)
 }
 
@@ -317,6 +352,9 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
     }
     if numbers > 0 {
         fields |= PERSONAL_NUMBERS;
+    }
+    if !layout.attachments.is_empty() {
+        fields |= ATTACHMENTS;
     }
     write_varint(&mut bytes, OUTFIT);
     write_varint(&mut bytes, fields);
@@ -377,6 +415,16 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
                 bytes.extend_from_slice(digits.as_bytes());
                 write_varint(&mut bytes, area);
             }
+        }
+    }
+    if fields & ATTACHMENTS != 0 {
+        write_varint(&mut bytes, layout.attachments.len() as u16);
+        for (&slot_id, attachment) in &layout.attachments {
+            write_varint(&mut bytes, 0xF);
+            write_varint(&mut bytes, attachment.id);
+            write_varint(&mut bytes, slot_id);
+            write_varint(&mut bytes, u16::from(attachment.scale));
+            write_varint(&mut bytes, u16::from(attachment.rotated));
         }
     }
     bytes
@@ -469,11 +517,13 @@ mod tests {
         let overlap = [4, 4, 2, 1, 2, 5, 3, 16];
         let invalid = [
             overlap.as_slice(),
-            &[4, 4, 4],                  // More components than surfaces.
-            &[4, 4, 1, 5, 2, 1],         // Chassis.
-            &[4, 16, 3],                 // Style.
-            &[4, 4, 1, 1, 128, 128, 16], // Oversized identifier.
-            &[4, 4, 0, 0],               // Extra byte.
+            &[4, 4, 4],                          // More components than surfaces.
+            &[4, 4, 1, 5, 2, 1],                 // Chassis.
+            &[4, 16, 3],                         // Style.
+            &[4, 4, 1, 1, 128, 128, 16],         // Oversized identifier.
+            &[4, 4, 0, 0],                       // Extra byte.
+            &[4, 128, 4, 7],                     // More attachments than permitted.
+            &[4, 128, 4, 2, 3, 1, 16, 3, 1, 16], // Duplicate attachment anchor.
         ];
         for payload in invalid {
             assert_eq!(decode(payload, None), None);

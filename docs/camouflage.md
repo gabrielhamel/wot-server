@@ -1,4 +1,4 @@
-# Garage camouflage, paints, decals, inscriptions and effects
+# Garage camouflage and exterior customization
 
 Exterior can buy permanent camouflage into shared stock or buy missing copies
 while applying an outfit. A placement consumes one copy per surface per season.
@@ -22,8 +22,7 @@ It uses the same prices for the shop stream and for charges. The server checks
 vehicle filters, vehicle and item surface availability, season, palette and
 scale before saving. Offer restrictions include unavailable items, token-gated
 items and style-only components. This implementation covers unbound, permanent
-camouflage and its garage layouts. Styles, attachments, cosmetic resale,
-rental and reward grants are outside this workflow.
+camouflage and its garage layouts. Styles, cosmetic resale and rentals are outside this workflow.
 
 ## Paints
 
@@ -78,6 +77,20 @@ definitions. The installed EU catalog prices the Tiger decal at 160 gold.
 Progression-locked and style-only decals remain unavailable through this
 purchase flow.
 
+## 3D attachments
+
+A vehicle has one common attachment layout across all map types. Each fitted
+attachment uses one depot copy. Removing it or switching to a configuration
+without a compatible anchor frees the copy for reuse. The server checks the
+installed modules, anchor type, available scale and whether the item can
+rotate. Anchors for the default vehicle model are eligible in a custom outfit.
+
+The extractor includes the installed `customization/attachments/list.xml`.
+The EU catalog marks River Race Revelry attachments as outside the shop.
+An operator can provision a depot copy using the [attachment grant API](admin.md#grants).
+The group's Zongzi Jubilee dragon boat (item 2033) fits the Executor's turret anchor 38000
+at scale 2.
+
 ## Exterior button
 
 The native hangar menu checks for at least one compatible 2D style before it
@@ -109,8 +122,10 @@ Outfit descriptors use unsigned base-128 varints for the component type (4),
 field mask, camouflage array length and component fields. The camouflage field
 uses mask bit 2 and encodes item ID, pattern size, applied-area mask and palette
 index in that order when present. Camouflage regions use bits 4, 8 and 12.
-The native customization dialog can send an empty common outfit (season 15)
-alongside the regular seasons. Effects use the modification ID array (bit 0).
+The native customization dialog sends a common outfit (season 15)
+alongside the regular seasons. Its attachment array uses bit 9 and each entry
+contains the item ID, slot ID, scale ID and rotation flag in that order.
+The server accepts up to six distinct attachment slots in the common outfit. Effects use the modification ID array (bit 0).
 Paint uses bit 1 and encodes the paint ID and its region mask. Paint regions
 use bits 0, 4, 8, 12 and 14 for chassis, hull, turret, gun and the second gun
 region. A single entry can cover several regions. Preset inscriptions use the
@@ -138,7 +153,7 @@ Protocol and filter behavior were traced in the pinned `wot-src` revision
 - `client/account_helpers/Shop.py` for commands 118 and 119 and their argument order.
 - `client/gui/Scaleform/daapi/view/lobby/customization/context/custom_mode.py` for seasonal outfit replacements and the common outfit entry.
 - `common/serializable_types/customizations/customization_outfit.py`,
-  `camouflage.py` and `paint.py` in the same directory and
+  `camouflage.py`, `paint.py` and `attachment.py` in the same directory and
   `common/serialization/component_bin_serializer.py` for descriptor types, masks and field defaults.
 - `common/items/readers/c11n_readers.py`, `common/items/components/c11n_components.py`
   and `common/items/vehicles.py` for inherited definitions, vehicle filters and customizable vehicle areas.
@@ -166,3 +181,8 @@ The Colour N1A regression checks the 20-gold shop price, rejects an
 ineligible nation and an unavailable region, and applies paint to four regions
 while preserving other fitted cosmetics. It verifies no extra charge on retry,
 depot reuse, reconnect persistence and trace parentage for successful and rejected requests.
+The attachment regression grants a depot copy of the dragon boat and fits it on
+the Executor with the four-entry command sent by the client. It verifies an
+unowned item, invalid anchor, scale and rotation are rejected, and checks
+single-copy accounting, removal, reapplication, reconnect and the grant and
+outfit traces.

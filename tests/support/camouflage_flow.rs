@@ -25,6 +25,7 @@ pub struct CosmeticFixtures {
     pub has_effects: bool,
     pub has_decals: bool,
     pub has_paints: bool,
+    pub has_attachments: bool,
 }
 
 pub fn exercise(
@@ -40,6 +41,7 @@ pub fn exercise(
         has_effects,
         has_decals,
         has_paints,
+        ..
     } = fixtures;
     let Pickle::I64(mut revision) = dict(before, "rev") else {
         panic!("Missing garage revision");
@@ -475,6 +477,146 @@ fn exercise_paint(
     );
 }
 
+pub fn exercise_attachments(
+    peer: &mut Peer,
+    dispatch: &ScriptDispatch,
+    before: &Pickle,
+    grant: impl Fn(
+        wot_server::accounts::PlayerGrant,
+    ) -> Result<
+        (
+            wot_server::accounts::AccountSnapshot,
+            wot_server::player_sessions::GrantDelivery,
+        ),
+        wot_server::player_sessions::GrantRequestError,
+    >,
+) -> Pickle {
+    use wot_server::{
+        accounts::{Attachment, OutfitSeason, PlayerGrant},
+        player_sessions::{GrantDelivery, GrantRequestError},
+    };
+    const DRAGON_BOAT: i32 = 2033;
+    const EXECUTOR: i32 = 26705;
+    let Pickle::I64(revision) = dict(before, "rev") else {
+        panic!("Missing garage revision");
+    };
+    let new_grant = |id, count| PlayerGrant::Attachment { id, count };
+    let boat = [4, 128, 4, 1, 7, 241, 15, 240, 168, 2, 2]; // Turret anchor 38000 at scale 2.
+    let wrong_anchor = [4, 128, 4, 1, 7, 241, 15, 208, 140, 1, 2]; // Universal anchor 18000.
+    let wrong_scale = [4, 128, 4, 1, 7, 241, 15, 240, 168, 2, 3];
+    let rotated = [4, 128, 4, 1, 15, 241, 15, 240, 168, 2, 2, 1];
+
+    let shop = peer.resource(780);
+    let Pickle::Set(hidden) = dict(&dict(&shop, "items"), "notInShopItems") else {
+        panic!("Missing shop exclusions");
+    };
+    assert!(hidden.contains(&((DRAGON_BOAT << 8) | 0xcc).into()));
+    send_outfits(peer, dispatch, 820, 43, &[(15, &boat)], -1);
+    assert!(matches!(
+        grant(new_grant(0, 1)),
+        Err(GrantRequestError::Rejected(_))
+    ));
+    assert!(matches!(
+        grant(new_grant(2033, 0)),
+        Err(GrantRequestError::Rejected(_))
+    ));
+    let update_count = |peer: &Peer| {
+        peer.methods
+            .iter()
+            .filter(|(name, _)| name.ends_with("update"))
+            .count()
+    };
+    let prior_updates = update_count(peer);
+    assert_eq!(
+        grant(new_grant(2033, 1)).unwrap().1,
+        GrantDelivery::QueuedForGarage
+    );
+    let replacement = Pickle::Tuple(vec![DRAGON_BOAT.into(), "_r".into()]);
+    let inventory = |cache: &Pickle| row(&dict(cache, "inventory"), 12);
+    let gold = |cache: &Pickle| dict(&dict(cache, "stats"), "gold");
+
+    peer.until(dispatch, |peer| update_count(peer) > prior_updates);
+    let granted = update(peer, revision + 1);
+    assert_eq!(
+        row(&inventory(&granted), 1),
+        pickle!({12: {(replacement.clone()): {0: 1}}})
+    );
+    assert_eq!(gold(&granted), gold(before));
+
+    send_outfits(peer, dispatch, 821, 43, &[(1, &boat)], -2);
+    send_outfits(peer, dispatch, 822, 43, &[(15, &wrong_anchor)], -1);
+    send_outfits(peer, dispatch, 823, 43, &[(15, &wrong_scale)], -1);
+    send_outfits(peer, dispatch, 824, 43, &[(15, &rotated)], -1);
+
+    let Pickle::Dict(outfits) = row(&inventory(before), 2) else {
+        panic!("Missing outfits");
+    };
+    let executor_before = outfits
+        .get(&EXECUTOR.into())
+        .cloned()
+        .unwrap_or_else(|| pickle!({}));
+    let seasonal_outfit = |table: &Pickle, season| {
+        let Pickle::Dict(outfits) = table else {
+            panic!("Expected seasonal outfit table");
+        };
+        match outfits.get(&Pickle::from(season)) {
+            Some(Pickle::Bytes(bytes)) => bytes.clone(),
+            None => Vec::new(),
+            value => panic!("Unexpected Executor outfit {value:?}"),
+        }
+    };
+    let seasonal = [1, 2, 4].map(|season| seasonal_outfit(&executor_before, season));
+    let rows = [
+        (15, boat.as_slice()),
+        (1, seasonal[0].as_slice()),
+        (2, seasonal[1].as_slice()),
+        (4, seasonal[2].as_slice()),
+    ];
+    send_outfits(peer, dispatch, 825, 43, &rows, 0);
+    let fitted = update(peer, revision + 2);
+    assert_eq!(
+        row(&inventory(&fitted), 4),
+        pickle!({12: {(replacement.clone()): {(EXECUTOR): 1}}})
+    );
+    assert_eq!(gold(&fitted), gold(before));
+    send_outfits(peer, dispatch, 826, 43, &rows, 0);
+
+    send_outfits(peer, dispatch, 827, 43, &[(15, &[])], 0);
+    let removed = update(peer, revision + 3);
+    assert_eq!(
+        row(&inventory(&removed), 1),
+        pickle!({12: {(replacement): {0: 1}}})
+    );
+    send_outfits(peer, dispatch, 828, 43, &[(15, &boat)], 0);
+    let outfitted = update(peer, revision + 4);
+    assert_eq!(gold(&outfitted), gold(before));
+
+    peer.command(dispatch, "doCmdInt3", sync(829, 100));
+    peer.until(dispatch, |peer| peer.has_resource(829));
+    let cache = peer.resource(829);
+    let executor = row(&row(&inventory(&cache), 2), EXECUTOR);
+    let Pickle::Bytes(common) = row(&executor, 15) else {
+        panic!("Missing common outfit with attachment");
+    };
+    let decoded = decode_outfits(&[15], [common.as_slice()].into_iter(), None).unwrap();
+    assert_eq!(
+        decoded[&OutfitSeason::Common].attachments[&38000],
+        Attachment {
+            id: 2033,
+            scale: 2,
+            rotated: false
+        },
+    );
+    for season in [1, 2, 4] {
+        assert_eq!(
+            seasonal_outfit(&executor, season),
+            seasonal_outfit(&executor_before, season)
+        );
+    }
+    assert_eq!(dict(&cache, "stats"), dict(before, "stats"));
+    cache
+}
+
 pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
     let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
     let field = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
@@ -504,6 +646,15 @@ pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
             (817, "43", "unchanged"),
             (819, "43", "committed"),
         ]);
+    }
+    if fixtures.has_attachments {
+        requests.extend([
+            (820, "43", "rejected"),
+            (822, "43", "rejected"),
+            (826, "43", "unchanged"),
+            (828, "43", "committed"),
+        ]);
+        assert_attachment_grant_trace(account, &spans);
     }
     for (request, inventory_id, outcome) in requests {
         let apply = spans
@@ -544,6 +695,7 @@ pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
                 810 => ("1", "27", "1"),
                 816 => ("1", "33", "4"),
                 819 => ("1", "32", "0"),
+                828 => ("1", "11", "0"),
                 _ => ("4", "17", "3"),
             };
             assert!(field(apply, "input.outfits.count", count));
@@ -566,6 +718,69 @@ pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
             assert_eq!(decision.status, opentelemetry::trace::Status::error(""));
         }
     }
+}
+
+fn assert_attachment_grant_trace(account: i64, spans: &[opentelemetry_sdk::trace::SpanData]) {
+    let has = |span: &opentelemetry_sdk::trace::SpanData, key, value: &str| {
+        span.attributes
+            .iter()
+            .any(|attr| attr.key.as_str() == key && attr.value.to_string() == value)
+    };
+    let find_grant = |count| {
+        spans
+            .iter()
+            .find(|span| {
+                span.name == "accounts.cosmetics.grant_attachment"
+                    && has(span, "input.attachment_id", "2033")
+                    && has(span, "input.amount", count)
+                    && spans.iter().any(|gateway| {
+                        gateway.name == "player_sessions.gateway.grant"
+                            && gateway.span_context.trace_id() == span.span_context.trace_id()
+                            && has(gateway, "user.id", &account.to_string())
+                    })
+            })
+            .unwrap()
+    };
+    let rejected = find_grant("0");
+    assert!(matches!(
+        rejected.status,
+        opentelemetry::trace::Status::Error { .. }
+    ));
+    assert!(!spans.iter().any(|span| {
+        span.name == "accounts.postgres.save_progression"
+            && span.span_context.trace_id() == rejected.span_context.trace_id()
+    }));
+    let grant = find_grant("1");
+    assert!(has(grant, "output.owned.count", "1"));
+    let in_trace = |name| {
+        spans
+            .iter()
+            .find(|span| {
+                span.name == name && span.span_context.trace_id() == grant.span_context.trace_id()
+            })
+            .unwrap()
+    };
+    let plan = in_trace("accounts.grants.plan_grant");
+    assert_eq!(grant.parent_span_id, plan.span_context.span_id());
+    let gateway = in_trace("player_sessions.gateway.grant");
+    assert_eq!(plan.parent_span_id, gateway.span_context.span_id());
+    let request = in_trace("player_sessions.grants.grant");
+    assert_eq!(gateway.parent_span_id, request.span_context.span_id());
+    assert!(has(gateway, "user.id", &account.to_string()));
+    let reply = in_trace("player_sessions.gateway.grant_response");
+    assert_eq!(reply.parent_span_id, gateway.span_context.span_id());
+    assert!(has(reply, "output.success", "true"));
+    let write = in_trace("accounts.postgres.save_progression");
+    let save = in_trace("accounts.save_progression");
+    assert_eq!(write.parent_span_id, save.span_context.span_id());
+    let commit = in_trace("player_sessions.commit_progression");
+    assert_eq!(save.parent_span_id, commit.span_context.span_id());
+    assert_eq!(commit.parent_span_id, gateway.span_context.span_id());
+    assert!(spans.iter().any(|span| {
+        span.name == "postgresql.query"
+            && span.parent_span_id == write.span_context.span_id()
+            && has(span, "db.operation.name", "UPDATE")
+    }));
 }
 
 fn send_outfits(

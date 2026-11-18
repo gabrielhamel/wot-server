@@ -18,7 +18,7 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
 | `infrastructure/gateway/progression.rs` | Equipment, directive, module, tank and depot request validation, bounded progression jobs and committed cache delivery. |
 | `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes, update handoff and session snapshots, and deliver committed cache diffs. |
-| `infrastructure/gateway/cosmetics.rs` | Decode native cosmetic stock purchases and binary seasonal outfits for the shared progression transaction. |
+| `infrastructure/gateway/cosmetics.rs` | Decode native cosmetic stock purchases and binary seasonal and common outfits for the shared progression transaction. |
 | `infrastructure/gateway/expendables.rs` | Decode consumable and directive layouts and auto-resupply settings for the shared progression transaction. |
 | `infrastructure/gateway/social.rs` | Messenger wire translation, bounded async Social requests, presence and private delivery. |
 | `infrastructure/xmpp/` | Bounded TCP/XML handling, game-issued token admission, native roster, presence, offline/history and WG extension translation. |

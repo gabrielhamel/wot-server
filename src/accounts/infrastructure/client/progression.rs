@@ -358,11 +358,8 @@ impl GarageCatalog {
                 if let Some(slots) = template.modules.exterior_slots(&next) {
                     snapshot.progression.cosmetics.retain_supported_slots(
                         inventory_id,
-                        &slots.camouflage,
-                        &slots.paints,
-                        &slots.inscriptions,
-                        slots.effect_slot,
-                        &slots.projection_slots,
+                        &slots,
+                        |id, attachment| self.cosmetics.attachment_fits(&slots, id, attachment),
                     );
                 }
             }

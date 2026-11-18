@@ -106,6 +106,7 @@ async fn exports_admin_http_request_inputs() {
         for body in [
             r#"{"kind":"currency","currency":"gold","amount":42}"#,
             r#"{"kind":"vehicle","vehicle":123}"#,
+            r#"{"kind":"attachment","id":2033,"count":1}"#,
         ] {
             let response = send("POST", "/api/admin/players/17/grants", TOKEN, body);
             let (response, ()) = tokio::join!(response, async {
@@ -180,7 +181,7 @@ async fn exports_admin_http_request_inputs() {
         .iter()
         .filter(|span| span.name == "admin.http.request")
         .collect();
-    assert_eq!(roots.len(), 10);
+    assert_eq!(roots.len(), 11);
     for (root, expected) in roots.iter().zip([
         &[
             ("http.response.status_code", "200"),
@@ -213,6 +214,12 @@ async fn exports_admin_http_request_inputs() {
             ("http.response.status_code", "404"),
             ("input.grant.kind", "vehicle"),
             ("input.vehicle_type", "123"),
+        ],
+        &[
+            ("http.response.status_code", "404"),
+            ("input.grant.kind", "attachment"),
+            ("input.attachment_id", "2033"),
+            ("input.amount", "1"),
         ],
         &[("http.response.status_code", "201")],
     ]) {
@@ -278,11 +285,12 @@ async fn exports_admin_http_request_inputs() {
     assert!(contains_operation(roots[0], "postgresql.query"));
     assert!(contains_operation(roots[7], "admin.garage.grant"));
     assert!(contains_operation(roots[7], "player_sessions.grants.grant"));
+    assert!(contains_operation(roots[9], "player_sessions.grants.grant"));
     assert!(contains_operation(
-        roots[9],
+        roots[10],
         "accounts.players.persist_starter_garage"
     ));
-    assert!(contains_operation(roots[9], "postgresql.query"));
+    assert!(contains_operation(roots[10], "postgresql.query"));
     let exported = format!("{spans:?}");
     for excluded in [
         "test-bearer-secret",

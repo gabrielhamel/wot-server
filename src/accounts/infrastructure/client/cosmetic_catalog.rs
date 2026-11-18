@@ -2,14 +2,13 @@ use super::{
     GarageCatalog, item_defs,
     item_prices::{ItemPrices, Price},
     items::{IntCompactDescr, item_type},
-    module_defs::ExteriorSlots,
     vehicle_defs::VehicleOffer,
 };
 use crate::{
     accounts::{
-        AccountSnapshot, CosmeticChange, CosmeticItem, CosmeticKind, CosmeticPlacement,
-        CosmeticRule, InscriptionSlot, PaintRegion, ProgressionError, VehicleCost, VehicleSurface,
-        change_cosmetics,
+        AccountSnapshot, Attachment, AttachmentRule, CosmeticChange, CosmeticItem, CosmeticKind,
+        CosmeticPlacement, CosmeticRule, InscriptionSlot, OutfitSeason, PaintRegion,
+        ProgressionError, VehicleCosmeticSlots, VehicleCost, VehicleSurface, change_cosmetics,
     },
     platform::client_formats::pxml::Element,
 };
@@ -17,6 +16,8 @@ use anyhow::{Context, Result, bail, ensure};
 use std::collections::{BTreeMap, BTreeSet};
 use wot_resources::ResourceBundle;
 
+const ATTACHMENTS: &str = "scripts/item_defs/customization/attachments/list.xml";
+const ATTACHMENT_TYPE: u8 = 12;
 const PAINTS: &str = "scripts/item_defs/customization/paints/list.xml";
 const CAMOUFLAGES: &str = "scripts/item_defs/customization/camouflages/list.xml";
 const DECALS: &str = "scripts/item_defs/customization/decals/list.xml";
@@ -112,6 +113,7 @@ pub(super) fn index_exterior_shop(fs: &ResourceBundle, prices: &mut ItemPrices) 
             (STYLES, "style", STYLE_TYPE),
             (CAMOUFLAGES, "camouflage", CAMOUFLAGE_TYPE),
             (PAINTS, "paint", 1),
+            (ATTACHMENTS, "attachment", ATTACHMENT_TYPE),
             (DECALS, "decal", 3),
             (NUMBERS, "personal_number", 9),
             (EFFECTS, "modification", 5),
@@ -189,6 +191,7 @@ impl CosmeticCatalog {
         for (path, item_name, kind) in [
             (CAMOUFLAGES, "camouflage", CosmeticKind::Camouflage),
             (PAINTS, "paint", CosmeticKind::Paint),
+            (ATTACHMENTS, "attachment", CosmeticKind::Attachment),
             (DECALS, "decal", CosmeticKind::Inscription),
             (NUMBERS, "personal_number", CosmeticKind::PersonalNumber),
             (EFFECTS, "modification", CosmeticKind::Effect),
@@ -240,12 +243,33 @@ impl CosmeticCatalog {
         Ok(catalog)
     }
 
+    pub(super) fn grantable_attachment(&self, id: u16) -> Option<&CosmeticRule> {
+        let definition = self.definitions.get(&(CosmeticKind::Attachment, id))?;
+        definition
+            .available_for_custom_outfits
+            .then_some(&definition.rule)
+    }
+
+    pub(super) fn attachment_fits(
+        &self,
+        exterior: &VehicleCosmeticSlots,
+        slot_id: u16,
+        attachment: &Attachment,
+    ) -> bool {
+        let Some(slot) = exterior.attachment_slots.get(&slot_id) else {
+            return false;
+        };
+        self.grantable_attachment(attachment.id).is_some_and(|rule| {
+            matches!(&rule.placement, CosmeticPlacement::Attachment(rule) if rule.fits(slot, attachment))
+        })
+    }
+
     fn rules_for(
         &self,
         key: &str,
         nation: &str,
         vehicle: &VehicleOffer,
-        exterior: &ExteriorSlots,
+        exterior: &VehicleCosmeticSlots,
     ) -> BTreeMap<CosmeticItem, CosmeticRule> {
         if ["lockOutfit", "lockExceptProgression", "event_battles"]
             .iter()
@@ -278,6 +302,11 @@ impl CosmeticCatalog {
                         !units_by_region.is_empty()
                     }
                     CosmeticPlacement::Effect => exterior.effect_slot,
+                    CosmeticPlacement::Attachment(rule) => exterior
+                        .attachment_slots
+                        .values()
+                        .any(|slot| slot.apply_type == rule.apply_type),
+
                     CosmeticPlacement::ProjectionDecal { form, .. } => exterior
                         .projection_slots
                         .values()
@@ -345,7 +374,7 @@ fn read_definition(
             }),
             _ => None,
         });
-    let seasons = text("season")
+    let mut seasons = text("season")
         .unwrap_or("ALL")
         .split_whitespace()
         .try_fold(BTreeSet::new(), |mut seasons, flag| {
@@ -366,6 +395,13 @@ fn read_definition(
             }
             Ok(seasons)
         })?;
+    if kind == CosmeticKind::Attachment {
+        let all = seasons.len() == 3;
+        seasons.clear();
+        if all {
+            seasons.insert(OutfitSeason::Common);
+        }
+    }
     let surfaces = text("compatibleParts")
         .unwrap_or("HULL TURRET GUN")
         .split_whitespace()
@@ -407,6 +443,22 @@ fn read_definition(
             )
         }
         CosmeticKind::Effect => (CosmeticPlacement::Effect, true),
+        CosmeticKind::Attachment => {
+            let apply_type = text("applyType").unwrap_or_default();
+            let tags = text("tags").unwrap_or_default();
+            let has_tag = |tag| tags.split_whitespace().any(|value| value == tag);
+            let scale = attachment_scale(text("size")).context("Invalid attachment size")?;
+            (
+                CosmeticPlacement::Attachment(AttachmentRule {
+                    apply_type: apply_type.to_owned(),
+                    scale,
+                    scalable: has_tag("scalable"),
+                    rotatable: has_tag("rotatable"),
+                }),
+                !apply_type.is_empty() && !seasons.is_empty(),
+            )
+        }
+
         CosmeticKind::Paint => (
             CosmeticPlacement::Paint {
                 units_by_region: paint_usage(item, group)?,
@@ -478,6 +530,16 @@ fn read_definition(
     ))
 }
 
+pub(super) fn attachment_scale(size: Option<&str>) -> Option<u8> {
+    match size.unwrap_or_default() {
+        "" => Some(0),
+        "small" => Some(1),
+        "medium" => Some(2),
+        "large" => Some(3),
+        _ => None,
+    }
+}
+
 pub(super) fn paint_region(name: &str) -> Option<PaintRegion> {
     match name {
         "CHASSIS" => Some(PaintRegion::Chassis),
@@ -530,6 +592,7 @@ pub(super) fn cosmetic_subtype(kind: CosmeticKind) -> u8 {
         CosmeticKind::PersonalNumber => 9,
         CosmeticKind::Effect => 5,
         CosmeticKind::ProjectionDecal => 7,
+        CosmeticKind::Attachment => ATTACHMENT_TYPE,
     }
 }
 
@@ -542,6 +605,7 @@ pub fn cosmetic_item(descriptor: i32) -> Option<CosmeticItem> {
         9 => CosmeticKind::PersonalNumber,
         5 => CosmeticKind::Effect,
         7 => CosmeticKind::ProjectionDecal,
+        ATTACHMENT_TYPE => CosmeticKind::Attachment,
         _ => return None,
     };
     (cosmetic_descriptor(cosmetic_subtype(kind), decoded.id).to_int() == i64::from(descriptor))
@@ -578,7 +642,7 @@ impl GarageCatalog {
                 change,
                 &rules,
                 &self.cosmetics.prohibited_numbers,
-                &BTreeMap::new(),
+                &VehicleCosmeticSlots::default(),
             );
         }
         let owned = snapshot
@@ -610,7 +674,7 @@ impl GarageCatalog {
             change,
             &rules,
             &self.cosmetics.prohibited_numbers,
-            &exterior.projection_slots,
+            &exterior,
         )
     }
 }

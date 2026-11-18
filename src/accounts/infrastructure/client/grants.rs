@@ -47,6 +47,17 @@ impl GarageCatalog {
                 currency.grant(&mut snapshot.balances, amount)?;
                 None
             }
+            PlayerGrant::Attachment { id, count } => {
+                let rule = self
+                    .cosmetics
+                    .grantable_attachment(id)
+                    .ok_or(GrantError::UnknownAttachment)?;
+                snapshot
+                    .progression
+                    .cosmetics
+                    .grant_attachment(id, count, rule.max_owned)?;
+                None
+            }
             PlayerGrant::Vehicle { vehicle } => {
                 let offer = self
                     .offers
@@ -105,7 +116,9 @@ impl GarageCatalog {
                     "stats": {(key): (currency.balance(&change.snapshot.balances))}
                 }))
             }
-            PlayerGrant::Vehicle { .. } => self.progression_diff(previous, change),
+            PlayerGrant::Vehicle { .. } | PlayerGrant::Attachment { .. } => {
+                self.progression_diff(previous, change)
+            }
         }
     }
 }

@@ -87,6 +87,7 @@ impl Garage {
 pub(super) enum GrantBody {
     Currency { currency: Currency, amount: i64 },
     Vehicle { vehicle: i32 },
+    Attachment { id: u16, count: u32 },
 }
 
 #[derive(Deserialize)]
@@ -156,7 +157,7 @@ pub(super) async fn grant(
             match error.status() {
                 StatusCode::PAYLOAD_TOO_LARGE => "The grant request exceeds 8 KiB.",
                 StatusCode::UNSUPPORTED_MEDIA_TYPE => "Send the grant request as application/json.",
-                _ => "Send a valid currency amount or catalog vehicle ID.",
+                _ => "Send a valid currency, vehicle or attachment grant.",
             },
         )
     })?;
@@ -172,6 +173,12 @@ pub(super) async fn grant(
             request_span.record("input.grant.currency", name);
             request_span.record("input.amount", amount);
             PlayerGrant::Currency { currency, amount }
+        }
+        GrantBody::Attachment { id, count } => {
+            request_span.record("input.grant.kind", "attachment");
+            request_span.record("input.attachment_id", id);
+            request_span.record("input.amount", count);
+            PlayerGrant::Attachment { id, count }
         }
         GrantBody::Vehicle { vehicle } => {
             request_span.record("input.grant.kind", "vehicle");

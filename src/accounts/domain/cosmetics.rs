@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_COSMETIC_PURCHASE_LINES: usize = 12;
+pub const MAX_ATTACHMENTS: usize = 6;
 pub const MAX_PROJECTION_DECALS: usize = 3;
 const MAX_UNITS_PER_PURCHASE: u32 = 100;
 
@@ -14,6 +15,7 @@ pub enum CosmeticKind {
     Effect,
     ProjectionDecal,
     Paint,
+    Attachment,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -21,6 +23,7 @@ pub enum OutfitSeason {
     Winter,
     Summer,
     Desert,
+    Common,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -84,6 +87,49 @@ impl ProjectionDecalSlot {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Attachment {
+    pub id: u16,
+    pub scale: u8,
+    pub rotated: bool,
+}
+
+#[derive(Clone)]
+pub struct AttachmentSlot {
+    pub apply_type: String,
+    pub scale: u8,
+}
+
+#[derive(Clone)]
+pub struct AttachmentRule {
+    pub apply_type: String,
+    pub scale: u8,
+    pub scalable: bool,
+    pub rotatable: bool,
+}
+
+impl AttachmentRule {
+    pub fn fits(&self, slot: &AttachmentSlot, attachment: &Attachment) -> bool {
+        self.apply_type == slot.apply_type
+            && (!attachment.rotated || self.rotatable)
+            && if self.scalable {
+                (1..=slot.scale).contains(&attachment.scale)
+            } else {
+                attachment.scale == self.scale.min(slot.scale)
+            }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct VehicleCosmeticSlots {
+    pub camouflage: BTreeSet<VehicleSurface>,
+    pub paints: BTreeSet<PaintRegion>,
+    pub inscriptions: BTreeSet<InscriptionSlot>,
+    pub effect_slot: bool,
+    pub projection_slots: BTreeMap<u16, ProjectionDecalSlot>,
+    pub attachment_slots: BTreeMap<u16, AttachmentSlot>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum PaintRegion {
     Chassis,
@@ -112,15 +158,28 @@ pub struct VehicleOutfit {
     pub effect: Option<u16>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub projection_decals: Vec<ProjectionDecal>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attachments: BTreeMap<u16, Attachment>,
 }
 
 impl VehicleOutfit {
     pub fn is_empty(&self) -> bool {
-        self.camouflage.is_empty()
-            && self.paints.is_empty()
-            && self.inscriptions.is_empty()
-            && self.effect.is_none()
-            && self.projection_decals.is_empty()
+        self.seasonal_placements() == 0 && self.attachments.is_empty()
+    }
+
+    pub fn supports_season(&self, season: OutfitSeason) -> bool {
+        match season {
+            OutfitSeason::Common => self.seasonal_placements() == 0,
+            _ => self.attachments.is_empty(),
+        }
+    }
+
+    fn seasonal_placements(&self) -> usize {
+        self.camouflage.len()
+            + self.paints.len()
+            + self.inscriptions.len()
+            + usize::from(self.effect.is_some())
+            + self.projection_decals.len()
     }
 
     fn items(&self) -> impl Iterator<Item = (CosmeticItem, u32)> + '_ {
@@ -133,6 +192,11 @@ impl VehicleOutfit {
                 self.projection_decals
                     .iter()
                     .map(|decal| (CosmeticKind::ProjectionDecal, decal.id)),
+            )
+            .chain(
+                self.attachments
+                    .values()
+                    .map(|attachment| (CosmeticKind::Attachment, attachment.id)),
             )
             .map(|item| (item, 1))
             .chain(
@@ -154,35 +218,64 @@ impl CosmeticState {
     pub(crate) fn retain_supported_slots(
         &mut self,
         vehicle: i64,
-        supported: &BTreeSet<VehicleSurface>,
-        paint_regions: &BTreeSet<PaintRegion>,
-        inscription_slots: &BTreeSet<InscriptionSlot>,
-        supports_effect: bool,
-        projection_slots: &BTreeMap<u16, ProjectionDecalSlot>,
+        slots: &VehicleCosmeticSlots,
+        attachment_fits: impl Fn(u16, &Attachment) -> bool,
     ) {
         if let Some(seasons) = self.outfits.get_mut(&vehicle) {
             seasons.retain(|_, outfit| {
                 outfit
                     .camouflage
-                    .retain(|surface, _| supported.contains(surface));
+                    .retain(|surface, _| slots.camouflage.contains(surface));
                 outfit
                     .paints
-                    .retain(|region, _| paint_regions.contains(region));
+                    .retain(|region, _| slots.paints.contains(region));
                 outfit
                     .inscriptions
-                    .retain(|slot, _| inscription_slots.contains(slot));
-                if !supports_effect {
+                    .retain(|slot, _| slots.inscriptions.contains(slot));
+                if !slots.effect_slot {
                     outfit.effect = None;
                 }
                 outfit
                     .projection_decals
-                    .retain(|decal| projection_slots.contains_key(&decal.slot_id));
+                    .retain(|decal| slots.projection_slots.contains_key(&decal.slot_id));
+                outfit
+                    .attachments
+                    .retain(|&id, attachment| attachment_fits(id, attachment));
                 !outfit.is_empty()
             });
             if seasons.is_empty() {
                 self.outfits.remove(&vehicle);
             }
         }
+    }
+
+    #[tracing::instrument(
+        name = "accounts.cosmetics.grant_attachment",
+        skip_all,
+        fields(ddd.bounded_context.name = "accounts", input.attachment_id = id, input.amount = count, output.owned.count = tracing::field::Empty),
+        err
+    )]
+    pub(crate) fn grant_attachment(
+        &mut self,
+        id: u16,
+        count: u32,
+        max_owned: Option<u32>,
+    ) -> Result<(), super::GrantError> {
+        use super::GrantError;
+        if !(1..=MAX_UNITS_PER_PURCHASE).contains(&count) {
+            return Err(GrantError::InvalidAmount);
+        }
+        let owned = self.owned.entry(CosmeticKind::Attachment).or_default();
+        let total = owned
+            .get(&id)
+            .copied()
+            .unwrap_or_default()
+            .checked_add(count)
+            .filter(|&total| max_owned.is_none_or(|limit| total <= limit))
+            .ok_or(GrantError::AttachmentLimit)?;
+        owned.insert(id, total);
+        tracing::Span::current().record("output.owned.count", total);
+        Ok(())
     }
 
     pub fn owned(&self) -> &BTreeMap<CosmeticKind, BTreeMap<u16, u32>> {
@@ -212,13 +305,7 @@ impl CosmeticChange {
             Self::Buy(items) => items.len(),
             Self::Apply(seasons) => seasons
                 .values()
-                .map(|outfit| {
-                    outfit.camouflage.len()
-                        + outfit.paints.len()
-                        + outfit.inscriptions.len()
-                        + usize::from(outfit.effect.is_some())
-                        + outfit.projection_decals.len()
-                })
+                .map(|outfit| outfit.seasonal_placements() + outfit.attachments.len())
                 .sum(),
         }
     }
@@ -254,6 +341,7 @@ pub enum CosmeticPlacement {
         digits: Option<usize>,
     },
     Effect,
+    Attachment(AttachmentRule),
     ProjectionDecal {
         form: Option<String>,
         horizontal_mirror: bool,
@@ -283,16 +371,9 @@ pub fn change_cosmetics(
     change: CosmeticChange,
     rules: &BTreeMap<CosmeticItem, CosmeticRule>,
     prohibited_numbers: &BTreeSet<String>,
-    projection_slots: &BTreeMap<u16, ProjectionDecalSlot>,
+    slots: &VehicleCosmeticSlots,
 ) -> Result<bool, ProgressionError> {
-    let result = plan_cosmetics(
-        snapshot,
-        vehicle,
-        change,
-        rules,
-        prohibited_numbers,
-        projection_slots,
-    );
+    let result = plan_cosmetics(snapshot, vehicle, change, rules, prohibited_numbers, slots);
     let span = tracing::Span::current();
     match &result {
         Ok(changed) => span.record(
@@ -314,7 +395,7 @@ fn plan_cosmetics(
     change: CosmeticChange,
     rules: &BTreeMap<CosmeticItem, CosmeticRule>,
     prohibited_numbers: &BTreeSet<String>,
-    projection_slots: &BTreeMap<u16, ProjectionDecalSlot>,
+    slots: &VehicleCosmeticSlots,
 ) -> Result<bool, ProgressionError> {
     use ProgressionError::InvalidCosmetic;
 
@@ -347,6 +428,24 @@ fn plan_cosmetics(
             let current = state.outfits.get(&vehicle);
             let mut outfits = current.cloned().unwrap_or_default();
             for (season, mut outfit) in seasons {
+                if !outfit.supports_season(season) || outfit.attachments.len() > MAX_ATTACHMENTS {
+                    return Err(InvalidCosmetic);
+                }
+                for (&slot_id, attachment) in &outfit.attachments {
+                    let rule = rules
+                        .get(&(CosmeticKind::Attachment, attachment.id))
+                        .ok_or(InvalidCosmetic)?;
+                    let CosmeticPlacement::Attachment(attachment_rule) = &rule.placement else {
+                        return Err(InvalidCosmetic);
+                    };
+                    let slot = slots
+                        .attachment_slots
+                        .get(&slot_id)
+                        .ok_or(InvalidCosmetic)?;
+                    if !rule.seasons.contains(&season) || !attachment_rule.fits(slot, attachment) {
+                        return Err(InvalidCosmetic);
+                    }
+                }
                 for (region, paint) in &mut outfit.paints {
                     let rule = rules
                         .get(&(CosmeticKind::Paint, paint.id))
@@ -424,7 +523,8 @@ fn plan_cosmetics(
                     else {
                         return Err(InvalidCosmetic);
                     };
-                    let slot = projection_slots
+                    let slot = slots
+                        .projection_slots
                         .get(&decal.slot_id)
                         .ok_or(InvalidCosmetic)?;
                     if !rule.seasons.contains(&season)
@@ -592,7 +692,7 @@ mod tests {
                 mount_summer(),
                 &rules,
                 &BTreeSet::new(),
-                &BTreeMap::new()
+                &VehicleCosmeticSlots::default()
             )
             .unwrap()
         );
@@ -609,7 +709,7 @@ mod tests {
                 mount_summer(),
                 &rules,
                 &BTreeSet::new(),
-                &BTreeMap::new()
+                &VehicleCosmeticSlots::default()
             )
             .unwrap()
         );
@@ -622,7 +722,7 @@ mod tests {
                     change,
                     &rules,
                     &BTreeSet::new(),
-                    &BTreeMap::new()
+                    &VehicleCosmeticSlots::default()
                 ),
                 Err(ProgressionError::NotEnoughMoney)
             );
@@ -638,7 +738,7 @@ mod tests {
                 invalid,
                 &rules,
                 &BTreeSet::new(),
-                &BTreeMap::new()
+                &VehicleCosmeticSlots::default()
             ),
             Err(ProgressionError::InvalidCosmetic)
         );
@@ -653,7 +753,7 @@ mod tests {
                 mount_desert(),
                 &rules,
                 &BTreeSet::new(),
-                &BTreeMap::new()
+                &VehicleCosmeticSlots::default()
             )
             .unwrap()
         );

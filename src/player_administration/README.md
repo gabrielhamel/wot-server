@@ -1,7 +1,7 @@
 # Player Administration
 
 Player Administration gives authorized operators the ability to find and
-provision players, inspect garages, and grant currency or vehicles. The HTTP
+provision players, inspect garages, and grant currency, vehicles or attachments. The HTTP
 API and dashboard expose those workflows. [Accounts](../accounts/README.md)
 owns player identities and garage state. Player Administration uses the
 published account and catalog data and submits grants through
@@ -17,7 +17,7 @@ published account and catalog data and submits grants through
 | --- | --- |
 | Admin token | Server-configured bearer credential shared with authorized operators. |
 | Player record | Account ID, game login and display name returned by the admin API. |
-| Grant | Operator-authorized addition of one resource or one permanently owned tank. |
+| Grant | Operator-authorized addition of currency, attachment copies or a permanently owned tank. |
 
 The [admin guide](../../docs/admin.md) describes configuration and the HTTP
 contract.

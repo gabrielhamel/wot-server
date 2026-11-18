@@ -1,7 +1,7 @@
 # Admin dashboard and HTTP API
 
 The game server can serve a React Admin dashboard to list and create player
-accounts and grant resources and tanks. Accounts creates the player and starter
+accounts and grant resources, tanks and 3D attachments. Accounts creates the player and starter
 garage in one transaction. The garage contains regular tech tree tier I tanks
 with stock modules, basic crew, default ammunition and initial settings.
 They can use their new credentials in the game client's basic login flow
@@ -107,6 +107,16 @@ Send one of these JSON bodies to the grants endpoint.
 { "kind": "vehicle", "vehicle": 58625 }
 ```
 
+```json
+{ "kind": "attachment", "id": 2033, "count": 1 }
+```
+
+An attachment grant adds 1–100 copies to the depot, subject to the item's
+ownership limit. Use the item ID from the bundle's
+`scripts/item_defs/customization/attachments/list.xml`. ID 2033 is the
+Zongzi Jubilee dragon boat from River Race Revelry in the installed EU build. The HTTP endpoint
+accepts the grant even when the catalog marks the attachment outside the shop.
+
 Currency identifiers are `credits`, `gold`, `bonds`, and `free_xp`.
 The resulting balance must fit the server's grant ceiling of 2,147,483,647.
 Use a vehicle ID from `GET /api/admin/vehicles`. Both the picker and the grant
@@ -121,7 +131,7 @@ the ISU-130. Names come from the installed localization files when present.
 The granted tank and its stock modules become available in account progression.
 
 An unknown player returns `404`. An invalid amount, unknown or unsupported tank,
-or balance over the ceiling returns `422`. A duplicate tank, full garage or
+unknown attachment, or ownership or balance over the ceiling returns `422`. A duplicate tank, full garage or
 account write already in progress returns `409`. Refresh the player's garage if
 a submission loses its HTTP response before deciding whether to submit again.
 
@@ -129,7 +139,8 @@ After a revision-checked commit, the game gateway refreshes its account snapshot
 and queues a reliable Mercury `Account.update` for the synced garage session
 (`queued_for_garage`). The balance diff carries the new absolute value in
 `stats.credits`, `stats.gold`, `stats.crystal` or `stats.freeXP`. Tank grants
-use the same inventory tables as garage purchases. `on_next_sync` means the
+use the same inventory tables as garage purchases. Attachment grants use the
+customization depot table. `on_next_sync` means the
 committed snapshot will be available at the next sync, including for an offline
 player or one still connecting.
 
