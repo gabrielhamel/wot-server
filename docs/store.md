@@ -3,7 +3,8 @@
 The garage's Store tab opens the embedded Store page. The initial catalog
 offers Improved Ventilation and Turbocharger in classes 1–3 for credits.
 Each purchase adds one unmounted item to the player's Depot. The Store
-shows the credit balance and Depot quantity for each offer.
+shows the credit balance and Depot quantity for each offer. Its Material UI
+components share a theme with the admin dashboard.
 
 ## Configuration
 
