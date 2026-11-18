@@ -32,6 +32,7 @@ establish compatibility with the current client.
 | Researching, buying and installing tank modules | [Module progression](modules.md) |
 | Loading, unloading and buying tank shells | [Garage ammunition](ammunition.md) |
 | Opening the in-game Store and buying equipment offers | [Store](store.md) |
+| Official EU Store categories and regular prices | [Store catalog](store-eu-catalog.md) |
 | Buying, mounting and demounting equipment | [Garage equipment](equipment.md) |
 | Buying and mounting consumables and setting auto-resupply | [Garage consumables](consumables.md) |
 | Seasonal camouflage, paint, decals, inscriptions, effects and 3D attachments | [Garage camouflage and exterior customization](camouflage.md) |
