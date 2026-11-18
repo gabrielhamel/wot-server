@@ -60,6 +60,12 @@ fn shop(prices: &ItemPrices) -> Value {
                     Value::dict([(price.currency, Value::from(price.amount))]),
                 )
             })
+            .chain(
+                prices
+                    .catalog_only
+                    .iter()
+                    .map(|cd| (Value::from(cd.to_int()), Value::Dict(Default::default()))),
+            )
             .collect(),
     );
     let item_prices = Value::object(

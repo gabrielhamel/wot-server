@@ -1,7 +1,7 @@
 # Accounts
 
 Accounts owns durable player identity, password hashes, balances, vehicle ownership,
-integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes immutable snapshots to
+integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, cosmetic ownership and outfits, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes immutable snapshots to
 Player Sessions. It does not own transport sessions, entities, battles or matchmaking.
 
 | Layer | Responsibilities |
@@ -28,6 +28,8 @@ context is a possible future boundary, not an implemented one.
 | Catalog key | A resource identifier such as `usa:A01_T1_Cunningham`. |
 | Snapshot | A coherent read of an account and its vehicle ownership. |
 | Revision | Monotonically increasing version changed with persisted preferences, research or inventory. |
+| Cosmetic ownership | Total copies of an exterior item, including applied copies. |
+| Outfit | Vehicle appearance for a season, including camouflage, inscriptions and an effect. |
 | Shell layout | Ordered compatible shell/count pairs loaded on one vehicle. |
 | Depot stock | Shared unmounted shells, modules, equipment, directives and consumables. Sales debit these counts and credit the account in the same revision. |
 | Equipment components | Balance used for paid demounting of level 2 and 3 Experimental equipment. The client calls it `equipCoin`. |
@@ -59,7 +61,8 @@ Untouched ammunition uses the existing default; changed ammunition and depot sto
 are durable. See [garage ammunition](../../docs/ammunition.md) for the use case,
 wire evidence and limits. [Garage equipment](../../docs/equipment.md) records
 equipment purchasing, mounting and removal. [Garage consumables](../../docs/consumables.md) covers regular consumable stock, slot changes and combined Auto Fill. [Garage directives](../../docs/directives.md)
-describes purchases, mounting and auto-resupply settings. The [Garage Depot](../../docs/depot.md)
+describes purchases, mounting and auto-resupply settings. The [Garage camouflage](../../docs/camouflage.md) describes stock, seasonal outfits and
+pricing. The [Garage Depot](../../docs/depot.md)
 records sale pricing, stock validation and cache updates. User balances and
 ownership come from PostgreSQL; the compatibility adapter supplies empty/default
 values for unsupported account features. See [server behavior](../../docs/server.md).

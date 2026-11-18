@@ -5,8 +5,8 @@ use super::{
 };
 use crate::{
     accounts::{
-        AmmunitionRules, ModuleDefinition, ModuleKind, ModuleLoadout, ModuleRules, ResearchStep,
-        ShellPrice,
+        AmmunitionRules, InscriptionSlot, ModuleDefinition, ModuleKind, ModuleLoadout, ModuleRules,
+        ResearchStep, ShellPrice, VehicleSurface,
     },
     platform::client_formats::pxml::Element,
 };
@@ -17,9 +17,35 @@ use wot_resources::ResourceBundle;
 pub(super) struct VehicleModules {
     pub rules: ModuleRules,
     pub ammunition: BTreeMap<(i32, i32), AmmunitionRules>,
+    exterior_slots: BTreeMap<(i32, i32), ExteriorSlots>,
+    chassis_with_effect_slots: BTreeSet<i32>,
+}
+
+pub(super) struct ExteriorSlots {
+    pub camouflage: BTreeSet<VehicleSurface>,
+    pub inscriptions: BTreeSet<InscriptionSlot>,
+    effect_slot: bool,
 }
 
 impl VehicleModules {
+    pub(super) fn exterior_slots(&self, modules: &ModuleLoadout) -> Option<&ExteriorSlots> {
+        self.exterior_slots.get(&(
+            *modules.get(&ModuleKind::Turret)?,
+            *modules.get(&ModuleKind::Gun)?,
+        ))
+    }
+
+    pub(super) fn supports_effect(
+        &self,
+        modules: &ModuleLoadout,
+        exterior: &ExteriorSlots,
+    ) -> bool {
+        exterior.effect_slot
+            || modules
+                .get(&ModuleKind::Chassis)
+                .is_some_and(|chassis| self.chassis_with_effect_slots.contains(chassis))
+    }
+
     pub fn load(
         fs: &ResourceBundle,
         nation: &str,
@@ -93,6 +119,13 @@ impl VehicleModules {
         };
         read_research(&vehicle, &ids, &[], &mut rules.research)?;
         let mut ammunition = BTreeMap::new();
+        let mut exterior_slots = BTreeMap::new();
+        let mut chassis_with_effect_slots = BTreeSet::new();
+        let hull_effect_slot = has_effect_slot(vehicle.get_child_element("hull"));
+        let hull_inscriptions = inscription_slots(vehicle.get_child_element("hull"));
+        let hull_camouflage = vehicle
+            .get_child_element("hull")
+            .is_some_and(|hull| super::cosmetic_catalog::has_camouflage_area(hull, "HULL"));
         let shells = item_defs::read_xml(fs, &format!("{dir}/components/shells.xml"))?;
         for (kind, section) in [
             (2, "chassis"),
@@ -135,6 +168,9 @@ impl VehicleModules {
                         max_weight: if kind == 2 { number("maxLoad") } else { None },
                     },
                 );
+                if kind == 2 && has_effect_slot(Some(base)) {
+                    chassis_with_effect_slots.insert(id);
+                }
                 if kind == 3 {
                     let guns = local
                         .and_then(|l| l.get_child_element("guns"))
@@ -151,6 +187,56 @@ impl VehicleModules {
                             .and_then(|xml| xml.get_child_element(name));
                         let gun_base =
                             gun_shared.or(gun_local).context("Missing gun definition")?;
+                        let surfaces = [
+                            (VehicleSurface::Hull, hull_camouflage),
+                            (
+                                VehicleSurface::Turret,
+                                super::cosmetic_catalog::has_camouflage_area(base, "TURRET"),
+                            ),
+                            (
+                                VehicleSurface::Gun,
+                                gun_local.is_some_and(|gun| {
+                                    super::cosmetic_catalog::has_camouflage_area(gun, "GUN")
+                                }),
+                            ),
+                        ];
+                        use InscriptionSlot::*;
+                        let show_on_gun = base.get_child_boolean("showEmblemsOnGun") == Some(true);
+                        let turret_slots = inscription_slots(Some(base));
+                        let gun_slot_definition = gun_local
+                            .filter(|gun| {
+                                gun.get_child("emblemSlots").is_some()
+                                    || gun.get_child("customizationSlots").is_some()
+                            })
+                            .unwrap_or(gun_base);
+                        let gun_slots = inscription_slots(Some(gun_slot_definition));
+                        let inscription_regions = [
+                            ([HullFirst, HullSecond], hull_inscriptions),
+                            (
+                                [TurretFirst, TurretSecond],
+                                if show_on_gun { 0 } else { turret_slots },
+                            ),
+                            (
+                                [GunFirst, GunSecond],
+                                if show_on_gun { turret_slots } else { gun_slots },
+                            ),
+                        ];
+                        exterior_slots.insert(
+                            (id, gun),
+                            ExteriorSlots {
+                                effect_slot: hull_effect_slot
+                                    || has_effect_slot(Some(base))
+                                    || has_effect_slot(Some(gun_slot_definition)),
+                                camouflage: surfaces
+                                    .into_iter()
+                                    .filter_map(|(surface, supported)| supported.then_some(surface))
+                                    .collect(),
+                                inscriptions: inscription_regions
+                                    .into_iter()
+                                    .flat_map(|(slots, count)| slots.into_iter().take(count))
+                                    .collect(),
+                            },
+                        );
                         let gun_number = |key| {
                             gun_local
                                 .and_then(|l| l.get_child_float(key))
@@ -258,7 +344,12 @@ impl VehicleModules {
                 .copied()
                 .collect();
         }
-        Ok(Self { rules, ammunition })
+        Ok(Self {
+            rules,
+            ammunition,
+            exterior_slots,
+            chassis_with_effect_slots,
+        })
     }
 
     pub fn project(&self, descr: &mut VehicleDescr, installed: &ModuleLoadout) -> Result<()> {
@@ -279,6 +370,29 @@ impl VehicleModules {
         }
         Ok(())
     }
+}
+
+fn has_effect_slot(part: Option<&Element>) -> bool {
+    // Vehicle falls back to the style anchor when there is no explicit effect anchor.
+    part.and_then(|part| part.get_child_element("customizationSlots"))
+        .into_iter()
+        .flat_map(Element::iter_child_elements)
+        .any(|(_, slot)| matches!(slot.get_child_string("slotType"), Some("style" | "effect")))
+}
+
+fn inscription_slots(part: Option<&Element>) -> usize {
+    let Some(part) = part else { return 0 };
+    if let Some(slots) = part.get_child_element("emblemSlots") {
+        return slots
+            .iter_child_elements()
+            .filter(|(name, _)| *name == "inscription")
+            .count();
+    }
+    part.get_child_element("customizationSlots")
+        .into_iter()
+        .flat_map(Element::iter_child_elements)
+        .filter(|(_, slot)| slot.get_child_string("slotType") == Some("inscription"))
+        .count()
 }
 
 fn read_research(

@@ -70,6 +70,7 @@ impl AccountSnapshot {
         self.vehicles
             .retain(|vehicle| vehicle.inventory_id != inventory_id);
         self.progression.installed.remove(&inventory_id);
+        self.progression.cosmetics.outfits.remove(&inventory_id);
         self.progression.equipment.remove(&inventory_id);
         self.progression
             .set_vehicle_consumables(inventory_id, Default::default());

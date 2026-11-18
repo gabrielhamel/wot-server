@@ -1,5 +1,7 @@
 #[path = "support/ammunition_flow.rs"]
 mod ammunition_flow;
+#[path = "support/camouflage_flow.rs"]
+mod camouflage_flow;
 #[path = "support/consumables_flow.rs"]
 mod consumables_flow;
 #[path = "support/crew_flow.rs"]
@@ -82,6 +84,12 @@ async fn exercise_garage(encrypted_login: bool) {
         format!("{prefix}_a@example.test")
     };
     let second = format!("{prefix}_b@example.test");
+    let has_extension_styles =
+        resources.has_file("last_stand/scripts/item_defs/customization/styles/list.xml");
+    let has_inscriptions = has_extension_styles
+        && resources.has_file("scripts/item_defs/customization/personal_numbers/list.xml");
+    let has_effects = has_inscriptions
+        && resources.has_file("scripts/item_defs/customization/modifications/list.xml");
     let tank_a = "usa:A01_T1_Cunningham".to_string();
     let tank_b = "germany:G12_Ltraktor".to_string();
     player_fixture::insert_player(
@@ -174,6 +182,13 @@ async fn exercise_garage(encrypted_login: bool) {
         .execute(&pool)
         .await
         .unwrap();
+    if has_extension_styles {
+        sqlx::query("INSERT INTO owned_vehicles (account_id, inventory_id, catalog_key) VALUES ($1, 43, 'uk:GB158_Executor')")
+            .bind(a.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
     assert!(
         repository
             .credentials(&first)
@@ -198,6 +213,8 @@ async fn exercise_garage(encrypted_login: bool) {
         stored.settings
     );
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[tank_a, tank_b]).unwrap());
+    let has_camouflage = resources.has_file("scripts/item_defs/customization/camouflages/list.xml");
+    let has_exterior_styles = resources.has_file("scripts/item_defs/customization/styles/list.xml");
     let script = ScriptDispatch::new(
         wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
     );
@@ -335,7 +352,18 @@ async fn exercise_garage(encrypted_login: bool) {
         );
         let module_cache =
             vehicles_flow::buy_with_consumables(&mut second_peer, &script, &module_cache);
-        let last_cache = ammunition_flow::exercise(&mut first_peer, &script);
+        let mut last_cache = ammunition_flow::exercise(&mut first_peer, &script);
+        if has_camouflage {
+            last_cache = camouflage_flow::exercise(
+                &mut first_peer,
+                &script,
+                &last_cache,
+                has_exterior_styles,
+                has_extension_styles,
+                has_inscriptions,
+                has_effects,
+            );
+        }
         first_peer.disconnect();
         social_flow::wait_presence(&mut second_peer, &script, a.id, false);
         std::thread::sleep(std::time::Duration::from_millis(250));
@@ -388,6 +416,9 @@ async fn exercise_garage(encrypted_login: bool) {
     if result.is_ok() {
         telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
         telemetry_capture::assert_operation_traces(b.id);
+        if has_camouflage {
+            camouflage_flow::assert_traces(a.id, has_inscriptions, has_effects);
+        }
     }
     let fresh_social = wot_server::social::Social::new(wot_server::social::PostgresSocial::new(
         PostgresAccounts::connect(&url, 2)
@@ -398,7 +429,16 @@ async fn exercise_garage(encrypted_login: bool) {
     if result.is_ok() {
         vehicle_sales_flow::verify_storage(&repository, &catalog, equipment_account).await;
         let stored = repository.snapshot(a.id).await.unwrap();
-        assert_eq!(stored.revision, 7);
+        assert_eq!(
+            stored.revision,
+            if has_camouflage {
+                11 + i64::from(has_extension_styles)
+                    + 5 * i64::from(has_inscriptions)
+                    + 3 * i64::from(has_effects)
+            } else {
+                7
+            }
+        );
         assert_eq!(
             PostgresAccounts::connect(&url, 2)
                 .await
@@ -585,7 +625,7 @@ async fn exercise_garage(encrypted_login: bool) {
         );
         assert_ne!(first_commit.unwrap(), repeated_commit.unwrap());
         let committed = repository.snapshot(a.id).await.unwrap();
-        assert_eq!(committed.revision, 8);
+        assert_eq!(committed.revision, change.previous_revision + 1);
         assert_eq!(committed.vehicles, change.snapshot.vehicles);
         assert_eq!(committed.depot_shells, change.snapshot.depot_shells);
         assert_eq!(committed.balances, change.snapshot.balances);

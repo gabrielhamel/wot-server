@@ -38,7 +38,7 @@ enum Outcome {
 }
 
 impl Gateway {
-    #[tracing::instrument(name = "player_sessions.gateway.change_progression", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.has_command = command.is_some()), err)]
+    #[tracing::instrument(name = "player_sessions.gateway.change_progression", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.has_command = command.is_some(), output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     pub(super) fn change_progression(
         &mut self,
         client: ClientKey,
@@ -51,6 +51,10 @@ impl Gateway {
             return Ok(());
         };
         let Some(command) = command else {
+            let span = tracing::Span::current();
+            span.record("output.outcome", "invalid_request");
+            span.record("otel.status_code", "ERROR");
+            tracing::info!("Garage progression request could not be decoded");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,
                 -2,
@@ -60,6 +64,7 @@ impl Gateway {
         };
         if shop_revision.is_some_and(|revision| revision != i64::from(self.catalog.shop_revision()))
         {
+            tracing::Span::current().record("output.outcome", "stale_shop");
             self.base.entity(entity)?.onCmdResponseExt(
                 request_id,
                 -4,
@@ -73,6 +78,7 @@ impl Gateway {
             && session.crew_running
             && session.crew_queue.len() < super::crew::MAX_QUEUED_CREW_COMMANDS
         {
+            tracing::Span::current().record("output.outcome", "queued");
             session
                 .crew_queue
                 .push_back(super::crew::QueuedCrewCommand {
@@ -87,6 +93,7 @@ impl Gateway {
             .then(|| self.workers.clone().try_acquire_owned().ok())
             .flatten();
         let Some(permit) = permit else {
+            tracing::Span::current().record("output.outcome", "busy");
             self.base
                 .entity(entity)?
                 .onCmdResponse(request_id, -5, "accountBusy".into())?;
@@ -145,7 +152,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "player_sessions.gateway.progression_response", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty))]
+    #[tracing::instrument(name = "player_sessions.gateway.progression_response", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty, output.delivery = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
     pub(super) fn complete_progression(&mut self, completion: Completion) {
         let Completion {
             client,
@@ -153,7 +160,8 @@ impl Gateway {
             request_id,
             result,
         } = completion;
-        tracing::Span::current().record(
+        let span = tracing::Span::current();
+        span.record(
             "output.outcome",
             match &result {
                 Ok(Outcome::Committed { .. }) => "committed",
@@ -165,11 +173,13 @@ impl Gateway {
         );
         self.pending_writes.remove(&account_id);
         let Some(session) = self.sessions.get_mut(&client) else {
+            span.record("output.delivery", "unavailable");
             return;
         };
         session.saving = false;
         session.crew_running = false;
         let Some(entity) = session.entity else {
+            span.record("output.delivery", "unavailable");
             return;
         };
         let response = self
@@ -198,12 +208,20 @@ impl Gateway {
                     account.onCmdResponse(request_id, FAILURE, "accountChanged".into())
                 }
                 Err(error) => {
+                    span.record("otel.status_code", "ERROR");
                     tracing::error!(%error,account_id,"Save garage progression failed");
                     account.onCmdResponse(request_id, FAILURE, "databaseUnavailable".into())
                 }
             });
-        if let Err(error) = response {
-            tracing::error!(%error,account_id,"Send garage progression response failed");
+        match response {
+            Ok(()) => {
+                span.record("output.delivery", "queued");
+            }
+            Err(error) => {
+                span.record("output.delivery", "failed");
+                span.record("otel.status_code", "ERROR");
+                tracing::error!(%error,account_id,"Send garage progression response failed");
+            }
         }
         while let Some(queued) = self.sessions.get_mut(&client).and_then(|session| {
             if session.saving {

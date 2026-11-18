@@ -181,6 +181,23 @@ impl AccountData {
                         .collect(),
                 ),
             ),
+            (
+                Value::from(i32::from(item_type::CUSTOMIZATION)),
+                super::cosmetic_inventory::CosmeticInventory::project(
+                    &self.progression.cosmetics,
+                    &self
+                        .ids
+                        .iter()
+                        .copied()
+                        .zip(
+                            self.vehicles
+                                .iter()
+                                .map(|v| v.descr.int_descr().to_int() as i32),
+                        )
+                        .collect(),
+                )
+                .full(),
+            ),
             (Value::from("enhancements"), crate::pickle!({})),
             (Value::from("telecomOrders"), crate::pickle!({})),
         ]);

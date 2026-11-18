@@ -14,6 +14,7 @@ use rsa::{
 };
 mod ammunition;
 mod commands;
+mod cosmetics;
 mod crew;
 mod expendables;
 mod grants;

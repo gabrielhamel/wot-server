@@ -73,6 +73,12 @@ impl GarageCatalog {
                 changed = roster != before || snapshot.balances != balances;
                 snapshot.crew = Some(roster);
             }
+            ProgressionCommand::Cosmetics {
+                inventory_id,
+                change,
+            } => {
+                changed = self.change_cosmetics(&mut snapshot, inventory_id, change)?;
+            }
             ProgressionCommand::Sell(items) => self.sell_depot_items(&mut snapshot, items)?,
             ProgressionCommand::SellVehicle(sale) => {
                 let id = sale.inventory_id;
@@ -349,6 +355,14 @@ impl GarageCatalog {
                         loaded: new_rules.defaults.iter().map(|&(id, _)| (id, 0)).collect(),
                     });
                 }
+                if let Some(slots) = template.modules.exterior_slots(&next) {
+                    snapshot.progression.cosmetics.retain_supported_slots(
+                        inventory_id,
+                        &slots.camouflage,
+                        &slots.inscriptions,
+                        template.modules.supports_effect(&next, slots),
+                    );
+                }
             }
         }
         if changed {
@@ -549,6 +563,28 @@ impl GarageCatalog {
                 );
             }
         }
+        if previous.progression.cosmetics != next.progression.cosmetics {
+            let project = |snapshot: &AccountSnapshot| {
+                let vehicle_types = snapshot
+                    .vehicles
+                    .iter()
+                    .filter_map(|vehicle| {
+                        Some((vehicle.inventory_id, *self.keys.get(&vehicle.catalog_key)?))
+                    })
+                    .collect();
+                super::cosmetic_inventory::CosmeticInventory::project(
+                    &snapshot.progression.cosmetics,
+                    &vehicle_types,
+                )
+            };
+            let changes = project(next).diff(&project(previous));
+            if !changes.is_empty() {
+                inventory.insert(
+                    Value::from(i32::from(items::item_type::CUSTOMIZATION)),
+                    Value::Dict(changes),
+                );
+            }
+        }
         let remaining_crew_capacity = crew.remaining_member_capacity();
         let mut unlocks = self.default_unlocks(next)?;
         let (elite_key, elite) = if change.sold_vehicle.is_some() {
@@ -690,7 +726,7 @@ fn changed_tables(old: Option<&Value>, new: &Value) -> BTreeMap<Value, Value> {
         .collect()
 }
 
-fn changed_rows(
+pub(super) fn changed_rows(
     old: &BTreeMap<Value, Value>,
     new: &BTreeMap<Value, Value>,
 ) -> BTreeMap<Value, Value> {

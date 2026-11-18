@@ -35,12 +35,13 @@ server. Older manifests without the field remain supported.
 - **Player Sessions** uses Packed XML aliases, entity and component lists and definitions,
   interface definitions and extension descriptors for the protocol ABI.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
-  item definitions, regular tech trees for starter garages and available vehicle
+  item definitions, camouflage definitions and price groups, style, camouflage, decal, effect and personal-number definitions from the client, plus
+  the personal-number restriction list and regular tech trees for starter garages and available vehicle
   name catalogs for admin labels.
 
 The extractor copies selected definition files as complete files and preserves
 their resource paths. It omits executables, packages, artwork, map assets and
-audio. With installed EU `2.4.1.5514` the selected files total about 83 MB
+audio. With installed EU `2.4.1.5514` the selected files total about 88 MB
 before compression. Both bundles and game files should stay outside Git.
 
 Package files take precedence over loose files. The extractor uses package
@@ -49,6 +50,8 @@ in filename order. Mod overlays are outside the extraction scope. Resource
 requirements come from the current [garage catalog](../src/accounts/infrastructure/client)
 and [script ABI loader](../src/player_sessions/infrastructure/mercury/script/load.rs).
 Regenerate the bundle when changing the game build or updating to a server
-that reads different resource paths. The format version identifies the bundle
+that reads different resource paths. For [garage camouflage](camouflage.md),
+regenerate existing bundles with the updated extractor. Older bundles load with
+camouflage purchases unavailable. The format version identifies the bundle
 contract and the extracted Account definition supplies the protocol's required
 client version.

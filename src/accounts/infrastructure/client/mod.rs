@@ -1,4 +1,9 @@
 mod account;
+mod cosmetic_catalog;
+mod cosmetic_inventory;
+mod outfit;
+pub use cosmetic_catalog::cosmetic_item;
+pub use outfit::decode_outfits;
 mod consumables;
 mod crew;
 mod crew_books;
@@ -42,6 +47,7 @@ pub struct GarageCatalog {
     crew_books: BTreeMap<i32, crew_books::CrewBook>,
     crew_skins: BTreeMap<u16, crew_skins::CrewSkin>,
     prices: item_prices::ItemPrices,
+    cosmetics: cosmetic_catalog::CosmeticCatalog,
     shell_prices: BTreeMap<i32, ShellPrice>,
     equipment: crate::accounts::EquipmentRules,
     directives: crate::accounts::DirectiveRules,
@@ -59,6 +65,8 @@ struct CatalogVehicle {
     equipment: crate::accounts::EquipmentVehicle,
     supply_slots: supply_slots::VehicleSupplySlots,
     elite_by_progression: bool,
+    customization_nation: String,
+    default_emblem: Option<u16>,
 }
 
 impl CatalogVehicle {
@@ -135,6 +143,8 @@ impl GarageCatalog {
             .map(|nation| crew::Passports::load(&fs, nation as u8))
             .collect::<std::io::Result<Vec<_>>>()?;
         let mut prices = item_prices::ItemPrices::load(&fs)?;
+        let cosmetics = cosmetic_catalog::CosmeticCatalog::load(&fs, &mut prices)?;
+        cosmetic_catalog::index_exterior_shop(&fs, &mut prices)?;
         let crew_books = crew_books::load(&fs, &mut prices)?;
         let crew_skins = crew_skins::load(&fs, &mut prices)?;
         let equipment = equipment::load(&fs, &prices)?;
@@ -192,6 +202,7 @@ impl GarageCatalog {
             crew_books,
             crew_skins,
             prices,
+            cosmetics,
             shell_prices,
             equipment,
             directives,
@@ -252,6 +263,8 @@ impl GarageCatalog {
                 shells,
             },
             crew_roles: def.crew_roles,
+            customization_nation: def.customization_nation,
+            default_emblem: def.default_emblem,
             supply_slots: def.supply_slots,
             elite_by_progression: def
                 .post_progression_tree

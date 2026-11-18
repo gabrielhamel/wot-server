@@ -172,6 +172,10 @@ pub struct ProgressionChange {
 pub enum ProgressionCommand {
     Crew(super::domain::CrewCommand),
     BuyVehicleSlot,
+    Cosmetics {
+        inventory_id: i64,
+        change: super::CosmeticChange,
+    },
     BuyVehicle {
         vehicle: i32,
         options: super::domain::VehiclePurchaseOptions,

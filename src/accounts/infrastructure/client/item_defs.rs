@@ -20,6 +20,8 @@ pub struct VehicleDef {
     pub equipment: crate::accounts::EquipmentVehicle,
     pub supply_slots: super::supply_slots::VehicleSupplySlots,
     pub post_progression_tree: Option<String>,
+    pub customization_nation: String,
+    pub default_emblem: Option<u16>,
 }
 impl VehicleDef {
     pub(super) fn load(
@@ -179,6 +181,15 @@ impl VehicleDef {
             max_ammo,
             equipment,
             supply_slots,
+            customization_nation: vehicle
+                .get_child_string("customizationNation")
+                .filter(|name| !name.is_empty())
+                .unwrap_or(nation)
+                .to_owned(),
+            default_emblem: vehicle
+                .get_child_value_at(&["emblems", "default"])
+                .and_then(pxml::Value::as_integer)
+                .and_then(|id| u16::try_from(id).ok()),
             post_progression_tree: vehicle
                 .get_child_string("postProgressionTree")
                 .map(str::to_owned),
@@ -200,7 +211,7 @@ impl VehicleDef {
     }
 }
 
-pub(super) fn vehicle_dirs(fs: &ResourceBundle, nation: &str) -> Vec<String> {
+pub(super) fn resource_extensions(fs: &ResourceBundle) -> Vec<String> {
     let mut extensions = fs
         .read_dir("")
         .into_iter()
@@ -208,13 +219,20 @@ pub(super) fn vehicle_dirs(fs: &ResourceBundle, nation: &str) -> Vec<String> {
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|extension| fs.has_file(&format!("{extension}/extension.xml")))
+        .collect::<Vec<_>>();
+    extensions.sort();
+    extensions
+}
+
+pub(super) fn vehicle_dirs(fs: &ResourceBundle, nation: &str) -> Vec<String> {
+    let extensions = resource_extensions(fs)
+        .into_iter()
         .filter(|extension| {
             read_xml(fs, &format!("{extension}/extension.xml"))
                 .is_ok_and(|extension| extension.get_child_boolean("IsEnabled") == Some(true))
         })
-        .map(|extension| format!("{extension}/"))
-        .collect::<Vec<_>>();
-    extensions.sort();
+        .map(|name| format!("{name}/"));
     std::iter::once(String::new())
         .chain(extensions)
         .map(|root| format!("{root}scripts/item_defs/vehicles/{nation}"))

@@ -99,6 +99,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.arg2`](../src/player_sessions/infrastructure/gateway/commands.rs) | Third decoded scalar argument, when the command form supplies it. |
 | [`input.arg3`](../src/player_sessions/infrastructure/gateway/commands.rs) | Fourth decoded scalar argument, when the command form supplies it. |
 | [`input.args.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Decoded array argument length on array command forms; array contents are not recorded. |
+| [`input.outfits.count`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Number of outfit descriptors in a decoded array command, including empty descriptors. |
+| [`input.outfit.bytes`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Total length in bytes of all outfit descriptors passed to the Exterior adapter. Descriptor contents are omitted. |
+| [`input.shop_revision`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Requested shop revision on a cosmetic purchase or apply command when the first integer is present. |
 | [`input.has_command`](../src/player_sessions/infrastructure/gateway/progression.rs) | Whether progression dispatch received a parsed progression command. |
 | [`input.id`](../src/player_sessions/application/mod.rs) | Operation-specific ID: account ID for account snapshot/settings and Social player lookup; target account for XMPP pushes/presence; crew member ID for crew dismissal/restoration; conversation ID for `social.conversations.load`. Interpret with the span name. |
 | [`input.account_id`](../src/player_sessions/application/grants.rs) | Target account ID passed to the Player Sessions admin-grant use case. Also recorded on the root HTTP span after an authenticated garage or grant route parses a positive account ID. |
@@ -128,7 +131,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input account snapshot used for catalog preparation or mutation planning. |
 | [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case. |
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
-| [`input.inventory_id`](../src/accounts/application/mod.rs) | Owned vehicle inventory ID for ammunition planning, module mounting, equipment application, or consumables. Distinct from a vehicle type descriptor. |
+| [`input.inventory_id`](../src/accounts/application/mod.rs) | Owned vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables or camouflage. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
+| [`input.operation`](../src/accounts/domain/cosmetics.rs) | Exterior action on the ownership decision span, `buy` or `apply`. |
+| [`input.items.count`](../src/accounts/domain/cosmetics.rs) | Number of purchase lines or requested surface placements across the supplied seasons. |
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
 | [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor on the root HTTP span for a decoded vehicle grant. |
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
@@ -174,7 +179,9 @@ meanings on different operations; those differences are listed explicitly.
 | --- | --- |
 | [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Encoded outgoing XMPP stanza or Mercury resource response byte length; excludes transport framing added later. |
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
-| [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage progression/ammunition completion result: `committed`, `unchanged`, `rejected`, `stale`, or `error`. Describes the mutation result, not guaranteed socket delivery. |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage progression/ammunition completion result: `committed`, `unchanged`, `rejected`, `stale`, or `error`. The Exterior decision also records `changed`, `unchanged` or `rejected`. Progression dispatch records `invalid_request`, `stale_shop`, `busy` or `queued` when it returns before work is scheduled. |
+| [`output.delivery`](../src/player_sessions/infrastructure/gateway/progression.rs) | Progression completion handed to the reliable transport queue (`queued`), absent session or entity (`unavailable`), or response enqueue failure (`failed`). |
+| [`output.purchases.count`](../src/accounts/domain/cosmetics.rs) | Number of new cosmetic copies purchased after successful planning, including the deficit after using owned stock. Zero for a successful change that spends only owned copies or leaves the layout as it was. |
 | [`output.response`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat `actionResponse` code sent by `player_sessions.social.send_chat`. |
 | [`output.stanza_count`](../src/player_sessions/infrastructure/xmpp/mod.rs) | Number of immediate replies returned by the XMPP handler, recorded before writing them. Does not count separate queued pushes or prove all writes succeeded. |
 | [`output.success`](../src/player_sessions/infrastructure/gateway/grants.rs) | Whether a Social job or admin-grant completion contains an `Ok` result; does not by itself prove recipient delivery. |
@@ -191,7 +198,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`db.query.text`](../src/platform/infrastructure/observability.rs) | Complete executed SQL statement with parameter placeholders. Bind values are not interpolated or serialized. |
 | [`error.type`](../src/platform/infrastructure/observability.rs) | Rust error type name when a database operation fails; omitted on success. |
 | [`otel.kind`](../src/platform/infrastructure/observability.rs) | Tracing bridge control field set to `client` for PostgreSQL operations. Exported as the intrinsic span kind, not an ordinary attribute. |
-| [`otel.status_code`](../src/platform/infrastructure/observability.rs) | Tracing bridge control field set to `ERROR` on database failure. Exported as intrinsic span status, not an ordinary attribute; diagnostic error events can also mark spans as failed. |
+| [`otel.status_code`](../src/platform/infrastructure/observability.rs) | Tracing bridge control field set to `ERROR` on database failure, a rejected Exterior decision, malformed progression input, or failed progression persistence or response enqueue. Exported as intrinsic span status, not an ordinary attribute; diagnostic error events can also mark spans as failed. |
 
 ## Transport diagnostic spans
 
