@@ -32,7 +32,7 @@ impl ServerHome {
         fs::copy(env!("CARGO_BIN_EXE_wot-server"), home.executable()).unwrap();
         fs::write(
             home.0.join("server.json"),
-            r#"{"resource_dir":"resources","database_url":"invalid","log_file":"legacy/server.log"}"#,
+            r#"{"resource_dir":"resources","database_url":"invalid"}"#,
         )
         .unwrap();
         fs::create_dir(home.0.join("resources")).unwrap();
@@ -74,10 +74,6 @@ impl ServerHome {
             String::from_utf8_lossy(&output.stderr).contains("Server stopped with an error"),
             "{output:?}"
         );
-        assert!(
-            !self.0.join("legacy").exists(),
-            "opened the legacy log file"
-        );
         output
     }
 }
@@ -89,7 +85,7 @@ impl Drop for ServerHome {
 }
 
 #[tokio::test]
-async fn console_filter_is_independent_of_otlp_and_no_log_file_is_created() {
+async fn console_filter_is_independent_of_otlp() {
     let home = ServerHome::new();
     let info = home.run(&["--log-level", "info"], None).await;
     assert!(String::from_utf8_lossy(&info.stderr).contains("Starting server"));

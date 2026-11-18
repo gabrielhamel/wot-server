@@ -92,8 +92,6 @@ pub(super) struct Configuration {
     pub max_clients: usize,
     pub max_pending: usize,
     pub log_level: LogLevel,
-    #[serde(rename = "log_file", skip_serializing)]
-    _legacy_log_file: serde::de::IgnoredAny,
     pub web: Option<WebConfiguration>,
     pub admin: Option<AdminConfiguration>,
     pub store: Option<StoreConfiguration>,
@@ -113,7 +111,6 @@ impl Default for Configuration {
             max_clients: 256,
             max_pending: 32,
             log_level: LogLevel::default(),
-            _legacy_log_file: serde::de::IgnoredAny,
             web: None,
             admin: None,
             store: None,
@@ -287,7 +284,6 @@ mod tests {
         let mut settings: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert!(settings.get("log_file").is_none());
-        settings["log_file"] = "old/server.log".into();
         settings["log_level"] = "trace".into();
         settings["max_clients"] = 7.into();
         let edited = serde_json::to_vec_pretty(&settings).unwrap();
@@ -298,6 +294,7 @@ mod tests {
             ("log_level", serde_json::json!("verbose")),
             ("db_connections", serde_json::json!(0)),
             ("max_pending", serde_json::json!(0)),
+            ("log_file", serde_json::json!("old/server.log")),
             ("unexpected", serde_json::json!(true)),
         ] {
             let mut invalid = settings.clone();
