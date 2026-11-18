@@ -86,9 +86,6 @@ transfer sizes, or `trace` for packet diagnostics. The CLI overrides
 cargo run --release -- --log-level debug
 ```
 
-Remove the legacy `log_file` key from existing `server.json` files before
-upgrading. Its presence now prevents the server from starting.
-
 To export logs, traces and metrics, set the collector's OTLP/HTTP base URL:
 
 ```sh
