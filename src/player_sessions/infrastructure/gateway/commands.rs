@@ -22,7 +22,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "player_sessions.commands.command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = tracing::field::Empty, input.command_id = tracing::field::Empty, input.arg0 = tracing::field::Empty, input.arg1 = tracing::field::Empty, input.arg2 = tracing::field::Empty, input.arg3 = tracing::field::Empty, input.args.count = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.commands.command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = tracing::field::Empty, input.command_id = tracing::field::Empty, input.arg0 = tracing::field::Empty, input.arg1 = tracing::field::Empty, input.arg2 = tracing::field::Empty, input.arg3 = tracing::field::Empty, input.args.count = tracing::field::Empty, input.outfits.count = tracing::field::Empty), err)]
     pub(super) fn command(
         &mut self,
         client: ClientKey,
@@ -80,6 +80,17 @@ impl Gateway {
                 span.record("input.command_id", cmd);
                 span.record("input.args.count", args.len());
             }
+            AccountBase::DoCmdIntArrStrArr {
+                request_id,
+                cmd,
+                ints,
+                strings,
+            } => {
+                span.record("input.request_id", request_id);
+                span.record("input.command_id", cmd);
+                span.record("input.args.count", ints.len());
+                span.record("input.outfits.count", strings.len());
+            }
             _ => {}
         }
         let current_revision = session.account.snapshot.revision;
@@ -89,6 +100,21 @@ impl Gateway {
             return Ok(());
         }
         match request {
+            AccountBase::DoCmdIntArr {
+                request_id,
+                cmd: cosmetics::BUY_CUSTOMIZATIONS,
+                args,
+            } => {
+                self.buy_cosmetics(client, entity, request_id, &args)?;
+            }
+            AccountBase::DoCmdIntArrStrArr {
+                request_id,
+                cmd: cosmetics::APPLY_OUTFIT,
+                ints,
+                strings,
+            } => {
+                self.apply_outfit(client, entity, request_id, &ints, &strings)?;
+            }
             request @ (AccountBase::ChatCommandFromClient { .. }
             | AccountBase::MessengerOnActionByClientChat2 { .. }) => {
                 self.social_command(client, entity, request)?;

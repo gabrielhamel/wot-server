@@ -27,7 +27,7 @@ ContextMap Server {
     implementationTechnology = "Offline read-only indexing of installed packages, loose resources and version.xml source provenance"
   }
   ResourceExtraction [U,PL] -> [D,ACL] Accounts {
-    implementationTechnology = "Versioned resource bundle containing garage definitions, regular tech trees and vehicle labels"
+    implementationTechnology = "Versioned resource bundle containing garage definitions, camouflage price groups, regular tech trees and vehicle labels"
   }
   ResourceExtraction [U,PL] -> [D,ACL] PlayerSessions {
     implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
@@ -39,7 +39,7 @@ ContextMap Server {
     implementationTechnology = "PlayerAccounts API for identity listing and provisioning, plus account snapshots and the vehicle catalog for the operator garage"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "Bounded PlayerGrants application API coordinates resource and tank grants with garage writes and publishes committed updates to game sessions"
+    implementationTechnology = "Bounded PlayerGrants application API coordinates currency, vehicle and cosmetic grants with garage writes and publishes committed updates to game sessions"
   }
   Accounts [U,OHS,PL] -> [D,ACL] Social {
     implementationTechnology = "Read-only account_directory SQL identity projection and account-ID foreign keys; shared SQLx pool"
@@ -61,7 +61,7 @@ BoundedContext BinaryMapping {
   domainVisionStatement = "Recover supported native type and network framing metadata, retain evidence and unknowns, and emit offline Rust declarations and JSON mappings."
 }
 BoundedContext Accounts {
-  domainVisionStatement = "Own durable identity, password hashes, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, crew rosters and training, and revisions in PostgreSQL; project snapshots into versioned garage caches."
+  domainVisionStatement = "Own durable identity, password hashes, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, cosmetic ownership and seasonal and common outfits, crew rosters and training, and revisions in PostgreSQL; project snapshots into versioned garage caches."
 }
 BoundedContext PlayerSessions {
   domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle and delivery of committed garage and chat updates."
@@ -72,7 +72,7 @@ BoundedContext Social {
 }
 
 BoundedContext PlayerAdministration {
-  domainVisionStatement = "Authorize operators to find and provision player accounts, inspect garages and grant currency or vehicles."
+  domainVisionStatement = "Authorize operators to find and provision player accounts, inspect garages and grant currency, vehicles or cosmetics."
 }
 
 BoundedContext SharedKernel {

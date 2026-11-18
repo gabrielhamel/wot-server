@@ -17,8 +17,8 @@ composition. Both support boundaries are independent of their consumers.
 snapshots upstream of [Player Sessions](src/player_sessions/README.md), which adapts them into login
 and garage sessions. Both translate external client data through anti-corruption
 layers. Accounts' PostgreSQL adapter persists user state, including revision-checked
-ammunition, tank/module research, vehicle purchases and module, equipment, consumable and directive loadouts, shared depot stock and balance updates; its resource adapter builds
-the garage projection. Player Sessions adapts shell, equipment, consumable, directive, module and tank progression requests and publishes committed
+ammunition, tank/module research, vehicle purchases and module, equipment, consumable and directive loadouts, cosmetic ownership and outfits, shared depot stock and balance updates; its resource adapter builds
+the garage projection. Player Sessions adapts shell, equipment, consumable, directive, camouflage, module and tank progression requests and publishes committed
 inventory/balance changes and purchase receipts. Player Sessions owns the Mercury UDP adapter and binds
 garage RPCs to the extracted script definitions. Both contexts use the shared
 [client formats](src/platform/infrastructure/client_formats/README.md) infrastructure.
@@ -36,7 +36,9 @@ consumes Social application operations and adapts native XMPP, both legacy
 messenger RPC versions, presence and committed participant delivery. See [social protocol](docs/social.md).
 
 [Player Administration](src/player_administration/README.md) authenticates operators and adapts Accounts' player
-listing and creation contract to HTTP and the React Admin dashboard.
+listing and creation contract to HTTP and the React Admin dashboard. It submits
+currency, vehicle and cosmetic grants through Player Sessions for serialized
+garage updates.
 
 [Binary Mapping](tools/wot-binary-map/src/binary_mapping/README.md) runs in its
 own workspace package. It reads the external executable and produces offline

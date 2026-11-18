@@ -9,6 +9,18 @@ const ABI_FILES: &[&str] = &[
 ];
 
 const GARAGE_FILES: &[&str] = &[
+    "scripts/item_defs/customization/camouflages/list.xml",
+    "scripts/item_defs/customization/paints/list.xml",
+    "scripts/item_defs/customization/attachments/list.xml",
+    "scripts/item_defs/customization/stat_trackers/list.xml",
+    "scripts/item_defs/customization/styles/list.xml",
+    "scripts/item_defs/customization/decals/list.xml",
+    "scripts/item_defs/customization/modifications/list.xml",
+    "scripts/item_defs/customization/projection_decals/list.xml",
+    "scripts/item_defs/customization/projection_decals/progression.xml",
+    "scripts/item_defs/customization/personal_numbers/list.xml",
+    "scripts/item_defs/customization/personal_numbers/prohibitedNumbers.xml",
+    "scripts/item_defs/customization/priceGroups/list.xml",
     "scripts/item_defs/crewBooks/crewBookTypes.xml",
     "scripts/item_defs/crewBooks/priceGroups.xml",
     "scripts/item_defs/crewBooks/crewBooks.xml",
@@ -45,6 +57,22 @@ pub(super) fn resource_root<'a>(
 }
 
 pub(super) fn is_definition(root: &str, path: &str) -> bool {
+    if !root.is_empty()
+        && matches!(
+            path,
+            "scripts/item_defs/customization/styles/list.xml"
+                | "scripts/item_defs/customization/camouflages/list.xml"
+                | "scripts/item_defs/customization/paints/list.xml"
+                | "scripts/item_defs/customization/attachments/list.xml"
+                | "scripts/item_defs/customization/stat_trackers/list.xml"
+                | "scripts/item_defs/customization/decals/list.xml"
+                | "scripts/item_defs/customization/modifications/list.xml"
+                | "scripts/item_defs/customization/projection_decals/list.xml"
+                | "scripts/item_defs/customization/personal_numbers/list.xml"
+        )
+    {
+        return true;
+    }
     if path == "extension.xml" {
         return !root.is_empty();
     }
@@ -75,6 +103,7 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
         && (ABI_FILES.contains(&path)
             || GARAGE_FILES.contains(&path)
             || path == "scripts/item_defs/vehicles/common/forbidden_vehicles_to_battle_config.xml"
+            || path == "text/lc_messages/vehicle_customization.mo"
             || NATIONS.iter().any(|nation| {
                 path == format!("scripts/item_defs/tankmen/{nation}.xml")
                     || path == format!("gui/flash/techtree/{nation}-tree.xml")

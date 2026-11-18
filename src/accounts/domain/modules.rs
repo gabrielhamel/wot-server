@@ -16,6 +16,8 @@ pub enum ModuleKind {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProgressionState {
+    #[serde(default)]
+    pub cosmetics: super::CosmeticState,
     pub unlocks: BTreeSet<i32>,
     pub vehicle_xp: BTreeMap<i32, i64>,
     pub depot: BTreeMap<i32, u32>,
@@ -279,6 +281,8 @@ pub enum ProgressionError {
     NotEnoughMoney,
     #[error("incompatibleEquipment")]
     InvalidEquipment,
+    #[error("invalidCosmetic")]
+    InvalidCosmetic,
     #[error("invalidConsumables")]
     InvalidConsumables,
     #[error(transparent)]

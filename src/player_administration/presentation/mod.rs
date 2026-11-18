@@ -65,6 +65,8 @@ pub(crate) fn router(
         .route("/players/{id}/garage", get(garage::show))
         .route("/players/{id}/grants", axum::routing::post(garage::grant))
         .route("/vehicles", get(garage::catalog))
+        .route("/attachments", get(garage::attachment_catalog))
+        .route("/stat-trackers", get(garage::stat_tracker_catalog))
         .route("/session", get(|| async { StatusCode::NO_CONTENT }))
         .layer(DefaultBodyLimit::max(8 * 1024))
         .layer(middleware::from_fn_with_state(token, authenticate))
@@ -145,6 +147,9 @@ async fn prevent_caching(request: Request, next: Next) -> Response {
         input.grant.currency = tracing::field::Empty,
         input.amount = tracing::field::Empty,
         input.vehicle_type = tracing::field::Empty,
+        input.attachment_id = tracing::field::Empty,
+        input.stat_tracker_id = tracing::field::Empty,
+        input.inventory_id = tracing::field::Empty,
         http.response.status_code = tracing::field::Empty,
     )
 )]

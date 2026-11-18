@@ -44,7 +44,11 @@ and copies the EU SD English `2.4.1.5514` resource bundle from the public
 do not change the fixture. The job builds and tests the checked-out Rust code
 and uses the image only to read the resource files. It needs no registry
 credentials, so it also works for fork pull requests. Update the image digest
-and fixture build together when the tests need a new resource bundle.
+and fixture build together when refreshing the CI resource bundle. The camouflage
+portion of the garage test requires the updated extractor output. The pinned image
+predates those files, so run the PostgreSQL garage test with a freshly extracted EU
+bundle to exercise purchases, outfits and reconnect. The default suite runs the
+camouflage ownership and descriptor tests.
 
 The database-dependent tests are opt-in when running Cargo locally.
 

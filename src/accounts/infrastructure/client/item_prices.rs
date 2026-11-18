@@ -27,6 +27,7 @@ pub struct Price {
 #[derive(Debug, Default)]
 pub struct ItemPrices {
     pub prices: Vec<(IntCompactDescr, Price)>,
+    pub catalog_only: Vec<IntCompactDescr>,
     pub not_in_shop: Vec<IntCompactDescr>,
     pub not_for_sale: HashSet<IntCompactDescr>,
 }
@@ -161,9 +162,7 @@ impl ItemPrices {
         Ok(prices)
     }
 
-    /// Add an item from its definition, which prices it in credits unless it says
-    /// otherwise, free if it says nothing.
-    pub(super) fn add(&mut self, cd: IntCompactDescr, def: &Element) {
+    pub(super) fn definition_price(def: &Element) -> Price {
         // The price is an element only to hold its currency's marker.
         let (amount, currency) = match def.get_child("price") {
             Some(pxml::Value::Element(price)) => (
@@ -176,13 +175,16 @@ impl ItemPrices {
             Some(price) => (price.as_integer(), None),
             None => (None, None),
         };
-        self.prices.push((
-            cd,
-            Price {
-                currency: currency.unwrap_or("credits"),
-                amount: amount.unwrap_or(0),
-            },
-        ));
+        Price {
+            currency: currency.unwrap_or("credits"),
+            amount: amount.unwrap_or(0),
+        }
+    }
+
+    /// Add an item from its definition, which prices it in credits unless it says
+    /// otherwise, free if it says nothing.
+    pub(super) fn add(&mut self, cd: IntCompactDescr, def: &Element) {
+        self.prices.push((cd, Self::definition_price(def)));
         if def.get_child_boolean("notInShop") == Some(true)
             || def
                 .get_child_string("notInShop")

@@ -1,7 +1,7 @@
 # Accounts
 
 Accounts owns durable player identity, password hashes, balances, vehicle ownership,
-integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes immutable snapshots to
+integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, cosmetic ownership and outfits, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes immutable snapshots to
 Player Sessions. It does not own transport sessions, entities, battles or matchmaking.
 
 | Layer | Responsibilities |
@@ -28,6 +28,8 @@ context is a possible future boundary, not an implemented one.
 | Catalog key | A resource identifier such as `usa:A01_T1_Cunningham`. |
 | Snapshot | A coherent read of an account and its vehicle ownership. |
 | Revision | Monotonically increasing version changed with persisted preferences, research or inventory. |
+| Cosmetic ownership | Total copies of an exterior item, including applied copies. Stat trackers are bound to a vehicle type. |
+| Outfit | Vehicle appearance for a season, including camouflage, projected decals, inscriptions and an effect. |
 | Shell layout | Ordered compatible shell/count pairs loaded on one vehicle. |
 | Depot stock | Shared unmounted shells, modules, equipment, directives and consumables. Sales debit these counts and credit the account in the same revision. |
 | Equipment components | Balance used for paid demounting of level 2 and 3 Experimental equipment. The client calls it `equipCoin`. |
@@ -35,7 +37,7 @@ context is a possible future boundary, not an implemented one.
 | Garage projection | Compressed Python cache derived from a snapshot and client definitions. |
 | Research | An account-wide tank or module unlock bought with vehicle XP and free XP. |
 | Vehicle purchase | An atomic debit and permanent ownership grant, with optional crew, ammunition and consumables. |
-| Player grant | An operator-authorized resource addition or permanent tank with stock modules, ammunition and basic crew, committed as an account revision. |
+| Player grant | An operator-authorized addition of currency, cosmetic copies, or a permanent tank with stock modules, ammunition and basic crew, committed as an account revision. |
 | Garage slot | One unit of total vehicle capacity. A slot purchase adds one unit and charges the shop price in the same revision. |
 | Vehicle sale | An atomic ownership removal that settles the vehicle and fitting value, returns retained fittings to the Depot, and transfers or dismisses its crew. |
 | Module loadout | The six module descriptors installed on an owned tank. |
@@ -59,7 +61,8 @@ Untouched ammunition uses the existing default; changed ammunition and depot sto
 are durable. See [garage ammunition](../../docs/ammunition.md) for the use case,
 wire evidence and limits. [Garage equipment](../../docs/equipment.md) records
 equipment purchasing, mounting and removal. [Garage consumables](../../docs/consumables.md) covers regular consumable stock, slot changes and combined Auto Fill. [Garage directives](../../docs/directives.md)
-describes purchases, mounting and auto-resupply settings. The [Garage Depot](../../docs/depot.md)
+describes purchases, mounting and auto-resupply settings. The [Garage camouflage](../../docs/camouflage.md) describes stock, seasonal outfits and
+pricing. The [Garage Depot](../../docs/depot.md)
 records sale pricing, stock validation and cache updates. User balances and
 ownership come from PostgreSQL; the compatibility adapter supplies empty/default
 values for unsupported account features. See [server behavior](../../docs/server.md).

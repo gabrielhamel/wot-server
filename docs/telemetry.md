@@ -51,6 +51,12 @@ Tokio workers and the completion queue. Queued crew commands retain their own
 request parent while waiting for earlier writes. Admin grants carry the HTTP
 request parent into the gateway's bounded queue.
 
+Exterior traces record the shop revision, target inventory ID, outfit
+count and encoded byte length. The Accounts decision records the action and
+new units purchased. Personal number digits stay out of telemetry. Repeating a layout records an unchanged result with
+no PostgreSQL write. A successful PostgreSQL commit is followed by a
+progression completion that records the cache and response enqueue result.
+
 Spans describe actual calls and work. An operation using only cached state
 can have fewer children. Pure accessors and mechanical helpers do not need
 spans. Cross-context calls retain their own context attributes.
@@ -78,7 +84,8 @@ relevant to their operation.
 The root `admin.http.request` span carries route-specific inputs so a trace
 can be filtered without opening child spans. The player list exports supplied
 numeric pagination parameters. Garage routes export the parsed account ID,
-and grants export their kind and either currency and amount or vehicle type.
+and grants export their kind with the currency and amount, vehicle type, or
+attachment ID and count.
 Player creation exports the UTF-8 lengths of the login and display name.
 Handlers record these fields after authentication and typed decoding, before
 business validation where applicable. A rejected query or JSON body can still

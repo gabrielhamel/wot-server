@@ -4,6 +4,7 @@ import {
   Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
 import { ListButton, Title, useDataProvider, useGetRecordId } from 'react-admin';
+import { CosmeticGrant } from './cosmetic-grant.jsx';
 
 const currencies = [
   ['credits', 'Credits'],
@@ -54,15 +55,17 @@ function GaragePage({ id }) {
       const result = await api.grant(id, body);
       setGarage(result.garage);
       if (body.kind === 'currency') setAmount('');
-      else setVehicle(null);
+      if (body.kind === 'vehicle') setVehicle(null);
       setFeedback({
         severity: 'success',
         message: result.delivery === 'queued_for_garage'
           ? 'Grant applied. A live garage update was queued.'
           : 'Grant applied. The player will see it when the garage next syncs.',
       });
+      return true;
     } catch (error) {
       setFeedback({ severity: 'error', message: error.message });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -164,6 +167,8 @@ function GaragePage({ id }) {
               </Button>
             </CardContent>
           </Card>
+          <CosmeticGrant api={api} busy={busy} kind="attachment" owned={garage.attachments} onGrant={submit} />
+          <CosmeticGrant api={api} busy={busy} kind="stat_tracker" vehicles={garage.vehicles} onGrant={submit} />
         </Box>
         <Card>
           <CardContent>

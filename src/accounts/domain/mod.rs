@@ -1,3 +1,5 @@
+mod cosmetics;
+pub use cosmetics::*;
 mod consumables;
 pub use consumables::*;
 mod ammunition;
