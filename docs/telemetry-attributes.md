@@ -1,6 +1,6 @@
 # Span attribute reference
 
-This is the inventory of all 116 fields explicitly declared by server spans,
+This is the inventory of all 117 fields explicitly declared by server spans,
 including the two OpenTelemetry control fields described below. It documents
 current instrumentation, rather than promising that every field appears on
 every span. See the [telemetry contract](telemetry.md) for tracing requirements
@@ -55,6 +55,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`user.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | Nonempty player display name from the account snapshot already returned by successful game authentication. Never copied from the login email; omitted if unavailable. No extra database query. |
 | [`user.email`](../src/player_sessions/infrastructure/gateway/mod.rs) | Email-shaped login supplied by the current game authentication payload, recorded after authentication succeeds. Requires nonempty local part, a dot in the domain, and no whitespace; this is a shape check, not proof of ownership. Omitted for non-email logins and requests without an email payload. |
 | [`network.protocol.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | `mercury` for game authentication/commands, `xmpp` for incoming XMPP requests. |
+| [`output.store.host`](../src/player_sessions/infrastructure/gateway/mod.rs) | Exact Store hostname or IP included in the client browser allowlist when the Account entity is created. Omitted when the Store is disabled. |
 | [`rpc.method`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Known incoming entity method on `game.command` or outbound entity method on `mercury.response`. |
 | [`wot.client.protocol_version`](../src/player_sessions/infrastructure/gateway/mod.rs) | Protocol number supplied by the game login request; not a confirmed game release version. |
 | [`wot.client.resource_digest`](../src/player_sessions/infrastructure/gateway/mod.rs) | Optional login digest encoded as hexadecimal. Omitted when the request does not supply a digest. |

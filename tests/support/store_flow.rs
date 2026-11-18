@@ -67,7 +67,14 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     )
     .unwrap();
     let (login, _) = gateway.addresses().unwrap();
-    let router = gateway.enable_store("http://127.0.0.1:8081".to_owned());
+    assert!(
+        gateway
+            .enable_store("https://*.example.test".to_owned())
+            .is_err()
+    );
+    let router = gateway
+        .enable_store("http://127.0.0.1:8081".to_owned())
+        .unwrap();
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
     let worker = tokio::task::spawn_blocking(move || gateway.run(worker_stop));
@@ -244,6 +251,12 @@ fn assert_store_traces(account_id: i64, item: i64, credits: i64) {
             })
             .unwrap_or_else(|| panic!("Missing {outcome} Store request span"))
     };
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.name == "player_sessions.enable"
+                && has(span, "output.store.host", "127.0.0.1"))
+    );
     let success = root("success");
     let stale = root("stale");
     for (operation, status) in [(success, "200"), (stale, "409")] {

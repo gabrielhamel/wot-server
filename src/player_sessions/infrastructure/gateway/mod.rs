@@ -565,7 +565,7 @@ impl Gateway {
         }
     }
 
-    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client), err)]
+    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.store.host = tracing::field::Empty), err)]
     fn enable(&mut self, client: ClientKey) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
@@ -573,13 +573,13 @@ impl Gateway {
         if session.entity.is_some() {
             return Ok(());
         }
-        let store_url = if let Some(store) = &self.store {
+        let store_settings = if let Some(store) = &self.store {
             let token = StoreToken::generate()?;
             let url = format!("{}/store/#{}", store.origin, token.encode());
             session.store_token = Some(token);
-            url
+            Some((url, store.host.as_str()))
         } else {
-            String::new()
+            None
         };
         let snapshot = &session.account.snapshot;
         let entity = self.base.create_base_player::<Account>(
@@ -594,10 +594,15 @@ impl Gateway {
                         self.base.addr()?,
                         client.addr(),
                     )?,
-                    &store_url,
+                    store_settings
+                        .as_ref()
+                        .map(|(url, host)| (url.as_str(), *host)),
                 ),
             },
         )?;
+        if let Some((_, host)) = store_settings {
+            tracing::Span::current().record("output.store.host", host);
+        }
         session.entity = Some(entity);
         self.base
             .entity(entity)?
