@@ -124,6 +124,23 @@ composition. Give standalone tools their own workspace packages under
 `tools/`. The server and tools inherit their release version from
 `[workspace.package]` in the root Cargo manifest.
 
+### Browser application
+
+Use strict TypeScript. Keep browser pages and components in their owning
+context's `presentation/` directory, with application contracts and HTTP
+adapters in the corresponding context layers. Keep common browser transport,
+telemetry and presentation primitives in Platform. Put route composition in
+`src/server/` and Vite+ configuration and test setup under `tools/web/`.
+
+Use Testing Library and MSW for admin and Store regression coverage. Render
+the full page, interact through accessible controls, and assert visible
+results and the HTTP contract. Cover successful workflows and relevant
+rejections or failures. Test emitted spans and the W3C trace context on
+outgoing requests. Preserve that parent through Rust HTTP handling and
+downstream work. Record only allowlisted input and output fields, and keep
+browser exception messages, raw stacks, tokens and URLs with credentials
+out of telemetry.
+
 ### Context maps
 
 Follow the context-map system in `docs/references/wg-launcher`:

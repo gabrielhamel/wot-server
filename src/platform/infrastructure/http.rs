@@ -90,3 +90,25 @@ pub(crate) fn record_client_address(
         span.record("client.port", peer.port());
     }
 }
+
+pub(crate) fn set_remote_trace_parent(span: &tracing::Span, headers: &HeaderMap) {
+    use opentelemetry::{propagation::TextMapPropagator, trace::TraceContextExt};
+    use opentelemetry_sdk::propagation::TraceContextPropagator;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    let mut values = headers.get_all("traceparent").iter();
+    let Some(value) = values.next().and_then(|value| value.to_str().ok()) else {
+        return;
+    };
+    if value.len() != 55 || values.next().is_some() {
+        return;
+    }
+    let parent = TraceContextPropagator::new().extract(&std::collections::HashMap::from([(
+        "traceparent".to_owned(),
+        value.to_owned(),
+    )]));
+    let context = parent.span();
+    if context.span_context().is_valid() && context.span_context().is_sampled() {
+        let _ = span.set_parent(parent.clone());
+    }
+}

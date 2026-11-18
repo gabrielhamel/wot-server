@@ -3422,6 +3422,7 @@ dependencies = [
  "paste",
  "prost",
  "quick-xml",
+ "reqwest",
  "roxmltree",
  "rsa 0.8.2",
  "serde",

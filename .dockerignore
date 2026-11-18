@@ -10,10 +10,10 @@
 !src/**
 !migrations/
 !migrations/**
-!web/
-!web/**
-web/node_modules/
-web/dist/
+!package.json
+!package-lock.json
+tools/web/node_modules/
+tools/web/dist/
 !resources/
 !resources/manifest.json
 !resources/res/

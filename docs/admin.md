@@ -17,8 +17,8 @@ recorded with the EU 2.4.1.5514 resources. See the
 From the repository root, build the SPA with Node.js 22.12 or later.
 
 ```sh
-npm --prefix web ci
-npm --prefix web run build
+npm ci
+npm run build --workspace tools/web
 openssl rand -hex 32
 ```
 
@@ -29,7 +29,7 @@ executable. Replace the example token with the generated value.
 {
   "web": {
     "bind": "127.0.0.1:8080",
-    "ui_dir": "../../web/dist"
+    "ui_dir": "../../tools/web/dist"
   },
   "admin": {
     "token": "REPLACE_WITH_THE_GENERATED_TOKEN"
@@ -61,7 +61,7 @@ stores the admin token in tab session storage.
 For remote administration, keep the server on loopback and use an HTTPS
 reverse proxy or an SSH tunnel. The built-in listener serves plain HTTP.
 
-For frontend development, `npm --prefix web run dev` starts Vite
+For frontend development, `npm run dev --workspace tools/web` starts Vite
 with a local API proxy to the default web listener. Open `/admin/` for the dashboard or `/shop/` for the Store.
 
 When implementing a player-usable item that the normal shop cannot sell,

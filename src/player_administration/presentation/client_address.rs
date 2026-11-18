@@ -4,7 +4,7 @@ mod tests {
     use axum::{Router, body::Body, http::Request, middleware, routing::get};
     use hyper::service::Service;
     use hyper_util::service::TowerToHyperService;
-    use opentelemetry::trace::{SpanId, TracerProvider};
+    use opentelemetry::trace::{SpanId, TraceId, TracerProvider};
     use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
     use std::net::{IpAddr, SocketAddr};
     use tracing_subscriber::prelude::*;
@@ -115,7 +115,7 @@ mod tests {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
         let client = stream.local_addr().unwrap();
-        stream.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nX-Forwarded-For: 203.0.113.99\r\n\r\n").await.unwrap();
+        stream.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\ntraceparent: 00-abcdef0123456789abcdef0123456789-1234567890abcdef-01\r\nX-Forwarded-For: 203.0.113.99\r\n\r\n").await.unwrap();
         let mut response = Vec::new();
         stream.read_to_end(&mut response).await.unwrap();
         stop.send(()).unwrap();
@@ -127,6 +127,14 @@ mod tests {
             .rev()
             .find(|span| span.name == "admin.http.request")
             .unwrap();
+        assert_eq!(
+            root.parent_span_id,
+            SpanId::from_hex("1234567890abcdef").unwrap()
+        );
+        assert_eq!(
+            root.span_context.trace_id(),
+            TraceId::from_hex("abcdef0123456789abcdef0123456789").unwrap()
+        );
         assert!(
             root.attributes
                 .iter()

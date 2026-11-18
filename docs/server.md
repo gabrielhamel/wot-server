@@ -86,9 +86,6 @@ transfer sizes, or `trace` for packet diagnostics. The CLI overrides
 cargo run --release -- --log-level debug
 ```
 
-The server no longer writes log files. It ignores legacy `log_file` settings,
-so they can be removed when convenient. Logs from earlier runs stay on disk.
-
 To export logs, traces and metrics, set the collector's OTLP/HTTP base URL:
 
 ```sh

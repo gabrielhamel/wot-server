@@ -4,6 +4,7 @@ use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
+use opentelemetry::trace::{SpanId, TraceId};
 use serde_json::{Value, json};
 use std::{
     path::Path,
@@ -202,6 +203,13 @@ async fn store_request(
     } else {
         "/api/shop/catalog"
     });
+    if let Some(order) = order {
+        let revision = order["revision"].as_str().unwrap().parse::<u128>().unwrap();
+        request = request.header(
+            "traceparent",
+            format!("00-fbdc84ebd1325763{revision:016x}-0123456789abcdef-01"),
+        );
+    }
     if let Some(token) = token {
         request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -265,6 +273,15 @@ fn assert_store_traces(account_id: i64, item: i64, credits: i64) {
             .find(|span| span.span_context.span_id() == operation.parent_span_id)
             .expect("Missing Store HTTP request parent");
         assert_eq!(root.name, "store.http.request");
+        assert_eq!(
+            root.parent_span_id,
+            SpanId::from_hex("0123456789abcdef").unwrap()
+        );
+        assert_ne!(root.span_context.trace_id(), TraceId::INVALID);
+        assert_eq!(
+            root.span_context.trace_id(),
+            operation.span_context.trace_id()
+        );
         assert!(has(root, "http.route", "/api/shop/orders"));
         assert!(has(root, "http.response.status_code", status));
     }

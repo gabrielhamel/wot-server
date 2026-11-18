@@ -14,5 +14,8 @@
 .DS_Store
 __pycache__/
 
+/node_modules/
+/tools/web/node_modules/
+/tools/web/dist/
 /web/dist/
 /web/node_modules/

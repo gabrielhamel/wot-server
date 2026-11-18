@@ -1,7 +1,7 @@
 # Span attribute reference
 
-This is the inventory of all 117 fields explicitly declared by server spans,
-including the two OpenTelemetry control fields described below. It documents
+This is the inventory of fields explicitly declared by server and browser spans,
+including the OpenTelemetry control fields described below. It documents
 current instrumentation, rather than promising that every field appears on
 every span. See the [telemetry contract](telemetry.md) for tracing requirements
 and [server configuration](server.md#logging-and-telemetry) for export setup.
@@ -302,3 +302,38 @@ To audit coverage, inspect `#[tracing::instrument(... fields(...))]`,
 calls under `src/`; event/log fields are a separate inventory. The regression
 capture in [tests/support/telemetry_capture.rs](../tests/support/telemetry_capture.rs)
 checks representative exported fields and parent links through real entry points.
+
+
+## Browser spans
+
+Every browser span declares `ddd.bounded_context.name`. Browser service
+resources carry `service.name` (`wot-server-web`) and `service.version` (the
+serving release). Operation and transport outcomes use `output.outcome`
+with `success`, `rejected`, `conflict`, `cancelled` or a bounded failure
+code. On error, the exception event's `exception.type` is that failure code.
+[Browser tracing](../src/platform/infrastructure/web/telemetry.ts)
+
+| Attribute | Meaning and emission |
+| --- | --- |
+| `http.request.method`, `http.route` | Method and fixed route template on the browser HTTP client span. |
+| `http.response.status_code` | HTTP status once a response arrives. |
+| `http.request.body.size` | Serialized request payload size in UTF-8 bytes, on requests with bodies. |
+| `input.page.route` | Fixed page route on browser entry-module load. |
+| `input.page`, `input.per_page` | Requested admin list page and maximum rows per page. |
+| `input.account_id` | Account identifier for an admin garage load or grant. |
+| `input.catalog` | Catalog selected by the admin grant form. |
+| `input.grant.kind`, `input.grant.currency`, `input.amount` | Grant type and, for a resource grant, currency and amount in units. |
+| `input.vehicle_type`, `input.attachment_id`, `input.stat_tracker_id`, `input.inventory_id`, `input.count` | Applicable grant item IDs and cosmetic quantity in copies. |
+| `output.player_count`, `output.vehicle_count`, `output.item_count` | Number of records returned by the admin list, garage or grant catalog. |
+| `output.delivery` | Delivery outcome returned by the admin grant API. |
+| `input.item`, `input.revision`, `input.price.credits` | Store order item ID, revision string and offered price in credits. |
+| `output.offer_count` | Offers returned by a Store catalog load or purchase. |
+| `exception.source` | Fixed browser error category on a standalone exception span. |
+| `exception.error_class`, `exception.asset_location` | Allowlisted built-in error class and bundled asset filename with line and column, when available. |
+
+Supporting sources include the [browser HTTP adapter](../src/platform/infrastructure/web/http.ts),
+[admin API adapter](../src/player_administration/infrastructure/admin-api.ts),
+[Store API adapter](../src/player_sessions/infrastructure/store-api.ts),
+[browser exception observer](../src/platform/infrastructure/web/browser-telemetry.ts),
+[entry point](../src/server/presentation/web/main.tsx) and
+[OTLP relay](../src/server/browser_telemetry.rs).

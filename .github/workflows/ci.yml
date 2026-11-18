@@ -79,12 +79,9 @@ jobs:
           cargo +stable test --locked -p wot-server --test garage -- --ignored
 
   web:
-    name: Web UI build
+    name: Web UI checks and tests
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: web
     steps:
       - uses: actions/checkout@v6
         with:
@@ -93,6 +90,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: web/package-lock.json
       - run: npm ci
-      - run: npm run build
+      - run: npm run check --workspace tools/web
+      - run: npm run test --workspace tools/web
+      - run: npm run build --workspace tools/web

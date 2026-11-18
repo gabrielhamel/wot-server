@@ -11,7 +11,9 @@ published account and catalog data and submits grants through
 | --- | --- |
 | `presentation/` | HTTP routes, operator authentication, JSON request and response models, and status mapping. |
 | [Platform HTTP](../platform/infrastructure/http.rs) | Shared bounded HTTP/1 connection serving and shutdown. |
-| [`web/src/admin.jsx`](../../web/src/admin.jsx) | React Admin player list, creation form, per-player garage and currency, tank and 3D attachment and stat tracker grants, and token sign-in. |
+| `application/admin-contracts.ts` | Typed contracts for player accounts, garages, catalogs and grants. |
+| `infrastructure/admin-api.ts` | React Admin authentication and data providers, HTTP serialization and browser operation spans. |
+| `presentation/web/` | Token sign-in, player list and creation, and the garage page and grant forms. |
 
 | Term | Meaning |
 | --- | --- |
@@ -24,6 +26,6 @@ contract.
 
 Player Administration HTTP traces cover method, route, status, allowlisted
 request inputs, validated caller and immediate peer IPs, presentation handlers, Accounts operations, and Player
-Sessions grant delivery. The grant queue preserves the HTTP parent through
+Sessions grant delivery. The admin API continues the browser trace, and the grant queue preserves the HTTP parent through
 gateway execution and response. See the
 [telemetry contract](../../docs/telemetry.md).
