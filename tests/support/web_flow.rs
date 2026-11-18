@@ -96,6 +96,10 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
         assert!(page.contains("Shared UI entry"));
         assert!(page.contains("cache-control: no-store"));
     }
+    let shop = get(address, "/shop/", None);
+    assert!(shop.contains("script-src 'self';"));
+    assert!(shop.contains("style-src 'self' 'unsafe-inline'; font-src 'self';"));
+    assert!(!shop.contains("script-src 'self' 'unsafe-inline'"));
     let root = get(address, "/", None);
     assert!(root.starts_with("HTTP/1.1 307") && root.contains("location: /admin/"));
     assert!(get(address, "/assets/test.js", None).starts_with("HTTP/1.1 200"));

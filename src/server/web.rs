@@ -76,7 +76,7 @@ async fn serve_page(State(proxies): State<Vec<IpAddr>>, request: Request, next: 
         (header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(if admin {
             "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         } else {
-            "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
         })),
     ]);
     response
