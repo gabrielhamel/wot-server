@@ -15,6 +15,9 @@
 tools/web/node_modules/
 tools/web/dist/
 !resources/
+resources/*
 !resources/manifest.json
 !resources/res/
 !resources/res/**
+**/.env
+**/.env.*

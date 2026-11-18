@@ -5,6 +5,8 @@
 
 /.local
 .env
+.env.*
+!.env.example
 
 /server.json
 /login.pem
