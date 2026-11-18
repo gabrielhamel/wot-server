@@ -22,7 +22,9 @@ mod progression;
 mod shop;
 mod starter_garage;
 mod store;
-pub use store::{StoreOffer, StoreOrder, StoreOrderError};
+pub use store::{
+    StoreAvailability, StoreCategory, StoreOffer, StoreOrder, StoreOrderError, StorePrice,
+};
 mod supply_slots;
 mod vehicle_defs;
 pub use grants::{CosmeticGrantEntry, VehicleCatalogEntry};
@@ -45,6 +47,7 @@ pub struct GarageCatalog {
     templates: RwLock<HashMap<String, Arc<CatalogVehicle>>>,
     offers: BTreeMap<i32, vehicle_defs::VehicleOffer>,
     keys: HashMap<String, i32>,
+    tech_tree: BTreeSet<i32>,
     filesystem: ResourceBundle,
     passports: Vec<crew::Passports>,
     crew_books: BTreeMap<i32, crew_books::CrewBook>,
@@ -151,7 +154,7 @@ impl GarageCatalog {
         cosmetic_catalog::index_exterior_shop(&fs, &mut prices)?;
         let crew_books = crew_books::load(&fs, &mut prices)?;
         let crew_skins = crew_skins::load(&fs, &mut prices)?;
-        let (equipment, store_offers) = equipment::load(&fs, &prices)?;
+        let equipment = equipment::load(&fs, &prices)?;
         let directives = directives::load(&fs, &prices)?;
         let consumables = consumables::load(&fs, &prices)?;
         let supply_slots = supply_slots::SupplySlots::load(&fs)?;
@@ -197,10 +200,15 @@ impl GarageCatalog {
             .iter()
             .map(|(&id, offer)| (offer.key.clone(), id))
             .collect();
+        let mut store_offers =
+            store::load(&fs, &prices, &offers, &equipment, &consumables, &directives)?;
+        store_offers.extend_from_slice(cosmetics.store_styles());
+        let tech_tree = starter_garage::tech_tree(&fs, &catalog_keys, &offers)?;
         let catalog = Self {
             templates: RwLock::new(HashMap::new()),
             offers,
             keys: catalog_keys,
+            tech_tree,
             filesystem: fs,
             passports,
             crew_books,
@@ -376,13 +384,15 @@ impl GarageCatalog {
             progression: snapshot.progression.clone(),
             elite_vehicles: self.elite_vehicles(snapshot, &default_unlocks)?,
             default_unlocks,
+            premium_expires_at: snapshot.active_premium_until(),
+            max_researched_tiers: self.max_researched_tiers(snapshot),
         })
     }
 
     #[tracing::instrument(name = "accounts.prepare", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
     pub fn prepare(&self, snapshot: AccountSnapshot) -> Result<PreparedAccount> {
         let data = self.project_account(&snapshot)?;
-        let cache = Self::encode_garage(snapshot.revision, &data)?;
+        let cache = self.encode_garage(snapshot.revision, &data)?;
         Ok(PreparedAccount {
             snapshot,
             cache: Arc::new(cache),
@@ -390,8 +400,8 @@ impl GarageCatalog {
     }
 
     #[tracing::instrument(name = "accounts.encode_garage", skip_all, fields(ddd.bounded_context.name = "accounts", input.revision = revision, output.bytes = tracing::field::Empty), err)]
-    fn encode_garage(revision: i64, data: &account::AccountData) -> Result<Vec<u8>> {
-        let cache = account::compress(&data.data(revision))?;
+    fn encode_garage(&self, revision: i64, data: &account::AccountData) -> Result<Vec<u8>> {
+        let cache = account::compress(&data.data(revision, self.tech_tree_economics()))?;
         tracing::Span::current().record("output.bytes", cache.len());
         Ok(cache)
     }

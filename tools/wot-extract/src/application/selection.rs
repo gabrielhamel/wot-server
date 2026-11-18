@@ -103,7 +103,13 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
         && (ABI_FILES.contains(&path)
             || GARAGE_FILES.contains(&path)
             || path == "scripts/item_defs/vehicles/common/forbidden_vehicles_to_battle_config.xml"
-            || path == "text/lc_messages/vehicle_customization.mo"
+            || matches!(
+                path,
+                "text/lc_messages/vehicle_customization.mo"
+                    | "text/lc_messages/artefacts.mo"
+                    | "text/lc_messages/crew_skins.mo"
+                    | "text/lc_messages/gb_vehicles.mo"
+            )
             || NATIONS.iter().any(|nation| {
                 path == format!("scripts/item_defs/tankmen/{nation}.xml")
                     || path == format!("gui/flash/techtree/{nation}-tree.xml")

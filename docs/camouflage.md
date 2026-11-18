@@ -22,7 +22,9 @@ It uses the same prices for the shop stream and for charges. The server checks
 vehicle filters, vehicle and item surface availability, season, palette and
 scale before saving. Offer restrictions include unavailable items, token-gated
 items and style-only components. This implementation covers unbound, permanent
-camouflage and its garage layouts. Styles, cosmetic resale and rentals are outside this workflow.
+camouflage and its garage layouts. Permanent styles from the [Store](store.md)
+are fitted through the common outfit. Cosmetic resale and rentals are outside
+the current implementation.
 
 ## Paints
 
@@ -110,9 +112,16 @@ for the counter require a battle statistics source.
 The native hangar menu checks for at least one compatible 2D style before it
 enables Exterior. Its lookup requires the style descriptor to be present in
 `items.itemPrices`. The server adds empty price rows for base 2D descriptors
-that the client already hides from the carousel. It also excludes styles from
-purchase using `notInShopItems`. Style purchases and application remain
-unsupported.
+that the client already hides from the carousel, and for Store styles so
+the client can display owned copies. The native price cache marks styles
+as unavailable for purchase through `notInShopItems`. The Store sells
+a selected catalog of permanent styles for bonds.
+
+The outfit serializer carries the style ID in field 4 of
+`CustomizationOutfit`. Store styles use the common season (15).
+The server requires a compatible vehicle and an owned copy. Style
+fitting consumes available stock until the style is removed. The client
+loads the style’s appearance from its installed definitions.
 
 The carousel enumerates client definitions directly, including extensions.
 Unpriced items can appear selectable at zero gold when their IDs are missing

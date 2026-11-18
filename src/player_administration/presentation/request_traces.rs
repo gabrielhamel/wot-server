@@ -241,6 +241,11 @@ async fn exports_admin_http_request_inputs() {
     });
     assert_eq!(response.unwrap().status(), StatusCode::NOT_FOUND);
 
+    let duplicate = send("POST", "/api/admin/players", session_cookie, &body)
+        .await
+        .unwrap();
+    assert_eq!(duplicate.status(), StatusCode::CONFLICT);
+
     let spans = exporter.get_finished_spans().unwrap();
     drop(subscriber_guard);
     let snapshot = accounts
@@ -263,11 +268,18 @@ async fn exports_admin_http_request_inputs() {
         Some(snapshot.id.to_string().as_str())
     );
     assert_eq!(snapshot.display_name, "Dashboard Player");
-    assert_eq!(snapshot.vehicles.len(), starter_keys.len());
+    assert_eq!(snapshot.balances.credits, 200_000);
+    assert_eq!(snapshot.balances.gold, 500);
+    let mut owned_keys: Vec<_> = snapshot
+        .vehicles
+        .iter()
+        .map(|vehicle| vehicle.catalog_key.clone())
+        .collect();
+    owned_keys.sort_unstable();
+    assert_eq!(owned_keys, starter_keys);
     assert!(!snapshot.settings.is_empty());
     let crew = snapshot.crew.as_ref().expect("starter crew persisted");
     for vehicle in &snapshot.vehicles {
-        assert!(starter_keys.contains(&vehicle.catalog_key));
         assert!(vehicle.has_crew);
         assert!(crew.members.values().any(|member| {
             member
@@ -291,7 +303,7 @@ async fn exports_admin_http_request_inputs() {
         .iter()
         .filter(|span| span.name == "admin.http.request")
         .collect();
-    assert_eq!(roots.len(), 16);
+    assert_eq!(roots.len(), 17);
     for (root, expected) in roots.iter().zip([
         &[
             ("http.response.status_code", "200"),
@@ -355,6 +367,7 @@ async fn exports_admin_http_request_inputs() {
             ("input.stat_tracker_id", "1"),
             ("input.amount", "1"),
         ],
+        &[("http.response.status_code", "409")],
     ]) {
         assert_eq!(root.parent_span_id, SpanId::INVALID);
         assert_eq!(
@@ -419,11 +432,53 @@ async fn exports_admin_http_request_inputs() {
     assert!(contains_operation(roots[7], "admin.garage.grant"));
     assert!(contains_operation(roots[7], "player_sessions.grants.grant"));
     assert!(contains_operation(roots[9], "player_sessions.grants.grant"));
+    for (root, outcome, transaction_end) in [
+        (roots[10], "created", "COMMIT"),
+        (roots[16], "conflict", "ROLLBACK"),
+    ] {
+        assert!(contains_operation(root, "accounts.players.provision"));
+        let provision = spans
+            .iter()
+            .find(|span| {
+                span.name == "accounts.players.provision"
+                    && span.span_context.trace_id() == root.span_context.trace_id()
+            })
+            .unwrap();
+        assert_eq!(
+            attribute(provision, "input.starter.credits").as_deref(),
+            Some("200000")
+        );
+        assert_eq!(
+            attribute(provision, "input.starter.gold").as_deref(),
+            Some("500")
+        );
+        assert_eq!(
+            attribute(provision, "output.outcome").as_deref(),
+            Some(outcome)
+        );
+        let mut queries = spans.iter().filter(|span| {
+            span.name == "postgresql.query"
+                && span.parent_span_id == provision.span_context.span_id()
+        });
+        assert!(queries.clone().any(|span| {
+            attribute(span, "db.query.text").is_some_and(|statement| {
+                statement.starts_with("INSERT INTO accounts(")
+                    && statement.contains("credits, gold) SELECT $1, $2, $3, $4, $5, $6")
+            })
+        }));
+        assert!(
+            queries
+                .any(|span| attribute(span, "db.query.text").as_deref() == Some(transaction_end))
+        );
+    }
     assert!(contains_operation(
         roots[10],
         "accounts.players.persist_starter_garage"
     ));
-    assert!(contains_operation(roots[10], "postgresql.query"));
+    assert!(!contains_operation(
+        roots[16],
+        "accounts.players.persist_starter_garage"
+    ));
     let auth_span = spans
         .iter()
         .find(|span| {

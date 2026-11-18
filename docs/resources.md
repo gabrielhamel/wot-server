@@ -38,6 +38,8 @@ server. Older manifests without the field remain supported.
   item definitions, customization price groups, style, camouflage, paint, decal, projected decal, effect, personal-number attachment and stat tracker definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle
   name catalogs for admin labels. The optional `vehicle_customization.mo` supplies localized attachment and stat tracker names. Older bundles fall back to the attachment definition name, with “Unnamed attachment” for entries without a name.
+  The Store also uses `artefacts.mo`, `crew_skins.mo` and
+  `gb_vehicles.mo` for localized service items, skins and British vehicles.
 
 The extractor copies selected definition files as complete files and preserves
 their resource paths. It omits executables, packages, artwork, map assets and

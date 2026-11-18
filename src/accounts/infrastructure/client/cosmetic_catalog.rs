@@ -1,3 +1,5 @@
+mod store_styles;
+
 use super::{
     GarageCatalog, item_defs,
     item_prices::{ItemPrices, Price},
@@ -41,6 +43,7 @@ pub(super) struct CosmeticCatalog {
     definitions: BTreeMap<CosmeticItem, CosmeticDefinition>,
     prohibited_numbers: BTreeSet<String>,
     grant_names: BTreeMap<CosmeticItem, String>,
+    store_styles: Vec<super::StoreOffer>,
 }
 
 struct CosmeticDefinition {
@@ -80,8 +83,7 @@ impl VehicleFilter {
                     .level
                     .is_some_and(|level| self.levels.contains(&level)))
             && (self.vehicles.is_empty() || self.vehicles.contains(key))
-            && (self.tags.is_empty()
-                || (self.tags.len() < vehicle.tags.len() && self.tags.is_subset(&vehicle.tags)))
+            && (self.tags.is_empty() || self.tags.is_subset(&vehicle.tags))
     }
 }
 
@@ -268,6 +270,7 @@ impl CosmeticCatalog {
                 .map(str::to_owned)
                 .collect();
         }
+        store_styles::load(&mut catalog, fs, prices)?;
         Ok(catalog)
     }
 
@@ -343,6 +346,7 @@ impl CosmeticCatalog {
                         units_by_region.retain(|region, _| exterior.paints.contains(region));
                         !units_by_region.is_empty()
                     }
+                    CosmeticPlacement::Style => true,
                     CosmeticPlacement::Effect => exterior.effect_slot,
                     CosmeticPlacement::StatTracker => !exterior.stat_tracker_slots.is_empty(),
                     CosmeticPlacement::Attachment(rule) => exterior
@@ -492,6 +496,7 @@ fn read_definition(
                 usable,
             )
         }
+        CosmeticKind::Style => bail!("Style definitions use the Store style catalog"),
         CosmeticKind::Effect => (CosmeticPlacement::Effect, true),
         CosmeticKind::StatTracker => (
             CosmeticPlacement::StatTracker,
@@ -643,6 +648,7 @@ fn cosmetic_descriptor(subtype: u8, id: u16) -> IntCompactDescr {
 pub(super) fn cosmetic_subtype(kind: CosmeticKind) -> u8 {
     match kind {
         CosmeticKind::Camouflage => CAMOUFLAGE_TYPE,
+        CosmeticKind::Style => STYLE_TYPE,
         CosmeticKind::Paint => 1,
         CosmeticKind::Inscription => 3,
         CosmeticKind::PersonalNumber => 9,

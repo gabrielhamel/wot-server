@@ -20,10 +20,11 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | `infrastructure/gateway/progression.rs` | Equipment, directive, module, tank and depot request validation, bounded progression jobs and committed cache delivery. |
 | `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes. |
 | `application/store.rs` | Store session tokens and the bounded request channel between HTTP and the gateway. |
+| `infrastructure/gateway/premium.rs` | Notify the live garage when an account’s Premium time expires. |
 | `infrastructure/gateway/store.rs` | Look up live Store sessions and coordinate catalog reads and account writes. |
 | `infrastructure/gateway/account_updates.rs` | Update handoff and session snapshots and deliver committed cache diffs for external account writes. |
 | `presentation/store/` | In-game Store HTTP catalog and checkout endpoints. |
-| `presentation/store/web/` | Store page, equipment offers and checkout state. |
+| `presentation/store/web/` | Store categories, vehicle filters and checkout state. |
 | `application/store-contracts.ts` and `infrastructure/store-api.ts` | Typed catalog and order contracts and the HTTP adapter that traces browser purchases. |
 | `infrastructure/gateway/cosmetics.rs` | Decode native cosmetic stock purchases and binary seasonal and common outfits for the shared progression transaction. |
 | `infrastructure/gateway/expendables.rs` | Decode consumable and directive layouts and auto-resupply settings for the shared progression transaction. |

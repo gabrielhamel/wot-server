@@ -195,6 +195,19 @@ impl Gateway {
             } => self.request_token(client, entity, account_id, request_id, token_type)?,
             AccountBase::DoCmdInt3 {
                 request_id,
+                cmd: progression::BUY_PREMIUM,
+                arg0: shop_revision,
+                arg1: days,
+                arg2: arena_id,
+            } => {
+                let command = i32::try_from(days)
+                    .ok()
+                    .filter(|_| arena_id == 0)
+                    .map(|days| crate::accounts::ProgressionCommand::BuyPremium { days });
+                self.change_progression(client, entity, request_id, command, Some(shop_revision))?;
+            }
+            AccountBase::DoCmdInt3 {
+                request_id,
                 cmd: progression::BUY_VEHICLE_SLOT,
                 arg0: shop_revision,
                 arg1,
@@ -423,13 +436,21 @@ impl Gateway {
                 request_id,
                 SUCCESS,
                 String::new(),
-                Pickle(crate::pickle!({"prevRev": current, "rev": current})),
+                Pickle(
+                    self.catalog.garage_sync(
+                        current,
+                        self.sessions
+                            .get(&client)
+                            .and_then(|session| session.account.snapshot.active_premium_until()),
+                    ),
+                ),
             )?;
         } else {
             self.stream(client, entity, request_id, cache)?;
         }
         if let Some(session) = self.sessions.get_mut(&client) {
             session.garage_synced = true;
+            session.reported_premium_expiry = None;
         }
         Ok(())
     }

@@ -9,6 +9,9 @@ use anyhow::Result;
 use sqlx::PgPool;
 use std::sync::Arc;
 
+const STARTING_CREDITS: i64 = 200_000;
+const STARTING_GOLD: i64 = 500;
+
 #[derive(Clone)]
 pub struct PostgresPlayers {
     pub(super) pool: PgPool,
@@ -89,7 +92,7 @@ impl PlayerRepository for PostgresPlayers {
         Ok(PlayerPage { accounts, total })
     }
 
-    #[tracing::instrument(name = "accounts.players.provision", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = username.len()), err)]
+    #[tracing::instrument(name = "accounts.players.provision", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = username.len(), input.starter.credits = STARTING_CREDITS, input.starter.gold = STARTING_GOLD, output.outcome = tracing::field::Empty), err)]
     async fn provision(
         &self,
         username: String,
@@ -113,7 +116,7 @@ impl PlayerRepository for PostgresPlayers {
             super::player_access::lock_accounts(&mut tx).await?;
         }
         let id = {
-            let statement = "INSERT INTO accounts(username, display_name, password_hash, role) SELECT $1, $2, $3, $4 WHERE $4 = 'player' OR NOT EXISTS (SELECT 1 FROM accounts) ON CONFLICT(username) DO NOTHING RETURNING id";
+            let statement = "INSERT INTO accounts(username, display_name, password_hash, role, credits, gold) SELECT $1, $2, $3, $4, $5, $6 WHERE $4 = 'player' OR NOT EXISTS (SELECT 1 FROM accounts) ON CONFLICT(username) DO NOTHING RETURNING id";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -122,12 +125,15 @@ impl PlayerRepository for PostgresPlayers {
                     .bind(&display_name)
                     .bind(password_hash)
                     .bind(role.as_str())
+                    .bind(STARTING_CREDITS)
+                    .bind(STARTING_GOLD)
                     .fetch_optional(&mut *tx),
             )
             .await
         }?;
         let Some(id) = id else {
             crate::platform::observability::database("accounts", "ROLLBACK", tx.rollback()).await?;
+            tracing::Span::current().record("output.outcome", "conflict");
             return Ok(None);
         };
 
@@ -143,6 +149,7 @@ impl PlayerRepository for PostgresPlayers {
         .await??;
         persist_starter_garage(&mut tx, &snapshot).await?;
         crate::platform::observability::database("accounts", "COMMIT", tx.commit()).await?;
+        tracing::Span::current().record("output.outcome", "created");
         Ok(Some(PlayerAccount {
             id,
             username,

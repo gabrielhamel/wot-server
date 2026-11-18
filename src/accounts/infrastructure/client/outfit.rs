@@ -9,6 +9,7 @@ const EFFECTS: u16 = 1;
 const PAINTS: u16 = 1 << 1;
 const CAMOUFLAGES: u16 = 1 << 2;
 const DECALS: u16 = 1 << 3;
+const STYLE: u16 = 1 << 4;
 const PROJECTION_DECALS: u16 = 1 << 5;
 const DEFAULT_DECAL_SCALE: u16 = 3;
 const STAT_TRACKERS: u16 = 1 << 12;
@@ -93,6 +94,7 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
             | PAINTS
             | CAMOUFLAGES
             | DECALS
+            | STYLE
             | PROJECTION_DECALS
             | PERSONAL_NUMBERS
             | ATTACHMENTS
@@ -202,6 +204,13 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
                 return None;
             }
         }
+    }
+    if mask & STYLE != 0 {
+        let id = read_varint(&mut bytes)?;
+        if id == EMPTY_ITEM {
+            return None;
+        }
+        layout.style = (id != 0).then_some(id);
     }
     if mask & PROJECTION_DECALS != 0 {
         let count = usize::from(read_varint(&mut bytes)?);
@@ -368,6 +377,9 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
     if presets > 0 {
         fields |= DECALS;
     }
+    if layout.style.is_some() {
+        fields |= STYLE;
+    }
     if !layout.projection_decals.is_empty() {
         fields |= PROJECTION_DECALS;
     }
@@ -418,6 +430,9 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
                 write_varint(&mut bytes, area);
             }
         }
+    }
+    if let Some(id) = layout.style {
+        write_varint(&mut bytes, id);
     }
     if fields & PROJECTION_DECALS != 0 {
         write_varint(&mut bytes, layout.projection_decals.len() as u16);
@@ -543,13 +558,23 @@ mod tests {
     }
 
     #[test]
+    fn round_trips_a_style_in_the_common_outfit() {
+        let raw = [4, 16, 0xa3, 2];
+        let outfits = decode_outfits(&[15], [raw.as_slice()].into_iter(), None).unwrap();
+        let outfit = &outfits[&OutfitSeason::Common];
+        assert_eq!(outfit.style, Some(291));
+        assert_eq!(encode(outfit), raw);
+        assert!(decode_outfits(&[2], [raw.as_slice()].into_iter(), None).is_none());
+    }
+
+    #[test]
     fn rejects_invalid_seasons_and_unbounded_or_overlapping_components() {
         let overlap = [4, 4, 2, 1, 2, 5, 3, 16];
         let invalid = [
             overlap.as_slice(),
             &[4, 4, 4],                          // More components than surfaces.
             &[4, 4, 1, 5, 2, 1],                 // Chassis.
-            &[4, 16, 3],                         // Style.
+            &[4, 16, 0x83],                      // Truncated style ID.
             &[4, 4, 1, 1, 128, 128, 16],         // Oversized identifier.
             &[4, 4, 0, 0],                       // Extra byte.
             &[4, 128, 4, 7],                     // More attachments than permitted.

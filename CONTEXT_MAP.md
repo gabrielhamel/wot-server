@@ -17,12 +17,12 @@ tracing adapters to runtime infrastructure and server composition. The admin and
 snapshots upstream of [Player Sessions](src/player_sessions/README.md), which adapts them into login
 and garage sessions. Both translate external client data through anti-corruption
 layers. Accounts' PostgreSQL adapter persists user state, including revision-checked
-ammunition, tank/module research, vehicle purchases and module, equipment, consumable and directive loadouts, cosmetic ownership and outfits, shared depot stock and balance updates; its resource adapter builds
-the garage projection. Player Sessions adapts shell, equipment, consumable, directive, camouflage, module and tank progression requests and publishes committed
+ammunition, tank/module research, vehicle purchases and module, equipment, consumable and directive loadouts, cosmetic ownership and outfits, shared depot stock, balances and Premium Account expiration. Its resource adapter builds the garage projection. Player Sessions adapts shell, equipment, consumable, directive, camouflage, module and tank progression requests and publishes committed
 inventory/balance changes and purchase receipts. Player Sessions owns the Mercury UDP adapter and binds
 garage RPCs to the extracted script definitions. Its [Store HTTP adapter](docs/store.md)
 uses the live garage session to publish Accounts offers and route checkout through
-the revision-checked inventory transaction. Both contexts use the shared
+the revision-checked account transaction. Player Sessions publishes Premium Account
+activation, renewal and expiry to the garage. Both contexts use the shared
 [client formats](src/platform/infrastructure/client_formats/README.md) infrastructure.
 
 [Resource Extraction](tools/wot-extract/README.md) runs offline and publishes

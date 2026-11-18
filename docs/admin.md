@@ -1,15 +1,15 @@
 # Admin dashboard and HTTP API
 
 The game server can serve a React Admin dashboard to list and create player
-accounts and grant resources, tanks, 3D attachments and stat trackers. Accounts creates the player and starter
-garage in one transaction. The garage contains regular tech tree tier I tanks
-with stock modules, basic crew, default ammunition and initial settings.
-They can use their new credentials in the game client's basic login flow
-immediately after creation.
+accounts and grant resources, tanks, 3D attachments and stat trackers. Accounts
+creates the player with 500 gold, 200,000 credits, and a starter garage in one
+transaction. The garage contains the regular Tech Tree tier I tanks with stock
+modules, basic crew and default ammunition. Players can use their new
+credentials in the game client's basic login flow immediately after creation.
 
-The catalog selects starters from the regular nation tech trees and excludes
-collector vehicles. The initial settings are a client-compatible baseline
-recorded with the EU 2.4.1.5514 resources. See the
+The catalog selects the tier I starters from regular nation tech trees and
+excludes collector vehicles. The initial settings are a client-compatible
+baseline recorded with the EU 2.4.1.5514 resources. See the
 [starter settings](../src/accounts/infrastructure/client/starter_settings.json).
 
 ## Enable the dashboard

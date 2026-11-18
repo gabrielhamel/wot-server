@@ -10,8 +10,9 @@ pub use application::{
 };
 pub use domain::*;
 pub use infrastructure::client::{
-    CosmeticGrantEntry, GarageCatalog, PreparedAccount, StoreOffer, StoreOrder, StoreOrderError,
-    VehicleCatalogEntry, cosmetic_item, decode_outfits,
+    CosmeticGrantEntry, GarageCatalog, PreparedAccount, StoreAvailability, StoreCategory,
+    StoreOffer, StoreOrder, StoreOrderError, StorePrice, VehicleCatalogEntry, cosmetic_item,
+    decode_outfits,
 };
 pub use infrastructure::players::PostgresPlayers;
 pub use infrastructure::postgres::PostgresAccounts;

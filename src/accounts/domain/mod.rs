@@ -14,6 +14,8 @@ pub use equipment::*;
 mod grants;
 pub use grants::*;
 mod modules;
+mod premium;
+pub(crate) use premium::{PREMIUM_PACKAGES, unix_now};
 mod players;
 pub use players::*;
 mod vehicles;

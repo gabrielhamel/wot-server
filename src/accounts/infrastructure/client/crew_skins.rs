@@ -15,6 +15,7 @@ use wot_resources::ResourceBundle;
 pub(super) struct CrewSkin {
     nation: Option<u8>,
     female_only: bool,
+    max_owned: Option<u32>,
 }
 
 fn descriptor(skin: u16) -> IntCompactDescr {
@@ -83,6 +84,10 @@ pub(super) fn load(
             CrewSkin {
                 nation,
                 female_only,
+                max_owned: skin
+                    .get_child_integer("maxCount")
+                    .map(u32::try_from)
+                    .transpose()?,
             },
         );
     }
@@ -162,4 +167,110 @@ pub(super) fn inventory(crew: &CrewRoster, depot: &BTreeMap<i32, u32>) -> Value 
         .filter_map(|(&id, member)| Some((Value::from(id), Value::from(i32::from(member.skin?)))))
         .collect();
     crate::pickle!({1: (Value::Dict(stock)), 2: (Value::Dict(outfits))})
+}
+
+// The EU Store catalog in docs/store-eu-catalog.md lists a gold price for these skins.
+// The native garage uses the extracted credit price groups.
+const STORE_SKINS: &[(u16, &str)] = &[
+    (2, "Pavel Rybalko"),
+    (3, "Mikhail Katukov"),
+    (4, "George Patton"),
+    (7, "Charles de Gaulle"),
+    (101, "Vasily Chapaev"),
+    (102, "Oksana Shevchenko"),
+    (103, "Oliver Murdoc"),
+    (104, "Gabriel Lyman"),
+    (105, "Emran Shankar"),
+    (106, "Chester O’Brien"),
+    (107, "Conrad Vitmaer"),
+    (108, "Wilhelm Berghoff"),
+    (109, "Christophe Lambert"),
+    (110, "Audrey Dupont"),
+    (111, "Hideo Tanaka"),
+    (112, "Josef Švejk"),
+    (113, "Tzinedi Tzidane"),
+    (114, "Grzegorz Brzęczyszczykiewicz"),
+    (115, "Björn Ragnarsson"),
+    (116, "Alessandro Lotti"),
+    (120, "Hellu Van Oob"),
+    (121, "Kannot Gitgud"),
+    (122, "Toma Teu"),
+    (123, "Uni Corn"),
+    (124, "Arengee Penetrael"),
+];
+
+pub(super) fn store_offers(
+    fs: &ResourceBundle,
+    prices: &ItemPrices,
+) -> Result<Vec<super::StoreOffer>> {
+    use super::store::{StoreCategory, StorePrice, listing};
+    let names = super::localization::localized_names(fs, "text/lc_messages/crew_skins.mo")
+        .unwrap_or_default();
+    let skins = read_xml(fs, "scripts/item_defs/crewSkins/crewSkins.xml")?;
+    let offers: BTreeMap<_, _> = STORE_SKINS.iter().copied().collect();
+    let mut result = Vec::new();
+    for (_, skin) in skins.iter_child_elements() {
+        let Some(id) = skin.get_child_integer("id") else {
+            continue;
+        };
+        let id = u16::try_from(id)?;
+        let cd = descriptor(id);
+        let Some(&fallback) = offers
+            .get(&id)
+            .filter(|_| !prices.not_in_shop.contains(&cd))
+        else {
+            continue;
+        };
+        let name = |field| {
+            skin.get_child_string(field)
+                .and_then(|label| label.strip_prefix("#crew_skins:"))
+                .and_then(|label| names.get(label))
+        };
+        let name = name("firstName").zip(name("lastName")).map_or_else(
+            || fallback.to_owned(),
+            |(first, last)| format!("{first} {last}"),
+        );
+        result.push(listing(
+            i32::try_from(cd.to_int())?,
+            name,
+            StoreCategory::CrewSkins,
+            StorePrice::Gold(200),
+        ));
+    }
+    Ok(result)
+}
+
+impl GarageCatalog {
+    #[tracing::instrument(name = "accounts.crew_skins.check_purchase_limit", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.item = item, input.count = count), err)]
+    pub(super) fn check_crew_skin_limit(
+        &self,
+        snapshot: &AccountSnapshot,
+        item: i32,
+        count: u32,
+    ) -> Result<(), ProgressionError> {
+        let id = IntCompactDescr::from_int(i64::from(item)).id;
+        let skin = self
+            .crew_skins
+            .get(&id)
+            .ok_or(ProgressionError::InvalidRequest)?;
+        if let Some(limit) = skin.max_owned {
+            let depot = snapshot
+                .progression
+                .depot
+                .get(&item)
+                .copied()
+                .unwrap_or_default();
+            let roster = self.crew_roster(snapshot).map_err(Self::catalog_failure)?;
+            let equipped = roster
+                .members
+                .values()
+                .filter(|member| member.skin == Some(id))
+                .count();
+            let owned = u64::from(depot) + u64::from(count) + equipped as u64;
+            if owned > u64::from(limit) {
+                return Err(ProgressionError::InvalidRequest);
+            }
+        }
+        Ok(())
+    }
 }

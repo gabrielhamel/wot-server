@@ -50,10 +50,18 @@ A server limit of 1,024 owned vehicles bounds projection work independently of
 an externally edited capacity. New inventory IDs exceed the highest owned or
 previously sold ID, within the positive signed 32-bit range used by garage commands.
 
-Researchable credit tanks require an unlock. Available premium/gold offers may
-be bought without a research step. A `notInShop` or unsupported-currency offer
-cannot be purchased. Collector-specific eligibility, rental, trade-in and vehicle
-restoration remain outside the current garage model. Unsupported
+Researchable credit tanks require an unlock. For gold vehicles offered by the
+[Store](store.md), the garage sync sends the eligible descriptors in
+`economics.unlocks`. The client merges those descriptors into its Tech Tree
+unlock set. Pz. S35, for example, uses the native purchase command at its
+extracted 1,000-gold price. These catalog unlocks leave persisted research and
+Collectors’ tier eligibility unchanged. A matching-revision sync also sends
+them so an existing client cache can receive the update.
+
+A `notInShop` or unsupported-currency offer cannot be purchased through the
+native command. Collectors’ vehicles use the same-nation tier requirement.
+Rental, trade-in and vehicle restoration remain outside the current garage
+model. Unsupported
 purchase options reject the entire request before any debit or ownership change.
 
 With free crew and stock ammunition, the installed Pz. II costs 3,000 credits
