@@ -94,13 +94,8 @@ pub(crate) fn router(
     ))
 }
 
-#[tracing::instrument(name = "admin.authenticate", skip_all, fields(ddd.bounded_context.name = "player_administration", input.method = request.method().as_str()))]
 async fn authenticate(State(token): State<AdminToken>, request: Request, next: Next) -> Response {
-    let authenticated = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.as_bytes().strip_prefix(b"Bearer "))
-        .is_some_and(|value| token.matches(value));
+    let authenticated = check_admin_token(&token, &request);
     if authenticated {
         return next.run(request).await;
     }
@@ -109,6 +104,24 @@ async fn authenticate(State(token): State<AdminToken>, request: Request, next: N
         players::ApiError::new(StatusCode::UNAUTHORIZED, "A valid admin token is required."),
     )
         .into_response()
+}
+
+#[tracing::instrument(name = "admin.authenticate", skip_all, fields(ddd.bounded_context.name = "player_administration", input.method = request.method().as_str(), output.outcome = tracing::field::Empty))]
+fn check_admin_token(token: &AdminToken, request: &Request) -> bool {
+    let authenticated = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.as_bytes().strip_prefix(b"Bearer "))
+        .is_some_and(|value| token.matches(value));
+    tracing::Span::current().record(
+        "output.outcome",
+        if authenticated {
+            "authorized"
+        } else {
+            "rejected"
+        },
+    );
+    authenticated
 }
 
 async fn prevent_caching(request: Request, next: Next) -> Response {

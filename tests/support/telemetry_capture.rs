@@ -104,7 +104,7 @@ pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
     );
 }
 
-pub fn assert_operation_traces(account: i64) {
+pub fn assert_operation_traces(account: i64, research_account: i64) {
     let spans = exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
         span.attributes.iter().any(|attribute| {
@@ -149,7 +149,7 @@ pub fn assert_operation_traces(account: i64) {
         .iter()
         .find(|root| {
             root.name == "game.command"
-                && has(root, "user.id", &account.to_string())
+                && has(root, "user.id", &research_account.to_string())
                 && spans
                     .iter()
                     .any(|span| span.name == "accounts.modules.research" && descendant(span, root))
@@ -168,6 +168,8 @@ pub fn assert_operation_traces(account: i64) {
         opentelemetry::trace::SpanId::INVALID
     );
     for operation in [
+        "accounts.project_garage",
+        "accounts.encode_garage",
         "accounts.save_progression",
         "accounts.postgres.save_progression",
         "accounts.modules.research",
@@ -179,6 +181,114 @@ pub fn assert_operation_traces(account: i64) {
             "missing {operation} under command"
         );
     }
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.name == "accounts.progression.plan_progression"
+                && descendant(span, command)
+                && has(span, "input.operation", "research"))
+    );
+    assert!(spans.iter().any(|span| span.name == "mercury.response"
+        && descendant(span, command)
+        && has(span, "rpc.method", "onCmdResponseExt")
+        && has(span, "output.response_code", "0")
+        && has(span, "output.delivery", "sent")));
+
+    let command_root = |request: &str, id: &str| {
+        spans
+            .iter()
+            .find(|root| {
+                root.name == "game.command"
+                    && has(root, "user.id", &account.to_string())
+                    && has(root, "input.request_id", request)
+                    && has(root, "input.command_id", id)
+            })
+            .unwrap_or_else(|| panic!("missing command {id} request {request}"))
+    };
+    let stats = command_root("2000", "501");
+    let read = spans
+        .iter()
+        .find(|span| {
+            span.name == "player_sessions.server_stats"
+                && descendant(span, stats)
+                && has(span, "output.players.online", "2")
+        })
+        .expect("online count operation");
+    assert!(spans.iter().any(|span| span.name == "mercury.response"
+        && span.parent_span_id == read.span_context.span_id()
+        && has(span, "rpc.method", "receiveServerStats")
+        && has(span, "output.delivery", "sent")));
+    assert!(
+        !spans
+            .iter()
+            .any(|span| span.name == "postgresql.query" && descendant(span, stats))
+    );
+
+    let settings = command_root("225", "1600");
+    let completion = spans
+        .iter()
+        .find(|span| {
+            span.name == "player_sessions.settings.response"
+                && descendant(span, settings)
+                && has(span, "output.outcome", "committed")
+        })
+        .expect("settings completion");
+    assert!(spans.iter().any(|span| {
+        span.name == "postgresql.query"
+            && descendant(span, settings)
+            && has(span, "db.operation.name", "UPDATE")
+            && span.attributes.iter().any(|attr| {
+                attr.key.as_str() == "db.query.text" && attr.value.to_string().contains("$1")
+            })
+    }));
+    assert!(spans.iter().any(|span| span.name == "mercury.response"
+        && span.parent_span_id == completion.span_context.span_id()
+        && has(span, "input.request_id", "225")
+        && has(span, "output.delivery", "sent")));
+    for (request, operation, code, outcome) in [
+        (
+            "229",
+            "player_sessions.gateway.change_ammunition",
+            "-2",
+            "invalid_request",
+        ),
+        (
+            "239",
+            "player_sessions.gateway.ammunition_response",
+            "0",
+            "unchanged",
+        ),
+    ] {
+        let root = command_root(request, "108");
+        let action = spans
+            .iter()
+            .find(|span| {
+                span.name == operation
+                    && descendant(span, root)
+                    && has(span, "output.outcome", outcome)
+            })
+            .expect(outcome);
+        assert!(spans.iter().any(|span| span.name == "mercury.response"
+            && span.parent_span_id == action.span_context.span_id()
+            && has(span, "output.response_code", code)
+            && has(span, "output.delivery", "sent")));
+        assert!(
+            !spans
+                .iter()
+                .any(|span| span.name == "postgresql.query" && descendant(span, root))
+        );
+    }
+
+    assert!(spans.iter().any(|root| {
+        root.name == "game.authenticate"
+            && has(root, "user.id", &account.to_string())
+            && spans.iter().any(|span| {
+                span.name == "mercury.login.response"
+                    && span.parent_span_id == root.span_context.span_id()
+                    && has(span, "output.response_code", "69")
+                    && has(span, "output.delivery", "sent")
+            })
+    }));
     assert!(
         spans.iter().all(|span| {
             !span.name.split('.').any(|segment| {
@@ -197,6 +307,15 @@ pub fn assert_operation_traces(account: i64) {
                 && has(root, "ddd.bounded_context.name", "player_sessions")
                 && spans.iter().any(|span| {
                     span.name == "social.send" && descendant(span, root)
+                })
+                && spans.iter().any(|enqueue| {
+                    enqueue.name == "player_sessions.enqueue"
+                        && has(enqueue, "output.delivery", "queued")
+                        && descendant(enqueue, root)
+                        && spans.iter().any(|response| {
+                            response.name == "xmpp.response"
+                                && response.parent_span_id == enqueue.span_context.span_id()
+                        })
                 })
                 && ["player_sessions.xmpp.handle", "xmpp.response"]
                     .iter()

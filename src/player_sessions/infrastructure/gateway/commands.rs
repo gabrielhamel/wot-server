@@ -1,6 +1,61 @@
 use super::*;
 
 impl Gateway {
+    pub(super) fn handle_base_method(&mut self, event: base::BaseMethodEvent) {
+        let span = event.span;
+        let session = self.sessions.get(&event.client);
+        if let Some(session) = session {
+            span.record("user.id", session.account.snapshot.id.to_string());
+        }
+        let owns_entity = session
+            .and_then(|session| session.entity)
+            .is_some_and(|entity| entity.any() == event.entity);
+        span.in_scope(|| {
+            if !owns_entity {
+                span.record("output.outcome", "entity_unavailable");
+                return;
+            }
+            let Some((entity, request)) =
+                self.base.decode::<AccountBase>(event.entity, &event.call)
+            else {
+                span.record(
+                    "output.outcome",
+                    if matches!(event.call, MethodCall::Known { .. }) {
+                        "decode_failed"
+                    } else {
+                        "unknown_method"
+                    },
+                );
+                tracing::error!("Cannot decode account base method");
+                return;
+            };
+            if let Some((request_id, cmd)) = command_ids(&request) {
+                span.record("input.request_id", request_id);
+                span.record("input.command_id", cmd);
+            } else {
+                match &request {
+                    AccountBase::RequestToken { request_id, .. }
+                    | AccountBase::MessengerOnActionByClientChat2 {
+                        request: request_id,
+                        ..
+                    } => {
+                        span.record("input.request_id", request_id);
+                    }
+                    AccountBase::ChatCommandFromClient { request_id, .. } => {
+                        span.record("input.request_id", request_id);
+                    }
+                    _ => {}
+                }
+            }
+            if let Err(error) = self.command(event.client, entity, request) {
+                span.record("output.outcome", "dispatch_failed");
+                error!(%error, "Account command failed");
+            } else {
+                span.record("output.outcome", "dispatched");
+            }
+        });
+    }
+
     #[tracing::instrument(name = "mercury.response.resource", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, output.bytes = data.len()), err)]
     fn stream(
         &mut self,
@@ -22,7 +77,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "player_sessions.commands.command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = tracing::field::Empty, input.command_id = tracing::field::Empty, input.arg0 = tracing::field::Empty, input.arg1 = tracing::field::Empty, input.arg2 = tracing::field::Empty, input.arg3 = tracing::field::Empty, input.args.count = tracing::field::Empty, input.outfits.count = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.commands.command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = tracing::field::Empty, input.command_id = tracing::field::Empty, input.arg0 = tracing::field::Empty, input.arg1 = tracing::field::Empty, input.arg2 = tracing::field::Empty, input.arg3 = tracing::field::Empty, input.args.count = tracing::field::Empty, input.outfits.count = tracing::field::Empty, input.string.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
     pub(super) fn command(
         &mut self,
         client: ClientKey,
@@ -33,61 +88,44 @@ impl Gateway {
             return Ok(());
         };
         let span = tracing::Span::current();
+        if let Some((request_id, cmd)) = command_ids(&request) {
+            span.record("input.request_id", request_id);
+            span.record("input.command_id", cmd);
+        }
         match &request {
             AccountBase::DoCmdInt3 {
-                request_id,
-                cmd,
-                arg0,
-                arg1,
-                arg2,
+                arg0, arg1, arg2, ..
             } => {
-                span.record("input.request_id", request_id);
-                span.record("input.command_id", cmd);
                 span.record("input.arg0", arg0);
                 span.record("input.arg1", arg1);
                 span.record("input.arg2", arg2);
             }
             AccountBase::DoCmdInt4 {
-                request_id,
-                cmd,
                 arg0,
                 arg1,
                 arg2,
                 arg3,
+                ..
             } => {
-                span.record("input.request_id", request_id);
-                span.record("input.command_id", cmd);
                 span.record("input.arg0", arg0);
                 span.record("input.arg1", arg1);
                 span.record("input.arg2", arg2);
                 span.record("input.arg3", arg3);
             }
-            AccountBase::DoCmdInt {
-                request_id,
-                cmd,
-                arg,
-            } => {
-                span.record("input.request_id", request_id);
-                span.record("input.command_id", cmd);
+            AccountBase::DoCmdInt2 { arg0, arg1, .. } => {
+                span.record("input.arg0", arg0);
+                span.record("input.arg1", arg1);
+            }
+            AccountBase::DoCmdStr { arg, .. } => {
+                span.record("input.string.bytes", arg.len());
+            }
+            AccountBase::DoCmdInt { arg, .. } => {
                 span.record("input.arg0", arg);
             }
-            AccountBase::DoCmdIntArr {
-                request_id,
-                cmd,
-                args,
-            } => {
-                span.record("input.request_id", request_id);
-                span.record("input.command_id", cmd);
+            AccountBase::DoCmdIntArr { args, .. } => {
                 span.record("input.args.count", args.len());
             }
-            AccountBase::DoCmdIntArrStrArr {
-                request_id,
-                cmd,
-                ints,
-                strings,
-            } => {
-                span.record("input.request_id", request_id);
-                span.record("input.command_id", cmd);
+            AccountBase::DoCmdIntArrStrArr { ints, strings, .. } => {
                 span.record("input.args.count", ints.len());
                 span.record("input.outfits.count", strings.len());
             }
@@ -125,21 +163,14 @@ impl Gateway {
                 arg0: revision,
                 ..
             } => {
-                let current = current_revision;
-                if revision == current {
-                    self.base.entity(entity)?.onCmdResponseExt(
-                        request_id,
-                        SUCCESS,
-                        String::new(),
-                        Pickle(crate::pickle!({"prevRev": current, "rev": current})),
-                    )?;
-                } else {
-                    let data = cache;
-                    self.stream(client, entity, request_id, &data)?;
-                }
-                if let Some(session) = self.sessions.get_mut(&client) {
-                    session.garage_synced = true;
-                }
+                self.sync_garage(
+                    client,
+                    entity,
+                    request_id,
+                    revision,
+                    current_revision,
+                    &cache,
+                )?;
             }
             AccountBase::DoCmdInt3 {
                 request_id,
@@ -147,50 +178,21 @@ impl Gateway {
                 arg1: len,
                 arg2: crc,
                 ..
-            } => {
-                let data = self.catalog.shop.clone();
-                if len == data.len() as i64 && crc == i64::from(crc32fast::hash(&data) as i32) {
-                    self.base
-                        .entity(entity)?
-                        .onCmdResponse(request_id, CACHE, String::new())?;
-                } else {
-                    self.stream(client, entity, request_id, &data)?;
-                }
-            }
+            } => self.sync_shop(entity, client, request_id, len, crc)?,
             AccountBase::DoCmdInt3 {
                 request_id,
                 cmd: SYNC_DOSSIERS,
                 ..
-            } => {
-                use std::io::Write;
-                let mut encoder =
-                    flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-                encoder.write_all(&pickle::to_bytes(&crate::pickle!((1, []))))?;
-                self.stream(client, entity, request_id, &encoder.finish()?)?;
-            }
+            } => self.sync_dossiers(client, entity, request_id)?,
             AccountBase::DoCmdInt3 {
-                cmd: SERVER_STATS, ..
-            } => {
-                let online = self.sessions.len() as u32;
-                self.base.entity(entity)?.receiveServerStats(ServerStats {
-                    clusterCCU: online,
-                    regionCCU: online,
-                })?;
-            }
+                request_id,
+                cmd: SERVER_STATS,
+                ..
+            } => self.server_stats(entity, request_id)?,
             AccountBase::RequestToken {
                 request_id,
                 token_type,
-            } => {
-                let data = if token_type == 1 {
-                    let token = self.xmpp.issue(account_id, client.addr().ip())?;
-                    Pickle(crate::pickle!({"databaseID": account_id, "token": (token.as_str())}))
-                } else {
-                    bootstrap::token_data(token_type, account_id)
-                };
-                self.base
-                    .entity(entity)?
-                    .onTokenReceived(request_id, token_type, data)?;
-            }
+            } => self.request_token(client, entity, account_id, request_id, token_type)?,
             AccountBase::DoCmdInt3 {
                 request_id,
                 cmd: progression::BUY_VEHICLE_SLOT,
@@ -366,57 +368,7 @@ impl Gateway {
                 cmd: ADD_SETTINGS,
                 args,
             } => {
-                let Some(session) = self.sessions.get_mut(&client) else {
-                    return Ok(());
-                };
-                if args.len() % 2 != 0 || session.saving {
-                    self.base.entity(entity)?.onCmdResponse(
-                        request_id,
-                        FAILURE,
-                        "Settings request invalid or busy".into(),
-                    )?;
-                    return Ok(());
-                }
-                session.saving = true;
-                let changes: BTreeMap<_, _> = args
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|pair| (pair[0], pair[1]))
-                    .collect();
-                let id = session.account.snapshot.id;
-                self.pending_writes.insert(id);
-                let accounts = self.accounts.clone();
-                let sender = self.sender.clone();
-                let catalog = self.catalog.clone();
-                self.runtime
-                    .spawn(tracing::Instrument::in_current_span(async move {
-                        let result = async {
-                            let snapshot = accounts.change_settings(id, changes.clone()).await?;
-                            tokio::task::spawn_blocking(
-                                crate::platform::observability::in_current_span(move || {
-                                    catalog.prepare(snapshot)
-                                }),
-                            )
-                            .await?
-                        }
-                        .await;
-                        tokio::task::spawn_blocking(
-                            crate::platform::observability::in_current_span(move || {
-                                let _ = sender.send(super::TracedCompletion::new(
-                                    Completion::Settings {
-                                        client,
-                                        account_id: id,
-                                        request_id,
-                                        changes,
-                                        result,
-                                    },
-                                ));
-                            }),
-                        )
-                        .await
-                        .ok();
-                    }));
+                self.change_settings(client, entity, request_id, &args)?;
             }
             AccountBase::DoCmdInt2 {
                 request_id,
@@ -428,6 +380,7 @@ impl Gateway {
                 cmd: RESET_SESSION_STATS,
                 ..
             } => {
+                span.record("output.outcome", "acknowledged_without_change");
                 self.base
                     .entity(entity)?
                     .onCmdResponse(request_id, SUCCESS, String::new())?;
@@ -441,14 +394,141 @@ impl Gateway {
             | AccountBase::DoCmdIntArrStrArr { request_id, .. }
                 if request_id != REQUEST_NO_RESPONSE =>
             {
+                span.record("output.outcome", "unimplemented");
                 self.base.entity(entity)?.onCmdResponse(
                     request_id,
                     FAILURE,
                     "Command not implemented in garage milestone".into(),
                 )?;
             }
-            _ => {}
+            _ => {
+                span.record("output.outcome", "ignored");
+            }
         }
         Ok(())
+    }
+
+    #[tracing::instrument(name = "player_sessions.sync_garage", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.revision = revision, output.revision = current, output.outcome = if revision == current { "up_to_date" } else { "stream" }), err)]
+    fn sync_garage(
+        &mut self,
+        client: ClientKey,
+        entity: EntityKey<Account>,
+        request_id: i16,
+        revision: i64,
+        current: i64,
+        cache: &[u8],
+    ) -> Result<()> {
+        if revision == current {
+            self.base.entity(entity)?.onCmdResponseExt(
+                request_id,
+                SUCCESS,
+                String::new(),
+                Pickle(crate::pickle!({"prevRev": current, "rev": current})),
+            )?;
+        } else {
+            self.stream(client, entity, request_id, cache)?;
+        }
+        if let Some(session) = self.sessions.get_mut(&client) {
+            session.garage_synced = true;
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "player_sessions.sync_shop", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.cache.bytes = len, input.cache.crc = crc, output.outcome = tracing::field::Empty), err)]
+    fn sync_shop(
+        &mut self,
+        entity: EntityKey<Account>,
+        client: ClientKey,
+        request_id: i16,
+        len: i64,
+        crc: i64,
+    ) -> Result<()> {
+        let data = self.catalog.shop.clone();
+        let cache_hit = len == data.len() as i64 && crc == i64::from(crc32fast::hash(&data) as i32);
+        tracing::Span::current().record(
+            "output.outcome",
+            if cache_hit { "cache_hit" } else { "stream" },
+        );
+        if cache_hit {
+            self.base
+                .entity(entity)?
+                .onCmdResponse(request_id, CACHE, String::new())?;
+        } else {
+            self.stream(client, entity, request_id, &data)?;
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "player_sessions.sync_dossiers", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id), err)]
+    fn sync_dossiers(
+        &mut self,
+        client: ClientKey,
+        entity: EntityKey<Account>,
+        request_id: i16,
+    ) -> Result<()> {
+        use std::io::Write;
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&pickle::to_bytes(&crate::pickle!((1, []))))?;
+        self.stream(client, entity, request_id, &encoder.finish()?)
+    }
+
+    #[tracing::instrument(name = "player_sessions.server_stats", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, output.players.online = tracing::field::Empty), err)]
+    fn server_stats(&mut self, entity: EntityKey<Account>, request_id: i16) -> Result<()> {
+        let online = self.sessions.len() as u32;
+        tracing::Span::current().record("output.players.online", online);
+        self.base.entity(entity)?.receiveServerStats(ServerStats {
+            clusterCCU: online,
+            regionCCU: online,
+        })?;
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "player_sessions.request_token", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account_id, input.request_id = request_id, input.token_type = token_type), err)]
+    fn request_token(
+        &mut self,
+        client: ClientKey,
+        entity: EntityKey<Account>,
+        account_id: i64,
+        request_id: u16,
+        token_type: u8,
+    ) -> Result<()> {
+        let data = if token_type == 1 {
+            let token = self.xmpp.issue(account_id, client.addr().ip())?;
+            Pickle(crate::pickle!({"databaseID": account_id, "token": (token.as_str())}))
+        } else {
+            bootstrap::token_data(token_type, account_id)
+        };
+        self.base
+            .entity(entity)?
+            .onTokenReceived(request_id, token_type, data)?;
+        Ok(())
+    }
+}
+
+fn command_ids(request: &AccountBase) -> Option<(i16, i16)> {
+    match *request {
+        AccountBase::DoCmdInt {
+            request_id, cmd, ..
+        }
+        | AccountBase::DoCmdInt2 {
+            request_id, cmd, ..
+        }
+        | AccountBase::DoCmdInt3 {
+            request_id, cmd, ..
+        }
+        | AccountBase::DoCmdInt4 {
+            request_id, cmd, ..
+        }
+        | AccountBase::DoCmdIntArr {
+            request_id, cmd, ..
+        }
+        | AccountBase::DoCmdIntArrStrArr {
+            request_id, cmd, ..
+        }
+        | AccountBase::DoCmdStr {
+            request_id, cmd, ..
+        } => Some((request_id, cmd)),
+        _ => None,
     }
 }

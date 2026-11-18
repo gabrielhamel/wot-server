@@ -38,7 +38,7 @@ enum Outcome {
 }
 
 impl Gateway {
-    #[tracing::instrument(name = "player_sessions.gateway.change_progression", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.has_command = command.is_some(), output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.gateway.change_progression", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.has_command = command.is_some(), input.shop_revision = shop_revision, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     pub(super) fn change_progression(
         &mut self,
         client: ClientKey,
@@ -99,6 +99,7 @@ impl Gateway {
                 .onCmdResponse(request_id, -5, "accountBusy".into())?;
             return Ok(());
         };
+        tracing::Span::current().record("output.outcome", "started");
         let previous = session.account.snapshot.clone();
         let account_id = previous.id;
         session.saving = true;
@@ -171,6 +172,10 @@ impl Gateway {
                 Err(_) => "error",
             },
         );
+        if let Err(error) = &result {
+            span.record("otel.status_code", "ERROR");
+            tracing::error!(%error, account_id, "Save garage progression failed");
+        }
         self.pending_writes.remove(&account_id);
         let Some(session) = self.sessions.get_mut(&client) else {
             span.record("output.delivery", "unavailable");
@@ -207,11 +212,7 @@ impl Gateway {
                 Ok(Outcome::Stale) => {
                     account.onCmdResponse(request_id, FAILURE, "accountChanged".into())
                 }
-                Err(error) => {
-                    span.record("otel.status_code", "ERROR");
-                    tracing::error!(%error,account_id,"Save garage progression failed");
-                    account.onCmdResponse(request_id, FAILURE, "databaseUnavailable".into())
-                }
+                Err(_) => account.onCmdResponse(request_id, FAILURE, "databaseUnavailable".into()),
             });
         match response {
             Ok(()) => {
@@ -229,17 +230,17 @@ impl Gateway {
             }
             session.crew_queue.pop_front()
         }) {
-            if let Err(error) = queued.parent.in_scope(|| {
-                self.change_progression(
+            queued.parent.in_scope(|| {
+                if let Err(error) = self.change_progression(
                     client,
                     entity,
                     queued.request_id,
                     Some(queued.command),
                     queued.shop_revision,
-                )
-            }) {
-                tracing::error!(%error, account_id, "Start queued crew command failed");
-            }
+                ) {
+                    tracing::error!(%error, account_id, "Start queued crew command failed");
+                }
+            });
         }
     }
 }

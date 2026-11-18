@@ -109,7 +109,7 @@ impl Gateway {
             })
     }
 
-    #[tracing::instrument(name = "player_sessions.social.social_command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client), err)]
+    #[tracing::instrument(name = "player_sessions.social.social_command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, input.request_id = tracing::field::Empty, input.action = tracing::field::Empty, input.channel = tracing::field::Empty, input.text.bytes = tracing::field::Empty, input.prefix.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
     pub(super) fn social_command(
         &mut self,
         client: ClientKey,
@@ -119,7 +119,9 @@ impl Gateway {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
         };
+        let span = tracing::Span::current();
         if !session.social_budget.admit(Instant::now()) {
+            span.record("output.outcome", "rate_limited");
             return Ok(());
         }
         match command {
@@ -128,7 +130,11 @@ impl Gateway {
                 request,
                 args,
             } => {
+                span.record("input.request_id", request);
+                span.record("input.action", command);
+                span.record("input.prefix.bytes", args.strArg1.0.len());
                 if command != 2 {
+                    span.record("output.outcome", "unsupported_action");
                     return self
                         .base
                         .entity(entity)?
@@ -143,6 +149,7 @@ impl Gateway {
                         .map_err(Into::into);
                 }
                 let Ok(prefix) = String::from_utf8(args.strArg1.0) else {
+                    span.record("output.outcome", "invalid_search_prefix");
                     return self.search_error(entity, request, 8);
                 };
                 self.social_job(
@@ -165,6 +172,10 @@ impl Gateway {
                 str_arg,
                 str_arg2,
             } => {
+                span.record("input.request_id", request_id);
+                span.record("input.action", command);
+                span.record("input.channel", channel.0);
+                span.record("input.text.bytes", str_arg.len());
                 let Some(session) = self.sessions.get(&client) else {
                     return Ok(());
                 };
@@ -313,7 +324,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "player_sessions.social.social_job", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client), err)]
+    #[tracing::instrument(name = "player_sessions.social.social_job", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.outcome = tracing::field::Empty), err)]
     fn social_job(
         &mut self,
         client: ClientKey,
@@ -325,6 +336,7 @@ impl Gateway {
         };
         let permit = self.workers.clone().try_acquire_owned();
         if session.social_pending || Instant::now() < session.social_next || permit.is_err() {
+            tracing::Span::current().record("output.outcome", "busy");
             return match request {
                 Request::Search { request, .. } => self.search_error(entity, request, 6),
                 Request::Roster { request } => self.social_error(entity, request, 13, 0, 26),
@@ -333,6 +345,7 @@ impl Gateway {
                 } => self.social_error(entity, request, action, 0, 26),
             };
         }
+        tracing::Span::current().record("output.outcome", "started");
         session.social_pending = true;
         session.social_next = Instant::now() + Duration::from_millis(100);
         let owner = session.account.snapshot.id;
@@ -362,12 +375,18 @@ impl Gateway {
                 })
                 .await
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("Social operation timed out")));
-                let _ = sender.try_send(super::TracedCompletion::new(Completion::Social {
-                    client,
-                    entity,
-                    request,
-                    result,
-                }));
+                if sender
+                    .try_send(super::TracedCompletion::new(Completion::Social {
+                        client,
+                        entity,
+                        request,
+                        result,
+                    }))
+                    .is_err()
+                {
+                    tracing::Span::current().record("output.outcome", "completion_unavailable");
+                    tracing::error!("Social completion queue unavailable");
+                }
             }));
         Ok(())
     }
@@ -380,6 +399,9 @@ impl Gateway {
         request: Request,
         result: Result<Reply>,
     ) -> Result<()> {
+        if let Err(error) = &result {
+            tracing::error!(%error, "Social operation failed");
+        }
         let Some(session) = self
             .sessions
             .get_mut(&client)
@@ -451,18 +473,13 @@ impl Gateway {
                 self.send_chat(entity, action(request, event, 0, data))?;
                 self.send_presence(client, entity, peer)?;
             }
-            (request, result) => {
-                if let Err(error) = result {
-                    tracing::error!(%error, "Social operation rejected");
-                }
-                match request {
-                    Request::Search { request, .. } => self.search_error(entity, request, 8)?,
-                    Request::Roster { request } => self.social_error(entity, request, 13, 0, 1)?,
-                    Request::Change {
-                        request, action, ..
-                    } => self.social_error(entity, request, action, 0, 9)?,
-                }
-            }
+            (request, _) => match request {
+                Request::Search { request, .. } => self.search_error(entity, request, 8)?,
+                Request::Roster { request } => self.social_error(entity, request, 13, 0, 1)?,
+                Request::Change {
+                    request, action, ..
+                } => self.social_error(entity, request, action, 0, 9)?,
+            },
         }
         Ok(())
     }

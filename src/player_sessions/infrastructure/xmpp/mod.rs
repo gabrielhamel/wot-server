@@ -143,19 +143,27 @@ impl Shared {
         self.enqueue(id, Outbound::Stanza(stanza)).await;
     }
 
-    #[tracing::instrument(name = "player_sessions.enqueue", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.id = id))]
+    #[tracing::instrument(name = "player_sessions.enqueue", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.id = id, output.delivery = tracing::field::Empty))]
     async fn enqueue(&self, id: i64, outbound: Outbound) {
         let mut online = self.online.lock().await;
-        if let Some(peer) = online.get(&id)
-            && peer
-                .sender
-                .try_send(TracedOutbound {
-                    parent: tracing::Span::current(),
-                    value: outbound,
-                })
-                .is_err()
+        let span = tracing::Span::current();
+        let Some(peer) = online.get(&id) else {
+            span.record("output.delivery", "offline");
+            return;
+        };
+        if peer
+            .sender
+            .try_send(TracedOutbound {
+                parent: span.clone(),
+                value: outbound,
+            })
+            .is_err()
         {
+            span.record("output.delivery", "enqueue_failed");
+            tracing::error!("XMPP recipient output queue unavailable");
             online.remove(&id);
+        } else {
+            span.record("output.delivery", "queued");
         }
     }
     #[tracing::instrument(name = "player_sessions.push_available", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.id = id, input.stanza.bytes = stanza.len()))]
@@ -251,7 +259,6 @@ async fn serve(
                             write_stanza(&mut write, &response).await?;
                         }
                         Frame::Stanza(stanza)=>{
-                            anyhow::ensure!(connection.budget.admit(Instant::now()),"XMPP request budget exceeded");
                             tracing::debug!(%address, account=?connection.identity.as_ref().map(|(id,_)|id),bytes=stanza.len(),"XMPP stanza received");
                             let span = tracing::info_span!(
                                 parent: None, "xmpp.request", "ddd.bounded_context.name" = "player_sessions",
@@ -261,8 +268,13 @@ async fn serve(
                                 "network.transport" = "tcp",
                                 "user.id" = connection.identity.as_ref().map(|(id, _)| id.to_string()),
                                 "output.stanza_count" = tracing::field::Empty,
+                                "output.outcome" = tracing::field::Empty,
                             );
                             tracing::Instrument::instrument(async {
+                                if !connection.budget.admit(Instant::now()) {
+                                    tracing::Span::current().record("output.outcome", "rate_limited");
+                                    return Err(anyhow::anyhow!("XMPP request budget exceeded"));
+                                }
                                 let result = async {
                                 let replies=tokio::time::timeout(Duration::from_secs(10),connection.handle(&stanza)).await??;
                                 tracing::Span::current().record("output.stanza_count", replies.len());
@@ -271,8 +283,12 @@ async fn serve(
                                 }
                                 Ok::<(), anyhow::Error>(())
                                 }.await;
+                                let span = tracing::Span::current();
                                 if let Err(error) = &result {
+                                    span.record("output.outcome", "failed");
                                     tracing::error!(%error, "XMPP request failed");
+                                } else {
+                                    span.record("output.outcome", "handled");
                                 }
                                 result
                             }, span).await?;

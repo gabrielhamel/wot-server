@@ -40,16 +40,66 @@ can contain several query and transaction spans.
           xmpp.response                       [player_sessions]
 
 The response may run on the recipient's connection task. It carries the
-originating request's parent through the bounded output queue. Offline
+originating request's parent through the bounded output queue. The enqueue span
+records whether the recipient is offline, the stanza was queued, or the queue
+was unavailable. Offline
 delivery is stored by the original request. A later history replay belongs
 to the recipient's history or presence request.
 
-A garage mutation traces game.command, decoding/dispatch, catalog planning,
-domain validation, application orchestration, repository queries, completion
-handling and response. Its parent is retained across blocking catalog work,
-Tokio workers and the completion queue. Queued crew commands retain their own
-request parent while waiting for earlier writes. Admin grants carry the HTTP
-request parent into the gateway's bounded queue.
+Mercury starts `game.command` before decoding a base method for the player's
+entity. The root records the method and request IDs available at each decoding
+stage. Use its dispatch outcome to identify unknown methods, invalid wire
+data or missing entities. The `player_sessions.commands.command` span records
+decoded scalar arguments and sizes. Its children show the operation that
+actually ran. For example, command 501 returns the current in-memory count.
+
+    game.command                                  [command 501]
+      player_sessions.commands.command
+        player_sessions.server_stats              [online count]
+          mercury.response                        [receiveServerStats, sent]
+
+A committed research command follows this path. Intermediate Accounts and
+Player Sessions spans retain their own bounded context.
+
+    game.command                                  [command 201]
+      player_sessions.commands.command
+        player_sessions.gateway.change_progression
+          accounts.progression.plan_progression   [research]
+            accounts.modules.research
+          accounts.progression.progression_diff
+          accounts.prepare
+            accounts.project_garage
+            accounts.encode_garage
+          player_sessions.commit_progression
+            accounts.save_progression
+              accounts.postgres.save_progression
+                postgresql.query                  [BEGIN / UPDATE / COMMIT]
+          player_sessions.gateway.progression_response
+            mercury.response                      [update, sent]
+            mercury.response                      [onCmdResponseExt, code 0, sent]
+
+Settings and ammunition use the same trace across their workers and
+completions. Invalid, stale-shop, busy and unchanged requests can return
+before any SQL runs. Queued crew commands retain their request parent while
+waiting for earlier writes.
+
+Each Mercury client method response in a traced operation retains its span in
+the outbox until the bundle is sent, fails to send, or is discarded. A bundle
+can contain replies from independent requests. Each reply keeps its own trace
+and receives the bundle's send outcome. `sent` means the local UDP write
+succeeded. Reliable ACKs and retransmissions run independently. Resource
+streams write their fragments inside `mercury.response.resource`.
+
+Login admission carries the authentication trace through SQL, garage cache
+preparation and the login response queue. The `mercury.login.response` span
+records the LoginApp protocol code and the UDP send outcome. The later BaseApp
+handshake uses a separate protocol exchange.
+
+Admin grants carry the HTTP request parent into the gateway's bounded
+queue. The admin token check and handler are siblings under the HTTP root, so
+SQL and grant processing time are visible in the handler and request durations.
+A connected player's garage update has a Mercury response span under the grant
+completion.
 
 Exterior traces record the shop revision, target inventory ID, outfit
 count and encoded byte length. The Accounts decision records the action and
@@ -142,7 +192,9 @@ not accumulate independent requests into a single trace.
 The telemetry capture helper under tests/support inspects exported spans
 from normal garage and XMPP flows. Regression coverage verifies same-trace
 ancestry through application, domain and repository work, complete SQL text,
-queued responses and database failure status. The server telemetry test
+UDP socket sends, XMPP delivery and database failure status. It checks that
+the server stats trace contains its memory read and UDP send, and that invalid
+or unchanged ammunition layouts perform no SQL. The server telemetry test
 checks OTLP resource export through the server executable.
 
 Contributions must extend these checks for changed workflows. The PR must

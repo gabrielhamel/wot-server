@@ -77,6 +77,7 @@ enum Outcome {
 }
 
 impl Gateway {
+    #[tracing::instrument(name = "player_sessions.gateway.change_ammunition", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.args.count = args.len(), input.inventory_id = tracing::field::Empty, input.shop_revision = tracing::field::Empty, input.requested.count = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
     pub(super) fn change_ammunition(
         &mut self,
         client: ClientKey,
@@ -87,7 +88,9 @@ impl Gateway {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
         };
+        let span = tracing::Span::current();
         let Some(request) = Request::decode(args) else {
+            span.record("output.outcome", "invalid_request");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,
                 WRONG_ARGS,
@@ -95,8 +98,12 @@ impl Gateway {
             )?;
             return Ok(());
         };
+        span.record("input.inventory_id", request.inventory_id);
+        span.record("input.shop_revision", request.shop_revision);
+        span.record("input.requested.count", request.shells.len());
         let shop_revision = self.catalog.shop_revision();
         if request.shop_revision != shop_revision {
+            span.record("output.outcome", "stale_shop");
             self.base.entity(entity)?.onCmdResponseExt(
                 request_id,
                 SHOP_DESYNC,
@@ -109,6 +116,7 @@ impl Gateway {
             .then(|| self.workers.clone().try_acquire_owned().ok())
             .flatten();
         let Some(permit) = permit else {
+            span.record("output.outcome", "busy");
             self.base
                 .entity(entity)?
                 .onCmdResponse(request_id, BUSY, "accountBusy".into())?;
@@ -116,6 +124,7 @@ impl Gateway {
         };
         let previous = session.account.snapshot.clone();
         let account_id = previous.id;
+        span.record("output.outcome", "queued");
         session.saving = true;
         self.pending_writes.insert(account_id);
         let catalog = self.catalog.clone();
@@ -179,7 +188,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "player_sessions.gateway.ammunition_response", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty))]
+    #[tracing::instrument(name = "player_sessions.gateway.ammunition_response", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = completion.account_id, input.request_id = completion.request_id, output.outcome = tracing::field::Empty, output.delivery = tracing::field::Empty))]
     pub(super) fn complete_ammunition(&mut self, completion: Completion) {
         let Completion {
             client,
@@ -187,7 +196,8 @@ impl Gateway {
             request_id,
             result,
         } = completion;
-        tracing::Span::current().record(
+        let span = tracing::Span::current();
+        span.record(
             "output.outcome",
             match &result {
                 Ok(Outcome::Committed { .. }) => "committed",
@@ -197,12 +207,17 @@ impl Gateway {
                 Err(_) => "error",
             },
         );
+        if let Err(error) = &result {
+            tracing::error!(%error, account_id, "Apply ammunition layout failed");
+        }
         self.pending_writes.remove(&account_id);
         let Some(session) = self.sessions.get_mut(&client) else {
+            span.record("output.delivery", "unavailable");
             return;
         };
         session.saving = false;
         let Some(entity) = session.entity else {
+            span.record("output.delivery", "unavailable");
             return;
         };
         let response = self
@@ -230,13 +245,16 @@ impl Gateway {
                 Ok(Outcome::StaleAccount) => {
                     account.onCmdResponse(request_id, FAILURE, "accountChanged".into())
                 }
-                Err(error) => {
-                    tracing::error!(%error, account_id, "Apply ammunition layout failed");
-                    account.onCmdResponse(request_id, FAILURE, "databaseUnavailable".into())
-                }
+                Err(_) => account.onCmdResponse(request_id, FAILURE, "databaseUnavailable".into()),
             });
-        if let Err(error) = response {
-            tracing::error!(%error, account_id, "Send ammunition response failed");
+        match response {
+            Ok(()) => {
+                span.record("output.delivery", "queued");
+            }
+            Err(error) => {
+                span.record("output.delivery", "failed");
+                tracing::error!(%error, account_id, "Send ammunition response failed");
+            }
         }
     }
 }

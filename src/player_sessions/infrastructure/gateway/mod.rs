@@ -19,6 +19,7 @@ mod crew;
 mod expendables;
 mod grants;
 mod progression;
+mod settings;
 mod social;
 use crate::social::{Contact, Conversations, Player, PostgresSocial, Social};
 
@@ -253,41 +254,7 @@ impl Gateway {
                         error!(%error, "Garage bootstrap failed");
                     }
                 }
-                base::Event::BaseMethod(event) => {
-                    let command_span = if let MethodCall::Known { name, .. } = &event.call {
-                        self.sessions.get(&event.client).map(|session| {
-                            tracing::info_span!(
-                                parent: None, "game.command",
-                                "ddd.bounded_context.name" = "player_sessions",
-                                "user.id" = %session.account.snapshot.id,
-                                "rpc.method" = %name,
-                                "client.address" = %event.client.addr().ip(),
-                                "client.port" = event.client.addr().port(),
-                                "network.peer.address" = %event.client.addr().ip(),
-                                "network.peer.port" = event.client.addr().port(),
-                                "network.transport" = "udp",
-                                "network.protocol.name" = "mercury",
-                            )
-                        })
-                    } else {
-                        None
-                    };
-                    let _command = command_span.as_ref().map(tracing::Span::enter);
-                    if let MethodCall::Known { name, .. } = &event.call {
-                        tracing::debug!(client = %event.client, method = %name, "Received base method");
-                    }
-
-                    if let Some((entity, request)) =
-                        self.base.decode::<AccountBase>(event.entity, &event.call)
-                        && self
-                            .sessions
-                            .get(&event.client)
-                            .is_some_and(|session| session.entity == Some(entity))
-                        && let Err(error) = self.command(event.client, entity, request)
-                    {
-                        error!(%error, "Account command failed");
-                    }
-                }
+                base::Event::BaseMethod(event) => self.handle_base_method(event),
                 base::Event::IoError(error) => error!(error = %error.error, "Base packet failed"),
                 _ => {}
             }
@@ -309,30 +276,6 @@ impl Gateway {
 
     fn authenticate(&mut self, event: login::LoginEvent) {
         let addr = event.addr;
-        let username = match super::credentials::account_username(&event.request.username) {
-            Ok(username) => username,
-            Err(error) => {
-                self.login.answer_login_error(addr, error, String::new());
-                return;
-            }
-        };
-        let Ok(blowfish) = Blowfish::new_from_slice(&event.request.blowfish_key) else {
-            self.login
-                .answer_login_error(addr, LoginError::MalformedRequest, String::new());
-            return;
-        };
-        let Ok(permit) = self.workers.clone().try_acquire_owned() else {
-            self.login
-                .answer_login_error(addr, LoginError::RateLimited, String::new());
-            return;
-        };
-        let Some(generation) = self.admissions.begin(addr, Instant::now()) else {
-            return;
-        };
-        let accounts = self.accounts.clone();
-        let catalog = self.catalog.clone();
-        let sender = self.sender.clone();
-        let grant_epoch = self.grant_epoch;
         let language = serde_json::from_str::<serde_json::Value>(&event.request.context)
             .ok()
             .and_then(|value| {
@@ -365,6 +308,40 @@ impl Gateway {
             "network.peer.port" = addr.port(),
             "network.transport" = "udp",
         );
+        span.in_scope(|| self.start_authentication(event));
+    }
+
+    fn start_authentication(&mut self, event: login::LoginEvent) {
+        let addr = event.addr;
+        let span = tracing::Span::current();
+        let username = match super::credentials::account_username(&event.request.username) {
+            Ok(username) => username,
+            Err(error) => {
+                span.record("outcome", "invalid_username");
+                self.login.answer_login_error(addr, error, String::new());
+                return;
+            }
+        };
+        let Ok(blowfish) = Blowfish::new_from_slice(&event.request.blowfish_key) else {
+            span.record("outcome", "malformed_request");
+            self.login
+                .answer_login_error(addr, LoginError::MalformedRequest, String::new());
+            return;
+        };
+        let Ok(permit) = self.workers.clone().try_acquire_owned() else {
+            span.record("outcome", "rate_limited");
+            self.login
+                .answer_login_error(addr, LoginError::RateLimited, String::new());
+            return;
+        };
+        let Some(generation) = self.admissions.begin(addr, Instant::now()) else {
+            span.record("outcome", "admission_unavailable");
+            return;
+        };
+        let accounts = self.accounts.clone();
+        let catalog = self.catalog.clone();
+        let sender = self.sender.clone();
+        let grant_epoch = self.grant_epoch;
         self.runtime.spawn(
             async move {
                 let result = async {
@@ -401,13 +378,19 @@ impl Gateway {
                         Err(_) => "error",
                     },
                 );
-                let _ = sender.try_send(TracedCompletion::new(Completion::Login {
-                    addr,
-                    generation,
-                    grant_epoch,
-                    blowfish: Arc::new(blowfish),
-                    result,
-                }));
+                if sender
+                    .try_send(TracedCompletion::new(Completion::Login {
+                        addr,
+                        generation,
+                        grant_epoch,
+                        blowfish: Arc::new(blowfish),
+                        result,
+                    }))
+                    .is_err()
+                {
+                    tracing::Span::current().record("outcome", "completion_unavailable");
+                    error!("Login completion queue unavailable");
+                }
                 drop(permit);
             }
             .instrument(span),
@@ -444,6 +427,7 @@ impl Gateway {
                     result => result,
                 };
                 if !self.admissions.complete(addr, generation, Instant::now()) {
+                    tracing::Span::current().record("outcome", "admission_expired");
                     return;
                 }
                 let account = match result {
@@ -527,39 +511,7 @@ impl Gateway {
                 changes,
                 result,
             } => {
-                self.pending_writes.remove(&account_id);
-                let Some(session) = self.sessions.get_mut(&client) else {
-                    return;
-                };
-                session.saving = false;
-                let Some(entity) = session.entity else {
-                    return;
-                };
-                match result {
-                    Ok(prepared) => {
-                        let revision = prepared.snapshot.revision;
-                        let previous = session.account.snapshot.revision;
-                        session.account = prepared;
-                        let diff = crate::pickle!({"prevRev": previous, "rev": revision, "intUserSettings": (Value::Dict(changes.into_iter().map(|(k,v)| (Value::from(k),Value::from(v))).collect()))});
-                        let result = self.base.entity(entity).and_then(|mut account| {
-                            account.update(Pickle(diff))?;
-                            account.onCmdResponse(request_id, SUCCESS, String::new())
-                        });
-                        if let Err(error) = result {
-                            error!(%error, "Send settings result failed");
-                        }
-                    }
-                    Err(error) => {
-                        error!(%error, "Persist settings failed");
-                        let _ = self.base.entity(entity).and_then(|mut account| {
-                            account.onCmdResponse(
-                                request_id,
-                                FAILURE,
-                                "Database unavailable".into(),
-                            )
-                        });
-                    }
-                }
+                self.complete_settings(client, account_id, request_id, changes, result);
             }
         }
     }

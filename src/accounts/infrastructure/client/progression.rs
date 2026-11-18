@@ -47,7 +47,7 @@ impl GarageCatalog {
         Ok(unlocks)
     }
 
-    #[tracing::instrument(name = "accounts.progression.plan_progression", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
+    #[tracing::instrument(name = "accounts.progression.plan_progression", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, input.operation = command.operation()), err)]
     pub fn plan_progression(
         &self,
         mut snapshot: AccountSnapshot,
