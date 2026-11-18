@@ -22,7 +22,8 @@ const demoOffers: (Omit<StoreOffer, "availability" | "in_depot"> & { locked?: bo
   { item: 123, name: "Turbocharger Class 1", category: "equipment", price: { currency: "credits", amount: 600_000 } },
   { item: 124, name: "Small Repair Kit", category: "consumables", price: { currency: "credits", amount: 3000 } },
   { item: 125, name: "Steady Hand", category: "crew_directives", price: { currency: "credits", amount: 10_000 } },
-  { item: 126, name: "SU-130PM", category: "bond_vehicles", nation: "ussr", tier: 8, price: { currency: "bonds", amount: 10_000 } },
+  { item: 126, name: "SU-100Y", category: "bond_vehicles", nation: "ussr", tier: 6, price: { currency: "bonds", amount: 5000 } },
+  { item: 126, name: "SU-100Y", category: "premium_vehicles", nation: "ussr", tier: 6, price: { currency: "gold", amount: 2900 } },
   { item: 127, name: "Venting System", category: "improved_equipment", price: { currency: "bonds", amount: 5000 } },
   { item: 128, name: "Optical Calibration", category: "equipment_directives", price: { currency: "bonds", amount: 8 } },
 ];
@@ -57,15 +58,16 @@ export function storeHandlers() {
     http.get("/api/shop/catalog", () => HttpResponse.json(catalog())),
     http.post("/api/shop/orders", async ({ request }) => {
       const order = (await request.json()) as StoreOrder;
-      const offer = catalog().offers.find(({ item }) => item === order.item);
-      if (!offer) return HttpResponse.text("This offer is unavailable.", { status: 404 });
-      const { currency, amount } = offer.price;
-      if (order.revision !== String(revision) || order.price?.currency !== currency || order.price.amount !== amount) {
+      const offers = catalog().offers.filter(({ item }) => item === order.item);
+      if (offers.length === 0) return HttpResponse.text("This offer is unavailable.", { status: 404 });
+      const offer = offers.find(({ price }) => price.currency === order.price?.currency);
+      if (!offer || order.revision !== String(revision) || order.price.amount !== offer.price.amount) {
         return HttpResponse.text("The offer or account changed. Review the current price and try again.", { status: 409 });
       }
       if (offer.availability !== "available") {
         return HttpResponse.text("This offer could not be purchased.", { status: 422 });
       }
+      const { currency, amount } = offer.price;
       balances[currency] -= amount;
       if (offer.category === "premium_account") {
         premiumExpiry = Math.max(premiumExpiry, Math.floor(Date.now() / 1000)) - offer.item * 86_400;

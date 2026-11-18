@@ -48,6 +48,10 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             .await
             .unwrap();
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &starter).unwrap());
+    let lowe_id = catalog
+        .vehicle_catalog_entry("germany:G51_Lowe")
+        .unwrap()
+        .id;
     let equipment = catalog
         .store_offers()
         .iter()
@@ -55,7 +59,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .unwrap();
     let item = i64::from(equipment.item);
     let credits = equipment.price.amount();
-    sqlx::query("UPDATE accounts SET credits = $2, gold = 500, bonds = 4450 WHERE id = $1")
+    sqlx::query("UPDATE accounts SET credits = $2, gold = 3400, bonds = 4450 WHERE id = $1")
         .bind(account_id)
         .bind(credits)
         .execute(&repository.connection_pool())
@@ -190,7 +194,6 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         );
         for (category, count) in [
             ("premium_account", 8),
-            ("premium_vehicles", 45),
             ("collectors_vehicles", 92),
             ("crew_skins", 25),
             ("equipment", 42),
@@ -206,9 +209,16 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
                 "{category} offer count",
             );
         }
-        let offer_ids: std::collections::BTreeSet<_> =
-            offers.iter().map(|offer| offer["item"].as_i64().unwrap()).collect();
-        assert_eq!(offer_ids.len(), offers.len(), "Store offer identifiers are unique");
+        let offer_ids: std::collections::BTreeSet<_> = offers.iter().map(|offer| {
+            (offer["item"].as_i64().unwrap(), offer["price"]["currency"].as_str().unwrap())
+        }).collect();
+        assert_eq!(offer_ids.len(), offers.len(), "Store offers are unique per item and currency");
+        let lowe = offers.iter().find(|offer| offer["category"] == "premium_vehicles" && offer["item"] == lowe_id).unwrap();
+        assert_eq!(lowe["price"], json!({"currency": "gold", "amount": 9500}));
+        let tog_offer = offers.iter().find(|offer| offer["category"] == "bond_vehicles" && offer["name"] == "TOG II*").unwrap();
+        assert!(!offers.iter().any(|offer| {
+            offer["item"] == tog_offer["item"] && offer["category"] == "premium_vehicles"
+        }), "TOG II* has an extracted gold price but is flagged notInShop");
 
         let premium_offer = find_offer(&committed.1, -1);
         assert_eq!(premium_offer["price"], json!({"currency": "gold", "amount": 250}));
@@ -221,7 +231,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         assert!(expiry <= std::time::UNIX_EPOCH.elapsed().unwrap().as_secs() + 86_400);
         let premium_diff = next_update(&mut peer, &dispatch, revision + 2);
         assert_eq!(dict(&dict(&premium_diff, "premium"), "premMask"), Pickle::I64(2));
-        assert_eq!(dict(&dict(&premium_diff, "stats"), "gold"), Pickle::I64(250));
+        assert_eq!(dict(&dict(&premium_diff, "stats"), "gold"), Pickle::I64(3150));
         assert_eq!(request(Some(&token), Some(&premium_order)).0, StatusCode::CONFLICT);
         premium_order["revision"] = activated["revision"].clone();
         let (status, extended) = request(Some(&token), Some(&premium_order));
@@ -230,9 +240,6 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         let premium_diff = next_update(&mut peer, &dispatch, revision + 3);
         let Pickle::Dict(premium) = dict(&premium_diff, "premium") else { panic!("Expected premium diff"); };
         assert_eq!(premium[&Pickle::I64(2)], Pickle::I64((expiry + 86_400) as i64));
-        premium_order["revision"] = extended["revision"].clone();
-        assert_eq!(request(Some(&token), Some(&premium_order)).0, StatusCode::UNPROCESSABLE_ENTITY);
-
         let bond_item = extended["offers"].as_array().unwrap().iter()
             .find(|offer| offer["category"] == "bond_vehicles" && offer["name"] == "TOG II*").unwrap();
         let bond_order = json!({"item": bond_item["item"], "price": bond_item["price"], "revision": extended["revision"]});
@@ -258,7 +265,32 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         let style_outfit = [4, 16, 163, 2];
         camouflage_flow::send_outfits(&mut peer, &dispatch, 811, persisted.vehicles[0].inventory_id, &[(15, &style_outfit)], -1);
         camouflage_flow::send_outfits(&mut peer, &dispatch, 812, tog.inventory_id, &[(15, &style_outfit)], 0);
-        assert_eq!(find_offer(&request(Some(&token), None).1, style_item)["in_depot"], 0);
+        let (_, fitted) = request(Some(&token), None);
+        assert_eq!(find_offer(&fitted, style_item)["in_depot"], 0);
+
+        let su_gold = fitted["offers"].as_array().unwrap().iter()
+            .find(|offer| offer["category"] == "premium_vehicles" && offer["name"] == "SU-100Y").unwrap();
+        assert_eq!(su_gold["price"], json!({"currency": "gold", "amount": 2900}));
+        let su_offers = |listing: &Value| {
+            listing["offers"].as_array().unwrap().iter()
+                .filter(|offer| offer["item"] == su_gold["item"]).cloned().collect::<Vec<_>>()
+        };
+        let offers = su_offers(&fitted);
+        assert_eq!(offers.len(), 2);
+        assert!(offers.iter().any(|offer| offer["price"] == json!({"currency": "bonds", "amount": 5000})));
+        let buy_su = json!({"item": su_gold["item"], "price": su_gold["price"], "revision": fitted["revision"]});
+        let mut wrong_currency = buy_su.clone();
+        wrong_currency["price"]["currency"] = json!("bonds");
+        assert_eq!(request(Some(&token), Some(&wrong_currency)).0, StatusCode::CONFLICT);
+        let (status, purchased_su) = request(Some(&token), Some(&buy_su));
+        assert_eq!(status, StatusCode::OK);
+        assert!(su_offers(&purchased_su).iter().all(|offer| offer["availability"] == "in_garage"));
+        let su_revision = purchased_su["revision"].as_str().unwrap().parse::<i64>().unwrap();
+        let diff = next_update(&mut peer, &dispatch, su_revision);
+        assert_eq!(dict(&dict(&diff, "stats"), "gold"), Pickle::I64(0));
+        assert_eq!(dict(&dict(&diff, "stats"), "crystal"), Pickle::I64(0));
+        premium_order["revision"] = purchased_su["revision"].clone();
+        assert_eq!(request(Some(&token), Some(&premium_order)).0, StatusCode::UNPROCESSABLE_ENTITY);
 
         peer.disconnect();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -322,6 +354,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         expiring.disconnect();
         assert_store_traces(account_id, item, "credits", cost);
         assert_store_traces(account_id, -1, "gold", 250);
+        assert_store_traces(account_id, su_gold["item"].as_i64().unwrap(), "gold", 2900);
     })
     .await;
     stop.store(true, Ordering::Relaxed);
@@ -450,7 +483,7 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
     let plan = child(purchase, "accounts.store.plan_purchase");
     assert!(has(plan, "input.price.currency", currency));
     assert!(has(plan, "input.price.amount", &amount.to_string()));
-    if currency == "gold" {
+    if item == -1 {
         let progression = child(plan, "accounts.progression.plan_progression");
         let premium = child(progression, "accounts.premium.extend");
         assert!(has(premium, "input.duration.days", "1"));

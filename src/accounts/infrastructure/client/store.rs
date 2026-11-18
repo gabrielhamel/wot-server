@@ -195,8 +195,20 @@ impl GarageCatalog {
         let offer = self
             .store_offers
             .iter()
-            .find(|offer| offer.item == order.item)
-            .ok_or(StoreOrderError::Unavailable)?;
+            .find(|offer| {
+                offer.item == order.item && offer.price.currency() == order.price.currency()
+            })
+            .ok_or_else(|| {
+                if self
+                    .store_offers
+                    .iter()
+                    .any(|offer| offer.item == order.item)
+                {
+                    StoreOrderError::Stale
+                } else {
+                    StoreOrderError::Unavailable
+                }
+            })?;
         if order.revision != account.revision || offer.price != order.price {
             return Err(StoreOrderError::Stale);
         }

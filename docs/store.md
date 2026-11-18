@@ -1,7 +1,7 @@
 # In-game Store
 
-The garage’s Store tab opens the embedded page. The catalog follows the
-regular offers in the [EU Store catalog](store-eu-catalog.md).
+The garage’s Store tab opens the embedded page. The Store combines client prices with selected offers from the
+[EU Store catalog](store-eu-catalog.md).
 The garage HUD displays the account balances. The Store displays each offer’s
 price, stock, and purchase eligibility.
 
@@ -24,17 +24,20 @@ current implementation.
 The resource bundle contains each nation’s `list.xml`, the Tech Tree nodes,
 and regular service definitions. The Store selects Collectors’ vehicles by
 the `collectorVehicle` tag, the resource credit price, and garage eligibility.
-The observed fixture supplies 92 Collectors’ vehicles. The complete catalog
-built from that fixture contains 355 offers, including 45 gold vehicles and
-54 bond vehicles. The highest researched
+The observed fixture supplies 92 Collectors’ vehicles. The highest researched
 Tech Tree tier in each nation gates that nation’s Collectors’ offers. The
 server projects the same maximum into the native garage cache. Buying or
 receiving a premium, reward or Collectors’ vehicle does not advance that maximum.
 
-Gold and bond vehicle sale lists come from the live mapping. The server
-resolves their entries to the installed resource definitions by catalog key.
-Client gold base prices alone do not confirm sale eligibility. The server uses
-client prices for standard and improved equipment, consumables and directives.
+The Premium vehicles tab uses positive gold prices from the client’s vehicle
+definitions. It excludes vehicles flagged `notInShop` and vehicles ineligible
+for the garage. Bond vehicle offers come from the live mapping and resolve
+to client definitions by catalog key. A vehicle may have a gold offer and a
+bond offer. Checkout identifies the offer by item and currency, and buying
+either offer updates both cards to show that the vehicle is in the garage.
+
+The server also uses client prices for standard and improved equipment,
+consumables and directives.
 It uses the mapped web Store prices for crew skins and the mapped Bond Shop
 prices for styles. The extractor brings over `artefacts.mo`,
 `crew_skins.mo` and the British `gb_vehicles.mo` for localized display names.

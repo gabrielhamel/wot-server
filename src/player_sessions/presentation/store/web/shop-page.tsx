@@ -90,7 +90,7 @@ function PremiumStatus({ expiresAt }: { expiresAt: number | null }) {
 }
 
 function Store({ token }: { token?: string }) {
-  const { catalog, loading, buyingItem, error, reload, buy } = useStoreCatalog(token);
+  const { catalog, loading, buyingOffer, error, reload, buy } = useStoreCatalog(token);
   const [section, setSection] = useState(sections[0]);
   const [category, setCategory] = useState(sections[0].categories[0]);
   const [nation, setNation] = useState("all");
@@ -219,10 +219,10 @@ function Store({ token }: { token?: string }) {
                   <Box sx={catalogGrid}>
                     {visible.map((offer) => (
                       <OfferCard
-                        key={offer.item}
+                        key={`${offer.item}:${offer.price.currency}`}
                         offer={offer}
-                        buying={buyingItem === offer.item}
-                        disabled={buyingItem !== null || error !== null}
+                        buying={buyingOffer === offer}
+                        disabled={buyingOffer !== null || error !== null}
                         onBuy={buy}
                       />
                     ))}

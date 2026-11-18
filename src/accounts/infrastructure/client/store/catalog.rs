@@ -132,43 +132,46 @@ pub(in crate::accounts::infrastructure::client) fn load(
 fn vehicle_listings(
     vehicles: &BTreeMap<i32, VehicleOffer>,
 ) -> impl Iterator<Item = StoreOffer> + '_ {
-    let gold: BTreeMap<_, _> = vehicle_offers::GOLD
-        .iter()
-        .map(|&(key, name, price)| (key, (name, StorePrice::Gold(price))))
-        .collect();
     let bonds: BTreeMap<_, _> = vehicle_offers::BONDS
         .iter()
         .map(|&(key, name, price)| (key, (name, StorePrice::Bonds(price))))
         .collect();
-    vehicles.iter().filter_map(move |(&item, vehicle)| {
-        if !vehicle.grantable() {
-            return None;
-        }
-        let (category, name, price) = if vehicle.tags.contains("collectorVehicle") {
-            let VehicleCost { credits, gold: 0 } = vehicle.price? else {
-                return None;
+    vehicles
+        .iter()
+        .filter(|(_, vehicle)| vehicle.grantable())
+        .flat_map(move |(&item, vehicle)| {
+            let nation = NATIONS
+                .get(usize::from(
+                    IntCompactDescr::from_int(i64::from(item)).nation,
+                ))
+                .copied();
+            let listing = |category, name: &str, price| StoreOffer {
+                nation,
+                tier: vehicle.level,
+                ..listing(item, name.to_owned(), category, price)
             };
-            (
-                Category::CollectorsVehicles,
-                vehicle.name.as_str(),
-                StorePrice::Credits(credits),
-            )
-        } else if let Some(&(name, price)) = gold.get(vehicle.key.as_str()) {
-            (Category::PremiumVehicles, name, price)
-        } else if let Some(&(name, price)) = bonds.get(vehicle.key.as_str()) {
-            (Category::BondVehicles, name, price)
-        } else {
-            return None;
-        };
-        let mut offer = listing(item, name.to_owned(), category, price);
-        offer.nation = NATIONS
-            .get(usize::from(
-                IntCompactDescr::from_int(i64::from(item)).nation,
-            ))
-            .copied();
-        offer.tier = vehicle.level;
-        Some(offer)
-    })
+            let priced = match vehicle.price {
+                Some(VehicleCost { credits, gold: 0 })
+                    if vehicle.tags.contains("collectorVehicle") =>
+                {
+                    Some(listing(
+                        Category::CollectorsVehicles,
+                        &vehicle.name,
+                        StorePrice::Credits(credits),
+                    ))
+                }
+                Some(VehicleCost { credits: 0, gold }) if gold > 0 => Some(listing(
+                    Category::PremiumVehicles,
+                    &vehicle.name,
+                    StorePrice::Gold(gold),
+                )),
+                _ => None,
+            };
+            let bond = bonds
+                .get(vehicle.key.as_str())
+                .map(|&(name, price)| listing(Category::BondVehicles, name, price));
+            priced.into_iter().chain(bond)
+        })
 }
 
 pub(in crate::accounts::infrastructure::client) fn listing(

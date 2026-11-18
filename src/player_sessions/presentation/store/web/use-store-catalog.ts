@@ -7,7 +7,7 @@ export function useStoreCatalog(token?: string) {
   const inFlight = useRef(false);
   const [catalog, setCatalog] = useState<StoreCatalog | null>(null);
   const [loading, setLoading] = useState(Boolean(token));
-  const [buyingItem, setBuyingItem] = useState<number | null>(null);
+  const [buyingOffer, setBuyingOffer] = useState<StoreOffer | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
@@ -45,7 +45,7 @@ export function useStoreCatalog(token?: string) {
   async function buy(offer: StoreOffer) {
     if (!catalog || !token || inFlight.current) return;
     inFlight.current = true;
-    setBuyingItem(offer.item);
+    setBuyingOffer(offer);
     setError(null);
     try {
       setCatalog(await placeOrder(token, offer, catalog.revision));
@@ -53,9 +53,9 @@ export function useStoreCatalog(token?: string) {
       setError(errorMessage(error));
     } finally {
       inFlight.current = false;
-      setBuyingItem(null);
+      setBuyingOffer(null);
     }
   }
 
-  return { catalog, loading, buyingItem, error, reload, buy };
+  return { catalog, loading, buyingOffer, error, reload, buy };
 }
