@@ -28,7 +28,7 @@ context is a possible future boundary, not an implemented one.
 | Catalog key | A resource identifier such as `usa:A01_T1_Cunningham`. |
 | Snapshot | A coherent read of an account and its vehicle ownership. |
 | Revision | Monotonically increasing version changed with persisted preferences, research or inventory. |
-| Cosmetic ownership | Total copies of an exterior item, including applied copies. |
+| Cosmetic ownership | Total copies of an exterior item, including applied copies. Stat trackers are bound to a vehicle type. |
 | Outfit | Vehicle appearance for a season, including camouflage, projected decals, inscriptions and an effect. |
 | Shell layout | Ordered compatible shell/count pairs loaded on one vehicle. |
 | Depot stock | Shared unmounted shells, modules, equipment, directives and consumables. Sales debit these counts and credit the account in the same revision. |
@@ -37,7 +37,7 @@ context is a possible future boundary, not an implemented one.
 | Garage projection | Compressed Python cache derived from a snapshot and client definitions. |
 | Research | An account-wide tank or module unlock bought with vehicle XP and free XP. |
 | Vehicle purchase | An atomic debit and permanent ownership grant, with optional crew, ammunition and consumables. |
-| Player grant | An operator-authorized addition of currency, attachment copies, or a permanent tank with stock modules, ammunition and basic crew, committed as an account revision. |
+| Player grant | An operator-authorized addition of currency, cosmetic copies, or a permanent tank with stock modules, ammunition and basic crew, committed as an account revision. |
 | Garage slot | One unit of total vehicle capacity. A slot purchase adds one unit and charges the shop price in the same revision. |
 | Vehicle sale | An atomic ownership removal that settles the vehicle and fitting value, returns retained fittings to the Depot, and transfers or dismisses its crew. |
 | Module loadout | The six module descriptors installed on an owned tank. |

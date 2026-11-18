@@ -17,6 +17,8 @@ use anyhow::{Context, Result, bail, ensure};
 use std::collections::{BTreeMap, BTreeSet};
 use wot_resources::ResourceBundle;
 
+const STAT_TRACKERS: &str = "scripts/item_defs/customization/stat_trackers/list.xml";
+const STAT_TRACKER_TYPE: u8 = 13;
 const ATTACHMENTS: &str = "scripts/item_defs/customization/attachments/list.xml";
 const ATTACHMENT_TYPE: u8 = 12;
 const PAINTS: &str = "scripts/item_defs/customization/paints/list.xml";
@@ -38,7 +40,7 @@ pub(super) const CAMOUFLAGE_TYPE: u8 = 2;
 pub(super) struct CosmeticCatalog {
     definitions: BTreeMap<CosmeticItem, CosmeticDefinition>,
     prohibited_numbers: BTreeSet<String>,
-    attachment_names: BTreeMap<u16, String>,
+    grant_names: BTreeMap<CosmeticItem, String>,
 }
 
 struct CosmeticDefinition {
@@ -116,6 +118,7 @@ pub(super) fn index_exterior_shop(fs: &ResourceBundle, prices: &mut ItemPrices) 
             (CAMOUFLAGES, "camouflage", CAMOUFLAGE_TYPE),
             (PAINTS, "paint", 1),
             (ATTACHMENTS, "attachment", ATTACHMENT_TYPE),
+            (STAT_TRACKERS, "stat_tracker", STAT_TRACKER_TYPE),
             (DECALS, "decal", 3),
             (NUMBERS, "personal_number", 9),
             (EFFECTS, "modification", 5),
@@ -196,6 +199,7 @@ impl CosmeticCatalog {
             (CAMOUFLAGES, "camouflage", CosmeticKind::Camouflage),
             (PAINTS, "paint", CosmeticKind::Paint),
             (ATTACHMENTS, "attachment", CosmeticKind::Attachment),
+            (STAT_TRACKERS, "stat_tracker", CosmeticKind::StatTracker),
             (DECALS, "decal", CosmeticKind::Inscription),
             (NUMBERS, "personal_number", CosmeticKind::PersonalNumber),
             (EFFECTS, "modification", CosmeticKind::Effect),
@@ -225,7 +229,9 @@ impl CosmeticCatalog {
                 }
                 let (definition, display_price) = read_definition(item, group, &groups, kind)
                     .with_context(|| format!("Read cosmetic {kind:?} {id}"))?;
-                if kind == CosmeticKind::Attachment && definition.available_for_custom_outfits {
+                if matches!(kind, CosmeticKind::Attachment | CosmeticKind::StatTracker)
+                    && definition.available_for_custom_outfits
+                {
                     let name = item
                         .get_child_string("userString")
                         .and_then(|label| label.strip_prefix("#vehicle_customization:"))
@@ -237,8 +243,11 @@ impl CosmeticCatalog {
                                 .filter(|name| !name.trim().is_empty())
                                 .map(|name| name.replace('_', " "))
                         })
-                        .unwrap_or_else(|| "Unnamed attachment".to_owned());
-                    catalog.attachment_names.insert(id, name);
+                        .unwrap_or_else(|| match kind {
+                            CosmeticKind::StatTracker => "Unnamed stat tracker".to_owned(),
+                            _ => "Unnamed attachment".to_owned(),
+                        });
+                    catalog.grant_names.insert((kind, id), name);
                 }
                 prices.prices.push((descriptor, display_price));
                 if definition.rule.price.is_none() {
@@ -262,14 +271,20 @@ impl CosmeticCatalog {
         Ok(catalog)
     }
 
-    pub(super) fn attachment_names(&self) -> impl Iterator<Item = (u16, &str)> {
-        self.attachment_names
-            .iter()
-            .map(|(&id, name)| (id, name.as_str()))
+    pub(super) fn grantable_cosmetics(
+        &self,
+        kind: CosmeticKind,
+    ) -> impl Iterator<Item = (u16, &str, Option<u32>)> {
+        self.grant_names
+            .range((kind, 0)..=(kind, u16::MAX))
+            .filter_map(move |(&item, name)| {
+                let rule = self.grantable_rule(item)?;
+                Some((item.1, name.as_str(), rule.max_owned))
+            })
     }
 
-    pub(super) fn grantable_attachment(&self, id: u16) -> Option<&CosmeticRule> {
-        let definition = self.definitions.get(&(CosmeticKind::Attachment, id))?;
+    pub(super) fn grantable_rule(&self, item: CosmeticItem) -> Option<&CosmeticRule> {
+        let definition = self.definitions.get(&item)?;
         definition
             .available_for_custom_outfits
             .then_some(&definition.rule)
@@ -284,7 +299,7 @@ impl CosmeticCatalog {
         let Some(slot) = exterior.attachment_slots.get(&slot_id) else {
             return false;
         };
-        self.grantable_attachment(attachment.id).is_some_and(|rule| {
+        self.grantable_rule((CosmeticKind::Attachment, attachment.id)).is_some_and(|rule| {
             matches!(&rule.placement, CosmeticPlacement::Attachment(rule) if rule.fits(slot, attachment))
         })
     }
@@ -295,6 +310,7 @@ impl CosmeticCatalog {
         nation: &str,
         vehicle: &VehicleOffer,
         exterior: &VehicleCosmeticSlots,
+        kind: Option<CosmeticKind>,
     ) -> BTreeMap<CosmeticItem, CosmeticRule> {
         if ["lockOutfit", "lockExceptProgression", "event_battles"]
             .iter()
@@ -304,6 +320,7 @@ impl CosmeticCatalog {
         }
         self.definitions
             .iter()
+            .filter(|(item, _)| kind.is_none_or(|kind| item.0 == kind))
             .filter_map(|(&id, definition)| {
                 let matches = |filter: &VehicleFilter| filter.matches(key, nation, vehicle);
                 if !definition.available_for_custom_outfits
@@ -327,6 +344,7 @@ impl CosmeticCatalog {
                         !units_by_region.is_empty()
                     }
                     CosmeticPlacement::Effect => exterior.effect_slot,
+                    CosmeticPlacement::StatTracker => !exterior.stat_tracker_slots.is_empty(),
                     CosmeticPlacement::Attachment(rule) => exterior
                         .attachment_slots
                         .values()
@@ -379,14 +397,21 @@ fn read_definition(
     };
     let display_price = ItemPrices::definition_price(price_definition);
     let excluded = |node: &Element| item_defs::xml_flag(node, "notInShop");
+    let vehicle_bound =
+        text("tags").is_some_and(|tags| tags.split_whitespace().any(|tag| tag == "vehicleBound"));
     let restricted = text("requiredToken").is_some_and(|token| !token.is_empty())
         || text("tags").is_some_and(|tags| {
             tags.split_whitespace()
-                .any(|tag| matches!(tag, "styleOnly" | "hiddenInUI" | "vehicleBound"))
+                .any(|tag| matches!(tag, "styleOnly" | "hiddenInUI"))
         });
     let price = Some(display_price)
         .filter(|price| {
-            price.amount > 0 && !restricted && !excluded(item) && !excluded(price_definition)
+            price.amount > 0
+                && !vehicle_bound
+                && kind != CosmeticKind::StatTracker
+                && !restricted
+                && !excluded(item)
+                && !excluded(price_definition)
         })
         .and_then(|price| match price.currency {
             "gold" => Some(VehicleCost {
@@ -420,7 +445,7 @@ fn read_definition(
             }
             Ok(seasons)
         })?;
-    if kind == CosmeticKind::Attachment {
+    if matches!(kind, CosmeticKind::Attachment | CosmeticKind::StatTracker) {
         let all = seasons.len() == 3;
         seasons.clear();
         if all {
@@ -468,6 +493,10 @@ fn read_definition(
             )
         }
         CosmeticKind::Effect => (CosmeticPlacement::Effect, true),
+        CosmeticKind::StatTracker => (
+            CosmeticPlacement::StatTracker,
+            vehicle_bound && !seasons.is_empty(),
+        ),
         CosmeticKind::Attachment => {
             let apply_type = text("applyType").unwrap_or_default();
             let tags = text("tags").unwrap_or_default();
@@ -547,7 +576,9 @@ fn read_definition(
     Ok((
         CosmeticDefinition {
             rule,
-            available_for_custom_outfits: !restricted && usable,
+            available_for_custom_outfits: !restricted
+                && usable
+                && (!vehicle_bound || kind == CosmeticKind::StatTracker),
             include,
             exclude,
         },
@@ -618,6 +649,7 @@ pub(super) fn cosmetic_subtype(kind: CosmeticKind) -> u8 {
         CosmeticKind::Effect => 5,
         CosmeticKind::ProjectionDecal => 7,
         CosmeticKind::Attachment => ATTACHMENT_TYPE,
+        CosmeticKind::StatTracker => STAT_TRACKER_TYPE,
     }
 }
 
@@ -631,6 +663,7 @@ pub fn cosmetic_item(descriptor: i32) -> Option<CosmeticItem> {
         5 => CosmeticKind::Effect,
         7 => CosmeticKind::ProjectionDecal,
         ATTACHMENT_TYPE => CosmeticKind::Attachment,
+        STAT_TRACKER_TYPE => CosmeticKind::StatTracker,
         _ => return None,
     };
     (cosmetic_descriptor(cosmetic_subtype(kind), decoded.id).to_int() == i64::from(descriptor))
@@ -664,20 +697,41 @@ impl GarageCatalog {
             return change_cosmetics(
                 snapshot,
                 inventory_id,
+                None,
                 change,
                 &rules,
                 &self.cosmetics.prohibited_numbers,
                 &VehicleCosmeticSlots::default(),
             );
         }
-        let owned = snapshot
-            .vehicles
-            .iter()
-            .find(|vehicle| vehicle.inventory_id == inventory_id)
-            .ok_or(ProgressionError::VehicleNotFound)?;
-        let vehicle = self
-            .vehicle(&owned.catalog_key)
-            .map_err(Self::catalog_failure)?;
+        let (vehicle_type, exterior, rules) =
+            self.vehicle_cosmetic_rules(snapshot, inventory_id, None)?;
+        change_cosmetics(
+            snapshot,
+            inventory_id,
+            Some(vehicle_type),
+            change,
+            &rules,
+            &self.cosmetics.prohibited_numbers,
+            &exterior,
+        )
+    }
+
+    pub(super) fn vehicle_cosmetic_rules(
+        &self,
+        snapshot: &AccountSnapshot,
+        inventory_id: i64,
+        kind: Option<CosmeticKind>,
+    ) -> Result<
+        (
+            i32,
+            VehicleCosmeticSlots,
+            BTreeMap<CosmeticItem, CosmeticRule>,
+        ),
+        ProgressionError,
+    > {
+        let vehicle = self.owned_vehicle_template(snapshot, inventory_id)?;
+        let vehicle_type = vehicle.modules.rules.vehicle;
         let modules = vehicle.modules.rules.loadout(snapshot, inventory_id);
         let exterior = vehicle
             .modules
@@ -685,21 +739,15 @@ impl GarageCatalog {
             .ok_or(ProgressionError::InvalidCosmetic)?;
         let offer = self
             .offers
-            .get(&vehicle.modules.rules.vehicle)
+            .get(&vehicle_type)
             .ok_or(ProgressionError::VehicleNotFound)?;
         let rules = self.cosmetics.rules_for(
-            &owned.catalog_key,
+            &offer.key,
             &vehicle.customization_nation,
             offer,
             &exterior,
+            kind,
         );
-        change_cosmetics(
-            snapshot,
-            inventory_id,
-            change,
-            &rules,
-            &self.cosmetics.prohibited_numbers,
-            &exterior,
-        )
+        Ok((vehicle_type, exterior, rules))
     }
 }

@@ -76,8 +76,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.per_page`](../src/player_administration/presentation/players.rs) | Requested player-list page size after query decoding. The root span records supplied values only. The list operation records default `25` when omitted. |
 | [`input.offset`](../src/accounts/application/players.rs) | Validated zero-based pagination offset passed to the player repository. |
 | [`input.limit`](../src/accounts/application/players.rs) | Validated maximum player rows requested by pagination. |
-| [`input.grant`](../src/player_sessions/application/grants.rs) | Debug representation of the parsed `PlayerGrant`: currency and amount, vehicle type descriptor, or attachment ID and count. Recorded after admin validation, and on the Player Sessions grant use case. |
-| [`input.grant.kind`](../src/player_administration/presentation/garage.rs) | Decoded grant kind on the root HTTP span, one of `currency`, `vehicle`, or `attachment`. |
+| [`input.grant`](../src/player_sessions/application/grants.rs) | Debug representation of the parsed `PlayerGrant`: currency and amount, vehicle type descriptor, attachment ID and count, or stat tracker ID, target inventory ID and count. Recorded after admin validation, and on the Player Sessions grant use case. |
+| [`input.grant.kind`](../src/player_administration/presentation/garage.rs) | Decoded grant kind on the root HTTP span, one of `currency`, `vehicle`, `attachment`, or `stat_tracker`. |
 | [`input.grant.currency`](../src/player_administration/presentation/garage.rs) | Decoded currency on the root HTTP span for currency grants only. One of `credits`, `gold`, `bonds`, or `free_xp`. |
 | [`xmpp.stanza.name`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Parsed XML element local name on `player_sessions.xmpp.handle`; unavailable if XML parsing fails. |
 | [`xmpp.stanza.id`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Optional XML stanza `id` when at most 128 bytes; omitted when absent or longer. |
@@ -131,13 +131,13 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input account snapshot used for catalog preparation or mutation planning. |
 | [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case. |
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
-| [`input.inventory_id`](../src/accounts/application/mod.rs) | Owned vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables or camouflage. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
+| [`input.inventory_id`](../src/accounts/application/mod.rs) | Owned vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables, outfit changes or a bound stat tracker grant. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
 | [`input.operation`](../src/accounts/domain/cosmetics.rs) | Exterior action on the ownership decision span, `buy` or `apply`. |
 | [`input.items.count`](../src/accounts/domain/cosmetics.rs) | Number of purchase lines or requested placements across the supplied seasons. Each painted region counts as one placement. |
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
-| [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor on the root HTTP span for a decoded vehicle grant. |
+| [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor for a bound stat tracker grant or vehicle-specific outfit change, and on the root HTTP span for a decoded vehicle grant. |
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
-| [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles` or `attachments` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`). |
+| [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles`, `attachments` or `stat_trackers` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`). |
 | [`input.count`](../src/accounts/domain/consumables.rs) | Requested purchase quantity, equipment charge quantity, or cost multiplier, depending on the operation. |
 | [`input.item`](../src/accounts/domain/consumables.rs) | Compact item descriptor for a module, equipment, consumable, or directive involved in the operation. |
 | [`input.index`](../src/accounts/domain/modules.rs) | Zero-based index into a vehicle module research plan. |
@@ -147,7 +147,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.gold`](../src/accounts/domain/vehicles.rs) | Gold component of a proposed vehicle/item cost before charging; not the account balance. |
 | [`input.credits`](../src/accounts/domain/vehicles.rs) | Credit component of a proposed vehicle/item cost before charging; not the account balance. |
 | [`input.attachment_id`](../src/accounts/domain/cosmetics.rs) | Numeric catalog ID of the granted 3D attachment. Recorded on the root HTTP span after decoding and on the account operation. |
-| [`input.amount`](../src/accounts/domain/grants.rs) | Requested amount of currency or number of attachments in a grant, before count and ownership checks. Also recorded on the root HTTP span after decoding either grant. |
+| [`input.stat_tracker_id`](../src/accounts/domain/cosmetics.rs) | Numeric catalog ID of the granted tracker. Recorded on the root HTTP span and on the account grant operation. |
+| [`input.amount`](../src/accounts/domain/grants.rs) | Requested amount of currency or number of cosmetic copies in a grant, before count and ownership checks. Also recorded on the root HTTP span after decoding the grant. |
 | [`input.slots`](../src/accounts/domain/consumables.rs) | Current garage slot balance on `accounts.vehicles.buy_vehicle_slot`; available consumable-slot count on consumable purchase/fill operations. |
 | [`input.requested.count`](../src/accounts/domain/ammunition.rs) | Number of requested shell selections passed to ammunition validation. |
 | [`input.depot.count`](../src/accounts/domain/ammunition.rs) | Number of distinct shell types in the depot passed to ammunition validation; not total shell units. |
@@ -182,8 +183,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage progression/ammunition completion result: `committed`, `unchanged`, `rejected`, `stale`, or `error`. The Exterior decision also records `changed`, `unchanged` or `rejected`. Progression dispatch records `invalid_request`, `stale_shop`, `busy` or `queued` when it returns before work is scheduled. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/progression.rs) | Progression completion handed to the reliable transport queue (`queued`), absent session or entity (`unavailable`), or response enqueue failure (`failed`). |
-| [`output.items.count`](../src/player_administration/presentation/garage.rs) | Number of grantable 3D attachments returned by the admin catalog endpoint. |
-| [`output.owned.count`](../src/accounts/domain/cosmetics.rs) | Total copies of the granted attachment, including fitted copies, after successful planning. |
+| [`output.items.count`](../src/player_administration/presentation/garage.rs) | Number of grantable 3D attachments or stat trackers returned by the admin catalog endpoint. |
+| [`output.owned.count`](../src/accounts/domain/cosmetics.rs) | Total copies of the granted cosmetic, including fitted copies, after successful planning. |
 | [`output.purchases.count`](../src/accounts/domain/cosmetics.rs) | Number of cosmetic units to purchase after using owned stock. For paint, a region uses the number of units specified by the catalog. Zero for a successful change that spends only owned stock or leaves the layout as it was. |
 | [`output.response`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat `actionResponse` code sent by `player_sessions.social.send_chat`. |
 | [`output.stanza_count`](../src/player_sessions/infrastructure/xmpp/mod.rs) | Number of immediate replies returned by the XMPP handler, recorded before writing them. Does not count separate queued pushes or prove all writes succeeded. |

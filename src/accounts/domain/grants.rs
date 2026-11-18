@@ -19,6 +19,11 @@ pub enum PlayerGrant {
     Vehicle {
         vehicle: i32,
     },
+    StatTracker {
+        vehicle: i64,
+        id: u16,
+        count: u32,
+    },
     Attachment {
         id: u16,
         count: u32,
@@ -35,6 +40,10 @@ pub enum GrantError {
     UnknownAttachment,
     #[error("The grant would exceed the attachment ownership limit.")]
     AttachmentLimit,
+    #[error("Select a compatible stat tracker and vehicle from the player garage.")]
+    IncompatibleStatTracker,
+    #[error("The grant would exceed the stat tracker ownership limit.")]
+    StatTrackerLimit,
     #[error(transparent)]
     Vehicle(#[from] super::ProgressionError),
 }

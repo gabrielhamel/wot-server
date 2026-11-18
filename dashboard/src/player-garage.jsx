@@ -4,7 +4,7 @@ import {
   Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
 import { ListButton, Title, useDataProvider, useGetRecordId } from 'react-admin';
-import { AttachmentGrant } from './attachment-grant.jsx';
+import { CosmeticGrant } from './cosmetic-grant.jsx';
 
 const currencies = [
   ['credits', 'Credits'],
@@ -167,7 +167,8 @@ function GaragePage({ id }) {
               </Button>
             </CardContent>
           </Card>
-          <AttachmentGrant api={api} busy={busy} owned={garage.attachments} onGrant={submit} />
+          <CosmeticGrant api={api} busy={busy} kind="attachment" owned={garage.attachments} onGrant={submit} />
+          <CosmeticGrant api={api} busy={busy} kind="stat_tracker" vehicles={garage.vehicles} onGrant={submit} />
         </Box>
         <Card>
           <CardContent>

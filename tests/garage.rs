@@ -97,6 +97,8 @@ async fn exercise_garage(encrypted_login: bool) {
         has_decals && resources.has_file("scripts/item_defs/customization/paints/list.xml");
     let has_attachments = has_extension_styles
         && resources.has_file("scripts/item_defs/customization/attachments/list.xml");
+    let has_stat_trackers = has_attachments
+        && resources.has_file("scripts/item_defs/customization/stat_trackers/list.xml");
     let cosmetic_fixtures = camouflage_flow::CosmeticFixtures {
         has_exterior_styles,
         has_extension_styles,
@@ -105,6 +107,7 @@ async fn exercise_garage(encrypted_login: bool) {
         has_decals,
         has_paints,
         has_attachments,
+        has_stat_trackers,
     };
     let tank_a = "usa:A01_T1_Cunningham".to_string();
     let tank_b = "germany:G12_Ltraktor".to_string();
@@ -382,6 +385,14 @@ async fn exercise_garage(encrypted_login: bool) {
                 |grant| runtime.block_on(grants.grant(a.id, grant)),
             );
         }
+        if has_stat_trackers {
+            last_cache = camouflage_flow::exercise_stat_tracker(
+                &mut first_peer,
+                &script,
+                &last_cache,
+                |grant| runtime.block_on(grants.grant(a.id, grant)),
+            );
+        }
         first_peer.disconnect();
         social_flow::wait_presence(&mut second_peer, &script, a.id, false);
         std::thread::sleep(std::time::Duration::from_millis(250));
@@ -456,6 +467,7 @@ async fn exercise_garage(encrypted_login: bool) {
                     + 4 * i64::from(has_decals)
                     + 3 * i64::from(has_paints)
                     + 4 * i64::from(has_attachments)
+                    + 4 * i64::from(has_stat_trackers)
             } else {
                 7
             }

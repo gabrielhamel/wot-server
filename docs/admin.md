@@ -1,7 +1,7 @@
 # Admin dashboard and HTTP API
 
 The game server can serve a React Admin dashboard to list and create player
-accounts and grant resources, tanks and 3D attachments. Accounts creates the player and starter
+accounts and grant resources, tanks, 3D attachments and stat trackers. Accounts creates the player and starter
 garage in one transaction. The garage contains regular tech tree tier I tanks
 with stock modules, basic crew, default ammunition and initial settings.
 They can use their new credentials in the game client's basic login flow
@@ -53,7 +53,9 @@ The player is charged nothing and needs a free garage slot. The picker lists
 tanks eligible for Random Battles and identifies already-owned tanks. Use
 **Grant a 3D attachment** to search by name, see how many copies
 the player owns, and add copies to the depot. Ownership includes fitted copies.
-The picker includes reward attachments such as Zongzi Jubilee. The browser
+The picker includes reward attachments such as Zongzi Jubilee. Use **Grant a
+stat tracker** to select a compatible owned tank and add a vehicle-bound copy
+to its depot stock. The browser
 stores the admin token in tab session storage.
 For remote administration, keep the server on loopback and use an HTTPS
 reverse proxy or an SSH tunnel. The built-in listener serves plain HTTP.
@@ -76,9 +78,10 @@ Send `Authorization: Bearer <admin-token>` with every request.
 | `GET /api/admin/session` | `204 No Content` for a valid token. |
 | `GET /api/admin/players?page=1&per_page=25` | `200 OK` with `{ "data": [player records], "total": 2 }`. Pages start at 1. Page size is 1–100. Defaults are page 1 and 25 records. |
 | `POST /api/admin/players` | `201 Created` with the new player record. |
-| `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks and an `attachments` map from item ID to total owned copies. Balances are decimal strings. |
+| `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks and an `attachments` map from item ID to total owned copies. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |
 | `GET /api/admin/attachments` | `200 OK` with grantable 3D attachments containing `id`, `name`, and `max_owned` (null if the catalog sets no limit). |
+| `GET /api/admin/stat-trackers` | `200 OK` with grantable trackers containing `id`, `name`, and `max_owned`. |
 | `POST /api/admin/players/{id}/grants` | `200 OK` with `garage` and `delivery` after commit. |
 
 Send `Content-Type: application/json` and the following fields for creation.
@@ -125,6 +128,14 @@ An attachment grant adds 1–100 copies to the depot, subject to the item's
 ownership limit. Use an item ID from `GET /api/admin/attachments`. ID 2033 is the
 Zongzi Jubilee dragon boat from River Race Revelry in the installed EU build. The HTTP endpoint
 accepts the grant even when the catalog marks the attachment outside the shop.
+
+```json
+{ "kind": "stat_tracker", "vehicle": 12, "id": 1, "count": 1 }
+```
+
+A stat tracker grant uses the owned tank's inventory ID to validate its current
+anchor and eligibility. The copies belong to that vehicle type, including
+after removal.
 
 Currency identifiers are `credits`, `gold`, `bonds`, and `free_xp`.
 The resulting balance must fit the server's grant ceiling of 2,147,483,647.

@@ -26,6 +26,7 @@ pub struct CosmeticFixtures {
     pub has_decals: bool,
     pub has_paints: bool,
     pub has_attachments: bool,
+    pub has_stat_trackers: bool,
 }
 
 pub fn exercise(
@@ -617,6 +618,117 @@ pub fn exercise_attachments(
     cache
 }
 
+pub fn exercise_stat_tracker(
+    peer: &mut Peer,
+    dispatch: &ScriptDispatch,
+    before: &Pickle,
+    grant: impl Fn(
+        wot_server::accounts::PlayerGrant,
+    ) -> Result<
+        (
+            wot_server::accounts::AccountSnapshot,
+            wot_server::player_sessions::GrantDelivery,
+        ),
+        wot_server::player_sessions::GrantRequestError,
+    >,
+) -> Pickle {
+    use wot_server::{
+        accounts::{OutfitSeason, PlayerGrant, StatTracker},
+        player_sessions::{GrantDelivery, GrantRequestError},
+    };
+    const EXECUTOR: i32 = 26705;
+    let Pickle::I64(revision) = dict(before, "rev") else {
+        panic!("Missing garage revision");
+    };
+    let shop = peer.resource(780);
+    let Pickle::Set(hidden) = dict(&dict(&shop, "items"), "notInShopItems") else {
+        panic!("Missing shop exclusions");
+    };
+    assert!(hidden.contains(&((1 << 8) | 0xdc).into()));
+    let inventory = |cache: &Pickle| row(&dict(cache, "inventory"), 12);
+    let executor = row(&row(&inventory(before), 2), EXECUTOR);
+    let Pickle::Bytes(boat) = row(&executor, 15) else {
+        panic!("Missing common outfit with attachment");
+    };
+    let with_tracker = |slot| {
+        let mut outfit = boat.clone();
+        outfit[2] |= 32;
+        outfit.extend([1, 3, 1, slot, 140, 1]);
+        outfit
+    };
+    let tracker = with_tracker(211); // Executor's dedicated anchor 18003.
+    let wrong_slot = with_tracker(208); // Universal attachment anchor 18000.
+    let malformed = [4, 128, 32, 2];
+    send_outfits(peer, dispatch, 830, 43, &[(15, &tracker)], -1);
+    send_outfits(peer, dispatch, 831, 43, &[(15, &malformed)], -2);
+
+    let make_grant = |vehicle, count| PlayerGrant::StatTracker {
+        vehicle,
+        id: 1,
+        count,
+    };
+    assert!(matches!(
+        grant(make_grant(42, 1)),
+        Err(GrantRequestError::Rejected(_))
+    ));
+    assert!(matches!(
+        grant(make_grant(43, 0)),
+        Err(GrantRequestError::Rejected(_))
+    ));
+    let updates = |peer: &Peer| {
+        peer.methods
+            .iter()
+            .filter(|(name, _)| name.ends_with("update"))
+            .count()
+    };
+    let before_updates = updates(peer);
+    assert_eq!(
+        grant(make_grant(43, 1)).unwrap().1,
+        GrantDelivery::QueuedForGarage
+    );
+    peer.until(dispatch, |peer| updates(peer) > before_updates);
+    let replacement = Pickle::Tuple(vec![1.into(), "_r".into()]);
+    let stock = pickle!({13: {(replacement.clone()): {(EXECUTOR): 1}}});
+    assert_eq!(row(&inventory(&update(peer, revision + 1)), 1), stock);
+
+    send_outfits(peer, dispatch, 832, 43, &[(15, &wrong_slot)], -1);
+    send_outfits(peer, dispatch, 833, 43, &[(1, &tracker)], -2);
+    send_outfits(peer, dispatch, 834, 43, &[(15, &tracker)], 0);
+    let fitted = update(peer, revision + 2);
+    assert_eq!(
+        row(&inventory(&fitted), 4),
+        pickle!({13: {(replacement): {(EXECUTOR): 1}}})
+    );
+    send_outfits(peer, dispatch, 835, 43, &[(15, &tracker)], 0);
+    send_outfits(peer, dispatch, 836, 43, &[(15, &boat)], 0);
+    assert_eq!(row(&inventory(&update(peer, revision + 3)), 1), stock);
+    send_outfits(peer, dispatch, 837, 43, &[(15, &tracker)], 0);
+
+    peer.command(dispatch, "doCmdInt3", sync(838, 100));
+    peer.until(dispatch, |peer| peer.has_resource(838));
+    let cache = peer.resource(838);
+    assert_eq!(dict(&cache, "rev"), (revision + 4).into());
+    assert_eq!(dict(&cache, "stats"), dict(before, "stats"));
+    let executor_after = row(&row(&inventory(&cache), 2), EXECUTOR);
+    let Pickle::Bytes(common) = row(&executor_after, 15) else {
+        panic!("Missing common outfit with stat tracker");
+    };
+    let before = decode_outfits(&[15], [boat.as_slice()].into_iter(), None).unwrap();
+    let after = decode_outfits(&[15], [common.as_slice()].into_iter(), None).unwrap();
+    assert_eq!(
+        after[&OutfitSeason::Common].stat_tracker,
+        Some(StatTracker {
+            id: 1,
+            slot_id: 18003
+        })
+    );
+    assert_eq!(
+        before[&OutfitSeason::Common].attachments,
+        after[&OutfitSeason::Common].attachments
+    );
+    cache
+}
+
 pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
     let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
     let field = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
@@ -654,7 +766,28 @@ pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
             (826, "43", "unchanged"),
             (828, "43", "committed"),
         ]);
-        assert_attachment_grant_trace(account, &spans);
+        assert_cosmetic_grant_trace(
+            account,
+            &spans,
+            "accounts.cosmetics.grant_attachment",
+            "input.attachment_id",
+            "2033",
+        );
+    }
+    if fixtures.has_stat_trackers {
+        requests.extend([
+            (830, "43", "rejected"),
+            (832, "43", "rejected"),
+            (834, "43", "committed"),
+            (835, "43", "unchanged"),
+        ]);
+        assert_cosmetic_grant_trace(
+            account,
+            &spans,
+            "accounts.cosmetics.grant_stat_tracker",
+            "input.stat_tracker_id",
+            "1",
+        );
     }
     for (request, inventory_id, outcome) in requests {
         let apply = spans
@@ -696,6 +829,7 @@ pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
                 816 => ("1", "33", "4"),
                 819 => ("1", "32", "0"),
                 828 => ("1", "11", "0"),
+                834 => ("1", "18", "0"),
                 _ => ("4", "17", "3"),
             };
             assert!(field(apply, "input.outfits.count", count));
@@ -720,7 +854,13 @@ pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
     }
 }
 
-fn assert_attachment_grant_trace(account: i64, spans: &[opentelemetry_sdk::trace::SpanData]) {
+fn assert_cosmetic_grant_trace(
+    account: i64,
+    spans: &[opentelemetry_sdk::trace::SpanData],
+    operation: &str,
+    item_field: &str,
+    item_id: &str,
+) {
     let has = |span: &opentelemetry_sdk::trace::SpanData, key, value: &str| {
         span.attributes
             .iter()
@@ -730,8 +870,8 @@ fn assert_attachment_grant_trace(account: i64, spans: &[opentelemetry_sdk::trace
         spans
             .iter()
             .find(|span| {
-                span.name == "accounts.cosmetics.grant_attachment"
-                    && has(span, "input.attachment_id", "2033")
+                span.name == operation
+                    && has(span, item_field, item_id)
                     && has(span, "input.amount", count)
                     && spans.iter().any(|gateway| {
                         gateway.name == "player_sessions.gateway.grant"

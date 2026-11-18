@@ -27,6 +27,7 @@ struct ChassisExterior {
     effect_slot: bool,
     projection_slots: BTreeMap<u16, ProjectionDecalSlot>,
     attachment_slots: BTreeMap<u16, AttachmentSlot>,
+    stat_tracker_slots: BTreeSet<u16>,
 }
 
 impl VehicleModules {
@@ -58,6 +59,9 @@ impl VehicleModules {
                     .iter()
                     .map(|(&id, slot)| (id, slot.clone())),
             );
+            exterior
+                .stat_tracker_slots
+                .extend(&chassis.stat_tracker_slots);
         }
         Some(exterior)
     }
@@ -142,6 +146,8 @@ impl VehicleModules {
             projection_decal_slots(vehicle.get_child_element("hull")).collect::<BTreeMap<_, _>>();
         let hull_attachment_slots =
             attachment_slots(vehicle.get_child_element("hull")).collect::<BTreeMap<_, _>>();
+        let hull_stat_tracker_slots: BTreeSet<_> =
+            stat_tracker_slots(vehicle.get_child_element("hull")).collect();
         let hull_effect_slot = has_effect_slot(vehicle.get_child_element("hull"));
         let hull_inscriptions = inscription_slots(vehicle.get_child_element("hull"));
         let hull_camouflage = vehicle
@@ -198,6 +204,7 @@ impl VehicleModules {
                             effect_slot: has_effect_slot(Some(base)),
                             projection_slots: projection_decal_slots(Some(base)).collect(),
                             attachment_slots: attachment_slots(Some(base)).collect(),
+                            stat_tracker_slots: stat_tracker_slots(Some(base)).collect(),
                         },
                     );
                 }
@@ -278,6 +285,10 @@ impl VehicleModules {
                                             .iter()
                                             .map(|(&id, slot)| (id, slot.clone())),
                                     )
+                                    .collect(),
+                                stat_tracker_slots: stat_tracker_slots(Some(gun_slot_definition))
+                                    .chain(stat_tracker_slots(Some(base)))
+                                    .chain(hull_stat_tracker_slots.iter().copied())
                                     .collect(),
                                 camouflage: surfaces
                                     .into_iter()
@@ -440,6 +451,17 @@ fn has_effect_slot(part: Option<&Element>) -> bool {
         .into_iter()
         .flat_map(Element::iter_child_elements)
         .any(|(_, slot)| matches!(slot.get_child_string("slotType"), Some("style" | "effect")))
+}
+
+fn stat_tracker_slots(part: Option<&Element>) -> impl Iterator<Item = u16> {
+    part.and_then(|part| part.get_child_element("customizationSlots"))
+        .into_iter()
+        .flat_map(Element::iter_child_elements)
+        .filter(|(_, slot)| {
+            slot.get_child_string("slotType") == Some("statTracker")
+                && user_customization_slot(slot)
+        })
+        .filter_map(|(_, slot)| u16::try_from(slot.get_child_integer("slotId")?).ok())
 }
 
 fn attachment_slots(part: Option<&Element>) -> impl Iterator<Item = (u16, AttachmentSlot)> {

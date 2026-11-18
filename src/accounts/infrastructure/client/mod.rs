@@ -23,7 +23,7 @@ mod shop;
 mod starter_garage;
 mod supply_slots;
 mod vehicle_defs;
-pub use grants::{AttachmentCatalogEntry, VehicleCatalogEntry};
+pub use grants::{CosmeticGrantEntry, VehicleCatalogEntry};
 mod vehicle_sales;
 
 use crate::accounts::{

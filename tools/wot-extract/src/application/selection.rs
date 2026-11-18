@@ -12,6 +12,7 @@ const GARAGE_FILES: &[&str] = &[
     "scripts/item_defs/customization/camouflages/list.xml",
     "scripts/item_defs/customization/paints/list.xml",
     "scripts/item_defs/customization/attachments/list.xml",
+    "scripts/item_defs/customization/stat_trackers/list.xml",
     "scripts/item_defs/customization/styles/list.xml",
     "scripts/item_defs/customization/decals/list.xml",
     "scripts/item_defs/customization/modifications/list.xml",
@@ -63,6 +64,7 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
                 | "scripts/item_defs/customization/camouflages/list.xml"
                 | "scripts/item_defs/customization/paints/list.xml"
                 | "scripts/item_defs/customization/attachments/list.xml"
+                | "scripts/item_defs/customization/stat_trackers/list.xml"
                 | "scripts/item_defs/customization/decals/list.xml"
                 | "scripts/item_defs/customization/modifications/list.xml"
                 | "scripts/item_defs/customization/projection_decals/list.xml"

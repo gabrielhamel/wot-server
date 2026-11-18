@@ -24,6 +24,7 @@ async fn exports_admin_http_request_inputs() {
         resources.has_file("scripts/item_defs/customization/attachments/list.xml");
     let catalog = Arc::new(GarageCatalog::load(resources, &[]).unwrap());
     let attachment_count = catalog.grantable_attachments().count();
+    let tracker_count = catalog.grantable_stat_trackers().count();
     let starter_keys = catalog.tier_one_keys().unwrap();
     let repository = PostgresAccounts::connect(&url, 2).await.unwrap();
     let accounts = Accounts::new(repository.clone());
@@ -174,6 +175,45 @@ async fn exports_admin_http_request_inputs() {
         serde_json::from_slice(&to_bytes(response.into_body(), 32 * 1024).await.unwrap()).unwrap();
     assert_eq!(garage["attachments"], serde_json::json!({}));
 
+    let response = send("GET", "/api/admin/stat-trackers", TOKEN, "")
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let trackers: Vec<serde_json::Value> =
+        serde_json::from_slice(&to_bytes(response.into_body(), 32 * 1024).await.unwrap()).unwrap();
+    assert_eq!(trackers.len(), tracker_count);
+    if tracker_count > 0 {
+        assert!(
+            trackers.iter().any(|item| item["id"] == 1
+                && item["name"].as_str().is_some_and(|name| !name.is_empty()))
+        );
+    }
+    let response = send(
+        "POST",
+        "/api/admin/players/17/grants",
+        TOKEN,
+        r#"{"kind":"stat_tracker","vehicle":43,"id":1,"count":1}"#,
+    );
+    let (response, ()) = tokio::join!(response, async {
+        let request = tokio::time::timeout(std::time::Duration::from_secs(5), queued.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            request.grant,
+            crate::accounts::PlayerGrant::StatTracker {
+                vehicle: 43,
+                id: 1,
+                count: 1
+            }
+        ));
+        request
+            .reply
+            .send(Err(GrantRequestError::NotFound))
+            .unwrap();
+    });
+    assert_eq!(response.unwrap().status(), StatusCode::NOT_FOUND);
+
     let spans = exporter.get_finished_spans().unwrap();
     drop(subscriber_guard);
     let snapshot = accounts
@@ -219,7 +259,7 @@ async fn exports_admin_http_request_inputs() {
         .iter()
         .filter(|span| span.name == "admin.http.request")
         .collect();
-    assert_eq!(roots.len(), 14);
+    assert_eq!(roots.len(), 16);
     for (root, expected) in roots.iter().zip([
         &[
             ("http.response.status_code", "200"),
@@ -271,6 +311,17 @@ async fn exports_admin_http_request_inputs() {
         &[
             ("http.response.status_code", "200"),
             ("http.route", "/api/admin/players/{id}/garage"),
+        ],
+        &[
+            ("http.response.status_code", "200"),
+            ("http.route", "/api/admin/stat-trackers"),
+        ],
+        &[
+            ("http.response.status_code", "404"),
+            ("input.grant.kind", "stat_tracker"),
+            ("input.inventory_id", "43"),
+            ("input.stat_tracker_id", "1"),
+            ("input.amount", "1"),
         ],
     ]) {
         assert_eq!(root.parent_span_id, SpanId::INVALID);
@@ -364,6 +415,15 @@ async fn exports_admin_http_request_inputs() {
         Some(attachment_count.to_string())
     );
     assert!(!contains_operation(roots[11], "admin.garage.catalog"));
+    assert!(contains_operation(roots[14], "admin.garage.catalog"));
+    assert!(spans.iter().any(|span| span.name == "admin.garage.catalog"
+        && span.span_context.trace_id() == roots[14].span_context.trace_id()
+        && attribute(span, "input.collection").as_deref() == Some("stat_trackers")
+        && attribute(span, "output.items.count") == Some(tracker_count.to_string())));
+    assert!(contains_operation(
+        roots[15],
+        "player_sessions.grants.grant"
+    ));
     let exported = format!("{spans:?}");
     for excluded in [
         "test-bearer-secret",

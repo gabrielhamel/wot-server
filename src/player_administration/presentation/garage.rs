@@ -1,8 +1,8 @@
 use super::{AdminState, RequestSpan, players::ApiError};
 use crate::{
     accounts::{
-        AccountNotFound, AccountSnapshot, CosmeticKind, GarageCatalog, GrantCurrency, GrantError,
-        PlayerGrant, ProgressionError, VehicleCatalogEntry,
+        AccountNotFound, AccountSnapshot, CosmeticGrantEntry, CosmeticKind, GarageCatalog,
+        GrantCurrency, GrantError, PlayerGrant, ProgressionError, VehicleCatalogEntry,
     },
     player_sessions::{GrantDelivery, GrantRequestError},
     shared_kernel::AccountId,
@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Serialize)]
-pub(super) struct AttachmentRecord {
+pub(super) struct CosmeticGrantRecord {
     id: u16,
     name: String,
     max_owned: Option<u32>,
@@ -43,6 +43,8 @@ impl From<VehicleCatalogEntry<'_>> for VehicleRecord {
 
 #[derive(Serialize)]
 struct GarageVehicle {
+    inventory_id: i64,
+    stat_trackers: BTreeMap<u16, u32>,
     key: String,
     name: String,
     tier: Option<i64>,
@@ -64,16 +66,40 @@ impl Garage {
     fn from_snapshot(snapshot: AccountSnapshot, catalog: &GarageCatalog) -> Self {
         let mut vehicles: Vec<_> = snapshot
             .vehicles
-            .into_iter()
+            .iter()
             .map(|vehicle| {
                 let entry = catalog.vehicle_catalog_entry(&vehicle.catalog_key);
                 let name = entry
                     .as_ref()
                     .map_or(vehicle.catalog_key.as_str(), |entry| entry.name)
                     .to_owned();
+                let stat_trackers = catalog
+                    .stat_tracker_options(&snapshot, vehicle.inventory_id)
+                    .map(|(vehicle_type, eligible)| {
+                        let owned = snapshot
+                            .progression
+                            .cosmetics
+                            .stat_trackers()
+                            .get(&vehicle_type);
+                        eligible
+                            .into_iter()
+                            .map(|id| {
+                                (
+                                    id,
+                                    owned
+                                        .and_then(|items| items.get(&id))
+                                        .copied()
+                                        .unwrap_or_default(),
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 GarageVehicle {
+                    inventory_id: vehicle.inventory_id,
+                    stat_trackers,
                     tier: entry.and_then(|entry| entry.tier),
-                    key: vehicle.catalog_key,
+                    key: vehicle.catalog_key.clone(),
                     name,
                 }
             })
@@ -104,6 +130,7 @@ pub(super) enum GrantBody {
     Currency { currency: Currency, amount: i64 },
     Vehicle { vehicle: i32 },
     Attachment { id: u16, count: u32 },
+    StatTracker { vehicle: i64, id: u16, count: u32 },
 }
 
 #[derive(Deserialize)]
@@ -165,19 +192,34 @@ pub(super) async fn catalog(State(state): State<AdminState>) -> Json<Vec<Vehicle
 )]
 pub(super) async fn attachment_catalog(
     State(state): State<AdminState>,
-) -> Json<Vec<AttachmentRecord>> {
-    let mut attachments: Vec<_> = state
-        .catalog
-        .grantable_attachments()
-        .map(|entry| AttachmentRecord {
+) -> Json<Vec<CosmeticGrantRecord>> {
+    cosmetic_grant_catalog(state.catalog.grantable_attachments())
+}
+
+#[tracing::instrument(
+    name = "admin.garage.catalog",
+    skip_all,
+    fields(ddd.bounded_context.name = "player_administration", input.collection = "stat_trackers", output.items.count = tracing::field::Empty)
+)]
+pub(super) async fn stat_tracker_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<CosmeticGrantRecord>> {
+    cosmetic_grant_catalog(state.catalog.grantable_stat_trackers())
+}
+
+fn cosmetic_grant_catalog<'a>(
+    entries: impl Iterator<Item = CosmeticGrantEntry<'a>>,
+) -> Json<Vec<CosmeticGrantRecord>> {
+    let mut items: Vec<_> = entries
+        .map(|entry| CosmeticGrantRecord {
             id: entry.id,
             name: entry.name.to_owned(),
             max_owned: entry.max_owned,
         })
         .collect();
-    attachments.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-    tracing::Span::current().record("output.items.count", attachments.len());
-    Json(attachments)
+    items.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    tracing::Span::current().record("output.items.count", items.len());
+    Json(items)
 }
 
 #[tracing::instrument(name = "admin.garage.grant", skip_all, fields(ddd.bounded_context.name = "player_administration", input.id.bytes = id.len(), input.grant = tracing::field::Empty), err)]
@@ -195,7 +237,7 @@ pub(super) async fn grant(
             match error.status() {
                 StatusCode::PAYLOAD_TOO_LARGE => "The grant request exceeds 8 KiB.",
                 StatusCode::UNSUPPORTED_MEDIA_TYPE => "Send the grant request as application/json.",
-                _ => "Send a valid currency, vehicle or attachment grant.",
+                _ => "Send a valid currency, vehicle or cosmetic grant.",
             },
         )
     })?;
@@ -217,6 +259,13 @@ pub(super) async fn grant(
             request_span.record("input.attachment_id", id);
             request_span.record("input.amount", count);
             PlayerGrant::Attachment { id, count }
+        }
+        GrantBody::StatTracker { vehicle, id, count } => {
+            request_span.record("input.grant.kind", "stat_tracker");
+            request_span.record("input.inventory_id", vehicle);
+            request_span.record("input.stat_tracker_id", id);
+            request_span.record("input.amount", count);
+            PlayerGrant::StatTracker { vehicle, id, count }
         }
         GrantBody::Vehicle { vehicle } => {
             request_span.record("input.grant.kind", "vehicle");

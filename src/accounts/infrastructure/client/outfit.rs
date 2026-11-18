@@ -1,6 +1,6 @@
 use crate::accounts::{
     Attachment, Camouflage, Inscription, InscriptionSlot, MAX_ATTACHMENTS, MAX_PROJECTION_DECALS,
-    OutfitSeason, Paint, PaintRegion, ProjectionDecal, VehicleOutfit, VehicleSurface,
+    OutfitSeason, Paint, PaintRegion, ProjectionDecal, StatTracker, VehicleOutfit, VehicleSurface,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -11,6 +11,7 @@ const CAMOUFLAGES: u16 = 1 << 2;
 const DECALS: u16 = 1 << 3;
 const PROJECTION_DECALS: u16 = 1 << 5;
 const DEFAULT_DECAL_SCALE: u16 = 3;
+const STAT_TRACKERS: u16 = 1 << 12;
 const ATTACHMENTS: u16 = 1 << 9;
 const PERSONAL_NUMBERS: u16 = 1 << 7;
 const MAX_NUMBER_DIGITS: usize = 8;
@@ -94,7 +95,8 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
             | DECALS
             | PROJECTION_DECALS
             | PERSONAL_NUMBERS
-            | ATTACHMENTS)
+            | ATTACHMENTS
+            | STAT_TRACKERS)
         != 0
     {
         return None;
@@ -306,6 +308,25 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
             }
         }
     }
+    if mask & STAT_TRACKERS != 0 {
+        match read_varint(&mut bytes)? {
+            0 => {}
+            1 => {
+                if read_varint(&mut bytes)? != 3 {
+                    return None;
+                }
+                let id = read_varint(&mut bytes)?;
+                let slot_id = read_varint(&mut bytes)?;
+                if id == 0 || slot_id == 0 {
+                    return None;
+                }
+                if id != EMPTY_ITEM {
+                    layout.stat_tracker = Some(StatTracker { id, slot_id });
+                }
+            }
+            _ => return None,
+        }
+    }
     bytes.is_empty().then_some(layout)
 }
 
@@ -355,6 +376,9 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
     }
     if !layout.attachments.is_empty() {
         fields |= ATTACHMENTS;
+    }
+    if layout.stat_tracker.is_some() {
+        fields |= STAT_TRACKERS;
     }
     write_varint(&mut bytes, OUTFIT);
     write_varint(&mut bytes, fields);
@@ -426,6 +450,12 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
             write_varint(&mut bytes, u16::from(attachment.scale));
             write_varint(&mut bytes, u16::from(attachment.rotated));
         }
+    }
+    if let Some(tracker) = layout.stat_tracker {
+        write_varint(&mut bytes, 1);
+        write_varint(&mut bytes, 3);
+        write_varint(&mut bytes, tracker.id);
+        write_varint(&mut bytes, tracker.slot_id);
     }
     bytes
 }

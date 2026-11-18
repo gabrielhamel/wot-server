@@ -59,6 +59,9 @@ export const dataProvider = {
   getAttachmentCatalog(signal) {
     return request('/attachments', { signal });
   },
+  getStatTrackerCatalog(signal) {
+    return request('/stat-trackers', { signal });
+  },
   grant(id, body) {
     return request(`/players/${encodeURIComponent(id)}/grants`, { body });
   },

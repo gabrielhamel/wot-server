@@ -92,6 +92,19 @@ page in the [admin dashboard](admin.md).
 The group's Zongzi Jubilee dragon boat (item 2033) fits the Executor's turret anchor 38000
 at scale 2.
 
+## Stat trackers
+
+A compatible tank can fit one tracker in the common outfit. The client catalog
+marks the EU Stat Tracker as vehicle-bound and outside the shop. An operator
+can grant it to an owned, compatible tank from the [admin dashboard](admin.md).
+The spare copy is keyed by vehicle type. Fitting consumes one copy from that
+tank's stock, and removing it returns the copy to the same tank. A common
+outfit can hold a tracker and 3D attachments together.
+
+The game's client gets the tracker counter from vehicle dossier statistics.
+This garage workflow implements grants, fitting and removal. Battle results
+for the counter require a battle statistics source.
+
 ## Exterior button
 
 The native hangar menu checks for at least one compatible 2D style before it
@@ -126,7 +139,9 @@ index in that order when present. Camouflage regions use bits 4, 8 and 12.
 The native customization dialog sends a common outfit (season 15)
 alongside the regular seasons. Its attachment array uses bit 9 and each entry
 contains the item ID, slot ID, scale ID and rotation flag in that order.
-The server accepts up to six distinct attachment slots in the common outfit. Effects use the modification ID array (bit 0).
+The server accepts up to six distinct attachment slots in the common outfit.
+The stat tracker array uses bit 12 and holds at most one item ID and anchor ID
+pair. Effects use the modification ID array (bit 0).
 Paint uses bit 1 and encodes the paint ID and its region mask. Paint regions
 use bits 0, 4, 8, 12 and 14 for chassis, hull, turret, gun and the second gun
 region. A single entry can cover several regions. Preset inscriptions use the
@@ -154,7 +169,7 @@ Protocol and filter behavior were traced in the pinned `wot-src` revision
 - `client/account_helpers/Shop.py` for commands 118 and 119 and their argument order.
 - `client/gui/Scaleform/daapi/view/lobby/customization/context/custom_mode.py` for seasonal outfit replacements and the common outfit entry.
 - `common/serializable_types/customizations/customization_outfit.py`,
-  `camouflage.py`, `paint.py` and `attachment.py` in the same directory and
+  `camouflage.py`, `paint.py` and `attachment.py` and `stat_tracker.py` in the same directory and
   `common/serialization/component_bin_serializer.py` for descriptor types, masks and field defaults.
 - `common/items/readers/c11n_readers.py`, `common/items/components/c11n_components.py`
   and `common/items/vehicles.py` for inherited definitions, vehicle filters and customizable vehicle areas.
@@ -187,3 +202,6 @@ the Executor with the four-entry command sent by the client. It verifies an
 unowned item, invalid anchor, scale and rotation are rejected, and checks
 single-copy accounting, removal, reapplication, reconnect and the grant and
 outfit traces.
+The stat tracker regression uses the Executor's hull anchor 18003 in the same
+EU build. It checks vehicle-bound stock and fitted counts, incompatible anchors,
+retry, removal, reconnect and the grant and outfit traces.

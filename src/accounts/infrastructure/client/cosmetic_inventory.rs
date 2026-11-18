@@ -4,7 +4,7 @@ use super::{
     progression::changed_rows,
 };
 use crate::{
-    accounts::{CosmeticItem, CosmeticState},
+    accounts::{CosmeticItem, CosmeticKind, CosmeticState},
     platform::client_formats::pickle::Value,
 };
 use std::collections::BTreeMap;
@@ -52,6 +52,32 @@ impl CosmeticInventory {
                         .insert(Value::from(i32::from(id)), crate::pickle!({0: (free)}));
                 }
             }
+        }
+        let mut tracker_stock = BTreeMap::<u16, BTreeMap<Value, Value>>::new();
+        for (&cd, trackers) in state.stat_trackers() {
+            for (&id, &count) in trackers {
+                let installed = fitted
+                    .get(&(CosmeticKind::StatTracker, id))
+                    .and_then(|vehicles| vehicles.get(&cd))
+                    .copied()
+                    .unwrap_or_default();
+                let free = count.saturating_sub(installed);
+                if free > 0 {
+                    tracker_stock
+                        .entry(id)
+                        .or_default()
+                        .insert(Value::from(cd), Value::from(free));
+                }
+            }
+        }
+        if !tracker_stock.is_empty() {
+            stock.insert(
+                cosmetic_subtype(CosmeticKind::StatTracker),
+                tracker_stock
+                    .into_iter()
+                    .map(|(id, rows)| (Value::from(i32::from(id)), Value::Dict(rows)))
+                    .collect(),
+            );
         }
         let mut dressed = ItemRows::from([(CAMOUFLAGE_TYPE, BTreeMap::new())]);
         for ((kind, id), vehicles) in fitted {

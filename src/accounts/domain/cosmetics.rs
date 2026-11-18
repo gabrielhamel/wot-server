@@ -16,6 +16,7 @@ pub enum CosmeticKind {
     ProjectionDecal,
     Paint,
     Attachment,
+    StatTracker,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -94,6 +95,12 @@ pub struct Attachment {
     pub rotated: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatTracker {
+    pub id: u16,
+    pub slot_id: u16,
+}
+
 #[derive(Clone)]
 pub struct AttachmentSlot {
     pub apply_type: String,
@@ -128,6 +135,7 @@ pub struct VehicleCosmeticSlots {
     pub effect_slot: bool,
     pub projection_slots: BTreeMap<u16, ProjectionDecalSlot>,
     pub attachment_slots: BTreeMap<u16, AttachmentSlot>,
+    pub stat_tracker_slots: BTreeSet<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -160,17 +168,21 @@ pub struct VehicleOutfit {
     pub projection_decals: Vec<ProjectionDecal>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub attachments: BTreeMap<u16, Attachment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stat_tracker: Option<StatTracker>,
 }
 
 impl VehicleOutfit {
     pub fn is_empty(&self) -> bool {
-        self.seasonal_placements() == 0 && self.attachments.is_empty()
+        self.seasonal_placements() == 0
+            && self.attachments.is_empty()
+            && self.stat_tracker.is_none()
     }
 
     pub fn supports_season(&self, season: OutfitSeason) -> bool {
         match season {
             OutfitSeason::Common => self.seasonal_placements() == 0,
-            _ => self.attachments.is_empty(),
+            _ => self.attachments.is_empty() && self.stat_tracker.is_none(),
         }
     }
 
@@ -198,6 +210,10 @@ impl VehicleOutfit {
                     .values()
                     .map(|attachment| (CosmeticKind::Attachment, attachment.id)),
             )
+            .chain(
+                self.stat_tracker
+                    .map(|tracker| (CosmeticKind::StatTracker, tracker.id)),
+            )
             .map(|item| (item, 1))
             .chain(
                 self.paints
@@ -212,6 +228,8 @@ pub struct CosmeticState {
     // Ownership includes mounted copies. Free stock is derived from the outfits.
     owned: BTreeMap<CosmeticKind, BTreeMap<u16, u32>>,
     pub outfits: BTreeMap<i64, BTreeMap<OutfitSeason, VehicleOutfit>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    stat_trackers: BTreeMap<i32, BTreeMap<u16, u32>>,
 }
 
 impl CosmeticState {
@@ -241,6 +259,12 @@ impl CosmeticState {
                 outfit
                     .attachments
                     .retain(|&id, attachment| attachment_fits(id, attachment));
+                if outfit
+                    .stat_tracker
+                    .is_some_and(|tracker| !slots.stat_tracker_slots.contains(&tracker.slot_id))
+                {
+                    outfit.stat_tracker = None;
+                }
                 !outfit.is_empty()
             });
             if seasons.is_empty() {
@@ -278,6 +302,40 @@ impl CosmeticState {
         Ok(())
     }
 
+    #[tracing::instrument(
+        name = "accounts.cosmetics.grant_stat_tracker",
+        skip_all,
+        fields(ddd.bounded_context.name = "accounts", input.vehicle_type = vehicle_type, input.stat_tracker_id = id, input.amount = count, output.owned.count = tracing::field::Empty),
+        err
+    )]
+    pub(crate) fn grant_stat_tracker(
+        &mut self,
+        vehicle_type: i32,
+        id: u16,
+        count: u32,
+        max_owned: Option<u32>,
+    ) -> Result<(), super::GrantError> {
+        use super::GrantError;
+        if !(1..=MAX_UNITS_PER_PURCHASE).contains(&count) {
+            return Err(GrantError::InvalidAmount);
+        }
+        let owned = self.stat_trackers.entry(vehicle_type).or_default();
+        let total = owned
+            .get(&id)
+            .copied()
+            .unwrap_or_default()
+            .checked_add(count)
+            .filter(|&total| max_owned.is_none_or(|limit| total <= limit))
+            .ok_or(GrantError::StatTrackerLimit)?;
+        owned.insert(id, total);
+        tracing::Span::current().record("output.owned.count", total);
+        Ok(())
+    }
+
+    pub fn stat_trackers(&self) -> &BTreeMap<i32, BTreeMap<u16, u32>> {
+        &self.stat_trackers
+    }
+
     pub fn owned(&self) -> &BTreeMap<CosmeticKind, BTreeMap<u16, u32>> {
         &self.owned
     }
@@ -305,7 +363,11 @@ impl CosmeticChange {
             Self::Buy(items) => items.len(),
             Self::Apply(seasons) => seasons
                 .values()
-                .map(|outfit| outfit.seasonal_placements() + outfit.attachments.len())
+                .map(|outfit| {
+                    outfit.seasonal_placements()
+                        + outfit.attachments.len()
+                        + usize::from(outfit.stat_tracker.is_some())
+                })
                 .sum(),
         }
     }
@@ -342,6 +404,7 @@ pub enum CosmeticPlacement {
     },
     Effect,
     Attachment(AttachmentRule),
+    StatTracker,
     ProjectionDecal {
         form: Option<String>,
         horizontal_mirror: bool,
@@ -357,6 +420,7 @@ pub enum CosmeticPlacement {
         ddd.bounded_context.name = "accounts",
         user.id = snapshot.id,
         input.inventory_id = vehicle,
+        input.vehicle_type = vehicle_type,
         input.revision = snapshot.revision,
         input.operation = change.operation(),
         input.items.count = change.line_count(),
@@ -368,12 +432,21 @@ pub enum CosmeticPlacement {
 pub fn change_cosmetics(
     snapshot: &mut AccountSnapshot,
     vehicle: i64,
+    vehicle_type: Option<i32>,
     change: CosmeticChange,
     rules: &BTreeMap<CosmeticItem, CosmeticRule>,
     prohibited_numbers: &BTreeSet<String>,
     slots: &VehicleCosmeticSlots,
 ) -> Result<bool, ProgressionError> {
-    let result = plan_cosmetics(snapshot, vehicle, change, rules, prohibited_numbers, slots);
+    let result = plan_cosmetics(
+        snapshot,
+        vehicle,
+        vehicle_type,
+        change,
+        rules,
+        prohibited_numbers,
+        slots,
+    );
     let span = tracing::Span::current();
     match &result {
         Ok(changed) => span.record(
@@ -392,6 +465,7 @@ pub fn change_cosmetics(
 fn plan_cosmetics(
     snapshot: &mut AccountSnapshot,
     vehicle: i64,
+    vehicle_type: Option<i32>,
     change: CosmeticChange,
     rules: &BTreeMap<CosmeticItem, CosmeticRule>,
     prohibited_numbers: &BTreeSet<String>,
@@ -430,6 +504,23 @@ fn plan_cosmetics(
             for (season, mut outfit) in seasons {
                 if !outfit.supports_season(season) || outfit.attachments.len() > MAX_ATTACHMENTS {
                     return Err(InvalidCosmetic);
+                }
+                if let Some(tracker) = outfit.stat_tracker {
+                    let rule = rules
+                        .get(&(CosmeticKind::StatTracker, tracker.id))
+                        .ok_or(InvalidCosmetic)?;
+                    if !matches!(rule.placement, CosmeticPlacement::StatTracker)
+                        || !rule.seasons.contains(&season)
+                        || !slots.stat_tracker_slots.contains(&tracker.slot_id)
+                        || vehicle_type
+                            .and_then(|cd| state.stat_trackers.get(&cd))
+                            .and_then(|owned| owned.get(&tracker.id))
+                            .copied()
+                            .unwrap_or_default()
+                            == 0
+                    {
+                        return Err(InvalidCosmetic);
+                    }
                 }
                 for (&slot_id, attachment) in &outfit.attachments {
                     let rule = rules
@@ -563,7 +654,11 @@ fn plan_cosmetics(
                     *count = count.saturating_sub(units);
                 }
             }
-            for (item, units) in outfits.values().flat_map(VehicleOutfit::items) {
+            for (item, units) in outfits
+                .values()
+                .flat_map(VehicleOutfit::items)
+                .filter(|(item, _)| item.0 != CosmeticKind::StatTracker)
+            {
                 let stock = free.entry(item).or_default();
                 let used = units.min(*stock);
                 *stock -= used;
@@ -689,6 +784,7 @@ mod tests {
             change_cosmetics(
                 &mut snapshot,
                 1,
+                None,
                 mount_summer(),
                 &rules,
                 &BTreeSet::new(),
@@ -706,6 +802,7 @@ mod tests {
             !change_cosmetics(
                 &mut snapshot,
                 1,
+                None,
                 mount_summer(),
                 &rules,
                 &BTreeSet::new(),
@@ -719,6 +816,7 @@ mod tests {
                 change_cosmetics(
                     &mut snapshot,
                     vehicle,
+                    None,
                     change,
                     &rules,
                     &BTreeSet::new(),
@@ -735,6 +833,7 @@ mod tests {
             change_cosmetics(
                 &mut snapshot,
                 2,
+                None,
                 invalid,
                 &rules,
                 &BTreeSet::new(),
@@ -750,6 +849,7 @@ mod tests {
             change_cosmetics(
                 &mut snapshot,
                 2,
+                None,
                 mount_desert(),
                 &rules,
                 &BTreeSet::new(),

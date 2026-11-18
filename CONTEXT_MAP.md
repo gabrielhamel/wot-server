@@ -37,7 +37,7 @@ messenger RPC versions, presence and committed participant delivery. See [social
 
 [Player Administration](src/player_administration/README.md) authenticates operators and adapts Accounts' player
 listing and creation contract to HTTP and the React Admin dashboard. It submits
-currency, vehicle and attachment grants through Player Sessions for serialized
+currency, vehicle and cosmetic grants through Player Sessions for serialized
 garage updates.
 
 [Binary Mapping](tools/wot-binary-map/src/binary_mapping/README.md) runs in its

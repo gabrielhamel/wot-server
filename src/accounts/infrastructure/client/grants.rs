@@ -1,6 +1,8 @@
 use super::GarageCatalog;
 use crate::{
-    accounts::{AccountSnapshot, GrantError, PlayerGrant, ProgressionChange, ProgressionError},
+    accounts::{
+        AccountSnapshot, CosmeticKind, GrantError, PlayerGrant, ProgressionChange, ProgressionError,
+    },
     platform::client_formats::pickle::Value,
 };
 
@@ -11,7 +13,7 @@ pub struct VehicleCatalogEntry<'a> {
     pub tier: Option<i64>,
 }
 
-pub struct AttachmentCatalogEntry<'a> {
+pub struct CosmeticGrantEntry<'a> {
     pub id: u16,
     pub name: &'a str,
     pub max_owned: Option<u32>,
@@ -41,15 +43,36 @@ impl GarageCatalog {
         })
     }
 
-    pub fn grantable_attachments(&self) -> impl Iterator<Item = AttachmentCatalogEntry<'_>> {
-        self.cosmetics.attachment_names().filter_map(|(id, name)| {
-            let rule = self.cosmetics.grantable_attachment(id)?;
-            Some(AttachmentCatalogEntry {
+    pub fn grantable_attachments(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.cosmetic_grant_entries(CosmeticKind::Attachment)
+    }
+
+    pub fn grantable_stat_trackers(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.cosmetic_grant_entries(CosmeticKind::StatTracker)
+    }
+
+    fn cosmetic_grant_entries(
+        &self,
+        kind: CosmeticKind,
+    ) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.cosmetics
+            .grantable_cosmetics(kind)
+            .map(|(id, name, max_owned)| CosmeticGrantEntry {
                 id,
                 name,
-                max_owned: rule.max_owned,
+                max_owned,
             })
-        })
+    }
+
+    pub fn stat_tracker_options(
+        &self,
+        snapshot: &AccountSnapshot,
+        inventory_id: i64,
+    ) -> Option<(i32, Vec<u16>)> {
+        let (vehicle_type, _, rules) = self
+            .vehicle_cosmetic_rules(snapshot, inventory_id, Some(CosmeticKind::StatTracker))
+            .ok()?;
+        Some((vehicle_type, rules.into_keys().map(|(_, id)| id).collect()))
     }
 
     #[tracing::instrument(name = "accounts.grants.plan_grant", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
@@ -67,12 +90,27 @@ impl GarageCatalog {
             PlayerGrant::Attachment { id, count } => {
                 let rule = self
                     .cosmetics
-                    .grantable_attachment(id)
+                    .grantable_rule((CosmeticKind::Attachment, id))
                     .ok_or(GrantError::UnknownAttachment)?;
                 snapshot
                     .progression
                     .cosmetics
                     .grant_attachment(id, count, rule.max_owned)?;
+                None
+            }
+            PlayerGrant::StatTracker { vehicle, id, count } => {
+                let (vehicle_type, _, rules) = self
+                    .vehicle_cosmetic_rules(&snapshot, vehicle, Some(CosmeticKind::StatTracker))
+                    .map_err(|_| GrantError::IncompatibleStatTracker)?;
+                let rule = rules
+                    .get(&(CosmeticKind::StatTracker, id))
+                    .ok_or(GrantError::IncompatibleStatTracker)?;
+                snapshot.progression.cosmetics.grant_stat_tracker(
+                    vehicle_type,
+                    id,
+                    count,
+                    rule.max_owned,
+                )?;
                 None
             }
             PlayerGrant::Vehicle { vehicle } => {
@@ -133,9 +171,9 @@ impl GarageCatalog {
                     "stats": {(key): (currency.balance(&change.snapshot.balances))}
                 }))
             }
-            PlayerGrant::Vehicle { .. } | PlayerGrant::Attachment { .. } => {
-                self.progression_diff(previous, change)
-            }
+            PlayerGrant::Vehicle { .. }
+            | PlayerGrant::Attachment { .. }
+            | PlayerGrant::StatTracker { .. } => self.progression_diff(previous, change),
         }
     }
 }
