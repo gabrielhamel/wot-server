@@ -39,10 +39,12 @@ the same computer, use `127.0.0.1` instead.
   "base_bind": "0.0.0.0:20017",
   "advertised_base": "192.168.1.10:20017",
   "private_key": "/state/login.pem",
-  "admin": {
+  "web": {
     "bind": "0.0.0.0:8080",
-    "token": "REPLACE_WITH_YOUR_GENERATED_TOKEN",
-    "dashboard_dir": "dashboard"
+    "ui_dir": "web"
+  },
+  "admin": {
+    "token": "REPLACE_WITH_YOUR_GENERATED_TOKEN"
   }
 }
 ```
@@ -76,7 +78,7 @@ docker run -d --name wot-server --restart unless-stopped \
 ```
 
 The server applies database migrations and generates its login key on first
-start. Open [the dashboard](http://127.0.0.1:8080/), sign in with your admin token,
+start. Open [the dashboard](http://127.0.0.1:8080/admin/), sign in with your admin token,
 and use **Player accounts → Create** to add an account. Use an email-shaped login
 such as `player@example.com` for the game client. New accounts receive tier I
 tanks, crew and ammunition. Startup does not create demo accounts automatically.
@@ -100,7 +102,7 @@ These are the host ports published by the commands above:
 Allow/forward **all three game mappings**, including both UDP and TCP on `20017`,
 through the host firewall and router when needed. Game clients do not need the
 admin or database ports. Docker's `EXPOSE` declarations alone do not publish
-ports; the `-p` options above do. The admin listener is optional: remove the
+ports; the `-p` options above do. The web listener is optional: remove the
 `admin` object and its port mapping to disable it.
 
 ## Add the server to the game's server list

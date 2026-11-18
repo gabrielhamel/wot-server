@@ -28,11 +28,11 @@ RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sh
     cargo build --locked --release --bin wot-server && \
     cp target/release/wot-server /build/wot-server
 
-FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS dashboard-build
+FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS web-build
 WORKDIR /build
-COPY dashboard/package.json dashboard/package-lock.json ./
+COPY web/package.json web/package-lock.json ./
 RUN npm ci
-COPY dashboard/ ./
+COPY web/ ./
 RUN npm run build
 
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
@@ -42,7 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && chown 10001:10001 .
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/licenses/wot-server/
 COPY --from=server-build /build/wot-server ./
-COPY --from=dashboard-build /build/dist/ ./dashboard/
+COPY --from=web-build /build/dist/ ./web/
+RUN ln -s web dashboard
 COPY resources/ ./resources/
 USER 10001:10001
 EXPOSE 20016/udp 20017/udp 20017/tcp 8080/tcp

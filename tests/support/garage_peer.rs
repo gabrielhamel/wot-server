@@ -56,6 +56,7 @@ pub struct Peer {
     session: u32,
     pub created: bool,
     pub shown: bool,
+    pub shop_url: Option<String>,
     resources: BTreeMap<u16, BTreeMap<u8, Vec<u8>>>,
     completed: BTreeMap<u16, Vec<u8>>,
     pub methods: Vec<(String, Vec<Value>)>,
@@ -83,6 +84,7 @@ impl Peer {
             session: 0,
             created: false,
             shown: false,
+            shop_url: None,
             resources: BTreeMap::new(),
             completed: BTreeMap::new(),
             methods: Vec::new(),
@@ -302,10 +304,37 @@ impl Peer {
                             assert!(
                                 epic.contains_key(&pickle::Value::Bytes(b"epicMetaGame".to_vec()))
                             );
+                            let pickle::Value::Dict(shop) = &settings[&pickle::Value::from("shop")]
+                            else {
+                                panic!("shop settings")
+                            };
                             assert_eq!(
-                                settings.get(&pickle::Value::from("shop")),
-                                Some(&wot_server::pickle!({"isStorageEnabled": true}))
+                                shop[&pickle::Value::from("isStorageEnabled")],
+                                pickle::Value::Bool(true)
                             );
+                            self.shop_url = shop.get(&pickle::Value::from("hostUrl")).map(|url| {
+                                let pickle::Value::Bytes(bytes) = url else {
+                                    panic!("shop hostUrl must be a Python string")
+                                };
+                                String::from_utf8(bytes.clone()).unwrap()
+                            });
+                            let browser_allowlist =
+                                settings.get(&pickle::Value::from("igbWhitelist"));
+                            if let Some(url) = &self.shop_url {
+                                let url: axum::http::Uri =
+                                    url.split('#').next().unwrap().parse().unwrap();
+                                let host = url.host().unwrap().to_ascii_lowercase();
+                                assert_eq!(
+                                    browser_allowlist,
+                                    Some(&wot_server::pickle!({
+                                        "isEnabled": true,
+                                        "defaultWhitelist": {(host.as_str())},
+                                        "whitelistUrl": "",
+                                    }))
+                                );
+                            } else {
+                                assert!(browser_allowlist.is_none());
+                            }
                             assert_eq!(creation.entity_type_id, 1);
                             self.created = true;
                         }

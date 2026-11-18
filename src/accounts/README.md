@@ -41,6 +41,7 @@ context is a possible future boundary, not an implemented one.
 | Garage slot | One unit of total vehicle capacity. A slot purchase adds one unit and charges the shop price in the same revision. |
 | Vehicle sale | An atomic ownership removal that settles the vehicle and fitting value, returns retained fittings to the Depot, and transfers or dismisses its crew. |
 | Module loadout | The six module descriptors installed on an owned tank. |
+| Store offer | A selected equipment catalog item with its server-owned credit price. |
 | Equipment layout | The ordered optional devices mounted on an owned tank. |
 | Consumable layout | Ordered regular consumables mounted on a vehicle, with an independent auto-resupply preference. |
 | Directive slot | A mounted crew or equipment directive and its vehicle-specific auto-resupply preference. |
@@ -77,7 +78,8 @@ context entry point. It receives account IDs, logins and display names. Account
 creation hashes the password with Argon2id and commits the identity and starter
 garage in one PostgreSQL transaction.
 Player Administration also reads snapshots and vehicle catalog entries. Player Sessions uses the same
-revision-checked progression transaction for player grants and garage purchases.
+revision-checked progression transaction for player grants, garage purchases and
+[Store checkout](../../docs/store.md).
 
 Accounts emits application, domain decision, catalog and repository spans.
 Repository queries and transaction boundaries use the shared database tracing

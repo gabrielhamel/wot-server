@@ -1,23 +1,31 @@
-use axum::Router;
+use axum::{Router, http::HeaderMap};
 use hyper::server::conn::http1;
 use hyper_util::{
     rt::{TokioIo, TokioTimer},
     service::TowerToHyperService,
 };
-use std::time::Duration;
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 
 const MAX_CONNECTIONS: usize = 64;
 const CONNECTION_LIFETIME: Duration = Duration::from_secs(20);
 
-pub(crate) async fn serve(listener: TcpListener, router: Router, mut stop: oneshot::Receiver<()>) {
+pub(crate) async fn serve(
+    listener: TcpListener,
+    router: Router,
+    service_name: &'static str,
+    mut stop: oneshot::Receiver<()>,
+) {
     let mut connections = JoinSet::new();
     loop {
         tokio::select! {
             _ = &mut stop => break,
             result = connections.join_next(), if !connections.is_empty() => {
                 if let Some(Err(error)) = result {
-                    tracing::error!(%error, "Admin HTTP connection task failed");
+                    tracing::error!(%error, service_name, "HTTP connection task failed");
                 }
             }
             accepted = listener.accept(), if connections.len() < MAX_CONNECTIONS => {
@@ -32,13 +40,13 @@ pub(crate) async fn serve(listener: TcpListener, router: Router, mut stop: onesh
                                 .serve_connection(TokioIo::new(stream), service);
                             match tokio::time::timeout(CONNECTION_LIFETIME, connection).await {
                                 Ok(Ok(())) => {}
-                                Ok(Err(error)) => tracing::debug!(%peer, %error, "Admin HTTP connection closed"),
-                                Err(_) => tracing::debug!(%peer, "Admin HTTP connection expired"),
+                                Ok(Err(error)) => tracing::debug!(%peer, %error, service_name, "HTTP connection closed"),
+                                Err(_) => tracing::debug!(%peer, service_name, "HTTP connection expired"),
                             }
                         });
                     }
                     Err(error) => {
-                        tracing::error!(%error, "Accept admin HTTP connection failed");
+                        tracing::error!(%error, service_name, "Accept HTTP connection failed");
                         tokio::select! {
                             _ = &mut stop => break,
                             _ = tokio::time::sleep(Duration::from_millis(250)) => {}
@@ -50,4 +58,35 @@ pub(crate) async fn serve(listener: TcpListener, router: Router, mut stop: onesh
     }
     drop(listener);
     connections.shutdown().await;
+}
+
+fn forwarded_client(
+    peer: IpAddr,
+    headers: &HeaderMap,
+    trusted_proxies: &[IpAddr],
+) -> Option<IpAddr> {
+    if !trusted_proxies.contains(&peer) {
+        return None;
+    }
+    let mut values = headers.get_all("x-forwarded-for").iter();
+    let value = values.next()?.to_str().ok()?;
+    if values.next().is_some() || value.len() > 45 {
+        return None;
+    }
+    value.trim().parse().ok()
+}
+
+pub(crate) fn record_client_address(
+    peer: SocketAddr,
+    headers: &HeaderMap,
+    trusted_proxies: &[IpAddr],
+) {
+    let forwarded = forwarded_client(peer.ip(), headers, trusted_proxies);
+    let span = tracing::Span::current();
+    span.record("network.peer.address", peer.ip().to_string());
+    span.record("network.peer.port", peer.port());
+    span.record("client.address", forwarded.unwrap_or(peer.ip()).to_string());
+    if forwarded.is_none() {
+        span.record("client.port", peer.port());
+    }
 }

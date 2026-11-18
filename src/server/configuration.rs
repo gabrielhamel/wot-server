@@ -32,14 +32,51 @@ impl LogLevel {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct AdminConfiguration {
-    #[serde(default = "admin_bind")]
+    #[serde(default = "default_web_bind")]
     pub bind: SocketAddrV4,
     pub token: String,
     pub dashboard_dir: Option<PathBuf>,
 }
 
-fn admin_bind() -> SocketAddrV4 {
+fn default_web_bind() -> SocketAddrV4 {
     SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 8080)
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct WebConfiguration {
+    #[serde(default = "default_web_bind")]
+    pub bind: SocketAddrV4,
+    pub ui_dir: Option<PathBuf>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct StoreConfiguration {
+    bind: Option<SocketAddrV4>,
+    pub origin: String,
+}
+
+impl StoreConfiguration {
+    fn validate(&mut self) -> Result<()> {
+        let uri = self
+            .origin
+            .parse::<axum::http::Uri>()
+            .context("Invalid Store origin")?;
+        let host = uri.host().context("Store origin requires a host")?;
+        let loopback = matches!(host, "localhost" | "127.0.0.1" | "[::1]");
+        ensure!(
+            uri.scheme_str() == Some("https") || (uri.scheme_str() == Some("http") && loopback),
+            "Store origin requires HTTPS or loopback HTTP"
+        );
+        ensure!(
+            uri.path() == "/" && uri.query().is_none() && !self.origin.contains(['@', '#']),
+            "Store origin must contain only a scheme, host and optional port"
+        );
+        self.origin
+            .truncate(self.origin.trim_end_matches('/').len());
+        Ok(())
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -57,7 +94,9 @@ pub(super) struct Configuration {
     pub log_level: LogLevel,
     #[serde(rename = "log_file", skip_serializing)]
     _legacy_log_file: serde::de::IgnoredAny,
+    pub web: Option<WebConfiguration>,
     pub admin: Option<AdminConfiguration>,
+    pub store: Option<StoreConfiguration>,
 }
 
 impl Default for Configuration {
@@ -75,7 +114,9 @@ impl Default for Configuration {
             max_pending: 32,
             log_level: LogLevel::default(),
             _legacy_log_file: serde::de::IgnoredAny,
+            web: None,
             admin: None,
+            store: None,
         }
     }
 }
@@ -142,13 +183,34 @@ impl Configuration {
                         || matches!(byte, b'-' | b'_' | b'.' | b'~')),
                 "Admin token must contain 32 to 256 URL-safe characters"
             );
-            if let Some(dashboard) = &mut admin.dashboard_dir {
+        }
+        if let Some(store) = &mut config.store {
+            store.validate()?;
+        }
+        if config.web.is_none() && (config.admin.is_some() || config.store.is_some()) {
+            let bind = config
+                .admin
+                .as_ref()
+                .map(|admin| admin.bind)
+                .or_else(|| config.store.as_ref().and_then(|store| store.bind))
+                .unwrap_or_else(default_web_bind);
+            let ui_dir = config
+                .admin
+                .as_ref()
+                .and_then(|admin| admin.dashboard_dir.clone());
+            config.web = Some(WebConfiguration { bind, ui_dir });
+        }
+        if let Some(web) = &mut config.web {
+            if config.store.is_some() && web.ui_dir.is_none() {
+                web.ui_dir = Some(PathBuf::from("web"));
+            }
+            if let Some(ui_dir) = &mut web.ui_dir {
                 ensure!(
-                    !dashboard.as_os_str().is_empty(),
-                    "Admin dashboard directory must be nonempty"
+                    !ui_dir.as_os_str().is_empty(),
+                    "Web UI directory must be nonempty"
                 );
-                if dashboard.is_relative() {
-                    *dashboard = directory.join(&*dashboard);
+                if ui_dir.is_relative() {
+                    *ui_dir = directory.join(&*ui_dir);
                 }
             }
         }

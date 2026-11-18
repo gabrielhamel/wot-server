@@ -10,10 +10,15 @@ fn pickle_dict(entries: impl IntoIterator<Item = (&'static str, PickleValue)>) -
     )
 }
 
-pub fn server_settings() -> Pickle {
+fn server_settings(store_url: &str) -> Pickle {
+    let shop = if store_url.is_empty() {
+        crate::pickle!({"isStorageEnabled": true})
+    } else {
+        crate::pickle!({"isStorageEnabled": true, "hostUrl": (store_url)})
+    };
     Pickle(crate::pickle!({
         "file_server": {},
-        "shop": {"isStorageEnabled": true},
+        "shop": (shop),
         "isCrewBooksPurchaseEnabled": true,
         "isCrewBooksSaleEnabled": true,
         "isJunkCrewConversionEnabled": true,
@@ -125,12 +130,25 @@ pub fn token_data(token_type: u8, database_id: i64) -> Pickle {
     ]))
 }
 
-pub fn server_settings_with_chat(address: std::net::SocketAddrV4) -> Pickle {
-    let mut settings = server_settings();
+pub fn server_settings_with_chat(
+    address: std::net::SocketAddrV4,
+    store: Option<(&str, &str)>,
+) -> Pickle {
+    let mut settings = server_settings(store.map_or("", |(url, _)| url));
     if let PickleValue::Dict(ref mut dict) = settings.0 {
         let values = crate::pickle!({"xmpp_enabled": true, "xmpp_host": (super::xmpp::DOMAIN), "xmpp_port": (i32::from(address.port())), "xmpp_resource": (super::xmpp::RESOURCE), "xmpp_connections": [((address.ip().to_string().as_str()), (i32::from(address.port())))], "xmpp_muc_services": []});
         if let PickleValue::Dict(values) = values {
             dict.extend(values);
+        }
+        if let Some((_, host)) = store {
+            dict.insert(
+                PickleValue::from("igbWhitelist"),
+                crate::pickle!({
+                    "isEnabled": true,
+                    "defaultWhitelist": {(host)},
+                    "whitelistUrl": "",
+                }),
+            );
         }
     }
     settings

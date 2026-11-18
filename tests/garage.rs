@@ -27,8 +27,12 @@ use garage_peer::Peer;
 mod player_fixture;
 #[path = "support/social_flow.rs"]
 mod social_flow;
+#[path = "support/store_flow.rs"]
+mod store_flow;
 #[path = "support/telemetry_capture.rs"]
 mod telemetry_capture;
+#[path = "support/web_flow.rs"]
+mod web_flow;
 #[path = "support/xmpp_flow.rs"]
 mod xmpp_flow;
 use std::{

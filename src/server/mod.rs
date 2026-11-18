@@ -1,5 +1,6 @@
 use crate::{
     accounts::{Accounts, GarageCatalog, PlayerAccounts, PostgresAccounts, PostgresPlayers},
+    platform::http,
     player_administration,
     player_sessions::{Gateway, GatewayConfig},
 };
@@ -16,6 +17,7 @@ mod configuration;
 mod logging;
 mod login_key;
 mod telemetry;
+mod web;
 use configuration::{Configuration, LogLevel};
 
 #[derive(Parser)]
@@ -84,7 +86,7 @@ async fn serve(config: Configuration) -> Result<()> {
         }))
         .await??;
     let accounts = Accounts::new(repository.clone());
-    let gateway = Gateway::bind(
+    let mut gateway = Gateway::bind(
         GatewayConfig {
             login_bind: config.login_bind,
             base_bind: config.base_bind,
@@ -98,50 +100,57 @@ async fn serve(config: Configuration) -> Result<()> {
         accounts.clone(),
         tokio::runtime::Handle::current(),
     )?;
-    let (admin_stop, admin_shutdown) = tokio::sync::oneshot::channel();
-    let admin_listener = if let Some(settings) = config.admin {
-        if let Some(dashboard) = &settings.dashboard_dir {
-            anyhow::ensure!(
-                dashboard.join("index.html").is_file() && dashboard.join("assets").is_dir(),
-                "Build the admin dashboard before using {}",
-                dashboard.display()
-            );
+    let (web_stop, web_shutdown) = tokio::sync::oneshot::channel();
+    let web_worker = if let Some(settings) = config.web {
+        let trusted_proxies = if config.admin.is_some() {
+            configuration::admin_trusted_proxy_ips()?
+        } else {
+            Vec::new()
+        };
+        let mut router = axum::Router::new();
+        if let Some(directory) = &settings.ui_dir {
+            router = web::pages(
+                directory,
+                config.admin.is_some(),
+                config.store.is_some(),
+                trusted_proxies.clone(),
+            )?;
         }
-        let token = player_administration::AdminToken::new(&settings.token);
+        if let Some(store) = config.store {
+            router = router.merge(gateway.enable_store(store.origin)?);
+        }
+        if let Some(admin) = config.admin {
+            let (players, catalog) = tokio::task::spawn_blocking(
+                crate::platform::observability::in_current_span(move || {
+                    PostgresPlayers::new(&repository, catalog.clone())
+                        .map(|players| (players, catalog))
+                }),
+            )
+            .await??;
+            router = router.merge(player_administration::router(
+                PlayerAccounts::new(players),
+                accounts,
+                catalog,
+                gateway.player_grants(),
+                player_administration::AdminToken::new(&admin.token),
+                trusted_proxies,
+            ));
+        }
         let listener = tokio::net::TcpListener::bind(settings.bind)
             .await
-            .with_context(|| format!("Bind admin HTTP listener at {}", settings.bind))?;
-        let player_catalog = catalog.clone();
-        let player_repository = repository.clone();
-        let players = tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
-            move || PostgresPlayers::new(&player_repository, player_catalog),
-        ))
-        .await??;
-        let router = player_administration::router(
-            PlayerAccounts::new(players),
-            accounts,
-            catalog,
-            gateway.player_grants(),
-            token,
-            settings.dashboard_dir.as_deref(),
-            configuration::admin_trusted_proxy_ips()?,
-        );
-        Some((listener, router))
+            .with_context(|| format!("Bind web HTTP listener at {}", settings.bind))?;
+        tracing::info!(address = %listener.local_addr()?, "Web HTTP listener started");
+        Some(tokio::spawn(http::serve(
+            listener,
+            router,
+            "web",
+            web_shutdown,
+        )))
     } else {
         None
     };
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
-    let admin_worker = if let Some((listener, router)) = admin_listener {
-        tracing::info!(address = %listener.local_addr()?, "Admin HTTP listener started");
-        Some(tokio::spawn(player_administration::serve(
-            listener,
-            router,
-            admin_shutdown,
-        )))
-    } else {
-        None
-    };
     let mut worker =
         tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
             gateway.run(worker_stop)
@@ -154,9 +163,9 @@ async fn serve(config: Configuration) -> Result<()> {
             signal.context("Wait for shutdown signal").and(result)
         }
     };
-    let _ = admin_stop.send(());
-    if let Some(admin_worker) = admin_worker {
-        admin_worker.await.context("Join admin HTTP listener")?;
+    let _ = web_stop.send(());
+    if let Some(web_worker) = web_worker {
+        web_worker.await.context("Join web HTTP listener")?;
     }
     result
 }

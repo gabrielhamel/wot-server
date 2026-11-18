@@ -1,4 +1,5 @@
 use super::{
+    StoreOffer,
     item_defs::read_xml,
     item_prices::{ItemPrices, NO_NATION},
     items::{IntCompactDescr, item_type},
@@ -20,9 +21,13 @@ use wot_resources::ResourceBundle;
 
 const VEHICLE_COMMON: &str = "scripts/item_defs/vehicles/common";
 
-pub(super) fn load(fs: &ResourceBundle, prices: &ItemPrices) -> Result<EquipmentRules> {
+pub(super) fn load(
+    fs: &ResourceBundle,
+    prices: &ItemPrices,
+) -> Result<(EquipmentRules, Vec<StoreOffer>)> {
     let definitions = read_xml(fs, &format!("{VEHICLE_COMMON}/optional_devices.xml"))?;
     let mut rules = EquipmentRules::default();
+    let mut offers = Vec::new();
     for (name, device) in definitions.iter_child_elements() {
         let Some(id) = device.get_child_integer("id") else {
             continue;
@@ -57,8 +62,20 @@ pub(super) fn load(fs: &ResourceBundle, prices: &ItemPrices) -> Result<Equipment
         let incompatible = device
             .get_child_element("incompatibleTags")
             .map_or_else(BTreeSet::new, |filter| words(filter, "installed"));
+        let item = i32::try_from(cd.to_int())?;
+        if let Some(EquipmentPrice::Credits(credits)) = price
+            && credits > 0
+            && !prices.not_for_sale.contains(&cd)
+            && let Some(name) = store_equipment_name(name)
+        {
+            offers.push(StoreOffer {
+                item,
+                name,
+                credits,
+            });
+        }
         rules.items.insert(
-            i32::try_from(cd.to_int())?,
+            item,
             EquipmentDefinition {
                 price,
                 removable: device.get_child_boolean("removable").unwrap_or(false),
@@ -70,7 +87,20 @@ pub(super) fn load(fs: &ResourceBundle, prices: &ItemPrices) -> Result<Equipment
             },
         );
     }
-    Ok(rules)
+    offers.sort_by_key(|offer| (offer.credits, offer.name));
+    Ok((rules, offers))
+}
+
+fn store_equipment_name(key: &str) -> Option<&'static str> {
+    match key {
+        "improvedVentilation_tier3" => Some("Improved Ventilation Class 3"),
+        "improvedVentilation_tier2" => Some("Improved Ventilation Class 2"),
+        "improvedVentilation_tier1" => Some("Improved Ventilation Class 1"),
+        "turbocharger_tier3" => Some("Turbocharger Class 3"),
+        "turbocharger_tier2" => Some("Turbocharger Class 2"),
+        "turbocharger_tier1" => Some("Turbocharger Class 1"),
+        _ => None,
+    }
 }
 
 pub(super) fn vehicle(

@@ -21,6 +21,8 @@ mod module_defs;
 mod progression;
 mod shop;
 mod starter_garage;
+mod store;
+pub use store::{StoreOffer, StoreOrder, StoreOrderError};
 mod supply_slots;
 mod vehicle_defs;
 pub use grants::{CosmeticGrantEntry, VehicleCatalogEntry};
@@ -51,6 +53,7 @@ pub struct GarageCatalog {
     cosmetics: cosmetic_catalog::CosmeticCatalog,
     shell_prices: BTreeMap<i32, ShellPrice>,
     equipment: crate::accounts::EquipmentRules,
+    store_offers: Vec<StoreOffer>,
     directives: crate::accounts::DirectiveRules,
     consumables: crate::accounts::ConsumableRules,
     supply_slots: supply_slots::SupplySlots,
@@ -148,7 +151,7 @@ impl GarageCatalog {
         cosmetic_catalog::index_exterior_shop(&fs, &mut prices)?;
         let crew_books = crew_books::load(&fs, &mut prices)?;
         let crew_skins = crew_skins::load(&fs, &mut prices)?;
-        let equipment = equipment::load(&fs, &prices)?;
+        let (equipment, store_offers) = equipment::load(&fs, &prices)?;
         let directives = directives::load(&fs, &prices)?;
         let consumables = consumables::load(&fs, &prices)?;
         let supply_slots = supply_slots::SupplySlots::load(&fs)?;
@@ -206,6 +209,7 @@ impl GarageCatalog {
             cosmetics,
             shell_prices,
             equipment,
+            store_offers,
             directives,
             consumables,
             supply_slots,

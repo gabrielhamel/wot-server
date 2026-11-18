@@ -32,7 +32,7 @@ server-list registration, follow the
 The package is public and can be pulled without signing in. Set
 `IMAGE` to a published image name from the workflow summary. The image bundles
 the release binary, `/opt/wot-server/resources` and
-`/opt/wot-server/dashboard`. The server creates `server.json` beside the
+`/opt/wot-server/web`. The previous `dashboard/` path points to that bundle. The server creates `server.json` beside the
 binary on first start. The runtime user has UID and GID 10001.
 
 Both the server and extractor images include the project license and
@@ -55,8 +55,8 @@ docker run --rm --name wot-server \
 
 Set `private_key` to `/state/login.pem` and `advertised_base` to the host address and port that
 game clients can reach; the container's bridge address is usually unreachable
-from outside Docker. For the optional dashboard, set `admin.bind` to
-`0.0.0.0:8080`, `admin.dashboard_dir` to `dashboard` and `admin.token`
+from outside Docker. For the optional dashboard, set `web.bind` to
+`0.0.0.0:8080`, `web.ui_dir` to `web` and `admin.token`
 to a generated token. See the [server guide](server.md) for database, RSA
 login and client setup.
 

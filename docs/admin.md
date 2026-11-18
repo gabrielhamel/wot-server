@@ -17,33 +17,34 @@ recorded with the EU 2.4.1.5514 resources. See the
 From the repository root, build the SPA with Node.js 22.12 or later.
 
 ```sh
-npm --prefix dashboard ci
-npm --prefix dashboard run build
+npm --prefix web ci
+npm --prefix web run build
 openssl rand -hex 32
 ```
 
-Add this top-level property to the `server.json` beside the game server
+Add these top-level settings to the `server.json` beside the game server
 executable. Replace the example token with the generated value.
 
 ```json
 {
-  "admin": {
+  "web": {
     "bind": "127.0.0.1:8080",
-    "token": "REPLACE_WITH_THE_GENERATED_TOKEN",
-    "dashboard_dir": "../../dashboard/dist"
+    "ui_dir": "../../web/dist"
+  },
+  "admin": {
+    "token": "REPLACE_WITH_THE_GENERATED_TOKEN"
   }
 }
 ```
 
-The relative dashboard path above works with the executable in either
-`target/debug/` or `target/release/`. For a standalone installation, copy the
-built directory and set `dashboard_dir` relative to the executable or use an
-absolute path. Omit `dashboard_dir` to serve only the API. The default bind is
-`127.0.0.1:8080`. The server enables the listener when the `admin` object is
-present.
+The relative UI path works with the executable in `target/debug/` or
+`target/release/`. Use `web.ui_dir` to point to the built web project. Omit it
+for admin API-only mode. The shared listener defaults to `127.0.0.1:8080`.
+Legacy `admin.bind` and `admin.dashboard_dir` still supply the listener
+settings when there is no `web` object.
 
-Restart the server, open <http://127.0.0.1:8080/> and sign in with the admin
-token. Use **Create** in **Player accounts** to enter the game login, display
+Restart the server, open <http://127.0.0.1:8080/admin/> and sign in with the
+admin token. The old root URL redirects to the dashboard. Use **Create** in **Player accounts** to enter the game login, display
 name and password. The list displays player names and logins,
 newest first. Select a player to open **Resources & Garage**. The page displays
 credits, gold, bonds, free XP and owned tanks. Use **Grant resource** to add a
@@ -60,8 +61,8 @@ stores the admin token in tab session storage.
 For remote administration, keep the server on loopback and use an HTTPS
 reverse proxy or an SSH tunnel. The built-in listener serves plain HTTP.
 
-For frontend development, `npm --prefix dashboard run dev` starts Vite
-with a local API proxy to the default admin listener.
+For frontend development, `npm --prefix web run dev` starts Vite
+with a local API proxy to the default web listener. Open `/admin/` for the dashboard or `/shop/` for the Store.
 
 When implementing a player-usable item that the normal shop cannot sell,
 include an authenticated admin dashboard grant. Grants preserve the
@@ -176,5 +177,5 @@ refreshes via the wallet callback.
 Set `WOT_ADMIN_TRUSTED_PROXY_IPS` to the exact comma-separated proxy peer IPs
 only when your proxy replaces `X-Forwarded-For` with the visitor's socket IP.
 The server otherwise records the direct peer, including on authentication
-failures and static dashboard requests. See [request source IP](telemetry.md#request-source-ip)
+failures. Shared UI requests appear under `web.ui.request`. See [request source IP](telemetry.md#request-source-ip)
 for Kubernetes routing, validation, and the trust boundary.

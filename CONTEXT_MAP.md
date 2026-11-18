@@ -10,8 +10,8 @@ a review of the names used in this map.
 [Shared Kernel](src/shared_kernel/README.md) supplies the account ID model to
 Player Administration, Player Sessions, and Social.
 [Platform](src/platform/README.md) supplies shared codecs to Accounts and
-Player Sessions, and tracing adapters to runtime infrastructure and server
-composition. Both support boundaries are independent of their consumers.
+Player Sessions, bounded HTTP serving to the shared web listener, and
+tracing adapters to runtime infrastructure and server composition. Both support boundaries are independent of their consumers.
 
 [Accounts](src/accounts/README.md) publishes its application API and immutable
 snapshots upstream of [Player Sessions](src/player_sessions/README.md), which adapts them into login
@@ -20,7 +20,9 @@ layers. Accounts' PostgreSQL adapter persists user state, including revision-che
 ammunition, tank/module research, vehicle purchases and module, equipment, consumable and directive loadouts, cosmetic ownership and outfits, shared depot stock and balance updates; its resource adapter builds
 the garage projection. Player Sessions adapts shell, equipment, consumable, directive, camouflage, module and tank progression requests and publishes committed
 inventory/balance changes and purchase receipts. Player Sessions owns the Mercury UDP adapter and binds
-garage RPCs to the extracted script definitions. Both contexts use the shared
+garage RPCs to the extracted script definitions. Its [Store HTTP adapter](docs/store.md)
+uses the live garage session to publish Accounts offers and route checkout through
+the revision-checked inventory transaction. Both contexts use the shared
 [client formats](src/platform/infrastructure/client_formats/README.md) infrastructure.
 
 [Resource Extraction](tools/wot-extract/README.md) runs offline and publishes

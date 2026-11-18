@@ -17,14 +17,18 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
 | `infrastructure/gateway/progression.rs` | Equipment, directive, module, tank and depot request validation, bounded progression jobs and committed cache delivery. |
-| `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes, update handoff and session snapshots, and deliver committed cache diffs. |
+| `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes. |
+| `application/store.rs` | Store session tokens and the bounded request channel between HTTP and the gateway. |
+| `infrastructure/gateway/store.rs` | Look up live Store sessions and coordinate catalog reads and account writes. |
+| `infrastructure/gateway/account_updates.rs` | Update handoff and session snapshots and deliver committed cache diffs for external account writes. |
+| `presentation/store/` | In-game Store HTTP catalog and checkout endpoints consumed by the [shared web UI](../../web/). |
 | `infrastructure/gateway/cosmetics.rs` | Decode native cosmetic stock purchases and binary seasonal and common outfits for the shared progression transaction. |
 | `infrastructure/gateway/expendables.rs` | Decode consumable and directive layouts and auto-resupply settings for the shared progression transaction. |
 | `infrastructure/gateway/social.rs` | Messenger wire translation, bounded async Social requests, presence and private delivery. |
 | `infrastructure/xmpp/` | Bounded TCP/XML handling, game-issued token admission, native roster, presence, offline/history and WG extension translation. |
 | `infrastructure/credentials.rs` | Translate the basic-login JSON envelope into an account identity; reject official token methods. |
 | `infrastructure/schema.rs` | Version-bound Account wire schema; separate from account domain models. |
-| `infrastructure/bootstrap.rs` | Client bootstrap settings, account-specific GUI context and placeholder web-service token responses. |
+| `infrastructure/bootstrap.rs` | Client bootstrap settings, the Store hostname allowlist, account-specific GUI context and placeholder web-service token responses. |
 | `infrastructure/endpoint.rs` | Resolve the BaseApp handoff: loopback for local peers when bound, then the configured destination or route to each client. |
 
 Player Sessions traces game commands, XMPP requests, worker scheduling, completion
@@ -43,6 +47,7 @@ with Accounts.
 | Generation | Identifies a lookup so a timed-out completion cannot approve a later attempt. |
 | Handoff ticket | Random, one-use key granting a same-IP client access to BaseApp for 30 seconds. |
 | Session | One admitted client and its account projection; one session per account. |
+| Store session token | Random credential issued in the Store URL fragment and scoped to the synchronized garage session. |
 | Account entity | Client protocol representation created after the client enables entities. |
 | Resource stream | CRC-described, fragmented transfer correlated with an account command request ID. |
 
@@ -55,3 +60,7 @@ worker permits and hold account admission until pending completion is processed.
 The Admin grant queue is bounded. A grant reserves the account's write slot until
 its commit and session update complete. The gateway updates outstanding handoff
 tickets and refreshes any login lookup that could have read a pre-grant snapshot.
+
+The [in-game Store](../../docs/store.md) authenticates browser requests against
+the garage session and uses the same write slot and cache publication as other
+external account changes.

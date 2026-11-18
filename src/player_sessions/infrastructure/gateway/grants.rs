@@ -1,9 +1,8 @@
-use super::{Completion as GatewayCompletion, Gateway, Pickle, PreparedAccount};
+use super::{Completion as GatewayCompletion, Gateway, account_updates::CommittedAccountChange};
 use crate::{
     accounts::AccountNotFound,
-    platform::client_formats::pickle::Value,
     player_sessions::{
-        GrantDelivery, GrantRequestError,
+        GrantRequestError,
         application::grants::{GrantRequest, GrantResult},
     },
 };
@@ -14,13 +13,7 @@ use tokio::sync::oneshot;
 pub(super) struct Completion {
     account_id: i64,
     reply: oneshot::Sender<GrantResult>,
-    result: Result<CommittedGrant, GrantRequestError>,
-}
-
-struct CommittedGrant {
-    previous_revision: i64,
-    prepared: PreparedAccount,
-    diff: Value,
+    result: Result<CommittedAccountChange, GrantRequestError>,
 }
 
 impl Gateway {
@@ -80,7 +73,7 @@ impl Gateway {
                     if !accounts.commit_progression(&change).await? {
                         return Err(GrantRequestError::Busy);
                     }
-                    Ok(CommittedGrant {
+                    Ok(CommittedAccountChange {
                         previous_revision: change.previous_revision,
                         prepared,
                         diff,
@@ -111,39 +104,16 @@ impl Gateway {
             reply,
             result,
         } = completion;
-        self.pending_writes.remove(&account_id);
-        let mut session = self
-            .sessions
-            .iter_mut()
-            .find(|(_, session)| session.account.snapshot.id == account_id);
-        if let Some((_, session)) = &mut session {
-            session.saving = false;
-        }
+        self.release_account_write(account_id);
         let result = result.map(|committed| {
-            self.grant_epoch = self.grant_epoch.wrapping_add(1);
             let snapshot = committed.prepared.snapshot.clone();
-            let mut delivery = GrantDelivery::OnNextSync;
-            if let Some((client, session)) = session {
-                let previous_revision = session.account.snapshot.revision;
-                session.account = committed.prepared;
-                if let Some(entity) = session.entity.filter(|_| session.garage_synced) {
-                    let send = if previous_revision == committed.previous_revision {
-                        self.base.entity(entity).and_then(|mut account| account.update(Pickle(committed.diff)))
-                    } else {
-                        Err(std::io::Error::other("garage revision differs from the grant base"))
-                    };
-                    match send {
-                        Ok(()) => delivery = GrantDelivery::QueuedForGarage,
-                        Err(error) => {
-                            tracing::warn!(%error, account_id, "Reclaiming garage session after grant delivery failed");
-                            self.base.disconnect_client(*client);
-                        }
-                    }
-                }
-            } else if let Some(ticket) = self.tickets.values_mut().find(|ticket| ticket.account.snapshot.id == account_id) {
-                ticket.account = committed.prepared;
-            }
-            tracing::info!(account_id, revision = snapshot.revision, ?delivery, "Committed admin grant");
+            let delivery = self.publish_account_change(committed);
+            tracing::info!(
+                account_id,
+                revision = snapshot.revision,
+                ?delivery,
+                "Committed admin grant"
+            );
             (snapshot, delivery)
         });
         let _ = reply.send(result);
@@ -163,7 +133,7 @@ impl Gateway {
                 .answer_login_error(addr, super::LoginError::RateLimited, String::new());
             return;
         };
-        let grant_epoch = self.grant_epoch;
+        let account_change_epoch = self.account_change_epoch;
         let accounts = self.accounts.clone();
         let catalog = self.catalog.clone();
         let sender = self.sender.clone();
@@ -182,7 +152,7 @@ impl Gateway {
                 let _ = sender.try_send(super::TracedCompletion::new(GatewayCompletion::Login {
                     addr,
                     generation,
-                    grant_epoch,
+                    account_change_epoch,
                     blowfish,
                     result,
                 }));
