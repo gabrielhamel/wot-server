@@ -9,7 +9,7 @@ Player Sessions. It does not own transport sessions, entities, battles or matchm
 | `domain/` | Account snapshots, balances, owned vehicles and ammunition, progression, equipment, consumables, directives, depot sales, crew rosters, training and vehicle purchase rules; no SQL or protocol types. |
 | `application/` | Repository ports, credential verification, paginated player listing and provisioning, snapshot queries, preferences and ammunition/progression proposals/commit use cases. |
 | `infrastructure/postgres.rs` | SQLx pool, embedded migrations, coherent snapshot reads, atomic preference updates and revision-checked inventory transactions. |
-| `infrastructure/players.rs` | PostgreSQL player directory pages and atomic creation with tier I garage provisioning. |
+| `infrastructure/players.rs` | PostgreSQL player directory pages and atomic creation with initial balances and starter garage provisioning. |
 | `infrastructure/player_access.rs` | Role-aware account and session access, serialized role changes and session revocation. |
 | `infrastructure/client/` | Anti-corruption layer adapting the versioned [resource bundle](../../docs/resources.md), garage catalog and account/shop cache formats. These wire models are not account domain models. |
 
@@ -26,7 +26,7 @@ context is a possible future boundary, not an implemented one.
 | Account | A durable identity selected by a unique, case-sensitive username. |
 | Player role | The account's Player or Administrator access level. |
 | Dashboard session | A 60-day administrator credential backed by a revocable PostgreSQL record. |
-| Starter garage | Tier I regular tech tree tanks with stock modules, ammunition, and trained crew. |
+| Starter garage | Tier I regular tech tree tanks and the T2 Light Tank with stock modules, ammunition, and trained crew. |
 | Owned vehicle | A stable inventory ID and catalog key attached to one account. |
 | Catalog key | A resource identifier such as `usa:A01_T1_Cunningham`. |
 | Snapshot | A coherent read of an account and its vehicle ownership. |

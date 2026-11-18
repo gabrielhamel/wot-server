@@ -171,6 +171,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.stock.shell_types`](../src/accounts/domain/depot.rs) | Number of distinct shell types currently held in depot stock at the start of a depot sale. |
 | [`input.stock.fitting_types`](../src/accounts/domain/depot.rs) | Number of distinct fitting/item descriptors currently held in depot stock at the start of a depot sale. |
 | [`input.vehicle_count`](../src/accounts/infrastructure/players.rs) | Number of vehicles persisted during starter garage creation or projected for the account cache. |
+| [`input.starter.credits`, `input.starter.gold`](../src/accounts/infrastructure/players.rs) | Initial balances in credits and gold offered by `accounts.players.provision`, including attempts that end in conflict. |
 
 ## Crew inputs
 
@@ -200,6 +201,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.unlocked_vehicle_count`](../src/accounts/infrastructure/client/store.rs) | Number of purchasable gold vehicle descriptors projected in the Tech Tree economics unlock set during garage sync. |
 | [`output.offers.count`](../src/player_sessions/infrastructure/gateway/store.rs) | Number of offers included in a Store catalog response. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/admission.rs) | Login admission records `admitted`, `replaced`, `superseded`, `waiting_for_write`, `refreshing_snapshot`, `expired`, `full`, `destination_unavailable`, or `reply_unavailable`. |
+| [`output.outcome`](../src/accounts/infrastructure/players.rs) | Account provisioning records `created` after commit or `conflict` after rolling back an existing username or a first-admin setup that is closed. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/admission.rs) | Session replacement notice was `sent` to the old UDP peer, `unavailable` because it had no Account entity, or `failed` during enqueue or send. |
 | [`output.outcome`](../src/player_sessions/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_funds`, `research_required` or `failed`. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/account_updates.rs) | Account update `queued` on the live garage connection or `next_sync` when recovered from persisted state on a later sync. |
