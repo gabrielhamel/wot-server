@@ -179,6 +179,22 @@ impl Gateway {
             } => {
                 self.set_training_ready(client, entity, request_id, None)?;
             }
+            AccountBase::DoCmdInt3 {
+                request_id,
+                cmd: training::ASSIGN,
+                arg0: player_entity_id,
+                arg1: roster_slot,
+                arg2: group,
+            } => {
+                self.assign_training_roster(
+                    client,
+                    entity,
+                    request_id,
+                    player_entity_id,
+                    roster_slot,
+                    group,
+                )?;
+            }
             AccountBase::DoCmdIntArr {
                 request_id,
                 cmd: cosmetics::BUY_CUSTOMIZATIONS,
@@ -186,6 +202,43 @@ impl Gateway {
             } => {
                 self.buy_cosmetics(client, entity, request_id, &args)?;
             }
+            AccountBase::DoCmdInt3 {
+                request_id,
+                cmd: training::SWAP_TEAMS,
+                arg0,
+                arg1,
+                arg2,
+            } => {
+                self.swap_training_teams(client, entity, request_id, [arg0, arg1, arg2])?;
+            }
+            AccountBase::DoCmdInt3 {
+                request_id,
+                cmd:
+                    command @ (training::CHANGE_ARENA
+                    | training::CHANGE_DURATION
+                    | training::CHANGE_OPEN_STATUS
+                    | training::CHANGE_VOICE_CHAT),
+                arg0,
+                arg1,
+                arg2,
+            } => self.change_training_setting(
+                client,
+                entity,
+                request_id,
+                command,
+                training::SettingArgument::Numeric([arg0, arg1, arg2]),
+            )?,
+            AccountBase::DoCmdStr {
+                request_id,
+                cmd: training::CHANGE_COMMENT,
+                arg,
+            } => self.change_training_setting(
+                client,
+                entity,
+                request_id,
+                training::CHANGE_COMMENT,
+                training::SettingArgument::Comment(&arg),
+            )?,
             AccountBase::DoCmdIntArrStrArr {
                 request_id,
                 cmd: cosmetics::APPLY_OUTFIT,

@@ -147,6 +147,13 @@ to the room. The client automatically sends ready command `402` for the selected
 vehicle before opening the view. The server projects an owned vehicle's current
 descriptor from the account snapshot, emits player-state update (4), and acknowledges
 the command. Not-ready command `403` clears the roster's ready vehicle.
+The [Observer toggle](../references/wot-src/sources/res/scripts/client/gui/prb_control/entities/training/legacy/ctx.py#L73)
+uses ready command `402` with the reserved inventory value `-5000`. The server
+sends the stock `ussr:Observer` descriptor from the resource bundle in the same
+roster slot. The client's return to Player sends `402` with the current garage
+vehicle's inventory ID. The server resolves that owned loadout and updates the
+roster before acknowledging either transition. Observer selection is room state
+and creates no vehicle ownership. In-battle spectating remains pending.
 The [client init flow](../references/wot-src/sources/res/scripts/client/gui/prb_control/entities/base/legacy/entity.py#L207)
 and [training entry](../references/wot-src/sources/res/scripts/client/gui/prb_control/entities/training/legacy/entity.py#L369)
 show these boundaries.
@@ -156,6 +163,32 @@ overlay. Repeat requests replay the existing room snapshot. Leaving via command
 `401` removes the room and emits `onPrebattleLeft`. Disconnect or replacement
 also reclaims the room. The session owns the room and its ready state in memory.
 Inviting other players, joining another host and launching a battle are pending.
+
+The host moves between Team 1, Team 2 and the unassigned list through
+[`CMD_PRB_ASSIGN`](../references/wot-src/sources/res/scripts/client/Account.py#L809)
+(`404`). The arguments are the host's Account entity ID, the destination roster
+slot and group `0`. Assigned slots are `1` and `2`. Unassigned slots retain the
+previous team in `17` or `18`. The server sends roster update `5` with
+`(player_entity_id, previous_slot, next_slot, actor_entity_id)`, then acknowledges
+the command to close the assignment overlay. The room uses the current slot in
+subsequent readiness messages and when replaying its roster. A same-slot retry
+succeeds without moving the player again.
+
+**Modify Room** sends one [account command](../references/wot-src/sources/res/scripts/client/Account.py#L834)
+per changed field. The map (`406`), duration (`407`) and open flag (`408`) use
+`doCmdInt3`. The comment (`409`) uses `doCmdStr`. Each command validates and
+applies its field independently to the host's active room. A changed field
+sends `updatePrebattle(8, pickle((setting_name, value)))` before the command
+acknowledgement. The client tracks all acknowledgements before dismissing
+“Changing settings…”. Same-value retries succeed without another update.
+The room ID, roster and readiness carry over when settings change.
+
+The [voice-chat dropdown](../references/wot-src/sources-as3/gui_lobby/scripts/net/wg/gui/lobby/training/ArenaVoipSettings.as#L38)
+sends command `410` with index `0` for General or `1` for Team. New rooms use
+General. The server stores the selected mode in the room, publishes
+`arenaVoipChannels` through setting update `8`, and acknowledges the request.
+The room snapshot includes the selected mode. Voice audio transport remains
+outside the host-only lobby implementation.
 
 ## Battle entry and return
 

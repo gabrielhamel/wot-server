@@ -112,13 +112,25 @@ Training Room creation records the requested arena, duration, open flag and
 comment length. The join and room updates retain the original game-command
 parent. A rejection sends `onPrebattleJoinFailure` under the same operation.
 The subsequent ready command traces the owned-vehicle descriptor projection
-and sends the roster update and command response under its own trace.
+and sends the roster update and command response under its own trace. An Observer
+request carries reserved inventory value `-5000`, records `observer`, and uses the
+cached catalog descriptor. Returning to Player traces the owned-vehicle lookup again.
 
     game.command                                  [accountPrebattle_createTraining]
       player_sessions.commands.command
         player_sessions.create_training_room      [created, room ID]
           mercury.response                        [onPrebattleJoined, sent]
           mercury.response                        [updatePrebattle, sent]
+
+Training Room roster assignment records the requested player entity, slot and
+group. The roster update and command acknowledgement retain the originating
+command as their ancestor. An invalid assignment or a retry to the same slot
+sends an acknowledgement with its result and no roster update.
+
+Each Modify Room command and voice-chat mode change retains its own `game.command`
+trace. The decoded command span carries the numeric input or the comment's byte length. The
+`player_sessions.change_training_setting` span links the room update and
+acknowledgement and records the result. Room comment text stays out of traces.
 
 A committed research command follows this path. Intermediate Accounts and
 Player Sessions spans retain their own bounded context.

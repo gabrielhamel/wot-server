@@ -60,6 +60,7 @@ pub struct GarageCatalog {
     directives: crate::accounts::DirectiveRules,
     consumables: crate::accounts::ConsumableRules,
     supply_slots: supply_slots::SupplySlots,
+    observer_descriptor: Option<Vec<u8>>,
     elite_progression_trees: BTreeSet<String>,
     pub required_version: String,
     pub shop: Arc<Vec<u8>>,
@@ -139,6 +140,11 @@ pub struct PreparedAccount {
 }
 
 impl GarageCatalog {
+    #[tracing::instrument(name = "accounts.training_observer_descriptor", skip_all, fields(ddd.bounded_context.name = "accounts", output.bytes = self.observer_descriptor.as_ref().map(Vec::len)))]
+    pub fn training_observer_descriptor(&self) -> Option<&[u8]> {
+        self.observer_descriptor.as_deref()
+    }
+
     #[tracing::instrument(name = "accounts.training_vehicle_descriptor", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id), err)]
     pub fn training_vehicle_descriptor(
         &self,
@@ -217,6 +223,18 @@ impl GarageCatalog {
             .iter()
             .map(|(&id, offer)| (offer.key.clone(), id))
             .collect();
+        let observer_descriptor = offers
+            .values()
+            .find(|offer| offer.key == "ussr:Observer" && offer.tags.contains("observer"))
+            .and_then(|offer| {
+                match item_defs::VehicleDef::load(&fs, "ussr", "Observer", offer, &supply_slots) {
+                    Ok(vehicle) => Some(vehicle.descr.encode()),
+                    Err(error) => {
+                        tracing::warn!(%error, "Training Room observer vehicle is unavailable");
+                        None
+                    }
+                }
+            });
         let mut store_offers =
             store::load(&fs, &prices, &offers, &equipment, &consumables, &directives)?;
         store_offers.extend_from_slice(cosmetics.store_styles());
@@ -238,6 +256,7 @@ impl GarageCatalog {
             directives,
             consumables,
             supply_slots,
+            observer_descriptor,
             elite_progression_trees,
             required_version,
             shop,

@@ -38,7 +38,7 @@ context is a possible future boundary, not an implemented one.
 | Equipment components | Balance used for paid demounting of level 2 and 3 Experimental equipment. The client calls it `equipCoin`. |
 | Ammunition proposal | Validated next snapshot and purchase receipt, committed against its source revision. |
 | Garage projection | Compressed Python cache derived from a snapshot and client definitions. |
-| Training vehicle descriptor | Compact descriptor projected from an owned vehicle's current loadout for the Training Room roster. |
+| Training vehicle descriptor | Compact descriptor for the Training Room roster. A player vehicle uses its owned loadout. The observer uses the stock descriptor from the resource bundle. |
 | Research | An account-wide tank or module unlock bought with vehicle XP and free XP. |
 | Vehicle purchase | An atomic debit and permanent ownership grant, with optional crew, ammunition and consumables. |
 | Player grant | An operator-authorized addition of currency, cosmetic copies, or a permanent tank with stock modules, ammunition and basic crew, committed as an account revision. |
