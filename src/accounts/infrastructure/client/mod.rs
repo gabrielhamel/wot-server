@@ -392,7 +392,7 @@ impl GarageCatalog {
     #[tracing::instrument(name = "accounts.prepare", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
     pub fn prepare(&self, snapshot: AccountSnapshot) -> Result<PreparedAccount> {
         let data = self.project_account(&snapshot)?;
-        let cache = Self::encode_garage(snapshot.revision, &data)?;
+        let cache = self.encode_garage(snapshot.revision, &data)?;
         Ok(PreparedAccount {
             snapshot,
             cache: Arc::new(cache),
@@ -400,8 +400,8 @@ impl GarageCatalog {
     }
 
     #[tracing::instrument(name = "accounts.encode_garage", skip_all, fields(ddd.bounded_context.name = "accounts", input.revision = revision, output.bytes = tracing::field::Empty), err)]
-    fn encode_garage(revision: i64, data: &account::AccountData) -> Result<Vec<u8>> {
-        let cache = account::compress(&data.data(revision))?;
+    fn encode_garage(&self, revision: i64, data: &account::AccountData) -> Result<Vec<u8>> {
+        let cache = account::compress(&data.data(revision, self.tech_tree_economics()))?;
         tracing::Span::current().record("output.bytes", cache.len());
         Ok(cache)
     }

@@ -44,12 +44,13 @@ pub struct Vehicle {
 
 impl AccountData {
     /// The data of a full sync, bringing the client to the given revision.
-    pub fn data(&self, revision: i64) -> Value {
+    pub fn data(&self, revision: i64, economics: Value) -> Value {
         crate::pickle!({
             "rev": revision,
             "inventory": (self.inventory()),
             "recycleBin": (recycle_bin(&self.crew)),
             "stats": (self.stats()),
+            "economics": (economics),
             "premium": (premium_info(self.premium_expires_at)),
             "potapovQuests": (potapov_quests()),
             "cache": (cache()),
@@ -455,6 +456,14 @@ pub(super) fn researched_tiers_value(tiers: &BTreeMap<u8, i64>) -> Value {
 }
 
 impl super::GarageCatalog {
+    pub(crate) fn garage_sync(&self, revision: i64, expires_at: Option<u32>) -> Value {
+        crate::pickle!({
+            "prevRev": revision, "rev": revision,
+            "premium": (premium_info(expires_at)),
+            "economics": (self.tech_tree_economics()),
+        })
+    }
+
     pub(crate) fn premium_sync(revision: i64, expires_at: Option<u32>) -> Value {
         crate::pickle!({"prevRev": revision, "rev": revision, "premium": (premium_info(expires_at))})
     }

@@ -48,6 +48,11 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             .await
             .unwrap();
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &starter).unwrap());
+    let pz_s35 = catalog
+        .vehicle_catalog_entry("germany:G34_S35_captured")
+        .unwrap()
+        .id;
+    let restricted_tog = catalog.vehicle_catalog_entry("uk:GB63_TOG_II").unwrap().id;
     let lowe_id = catalog
         .vehicle_catalog_entry("germany:G51_Lowe")
         .unwrap()
@@ -119,7 +124,23 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
                 .to_owned();
             (peer, token, state)
         };
-        let (mut peer, token, _) = connect();
+        let (mut peer, token, state) = connect();
+        let expect_tech_tree_unlocks = |data: &Pickle| {
+            let Pickle::Set(unlocks) = dict(&dict(data, "economics"), "unlocks") else {
+                panic!("Expected Tech Tree economics unlocks");
+            };
+            assert!(unlocks.contains(&Pickle::from(pz_s35)));
+            assert!(!unlocks.contains(&Pickle::from(restricted_tog)));
+            assert!(!unlocks.contains(&Pickle::from(2065))); // Researchable Pz. II.
+        };
+        expect_tech_tree_unlocks(&state);
+        let Pickle::I64(cache_revision) = dict(&state, "rev") else { panic!("Expected revision"); };
+        peer.command(&dispatch, "doCmdInt3", vec![
+            WireValue::Int16(809), WireValue::Int16(100), WireValue::Int64(cache_revision),
+            WireValue::Int64(0), WireValue::Int64(0),
+        ]);
+        peer.until(&dispatch, |peer| peer.responses.contains(&(809, 0)));
+        expect_tech_tree_unlocks(&ammunition_flow::receipt(&peer, 809));
         let (status, catalog) = request(Some(&token), None);
         assert_eq!(status, StatusCode::OK);
         let find_offer = |listing: &Value, item| -> Value {
@@ -319,7 +340,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
 
         let near_expiry = i64::try_from(std::time::UNIX_EPOCH.elapsed().unwrap().as_secs()).unwrap() + 5;
         runtime.block_on(
-            sqlx::query("UPDATE accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = 250 WHERE id = $1")
+            sqlx::query("UPDATE accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = 1250 WHERE id = $1")
                 .bind(account_id)
                 .bind(near_expiry)
                 .execute(&expiry_test_db)
@@ -350,8 +371,19 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         ]);
         let native_diff = next_update(&mut expiring, &dispatch, persisted.revision + 1);
         assert_eq!(dict(&dict(&native_diff, "premium"), "premMask"), Pickle::I64(2));
-        assert_eq!(dict(&dict(&native_diff, "stats"), "gold"), Pickle::I64(0));
+        assert_eq!(dict(&dict(&native_diff, "stats"), "gold"), Pickle::I64(1000));
+        assert!(!persisted.progression.unlocks.contains(&pz_s35));
+        super::depot_flow::send_array(&mut expiring, &dispatch, 814, 301, &[1, pz_s35, 0, 0, -1, 0], 0);
+        let diff = next_update(&mut expiring, &dispatch, persisted.revision + 2);
+        assert_eq!(dict(&dict(&diff, "stats"), "gold"), Pickle::I64(0));
+        let (_, current_store) = request(Some(&expiry_token), None);
+        assert_eq!(find_offer(&current_store, i64::from(pz_s35))["availability"], "in_garage");
+        super::depot_flow::send_array(&mut expiring, &dispatch, 815, 301, &[1, pz_s35, 0, 0, -1, 0], -1);
+        let saved = runtime.block_on(accounts.snapshot(account_id)).unwrap();
+        assert_eq!(saved.revision, persisted.revision + 2);
+        assert!(saved.vehicles.iter().any(|vehicle| vehicle.catalog_key == "germany:G34_S35_captured"));
         expiring.disconnect();
+        assert_tech_tree_traces(account_id);
         assert_store_traces(account_id, item, "credits", cost);
         assert_store_traces(account_id, -1, "gold", 250);
         assert_store_traces(account_id, su_gold["item"].as_i64().unwrap(), "gold", 2900);
@@ -423,6 +455,63 @@ fn next_update(peer: &mut Peer, dispatch: &ScriptDispatch, revision: i64) -> Pic
         })
     });
     ammunition_flow::update(peer, revision)
+}
+
+fn assert_tech_tree_traces(account_id: i64) {
+    let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
+    let has = |span: &opentelemetry_sdk::trace::SpanData, key, value: &str| {
+        span.attributes
+            .iter()
+            .any(|attr| attr.key.as_str() == key && attr.value.to_string() == value)
+    };
+    let command = |request_id| {
+        spans
+            .iter()
+            .find(|span| {
+                span.name == "game.command"
+                    && has(span, "user.id", &account_id.to_string())
+                    && has(span, "input.request_id", request_id)
+            })
+            .unwrap()
+    };
+    let sync = command("809");
+    let garage = spans
+        .iter()
+        .find(|span| {
+            span.name == "player_sessions.sync_garage"
+                && span.span_context.trace_id() == sync.span_context.trace_id()
+        })
+        .unwrap();
+    assert!(spans.iter().any(|span| {
+        span.name == "accounts.tech_tree.economics"
+            && span.parent_span_id == garage.span_context.span_id()
+            && span.attributes.iter().any(|attribute| {
+                attribute.key.as_str() == "output.unlocked_vehicle_count"
+                    && attribute
+                        .value
+                        .to_string()
+                        .parse::<u64>()
+                        .is_ok_and(|count| count > 0)
+            })
+    }));
+    for (request, outcome) in [("814", "committed"), ("815", "rejected")] {
+        let trace = command(request).span_context.trace_id();
+        assert!(spans.iter().any(|span| {
+            span.name == "accounts.vehicles.buy" && span.span_context.trace_id() == trace
+        }));
+        assert!(spans.iter().any(|span| {
+            span.name == "player_sessions.gateway.progression_response"
+                && span.span_context.trace_id() == trace
+                && has(span, "output.outcome", outcome)
+                && has(span, "output.delivery", "queued")
+        }));
+        assert_eq!(
+            spans.iter().any(|span| {
+                span.name == "accounts.save_progression" && span.span_context.trace_id() == trace
+            }),
+            outcome == "committed"
+        );
+    }
 }
 
 fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) {

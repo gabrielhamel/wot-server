@@ -1,5 +1,4 @@
 use super::*;
-use crate::accounts::GarageCatalog;
 
 impl Gateway {
     pub(super) fn handle_base_method(&mut self, event: base::BaseMethodEvent) {
@@ -437,12 +436,14 @@ impl Gateway {
                 request_id,
                 SUCCESS,
                 String::new(),
-                Pickle(GarageCatalog::premium_sync(
-                    current,
-                    self.sessions
-                        .get(&client)
-                        .and_then(|session| session.account.snapshot.active_premium_until()),
-                )),
+                Pickle(
+                    self.catalog.garage_sync(
+                        current,
+                        self.sessions
+                            .get(&client)
+                            .and_then(|session| session.account.snapshot.active_premium_until()),
+                    ),
+                ),
             )?;
         } else {
             self.stream(client, entity, request_id, cache)?;

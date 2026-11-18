@@ -129,6 +129,19 @@ impl GarageCatalog {
         &self.store_offers
     }
 
+    #[tracing::instrument(name = "accounts.tech_tree.economics", skip_all, fields(ddd.bounded_context.name = "accounts", output.unlocked_vehicle_count = tracing::field::Empty))]
+    pub(super) fn tech_tree_economics(&self) -> crate::platform::client_formats::pickle::Value {
+        use crate::platform::client_formats::pickle::Value;
+        let unlocks: std::collections::BTreeSet<_> = self
+            .store_offers
+            .iter()
+            .filter(|offer| offer.category == StoreCategory::PremiumVehicles)
+            .map(|offer| Value::from(offer.item))
+            .collect();
+        tracing::Span::current().record("output.unlocked_vehicle_count", unlocks.len());
+        crate::pickle!({"unlocks": (Value::Set(unlocks))})
+    }
+
     pub(crate) fn store_depot_count(&self, account: &AccountSnapshot, offer: &StoreOffer) -> u32 {
         if offer.category.is_style() {
             account
