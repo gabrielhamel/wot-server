@@ -1,3 +1,4 @@
+mod client_address;
 mod garage;
 mod players;
 #[cfg(test)]
@@ -16,7 +17,11 @@ use axum::{
     routing::get,
 };
 use sha2::{Digest, Sha256};
-use std::{path::Path, sync::Arc};
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::Path,
+    sync::Arc,
+};
 use subtle::ConstantTimeEq;
 use tokio::sync::Semaphore;
 use tower_http::services::{ServeDir, ServeFile};
@@ -53,6 +58,7 @@ pub(crate) fn router(
     grants: PlayerGrants,
     token: AdminToken,
     dashboard: Option<&Path>,
+    trusted_proxies: Vec<IpAddr>,
 ) -> Router {
     let api = Router::new()
         .route("/players", get(players::list).post(players::create))
@@ -80,7 +86,10 @@ pub(crate) fn router(
                 ServeDir::new(dashboard.join("assets")).append_index_html_on_directories(false),
             );
     }
-    router.layer(middleware::from_fn(set_browser_headers))
+    router.layer(middleware::from_fn_with_state(
+        trusted_proxies,
+        set_browser_headers,
+    ))
 }
 
 #[tracing::instrument(name = "admin.authenticate", skip_all, fields(ddd.bounded_context.name = "player_administration", input.method = request.method().as_str()))]
@@ -114,6 +123,11 @@ async fn prevent_caching(request: Request, next: Next) -> Response {
     skip_all,
     fields(
         ddd.bounded_context.name = "player_administration",
+        network.transport = "tcp",
+        client.address = tracing::field::Empty,
+        client.port = tracing::field::Empty,
+        network.peer.address = tracing::field::Empty,
+        network.peer.port = tracing::field::Empty,
         http.request.method = request.method().as_str(),
         url.path = request.uri().path(),
         http.route = request.extensions().get::<MatchedPath>().map(MatchedPath::as_str),
@@ -134,7 +148,14 @@ async fn prevent_caching(request: Request, next: Next) -> Response {
         http.response.status_code = tracing::field::Empty,
     )
 )]
-async fn set_browser_headers(mut request: Request, next: Next) -> Response {
+async fn set_browser_headers(
+    State(trusted_proxies): State<Vec<IpAddr>>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    if let Some(peer) = request.extensions().get::<SocketAddr>().copied() {
+        client_address::record(peer, request.headers(), &trusted_proxies);
+    }
     request
         .extensions_mut()
         .insert(RequestSpan(tracing::Span::current()));

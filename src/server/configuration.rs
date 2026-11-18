@@ -156,9 +156,50 @@ impl Configuration {
     }
 }
 
+pub(super) fn admin_trusted_proxy_ips() -> Result<Vec<std::net::IpAddr>> {
+    match std::env::var("WOT_ADMIN_TRUSTED_PROXY_IPS") {
+        Ok(value) => parse_trusted_proxy_ips(&value),
+        Err(std::env::VarError::NotPresent) => Ok(Vec::new()),
+        Err(error) => Err(error).context("Read WOT_ADMIN_TRUSTED_PROXY_IPS"),
+    }
+}
+
+fn parse_trusted_proxy_ips(value: &str) -> Result<Vec<std::net::IpAddr>> {
+    ensure!(
+        value.len() <= 1024,
+        "WOT_ADMIN_TRUSTED_PROXY_IPS exceeds 1024 bytes"
+    );
+    if value.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    value
+        .split(',')
+        .map(|ip| {
+            ip.trim()
+                .parse()
+                .context("WOT_ADMIN_TRUSTED_PROXY_IPS must contain comma-separated IP addresses")
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trusted_proxy_configuration_requires_explicit_ip_addresses() {
+        assert!(parse_trusted_proxy_ips("").unwrap().is_empty());
+        assert_eq!(parse_trusted_proxy_ips("192.0.2.1, ::1").unwrap().len(), 2);
+        for invalid in [
+            "*",
+            "10.0.0.0/8",
+            "proxy.local",
+            "192.0.2.1,",
+            &"x".repeat(1025),
+        ] {
+            assert!(parse_trusted_proxy_ips(invalid).is_err());
+        }
+    }
 
     #[test]
     fn creates_defaults_preserves_edits_and_rejects_invalid_settings() {

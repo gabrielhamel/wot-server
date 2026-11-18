@@ -124,6 +124,7 @@ async fn serve(config: Configuration) -> Result<()> {
             gateway.player_grants(),
             token,
             settings.dashboard_dir.as_deref(),
+            configuration::admin_trusted_proxy_ips()?,
         );
         Some((listener, router))
     } else {
