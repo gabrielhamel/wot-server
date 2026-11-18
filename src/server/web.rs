@@ -1,17 +1,25 @@
 use anyhow::{Result, ensure};
 use axum::{
     Router,
-    extract::{MatchedPath, Request},
+    extract::{MatchedPath, Request, State},
     http::{HeaderValue, header},
-    middleware::{Next, from_fn},
+    middleware::{Next, from_fn_with_state},
     response::{Redirect, Response},
     routing::get,
 };
-use std::{net::SocketAddr, path::Path};
+use std::{
+    net::{IpAddr, SocketAddr},
+    path::Path,
+};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::{Span, field::Empty};
 
-pub(super) fn pages(directory: &Path, admin: bool, shop: bool) -> Result<Router> {
+pub(super) fn pages(
+    directory: &Path,
+    admin: bool,
+    shop: bool,
+    trusted_proxies: Vec<IpAddr>,
+) -> Result<Router> {
     let index = directory.join("index.html");
     let assets = directory.join("assets");
     ensure!(
@@ -35,7 +43,7 @@ pub(super) fn pages(directory: &Path, admin: bool, shop: bool) -> Result<Router>
             .route_service("/shop", ServeFile::new(&index))
             .route_service("/shop/", ServeFile::new(&index));
     }
-    Ok(router.layer(from_fn(serve_page)))
+    Ok(router.layer(from_fn_with_state(trusted_proxies, serve_page)))
 }
 
 #[tracing::instrument(
@@ -44,6 +52,8 @@ pub(super) fn pages(directory: &Path, admin: bool, shop: bool) -> Result<Router>
     fields(
         ddd.bounded_context.name = "server",
         network.transport = "tcp",
+        client.address = Empty,
+        client.port = Empty,
         network.peer.address = Empty,
         network.peer.port = Empty,
         http.request.method = request.method().as_str(),
@@ -51,12 +61,11 @@ pub(super) fn pages(directory: &Path, admin: bool, shop: bool) -> Result<Router>
         http.response.status_code = Empty,
     )
 )]
-async fn serve_page(request: Request, next: Next) -> Response {
+async fn serve_page(State(proxies): State<Vec<IpAddr>>, request: Request, next: Next) -> Response {
     let admin = request.uri().path().starts_with("/admin");
     let span = Span::current();
-    if let Some(peer) = request.extensions().get::<SocketAddr>() {
-        span.record("network.peer.address", tracing::field::display(peer.ip()));
-        span.record("network.peer.port", peer.port());
+    if let Some(peer) = request.extensions().get::<SocketAddr>().copied() {
+        super::http::record_client_address(peer, request.headers(), &proxies);
     }
     let mut response = next.run(request).await;
     span.record("http.response.status_code", response.status().as_u16());

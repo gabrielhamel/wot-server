@@ -10,7 +10,7 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| `client.address` | Caller IP without port on `admin.http.request`, `game.authenticate`, `game.command`, and `xmpp.request`. Store API and web UI requests record their immediate network peer. Admin HTTP uses a valid single `X-Forwarded-For` IP only from a configured trusted peer; otherwise the socket IP. Omitted only when an HTTP request has no socket metadata (for example, an in-process router call). |
+| `client.address` | Caller IP without port on `admin.http.request`, `game.authenticate`, `game.command`, `xmpp.request`, and `web.ui.request`. Store API requests record their immediate network peer. Admin HTTP and shared UI requests use a valid single `X-Forwarded-For` IP only from a configured trusted peer; otherwise the socket IP. Omitted only when an HTTP request has no socket metadata (for example, an in-process router call). |
 | `client.port` | Caller source port, in TCP/UDP port units, on the same roots when the socket identifies the caller. Omitted for forwarded HTTP callers because the header supplies no source port. |
 | `network.peer.address` | Immediate socket peer IP without port on those roots and `store.http.request` or `web.ui.request`; remains the proxy address for forwarded HTTP requests. |
 | `network.peer.port` | Immediate socket peer TCP/UDP source port on those roots and `store.http.request` or `web.ui.request`. |
@@ -19,7 +19,7 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 Supporting sources: [Admin HTTP middleware](../src/player_administration/presentation/mod.rs),
 [Store API middleware](../src/player_sessions/presentation/store/mod.rs),
 [Web UI middleware](../src/server/web.rs),
-[HTTP address validation](../src/player_administration/presentation/client_address.rs),
+[HTTP address validation](../src/platform/infrastructure/http.rs),
 [Mercury gateway](../src/player_sessions/infrastructure/gateway/mod.rs), and
 [XMPP listener](../src/player_sessions/infrastructure/xmpp/mod.rs).
 Child spans retain the causal parent rather than copying its source attributes.
