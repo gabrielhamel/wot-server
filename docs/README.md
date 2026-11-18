@@ -33,6 +33,7 @@ establish compatibility with the current client.
 | Loading, unloading and buying tank shells | [Garage ammunition](ammunition.md) |
 | Opening the in-game Store, browsing categories, and buying Premium Account time | [Store](store.md) |
 | Official EU Store categories and regular prices | [Store catalog](store-eu-catalog.md) |
+| Unimplemented Store offers and account products | [Missing Store features](store-missing-features.md) |
 | Buying, mounting and demounting equipment | [Garage equipment](equipment.md) |
 | Buying and mounting consumables and setting auto-resupply | [Garage consumables](consumables.md) |
 | Seasonal camouflage, paint, decals, inscriptions, effects and 3D attachments | [Garage camouflage and exterior customization](camouflage.md) |

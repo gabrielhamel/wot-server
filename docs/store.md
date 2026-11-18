@@ -13,11 +13,8 @@ price, stock, and purchase eligibility.
 | Service | Standard equipment, consumables and crew directives |
 | Items for Bonds | Vehicles, improved equipment, equipment directives and styles |
 
-The catalog excludes EUR checkout and WoT Plus subscriptions. Rotating offers,
-fixed bundles whose contents or checkout prices are unverified, Personal
-Reserves, and progressive styles such as Tiger Claw remain outside the current
-catalog. Applying custom changes to an editable style is also outside the
-current implementation.
+See [Missing Store features](store-missing-features.md) for unsupported offers,
+account products, and features outside the current scope.
 
 ## Catalog provenance
 
