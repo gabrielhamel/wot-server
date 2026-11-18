@@ -279,16 +279,27 @@ pub fn assert_operation_traces(account: i64, research_account: i64) {
         );
     }
 
-    assert!(spans.iter().any(|root| {
-        root.name == "game.authenticate"
-            && has(root, "user.id", &account.to_string())
-            && spans.iter().any(|span| {
-                span.name == "mercury.login.response"
-                    && span.parent_span_id == root.span_context.span_id()
-                    && has(span, "output.response_code", "69")
-                    && has(span, "output.delivery", "sent")
-            })
-    }));
+    let replacement = spans
+        .iter()
+        .find(|admission| {
+            admission.name == "player_sessions.admit"
+                && has(admission, "user.id", &account.to_string())
+                && has(admission, "output.outcome", "replaced")
+                && spans.iter().any(|root| {
+                    root.name == "game.authenticate"
+                        && has(root, "user.id", &account.to_string())
+                        && admission.parent_span_id == root.span_context.span_id()
+                })
+        })
+        .expect("Expected a replacement admission");
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.name == "mercury.login.response"
+                && span.parent_span_id == replacement.span_context.span_id()
+                && has(span, "output.response_code", "1")
+                && has(span, "output.delivery", "sent"))
+    );
     assert!(
         spans.iter().all(|span| {
             !span.name.split('.').any(|segment| {

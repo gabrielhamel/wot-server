@@ -151,24 +151,7 @@ impl Peer {
         &mut self,
         success: wot_server::player_sessions::mercury::app::login::element::LoginSuccess,
     ) {
-        self.base = success.addr.addr.into();
-        let mut bundle = Bundle::new();
-        bundle
-            .element_writer()
-            .write_simple_request(
-                base::LoginKey {
-                    login_key: success.login_key,
-                    attempt_num: 0,
-                    unk: 0,
-                },
-                2,
-            )
-            .unwrap();
-        self.protocol
-            .off_channel(self.base)
-            .prepare(&mut bundle, false);
-        self.socket.send_bundle(&bundle, self.base).unwrap();
-        self.socket.set_encryption(self.base, self.cipher.clone());
+        self.request_handoff(&success);
         let (packet, addr) = self.socket.recv().unwrap();
         let bundle = self
             .protocol
@@ -187,6 +170,48 @@ impl Peer {
             .write_simple(base::EnableEntities {})
             .unwrap();
         self.send(bundle);
+    }
+
+    pub fn assert_handoff_rejected(
+        &mut self,
+        ticket: &wot_server::player_sessions::mercury::app::login::element::LoginSuccess,
+    ) {
+        self.request_handoff(ticket);
+        self.socket
+            .set_recv_timeout(Some(Duration::from_millis(250)))
+            .unwrap();
+        let error = self
+            .socket
+            .recv()
+            .expect_err("Superseded ticket received a BaseApp reply");
+        assert!(matches!(
+            error.kind(),
+            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+        ));
+    }
+
+    fn request_handoff(
+        &mut self,
+        success: &wot_server::player_sessions::mercury::app::login::element::LoginSuccess,
+    ) {
+        self.base = success.addr.addr.into();
+        let mut bundle = Bundle::new();
+        bundle
+            .element_writer()
+            .write_simple_request(
+                base::LoginKey {
+                    login_key: success.login_key,
+                    attempt_num: 0,
+                    unk: 0,
+                },
+                2,
+            )
+            .unwrap();
+        self.protocol
+            .off_channel(self.base)
+            .prepare(&mut bundle, false);
+        self.socket.send_bundle(&bundle, self.base).unwrap();
+        self.socket.set_encryption(self.base, self.cipher.clone());
     }
 
     fn authenticated_bundle(&self) -> Bundle {

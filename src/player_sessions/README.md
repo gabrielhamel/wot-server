@@ -15,6 +15,7 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | `application/` | Credential input policy, preferences, and ammunition/progression commit use cases, using Accounts' published application API. |
 | `infrastructure/mercury/` | Mercury UDP framing, reliability, RSA and Blowfish, LoginApp/BaseApp wire sessions, and Account RPC binding from the [resource bundle](../../docs/resources.md). |
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
+| `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
 | `infrastructure/gateway/progression.rs` | Equipment, directive, module, tank and depot request validation, bounded progression jobs and committed cache delivery. |
 | `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes. |
@@ -50,6 +51,13 @@ with Accounts.
 | Store session token | Random credential issued in the Store URL fragment and scoped to the synchronized garage session. |
 | Account entity | Client protocol representation created after the client enables entities. |
 | Resource stream | CRC-described, fragmented transfer correlated with an account command request ID. |
+
+A successful login replaces the previous session or pending handoff for that
+account, including a session whose client crashed. The gateway waits for
+an in-flight write and refreshes the account snapshot before issuing a
+replacement ticket. A successful authentication request can reuse its account's
+existing capacity slot. The gateway invalidates older tickets, removes the
+previous transport and revokes its Store and XMPP access.
 
 Disconnect and two minutes without incoming client traffic reclaim the session and
 transport state. Idle heartbeats count as activity. Admission capacity is bounded

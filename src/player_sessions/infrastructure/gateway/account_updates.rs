@@ -8,8 +8,13 @@ pub(super) struct CommittedAccountChange {
 }
 
 impl Gateway {
-    pub(super) fn release_account_write(&mut self, account_id: i64) {
+    pub(super) fn finish_account_write(&mut self, account_id: i64) {
+        self.account_change_epoch = self.account_change_epoch.wrapping_add(1);
         self.pending_writes.remove(&account_id);
+    }
+
+    pub(super) fn release_account_write(&mut self, account_id: i64) {
+        self.finish_account_write(account_id);
         if let Some(session) = self
             .sessions
             .values_mut()
@@ -24,7 +29,6 @@ impl Gateway {
         &mut self,
         change: CommittedAccountChange,
     ) -> GrantDelivery {
-        self.account_change_epoch = self.account_change_epoch.wrapping_add(1);
         let account_id = change.prepared.snapshot.id;
         let mut delivery = GrantDelivery::OnNextSync;
         if let Some((client, session)) = self

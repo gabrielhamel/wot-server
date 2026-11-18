@@ -8,11 +8,9 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use blowfish::{Blowfish, cipher::KeyInit};
-use rsa::{
-    RsaPrivateKey,
-    rand_core::{OsRng, RngCore},
-};
+use rsa::RsaPrivateKey;
 mod account_updates;
+mod admission;
 mod ammunition;
 mod commands;
 mod cosmetics;
@@ -25,6 +23,7 @@ mod social;
 mod store;
 use crate::player_sessions::application::store::StoreToken;
 use crate::social::{Contact, Conversations, Player, PostgresSocial, Social};
+use admission::{DeferredLogin, LoginAttempt};
 
 use crate::platform::client_formats::pickle::{self, Value};
 use crate::player_sessions::mercury::app::{
@@ -71,12 +70,14 @@ pub struct GatewayConfig {
 }
 
 struct Ticket {
+    generation: u64,
     addr: SocketAddr,
     blowfish: Arc<Blowfish>,
     account: PreparedAccount,
     expires: Instant,
 }
 struct Session {
+    generation: u64,
     account: PreparedAccount,
     entity: Option<EntityKey<Account>>,
     garage_synced: bool,
@@ -114,10 +115,7 @@ enum Completion {
         result: Result<social::Reply>,
     },
     Login {
-        addr: SocketAddr,
-        generation: u64,
-        account_change_epoch: u64,
-        blowfish: Arc<Blowfish>,
+        attempt: LoginAttempt,
         result: Result<Option<PreparedAccount>>,
     },
     Ammunition(ammunition::Completion),
@@ -143,6 +141,7 @@ pub struct Gateway {
     catalog: Arc<GarageCatalog>,
     accounts: crate::player_sessions::application::ClientAccounts<PostgresAccounts>,
     admissions: Admissions,
+    deferred_logins: HashMap<SocketAddr, DeferredLogin>,
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
     pending_writes: HashSet<i64>,
@@ -207,6 +206,7 @@ impl Gateway {
             catalog,
             accounts: crate::player_sessions::application::ClientAccounts::new(accounts),
             admissions,
+            deferred_logins: HashMap::new(),
             tickets: HashMap::new(),
             sessions: HashMap::new(),
             pending_writes: HashSet::new(),
@@ -236,6 +236,7 @@ impl Gateway {
                 let TracedCompletion { parent, value } = completion;
                 parent.in_scope(|| self.complete(value));
             }
+            self.resume_logins();
             if let Ok(request) = self.grants.try_recv() {
                 self.start_grant(request);
             }
@@ -275,11 +276,7 @@ impl Gateway {
             if Instant::now() >= tick {
                 self.base.disconnect_idle_clients(Duration::from_secs(120));
                 for client in self.base.take_disconnected_clients() {
-                    if let Some(session) = self.sessions.get(&client) {
-                        self.xmpp.revoke(session.account.snapshot.id);
-                    }
-                    self.social_disconnect(client);
-                    self.sessions.remove(&client);
+                    self.remove_session(client);
                 }
                 tick = Instant::now() + Duration::from_millis(100);
             }
@@ -309,6 +306,7 @@ impl Gateway {
             parent: None, "game.authenticate",
             "ddd.bounded_context.name" = "player_sessions",
             outcome = tracing::field::Empty,
+            "otel.status_code" = tracing::field::Empty,
             "user.id" = tracing::field::Empty,
             "user.name" = tracing::field::Empty,
             "user.email" = tracing::field::Empty,
@@ -394,10 +392,12 @@ impl Gateway {
                 );
                 if sender
                     .try_send(TracedCompletion::new(Completion::Login {
-                        addr,
-                        generation,
-                        account_change_epoch,
-                        blowfish: Arc::new(blowfish),
+                        attempt: LoginAttempt {
+                            addr,
+                            generation,
+                            account_change_epoch,
+                            blowfish: Arc::new(blowfish),
+                        },
                         result,
                     }))
                     .is_err()
@@ -423,98 +423,7 @@ impl Gateway {
                     error!(%error, "Social response failed");
                 }
             }
-            Completion::Login {
-                addr,
-                generation,
-                account_change_epoch,
-                blowfish,
-                result,
-            } => {
-                let result = match result {
-                    Ok(Some(account))
-                        if account_change_epoch != self.account_change_epoch
-                            && self.admissions.is_pending(addr, generation, Instant::now()) =>
-                    {
-                        self.refresh_admission(addr, generation, blowfish, account.snapshot.id);
-                        return;
-                    }
-                    result => result,
-                };
-                if !self.admissions.complete(addr, generation, Instant::now()) {
-                    tracing::Span::current().record("outcome", "admission_expired");
-                    return;
-                }
-                let account = match result {
-                    Ok(Some(account)) => account,
-                    Ok(None) => {
-                        self.login.answer_login_error(
-                            addr,
-                            LoginError::InvalidPassword,
-                            String::new(),
-                        );
-                        return;
-                    }
-                    Err(error) => {
-                        error!(%error, "Account lookup failed");
-                        self.login.answer_login_error(
-                            addr,
-                            LoginError::DatabaseGeneralFailure,
-                            String::new(),
-                        );
-                        return;
-                    }
-                };
-                if self.pending_writes.contains(&account.snapshot.id)
-                    || self
-                        .sessions
-                        .values()
-                        .any(|s| s.account.snapshot.id == account.snapshot.id)
-                    || self
-                        .tickets
-                        .values()
-                        .any(|t| t.account.snapshot.id == account.snapshot.id)
-                {
-                    self.login
-                        .answer_login_error(addr, LoginError::AlreadyLoggedIn, String::new());
-                    return;
-                }
-                if self.sessions.len() + self.tickets.len() >= self.config.max_clients {
-                    self.login
-                        .answer_login_error(addr, LoginError::BaseAppOverload, String::new());
-                    return;
-                }
-                let destination = match self.base.addr().and_then(|bound| {
-                    super::endpoint::advertised_base(self.config.advertised_base, bound, addr)
-                }) {
-                    Ok(destination) => destination,
-                    Err(error) => {
-                        error!(%error, "Resolve client-facing BaseApp address");
-                        self.login
-                            .answer_login_error(addr, LoginError::NoBaseApp, String::new());
-                        return;
-                    }
-                };
-                let mut key = OsRng.next_u32();
-                while key == 0 || self.tickets.contains_key(&key) {
-                    key = OsRng.next_u32();
-                }
-                self.tickets.insert(
-                    key,
-                    Ticket {
-                        addr,
-                        blowfish,
-                        account,
-                        expires: Instant::now() + Duration::from_secs(30),
-                    },
-                );
-                if self
-                    .login
-                    .answer_login_success(addr, destination, key, String::new())
-                    .is_none()
-                {
-                    self.tickets.remove(&key);
-                }
-            }
+            Completion::Login { attempt, result } => self.complete_login(attempt, result),
             Completion::Progression(completion) => self.complete_progression(completion),
             Completion::Ammunition(completion) => self.complete_ammunition(completion),
             Completion::Grant(completion) => self.complete_grant(completion),
@@ -546,6 +455,7 @@ impl Gateway {
             self.sessions.insert(
                 client,
                 Session {
+                    generation: ticket.generation,
                     account: ticket.account,
                     entity: None,
                     garage_synced: false,
