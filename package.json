@@ -1,5 +1,11 @@
 {
   "name": "wot-server-workspace",
   "private": true,
-  "workspaces": ["tools/web"]
+  "workspaces": [
+    "tools/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace tools/web --",
+    "dev:server": "npm run dev:server --workspace tools/web --"
+  }
 }

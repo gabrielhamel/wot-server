@@ -89,8 +89,17 @@ UPDATE accounts SET role = 'admin' WHERE username = 'operator@example.com';
 
 ### Frontend development
 
-For frontend development, `npm run dev --workspace tools/web` starts Vite
-with a local API proxy to the default web listener. Open `/admin/` for the dashboard or `/shop/` for the Store.
+From the repository root, run `npm ci` and `npm run dev`. Open `/admin/`
+or `/shop/` on the URL Vite prints. Vite development uses MSW by default.
+Both pages open with demo data without Rust, PostgreSQL, or a connected game
+client. The Store replaces old garage session fragments with its demo session.
+The dashboard starts signed in, even when a saved URL points to the login page.
+After signing out, use `admin@example.test` and `demo-admin`, or reload.
+Player creation, role changes, garage grants, and Store purchases update
+the demo data in memory. Reload the page to reset it.
+
+Use `npm run dev:server` to proxy API requests to a running server at
+`http://127.0.0.1:8080`.
 
 When implementing a player-usable item that the normal shop cannot sell,
 include an authenticated admin dashboard grant. Grants preserve the

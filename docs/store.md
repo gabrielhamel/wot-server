@@ -6,6 +6,10 @@ Each purchase adds one unmounted item to the player's Depot. The Store
 shows the credit balance and Depot quantity for each offer. Its Material UI
 components share a theme with the admin dashboard.
 
+For frontend development, run `npm run dev` from the repository root and
+open `/shop/` on the URL Vite prints. The [mock API](admin.md#frontend-development)
+supplies a demo session and supports purchases against an in-memory balance.
+
 ## Configuration
 
 Build the shared React project with `npm ci` and

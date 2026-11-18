@@ -2,6 +2,8 @@ import { createRoot } from "react-dom/client";
 import { initializeBrowserTelemetry } from "../../../platform/infrastructure/web/browser-telemetry";
 import { recordBrowserError, webOperation } from "../../../platform/infrastructure/web/telemetry";
 
+declare const __WEB_MOCK_API__: boolean;
+
 const pages = {
   "/admin": {
     owner: "player_administration",
@@ -41,8 +43,12 @@ async function start() {
   });
   document.title = page.title;
 
-  await initializeBrowserTelemetry(page.owner);
   try {
+    if (__WEB_MOCK_API__) {
+      const { startMockApi } = await import("../../../../tools/web/mocks/browser");
+      await startMockApi(route);
+    }
+    await initializeBrowserTelemetry(page.owner);
     const { default: Page } = await webOperation(
       page.owner,
       "web.load_page",
