@@ -330,18 +330,20 @@ fn exercise_settings(peer: &mut Peer, script: &ScriptDispatch, settings: &mut Pi
         ("arenaTypeID", Pickle::I64(1)),
         ("roundLength", Pickle::I64(660)),
     ];
-    assert_eq!(peer.methods.len(), before + expected.len() * 2);
+    let (message_pairs, remaining) = peer.methods[before..].as_chunks::<2>();
+    assert_eq!(message_pairs.len(), expected.len());
+    assert!(remaining.is_empty());
     let Pickle::Dict(settings) = settings else {
         panic!("Missing room settings dictionary")
     };
-    for (messages, (key, value)) in peer.methods[before..].chunks_exact(2).zip(expected) {
-        assert_eq!(messages[0].0, "updatePrebattle");
-        assert_eq!(messages[0].1[0], Value::UInt8(8));
+    for ([(update, args), (response, _)], (key, value)) in message_pairs.iter().zip(expected) {
+        assert_eq!(update, "updatePrebattle");
+        assert_eq!(args[0], Value::UInt8(8));
         assert_eq!(
-            pickle_value(&messages[0].1[1]),
+            pickle_value(&args[1]),
             Pickle::Tuple(vec![Pickle::from(key), value.clone()])
         );
-        assert_eq!(messages[1].0, "onCmdResponse");
+        assert_eq!(response, "onCmdResponse");
         settings.insert(Pickle::from(key), value);
     }
 
