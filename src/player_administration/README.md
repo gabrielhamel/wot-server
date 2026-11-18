@@ -1,31 +1,30 @@
 # Player Administration
 
-Player Administration gives authorized operators the ability to find and
-provision players, inspect garages, and grant currency, vehicles or cosmetics. The HTTP
-API and dashboard expose those workflows. [Accounts](../accounts/README.md)
-owns player identities and garage state. Player Administration uses the
-published account and catalog data and submits grants through
-[Player Sessions](../player_sessions/README.md) to coordinate with live sessions.
+Player Administration lets administrators find and provision players, manage
+roles, inspect garages, and grant currency, vehicles or cosmetics. [Accounts](../accounts/README.md)
+owns player identities, roles, dashboard session records and garage state.
+Player Administration uses the published account and catalog data and submits
+grants through [Player Sessions](../player_sessions/README.md) to coordinate
+with live game sessions.
 
 | Layer | Responsibilities |
 | --- | --- |
-| `presentation/` | HTTP routes, operator authentication, JSON request and response models, and status mapping. |
-| [Platform HTTP](../platform/infrastructure/http.rs) | Shared bounded HTTP/1 connection serving and shutdown. |
-| `application/admin-contracts.ts` | Typed contracts for player accounts, garages, catalogs and grants. |
+| `application/mod.rs` | Sign-in orchestration and session secret generation. |
+| `application/admin-contracts.ts` | Browser contracts for player accounts, dashboard sessions, garages, catalogs and grants. |
 | `infrastructure/admin-api.ts` | React Admin authentication and data providers, HTTP serialization and browser operation spans. |
-| `presentation/web/` | Token sign-in, player list and creation, and the garage page and grant forms. |
+| `presentation/` | HTTP routes, session cookies, JSON contracts and status mapping. |
+| `presentation/web/` | First-administrator setup, email and password sign-in, role controls and garage grant forms. |
 
 | Term | Meaning |
 | --- | --- |
-| Admin token | Server-configured bearer credential shared with authorized operators. |
-| Player record | Account ID, game login and display name returned by the admin API. |
-| Grant | Operator-authorized addition of currency, cosmetic copies or a permanently owned tank. |
+| Administrator | Player account whose database role authorizes dashboard access. |
+| First administrator | Account created by the setup form when the database has no players. |
+| Player record | Account ID, game login, display name and role returned by the admin API. |
+| Grant | Administrator-authorized addition of currency, cosmetic copies or a permanently owned tank. |
 
 The [admin guide](../../docs/admin.md) describes configuration and the HTTP
 contract.
 
-Player Administration HTTP traces cover method, route, status, allowlisted
-request inputs, validated caller and immediate peer IPs, presentation handlers, Accounts operations, and Player
-Sessions grant delivery. The admin API continues the browser trace, and the grant queue preserves the HTTP parent through
-gateway execution and response. See the
-[telemetry contract](../../docs/telemetry.md).
+Player Administration continues the browser trace through HTTP handlers,
+Accounts operations and PostgreSQL. The grant queue preserves the HTTP parent
+through gateway execution and response. See the [telemetry contract](../../docs/telemetry.md).

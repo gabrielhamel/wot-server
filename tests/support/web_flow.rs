@@ -47,7 +47,7 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
         .unwrap()
         .local_addr()
         .unwrap();
-    let admin_token = "test-admin-token-with-at-least-32-characters";
+    let admin_cookie = "wot_admin_session=not-a-session";
     let debug_log = fs::File::create(fixture.directory.join("server.log")).unwrap();
     let configuration = serde_json::json!({
         "resource_dir": resources,
@@ -55,7 +55,7 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
         "login_bind": "127.0.0.1:0",
         "base_bind": "127.0.0.1:0",
         "web": {"bind": address.to_string(), "ui_dir": "web"},
-        "admin": {"token": admin_token},
+        "admin": {},
         "store": {"origin": format!("http://{address}")},
     });
     fs::write(
@@ -103,13 +103,13 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
     let root = get(address, "/", None);
     assert!(root.starts_with("HTTP/1.1 307") && root.contains("location: /admin/"));
     assert!(get(address, "/assets/test.js", None).starts_with("HTTP/1.1 200"));
-    assert!(get(address, "/api/admin/session", None).starts_with("HTTP/1.1 401"));
-    assert!(get(address, "/api/admin/session", Some(admin_token)).starts_with("HTTP/1.1 204"));
-    assert!(get(address, "/api/shop/catalog", Some(admin_token)).starts_with("HTTP/1.1 401"));
+    assert!(get(address, "/api/admin/session", None).starts_with("HTTP/1.1 200"));
+    assert!(get(address, "/api/admin/players", None).starts_with("HTTP/1.1 401"));
+    assert!(get(address, "/api/shop/catalog", Some(admin_cookie)).starts_with("HTTP/1.1 401"));
     assert!(get(address, "/api/shop/missing", None).starts_with("HTTP/1.1 404"));
 }
 
-fn get(address: SocketAddr, path: &str, token: Option<&str>) -> String {
+fn get(address: SocketAddr, path: &str, cookie: Option<&str>) -> String {
     let mut stream = TcpStream::connect(address).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -119,8 +119,8 @@ fn get(address: SocketAddr, path: &str, token: Option<&str>) -> String {
         "GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n"
     )
     .unwrap();
-    if let Some(token) = token {
-        write!(stream, "Authorization: Bearer {token}\r\n").unwrap();
+    if let Some(cookie) = cookie {
+        write!(stream, "Cookie: {cookie}\r\n").unwrap();
     }
     stream.write_all(b"\r\n").unwrap();
     let mut response = String::new();

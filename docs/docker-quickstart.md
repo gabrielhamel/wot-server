@@ -26,8 +26,8 @@ if you override them, update `database_url` accordingly.
 
 ### Configure the server
 
-Generate an admin token with `openssl rand -hex 32`. Save the following as
-`server.json` in the repository root, replacing the token and `192.168.1.10` with
+Save the following as `server.json` in the repository root, replacing
+`192.168.1.10` with
 the server host's IPv4 address reachable by game clients. For a game running on
 the same computer, use `127.0.0.1` instead.
 
@@ -44,7 +44,7 @@ the same computer, use `127.0.0.1` instead.
     "ui_dir": "web"
   },
   "admin": {
-    "token": "REPLACE_WITH_YOUR_GENERATED_TOKEN"
+    "secure_cookies": false
   }
 }
 ```
@@ -78,8 +78,9 @@ docker run -d --name wot-server --restart unless-stopped \
 ```
 
 The server applies database migrations and generates its login key on first
-start. Open [the dashboard](http://127.0.0.1:8080/admin/), sign in with your admin token,
-and use **Player accounts → Create** to add an account. Use an email-shaped login
+start. Open [the dashboard](http://127.0.0.1:8080/admin/), create the first
+administrator, then sign in with the administrator email and password. Use
+**Player accounts → Create** to add another account. Use an email-shaped login
 such as `player@example.com` for the game client. New accounts receive tier I
 tanks, crew and ammunition. Startup does not create demo accounts automatically.
 

@@ -1,6 +1,7 @@
 use super::{AdminState, RequestSpan};
 use crate::accounts::{
-    CreatePlayerError, NewPlayer, NewPlayerError, PlayerAccount, PlayerPagination,
+    CreatePlayerError, NewPlayer, NewPlayerError, PlayerAccount, PlayerPagination, PlayerRole,
+    is_admin_email,
 };
 use axum::{
     Extension, Json,
@@ -19,6 +20,7 @@ pub(super) struct PlayerRecord {
     id: String,
     username: String,
     display_name: String,
+    role: PlayerRole,
 }
 
 impl From<PlayerAccount> for PlayerRecord {
@@ -27,6 +29,7 @@ impl From<PlayerAccount> for PlayerRecord {
             id: player.id.to_string(),
             username: player.username,
             display_name: player.display_name,
+            role: player.role,
         }
     }
 }
@@ -82,6 +85,32 @@ pub(super) async fn create(
     Extension(RequestSpan(request_span)): Extension<RequestSpan>,
     body: Result<Json<CreatePlayerRequest>, JsonRejection>,
 ) -> Result<(StatusCode, Json<PlayerRecord>), ApiError> {
+    provision(state, request_span, body, PlayerRole::Player).await
+}
+
+#[tracing::instrument(name = "admin.players.bootstrap", skip_all, fields(ddd.bounded_context.name = "player_administration", input.role = "admin", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
+pub(super) async fn bootstrap(
+    State(state): State<AdminState>,
+    Extension(RequestSpan(request_span)): Extension<RequestSpan>,
+    body: Result<Json<CreatePlayerRequest>, JsonRejection>,
+) -> Result<(StatusCode, Json<PlayerRecord>), ApiError> {
+    if !state
+        .accounts
+        .setup_available()
+        .await
+        .map_err(ApiError::internal)?
+    {
+        return Err(setup_closed());
+    }
+    provision(state, request_span, body, PlayerRole::Admin).await
+}
+
+async fn provision(
+    state: AdminState,
+    request_span: tracing::Span,
+    body: Result<Json<CreatePlayerRequest>, JsonRejection>,
+    role: PlayerRole,
+) -> Result<(StatusCode, Json<PlayerRecord>), ApiError> {
     let Json(body) = body.map_err(|error| {
         ApiError::new(
             error.status(),
@@ -100,6 +129,13 @@ pub(super) async fn create(
     request_span.record("input.display_name.bytes", display_name_bytes);
     tracing::Span::current().record("input.username.bytes", username_bytes);
     tracing::Span::current().record("input.display_name.bytes", display_name_bytes);
+    if role == PlayerRole::Admin && !is_admin_email(&body.username) {
+        return Err(ApiError::field(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "username",
+            "Enter a valid email address.",
+        ));
+    }
     let player = NewPlayer::new(body.username, body.display_name, body.password)?;
     let permit = state.create_slots.try_acquire_owned().map_err(|_| {
         ApiError::new(
@@ -109,7 +145,10 @@ pub(super) async fn create(
     })?;
     let result = tokio::spawn(tracing::Instrument::in_current_span(async move {
         let _permit = permit;
-        state.accounts.create(player).await
+        match role {
+            PlayerRole::Player => state.accounts.create(player).await,
+            PlayerRole::Admin => state.accounts.bootstrap_admin(player).await,
+        }
     }))
     .await
     .map_err(ApiError::internal)?;
@@ -121,8 +160,13 @@ pub(super) async fn create(
             "username",
             "That login is already in use.",
         )),
+        Err(CreatePlayerError::SetupClosed) => Err(setup_closed()),
         Err(CreatePlayerError::Internal(error)) => Err(ApiError::internal(error)),
     }
+}
+
+fn setup_closed() -> ApiError {
+    ApiError::new(StatusCode::CONFLICT, "First administrator setup is closed.")
 }
 
 pub(super) struct ApiError {
@@ -161,7 +205,7 @@ impl ApiError {
     }
 
     pub(super) fn internal(error: impl std::fmt::Display) -> Self {
-        tracing::error!(%error, "Admin player operation failed");
+        tracing::error!(%error, "Admin operation failed");
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "The player operation failed.",

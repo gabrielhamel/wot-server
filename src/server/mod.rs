@@ -1,5 +1,5 @@
 use crate::{
-    accounts::{Accounts, GarageCatalog, PlayerAccounts, PostgresAccounts, PostgresPlayers},
+    accounts::{Accounts, GarageCatalog, PostgresAccounts, PostgresPlayers},
     platform::http,
     player_administration,
     player_sessions::{Gateway, GatewayConfig},
@@ -134,11 +134,11 @@ async fn serve(config: Configuration) -> Result<()> {
             )
             .await??;
             router = router.merge(player_administration::router(
-                PlayerAccounts::new(players),
+                players,
                 accounts,
                 catalog,
                 gateway.player_grants(),
-                player_administration::AdminToken::new(&admin.token),
+                admin.secure_cookies,
                 trusted_proxies,
             ));
         }

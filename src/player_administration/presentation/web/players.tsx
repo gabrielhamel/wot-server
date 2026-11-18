@@ -1,3 +1,5 @@
+import type { PlayerRecord } from "../../application/admin-contracts";
+import { PlayerRoleAction } from "./player-role";
 import { Box, Typography } from "@mui/material";
 import {
   Create,
@@ -17,6 +19,15 @@ export function PlayerList() {
       <DataTable bulkActionButtons={false} rowClick="show" sx={{ overflowX: "auto" }}>
         <DataTable.Col source="display_name" label="Display name" disableSort />
         <DataTable.Col source="username" label="Login" disableSort />
+        <DataTable.Col<PlayerRecord>
+          source="role"
+          label="Role"
+          disableSort
+          render={(player) => (player.role === "admin" ? "Administrator" : "Player")}
+        />
+        <DataTable.Col label="Change role">
+          <PlayerRoleAction />
+        </DataTable.Col>
       </DataTable>
     </List>
   );

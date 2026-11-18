@@ -82,15 +82,18 @@ docker compose up -d --wait
 export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
-cargo test --locked --lib exports_admin_http_request_inputs -- --ignored
+cargo test --locked --lib exports_admin_http -- --ignored
 cargo test --locked -p wot-server --test garage -- --ignored
 ```
 
-The admin HTTP test sends requests through the authenticated router and inspects
+The admin HTTP tests send requests through the authenticated router and inspects
 exported inputs, status and parent links for successful and rejected requests.
-It also authenticates a player created through the API, checks their persisted
-starter garage, and verifies that raw credentials and invalid input text stay
-out of spans.
+They authenticate a player created through the API, check their starter garage,
+and verify that raw credentials and invalid input text stay out of spans. They
+also exercise concurrent first-admin setup, case-sensitive credentials,
+60-day session persistence across router and database-pool restarts, role
+changes, concurrent demotion, revocation, expiration and sign-out. The access
+lifecycle test uses a temporary PostgreSQL schema.
 
 For an existing database, set `WG_TEST_DATABASE_URL` to the same connection
 URL used by the server. The test uses uniquely named temporary accounts and removes them after its network

@@ -1,5 +1,5 @@
 pub(super) mod players;
-pub use players::{CreatePlayerError, PlayerAccounts, PlayerRepository};
+pub use players::{CreatePlayerError, PlayerAccessRepository, PlayerAccounts, PlayerRepository};
 
 use super::domain::{
     AccountSnapshot, AmmoError, AmmunitionRules, ShellPurchase, ShellSelection, VehicleAmmunition,
@@ -51,22 +51,10 @@ impl<R: AccountRepository> Accounts<R> {
         username: &str,
         password: String,
     ) -> anyhow::Result<Option<AccountSnapshot>> {
-        use argon2::{Argon2, PasswordHash, PasswordVerifier};
         let Some((id, hash)) = self.repository.credentials(username).await? else {
             return Ok(None);
         };
-        let valid = tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
-            move || {
-                let hash = PasswordHash::new(&hash)
-                    .map_err(|e| anyhow::anyhow!("Invalid stored password hash: {e}"))?;
-                Ok::<_, anyhow::Error>(
-                    Argon2::default()
-                        .verify_password(password.as_bytes(), &hash)
-                        .is_ok(),
-                )
-            },
-        ))
-        .await??;
+        let valid = verify_password(password, hash).await?;
         if !valid {
             return Ok(None);
         }
@@ -257,4 +245,17 @@ pub struct VehicleSaleRequest {
     pub dismiss_crew: bool,
     pub mounted_items: Vec<i32>,
     pub depot_items: Vec<i32>,
+}
+
+#[tracing::instrument(name = "accounts.verify_password", skip_all, fields(ddd.bounded_context.name = "accounts", input.algorithm = "argon2id"), err)]
+async fn verify_password(password: String, hash: String) -> anyhow::Result<bool> {
+    use argon2::{Argon2, PasswordHash, PasswordVerifier};
+    tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
+        let hash = PasswordHash::new(&hash)
+            .map_err(|error| anyhow::anyhow!("Invalid stored password hash: {error}"))?;
+        Ok(Argon2::default()
+            .verify_password(password.as_bytes(), &hash)
+            .is_ok())
+    }))
+    .await?
 }

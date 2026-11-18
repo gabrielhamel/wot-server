@@ -1,10 +1,13 @@
+export type PlayerRole = "player" | "admin";
+
 export interface PlayerRecord {
   id: string;
   username: string;
   display_name: string;
+  role: PlayerRole;
 }
 
-export type NewPlayer = Omit<PlayerRecord, "id"> & { password: string };
+export type NewPlayer = Omit<PlayerRecord, "id" | "role"> & { password: string };
 
 export const currencies = [
   ["credits", "Credits"],
@@ -54,3 +57,7 @@ export interface GrantResult {
   garage: Garage;
   delivery: "queued_for_garage" | "on_next_sync";
 }
+
+export type AdminSession =
+  | { status: "setup_required" | "signed_out" }
+  | { status: "authenticated"; player: PlayerRecord };

@@ -34,8 +34,13 @@ impl LogLevel {
 pub(super) struct AdminConfiguration {
     #[serde(default = "default_web_bind")]
     pub bind: SocketAddrV4,
-    pub token: String,
+    #[serde(default = "secure_admin_cookies")]
+    pub secure_cookies: bool,
     pub dashboard_dir: Option<PathBuf>,
+}
+
+fn secure_admin_cookies() -> bool {
+    true
 }
 
 fn default_web_bind() -> SocketAddrV4 {
@@ -172,14 +177,6 @@ impl Configuration {
             if value.is_relative() {
                 *value = directory.join(&*value);
             }
-        }
-        if let Some(admin) = &mut config.admin {
-            ensure!(
-                (32..=256).contains(&admin.token.len())
-                    && admin.token.bytes().all(|byte| byte.is_ascii_alphanumeric()
-                        || matches!(byte, b'-' | b'_' | b'.' | b'~')),
-                "Admin token must contain 32 to 256 URL-safe characters"
-            );
         }
         if let Some(store) = &mut config.store {
             store.validate()?;

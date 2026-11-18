@@ -3,7 +3,7 @@ use super::{
     postgres::{PostgresAccounts, read_snapshot},
 };
 use crate::accounts::{
-    AccountSnapshot, PlayerAccount, PlayerPage, PlayerPagination, PlayerRepository,
+    AccountSnapshot, PlayerAccount, PlayerPage, PlayerPagination, PlayerRepository, PlayerRole,
 };
 use anyhow::Result;
 use sqlx::PgPool;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct PostgresPlayers {
-    pool: PgPool,
+    pub(super) pool: PgPool,
     catalog: Arc<GarageCatalog>,
     starter_keys: Arc<[String]>,
 }
@@ -60,8 +60,8 @@ impl PlayerRepository for PostgresPlayers {
             )
             .await
         }?;
-        let rows: Vec<(i64, String, String)> = {
-            let statement = "SELECT id, username, display_name FROM accounts ORDER BY id DESC LIMIT $1 OFFSET $2";
+        let rows: Vec<(i64, String, String, bool)> = {
+            let statement = "SELECT id, username, display_name, role = 'admin' FROM accounts ORDER BY id DESC LIMIT $1 OFFSET $2";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -75,10 +75,15 @@ impl PlayerRepository for PostgresPlayers {
         crate::platform::observability::database("accounts", "COMMIT", tx.commit()).await?;
         let accounts = rows
             .into_iter()
-            .map(|(id, username, display_name)| PlayerAccount {
+            .map(|(id, username, display_name, admin)| PlayerAccount {
                 id,
                 username,
                 display_name,
+                role: if admin {
+                    PlayerRole::Admin
+                } else {
+                    PlayerRole::Player
+                },
             })
             .collect();
         Ok(PlayerPage { accounts, total })
@@ -90,6 +95,7 @@ impl PlayerRepository for PostgresPlayers {
         username: String,
         display_name: String,
         password_hash: String,
+        role: PlayerRole,
     ) -> Result<Option<PlayerAccount>> {
         let mut tx =
             crate::platform::observability::database("accounts", "BEGIN", self.pool.begin())
@@ -103,8 +109,11 @@ impl PlayerRepository for PostgresPlayers {
             )
             .await
         }?;
+        if role == PlayerRole::Admin {
+            super::player_access::lock_accounts(&mut tx).await?;
+        }
         let id = {
-            let statement = "INSERT INTO accounts(username, display_name, password_hash) VALUES($1, $2, $3) ON CONFLICT(username) DO NOTHING RETURNING id";
+            let statement = "INSERT INTO accounts(username, display_name, password_hash, role) SELECT $1, $2, $3, $4 WHERE $4 = 'player' OR NOT EXISTS (SELECT 1 FROM accounts) ON CONFLICT(username) DO NOTHING RETURNING id";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -112,11 +121,13 @@ impl PlayerRepository for PostgresPlayers {
                     .bind(&username)
                     .bind(&display_name)
                     .bind(password_hash)
+                    .bind(role.as_str())
                     .fetch_optional(&mut *tx),
             )
             .await
         }?;
         let Some(id) = id else {
+            crate::platform::observability::database("accounts", "ROLLBACK", tx.rollback()).await?;
             return Ok(None);
         };
 
@@ -136,6 +147,7 @@ impl PlayerRepository for PostgresPlayers {
             id,
             username,
             display_name,
+            role,
         }))
     }
 }

@@ -4,7 +4,7 @@ import { authProvider, dataProvider } from "../../infrastructure/admin-api";
 import { PlayerCreate, PlayerList } from "./players";
 import { PlayerGarage } from "./garage/garage-page";
 import { serverTheme } from "../../../platform/presentation/web/theme";
-import { TokenLogin } from "./token-login";
+import { AdminLogin } from "./admin-login";
 import { ServerLayout } from "./admin-layout";
 
 const theme = {
@@ -19,7 +19,7 @@ export default function AdminApp() {
       title="World of Tanks Server"
       dataProvider={dataProvider}
       authProvider={authProvider}
-      loginPage={TokenLogin}
+      loginPage={AdminLogin}
       layout={ServerLayout}
       theme={theme}
       darkTheme={null}

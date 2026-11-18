@@ -1,6 +1,6 @@
 # Accounts
 
-Accounts owns durable player identity, password hashes, balances, vehicle ownership,
+Accounts owns durable player identity, password hashes, player roles, dashboard sessions, balances, vehicle ownership,
 integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, cosmetic ownership and outfits, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes immutable snapshots to
 Player Sessions. It does not own transport sessions, entities, battles or matchmaking.
 
@@ -10,6 +10,7 @@ Player Sessions. It does not own transport sessions, entities, battles or matchm
 | `application/` | Repository ports, credential verification, paginated player listing and provisioning, snapshot queries, preferences and ammunition/progression proposals/commit use cases. |
 | `infrastructure/postgres.rs` | SQLx pool, embedded migrations, coherent snapshot reads, atomic preference updates and revision-checked inventory transactions. |
 | `infrastructure/players.rs` | PostgreSQL player directory pages and atomic creation with tier I garage provisioning. |
+| `infrastructure/player_access.rs` | Role-aware account and session access, serialized role changes and session revocation. |
 | `infrastructure/client/` | Anti-corruption layer adapting the versioned [resource bundle](../../docs/resources.md), garage catalog and account/shop cache formats. These wire models are not account domain models. |
 
 Player Sessions consumes `Accounts<R>`, `AccountSnapshot`, and the `GarageCatalog` encoder
@@ -23,6 +24,8 @@ context is a possible future boundary, not an implemented one.
 | Term | Meaning |
 | --- | --- |
 | Account | A durable identity selected by a unique, case-sensitive username. |
+| Player role | The account's Player or Administrator access level. |
+| Dashboard session | A 60-day administrator credential backed by a revocable PostgreSQL record. |
 | Starter garage | Tier I regular tech tree tanks with stock modules, ammunition, and trained crew. |
 | Owned vehicle | A stable inventory ID and catalog key attached to one account. |
 | Catalog key | A resource identifier such as `usa:A01_T1_Cunningham`. |
@@ -74,9 +77,11 @@ Social owns its contact table; foreign keys use Accounts IDs. Credentials, balan
 inventory and revisions are not part of this directory contract.
 
 [Player Administration](../player_administration/README.md) consumes `PlayerAccounts<R>` through the public
-context entry point. It receives account IDs, logins and display names. Account
+context entry point. It receives account IDs, logins, display names and roles. Account
 creation hashes the password with Argon2id and commits the identity and starter
-garage in one PostgreSQL transaction.
+garage in one PostgreSQL transaction. Bootstrap authorizes first-admin creation
+only in an empty database. The role transaction rechecks the actor, prevents
+self-role changes, and revokes sessions on demotion.
 Player Administration also reads snapshots and vehicle catalog entries. Player Sessions uses the same
 revision-checked progression transaction for player grants, garage purchases and
 [Store checkout](../../docs/store.md).
