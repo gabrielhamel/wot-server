@@ -8,7 +8,8 @@ pub use application::{
 pub use application::{CreatePlayerError, PlayerAccounts, PlayerRepository};
 pub use domain::*;
 pub use infrastructure::client::{
-    GarageCatalog, PreparedAccount, VehicleCatalogEntry, cosmetic_item, decode_outfits,
+    AttachmentCatalogEntry, GarageCatalog, PreparedAccount, VehicleCatalogEntry, cosmetic_item,
+    decode_outfits,
 };
 pub use infrastructure::players::PostgresPlayers;
 pub use infrastructure::postgres::PostgresAccounts;

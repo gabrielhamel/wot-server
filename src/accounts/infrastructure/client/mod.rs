@@ -16,13 +16,14 @@ mod grants;
 mod item_defs;
 mod item_prices;
 mod items;
+mod localization;
 mod module_defs;
 mod progression;
 mod shop;
 mod starter_garage;
 mod supply_slots;
 mod vehicle_defs;
-pub use grants::VehicleCatalogEntry;
+pub use grants::{AttachmentCatalogEntry, VehicleCatalogEntry};
 mod vehicle_sales;
 
 use crate::accounts::{

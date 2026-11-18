@@ -65,6 +65,7 @@ pub(crate) fn router(
         .route("/players/{id}/garage", get(garage::show))
         .route("/players/{id}/grants", axum::routing::post(garage::grant))
         .route("/vehicles", get(garage::catalog))
+        .route("/attachments", get(garage::attachment_catalog))
         .route("/session", get(|| async { StatusCode::NO_CONTENT }))
         .layer(DefaultBodyLimit::max(8 * 1024))
         .layer(middleware::from_fn_with_state(token, authenticate))

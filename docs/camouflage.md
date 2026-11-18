@@ -87,7 +87,8 @@ rotate. Anchors for the default vehicle model are eligible in a custom outfit.
 
 The extractor includes the installed `customization/attachments/list.xml`.
 The EU catalog marks River Race Revelry attachments as outside the shop.
-An operator can provision a depot copy using the [attachment grant API](admin.md#grants).
+An operator can provision a depot copy from the player’s **Resources & Garage**
+page in the [admin dashboard](admin.md).
 The group's Zongzi Jubilee dragon boat (item 2033) fits the Executor's turret anchor 38000
 at scale 2.
 

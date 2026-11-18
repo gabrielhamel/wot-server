@@ -137,7 +137,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
 | [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor on the root HTTP span for a decoded vehicle grant. |
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
-| [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`). |
+| [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles` or `attachments` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`). |
 | [`input.count`](../src/accounts/domain/consumables.rs) | Requested purchase quantity, equipment charge quantity, or cost multiplier, depending on the operation. |
 | [`input.item`](../src/accounts/domain/consumables.rs) | Compact item descriptor for a module, equipment, consumable, or directive involved in the operation. |
 | [`input.index`](../src/accounts/domain/modules.rs) | Zero-based index into a vehicle module research plan. |
@@ -182,6 +182,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage progression/ammunition completion result: `committed`, `unchanged`, `rejected`, `stale`, or `error`. The Exterior decision also records `changed`, `unchanged` or `rejected`. Progression dispatch records `invalid_request`, `stale_shop`, `busy` or `queued` when it returns before work is scheduled. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/progression.rs) | Progression completion handed to the reliable transport queue (`queued`), absent session or entity (`unavailable`), or response enqueue failure (`failed`). |
+| [`output.items.count`](../src/player_administration/presentation/garage.rs) | Number of grantable 3D attachments returned by the admin catalog endpoint. |
 | [`output.owned.count`](../src/accounts/domain/cosmetics.rs) | Total copies of the granted attachment, including fitted copies, after successful planning. |
 | [`output.purchases.count`](../src/accounts/domain/cosmetics.rs) | Number of cosmetic units to purchase after using owned stock. For paint, a region uses the number of units specified by the catalog. Zero for a successful change that spends only owned stock or leaves the layout as it was. |
 | [`output.response`](../src/player_sessions/infrastructure/gateway/social.rs) | Legacy chat `actionResponse` code sent by `player_sessions.social.send_chat`. |

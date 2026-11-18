@@ -11,7 +11,7 @@ published account and catalog data and submits grants through
 | --- | --- |
 | `presentation/` | HTTP routes, operator authentication, JSON request and response models, status mapping and static dashboard routing. |
 | `infrastructure/` | Bounded HTTP/1 connection serving and shutdown. |
-| [`dashboard/`](../../dashboard/) | React Admin player list, creation form, per-player garage and resource grants, and token sign-in. |
+| [`dashboard/`](../../dashboard/) | React Admin player list, creation form, per-player garage and currency, tank and 3D attachment grants, and token sign-in. |
 
 | Term | Meaning |
 | --- | --- |

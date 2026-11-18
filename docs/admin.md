@@ -50,13 +50,20 @@ credits, gold, bonds, free XP and owned tanks. Use **Grant resource** to add a
 positive whole amount, or search for a tank by name and use **Grant
 tank**. Tank grants include stock modules, standard ammunition and basic crew.
 The player is charged nothing and needs a free garage slot. The picker lists
-tanks eligible for Random Battles and identifies already-owned tanks. The browser
+tanks eligible for Random Battles and identifies already-owned tanks. Use
+**Grant a 3D attachment** to search by name or item ID, see how many copies
+the player owns, and add copies to the depot. Ownership includes fitted copies.
+The picker includes reward attachments such as Zongzi Jubilee. The browser
 stores the admin token in tab session storage.
 For remote administration, keep the server on loopback and use an HTTPS
 reverse proxy or an SSH tunnel. The built-in listener serves plain HTTP.
 
 For frontend development, `npm --prefix dashboard run dev` starts Vite
 with a local API proxy to the default admin listener.
+
+When implementing a player-usable item that the normal shop cannot sell,
+include an authenticated admin dashboard grant. Grants preserve the
+item's ownership limits and leave its shop availability unchanged.
 
 ## API
 
@@ -67,8 +74,9 @@ Send `Authorization: Bearer <admin-token>` with every request.
 | `GET /api/admin/session` | `204 No Content` for a valid token. |
 | `GET /api/admin/players?page=1&per_page=25` | `200 OK` with `{ "data": [player records], "total": 2 }`. Pages start at 1. Page size is 1–100. Defaults are page 1 and 25 records. |
 | `POST /api/admin/players` | `201 Created` with the new player record. |
-| `GET /api/admin/players/{id}/garage` | `200 OK` with the current balances, garage slot count, and owned tanks. Balances are decimal strings. |
+| `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks and an `attachments` map from item ID to total owned copies. Balances are decimal strings. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |
+| `GET /api/admin/attachments` | `200 OK` with grantable 3D attachments containing `id`, `name`, and `max_owned` (null if the catalog sets no limit). |
 | `POST /api/admin/players/{id}/grants` | `200 OK` with `garage` and `delivery` after commit. |
 
 Send `Content-Type: application/json` and the following fields for creation.
@@ -112,8 +120,7 @@ Send one of these JSON bodies to the grants endpoint.
 ```
 
 An attachment grant adds 1–100 copies to the depot, subject to the item's
-ownership limit. Use the item ID from the bundle's
-`scripts/item_defs/customization/attachments/list.xml`. ID 2033 is the
+ownership limit. Use an item ID from `GET /api/admin/attachments`. ID 2033 is the
 Zongzi Jubilee dragon boat from River Race Revelry in the installed EU build. The HTTP endpoint
 accepts the grant even when the catalog marks the attachment outside the shop.
 

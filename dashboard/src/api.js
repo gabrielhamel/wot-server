@@ -56,6 +56,9 @@ export const dataProvider = {
   getVehicleCatalog(signal) {
     return request('/vehicles', { signal });
   },
+  getAttachmentCatalog(signal) {
+    return request('/attachments', { signal });
+  },
   grant(id, body) {
     return request(`/players/${encodeURIComponent(id)}/grants`, { body });
   },

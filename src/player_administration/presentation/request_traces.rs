@@ -20,7 +20,10 @@ async fn exports_admin_http_request_inputs() {
     let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
     let resource_dir = std::env::var_os("WG_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&resource_dir)).unwrap();
+    let has_attachments =
+        resources.has_file("scripts/item_defs/customization/attachments/list.xml");
     let catalog = Arc::new(GarageCatalog::load(resources, &[]).unwrap());
+    let attachment_count = catalog.grantable_attachments().count();
     let starter_keys = catalog.tier_one_keys().unwrap();
     let repository = PostgresAccounts::connect(&url, 2).await.unwrap();
     let accounts = Accounts::new(repository.clone());
@@ -136,6 +139,41 @@ async fn exports_admin_http_request_inputs() {
     let created: serde_json::Value =
         serde_json::from_slice(&to_bytes(response.into_body(), 8 * 1024).await.unwrap()).unwrap();
 
+    let response = send(
+        "GET",
+        "/api/admin/attachments",
+        "Bearer unauthorized-secret",
+        "",
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let response = send("GET", "/api/admin/attachments", TOKEN, "")
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let attachments: Vec<serde_json::Value> =
+        serde_json::from_slice(&to_bytes(response.into_body(), 256 * 1024).await.unwrap()).unwrap();
+    assert_eq!(attachments.len(), attachment_count);
+    if has_attachments {
+        let boat = attachments
+            .iter()
+            .find(|entry| entry["id"] == 2033)
+            .unwrap();
+        assert!(boat["name"].as_str().is_some_and(|name| !name.is_empty()));
+        assert!(boat.get("max_owned").is_some());
+        assert!(!attachments.iter().any(|entry| entry["id"] == 0));
+    }
+    let garage_path = format!(
+        "/api/admin/players/{}/garage",
+        created["id"].as_str().unwrap()
+    );
+    let response = send("GET", garage_path.as_str(), TOKEN, "").await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let garage: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 32 * 1024).await.unwrap()).unwrap();
+    assert_eq!(garage["attachments"], serde_json::json!({}));
+
     let spans = exporter.get_finished_spans().unwrap();
     drop(subscriber_guard);
     let snapshot = accounts
@@ -181,7 +219,7 @@ async fn exports_admin_http_request_inputs() {
         .iter()
         .filter(|span| span.name == "admin.http.request")
         .collect();
-    assert_eq!(roots.len(), 11);
+    assert_eq!(roots.len(), 14);
     for (root, expected) in roots.iter().zip([
         &[
             ("http.response.status_code", "200"),
@@ -222,6 +260,18 @@ async fn exports_admin_http_request_inputs() {
             ("input.amount", "1"),
         ],
         &[("http.response.status_code", "201")],
+        &[
+            ("http.response.status_code", "401"),
+            ("http.route", "/api/admin/attachments"),
+        ],
+        &[
+            ("http.response.status_code", "200"),
+            ("http.route", "/api/admin/attachments"),
+        ],
+        &[
+            ("http.response.status_code", "200"),
+            ("http.route", "/api/admin/players/{id}/garage"),
+        ],
     ]) {
         assert_eq!(root.parent_span_id, SpanId::INVALID);
         assert_eq!(
@@ -291,6 +341,29 @@ async fn exports_admin_http_request_inputs() {
         "accounts.players.persist_starter_garage"
     ));
     assert!(contains_operation(roots[10], "postgresql.query"));
+    let auth_span = spans
+        .iter()
+        .find(|span| {
+            span.name == "admin.authenticate"
+                && span.parent_span_id == roots[12].span_context.span_id()
+        })
+        .unwrap();
+    let attachments_span = spans
+        .iter()
+        .find(|span| {
+            span.name == "admin.garage.catalog"
+                && span.parent_span_id == auth_span.span_context.span_id()
+        })
+        .unwrap();
+    assert_eq!(
+        attribute(attachments_span, "input.collection").as_deref(),
+        Some("attachments")
+    );
+    assert_eq!(
+        attribute(attachments_span, "output.items.count"),
+        Some(attachment_count.to_string())
+    );
+    assert!(!contains_operation(roots[11], "admin.garage.catalog"));
     let exported = format!("{spans:?}");
     for excluded in [
         "test-bearer-secret",

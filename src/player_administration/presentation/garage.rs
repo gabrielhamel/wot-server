@@ -1,8 +1,8 @@
 use super::{AdminState, RequestSpan, players::ApiError};
 use crate::{
     accounts::{
-        AccountNotFound, AccountSnapshot, GarageCatalog, GrantCurrency, GrantError, PlayerGrant,
-        ProgressionError, VehicleCatalogEntry,
+        AccountNotFound, AccountSnapshot, CosmeticKind, GarageCatalog, GrantCurrency, GrantError,
+        PlayerGrant, ProgressionError, VehicleCatalogEntry,
     },
     player_sessions::{GrantDelivery, GrantRequestError},
     shared_kernel::AccountId,
@@ -13,6 +13,14 @@ use axum::{
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+#[derive(Serialize)]
+pub(super) struct AttachmentRecord {
+    id: u16,
+    name: String,
+    max_owned: Option<u32>,
+}
 
 #[derive(Serialize)]
 pub(super) struct VehicleRecord {
@@ -49,6 +57,7 @@ pub(super) struct Garage {
     free_xp: String,
     slots: i64,
     vehicles: Vec<GarageVehicle>,
+    attachments: BTreeMap<u16, u32>,
 }
 
 impl Garage {
@@ -78,6 +87,13 @@ impl Garage {
             free_xp: snapshot.balances.free_xp.to_string(),
             slots: snapshot.balances.slots,
             vehicles,
+            attachments: snapshot
+                .progression
+                .cosmetics
+                .owned()
+                .get(&CosmeticKind::Attachment)
+                .cloned()
+                .unwrap_or_default(),
         }
     }
 }
@@ -140,6 +156,28 @@ pub(super) async fn catalog(State(state): State<AdminState>) -> Json<Vec<Vehicle
         .collect();
     vehicles.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.key.cmp(&b.key)));
     Json(vehicles)
+}
+
+#[tracing::instrument(
+    name = "admin.garage.catalog",
+    skip_all,
+    fields(ddd.bounded_context.name = "player_administration", input.collection = "attachments", output.items.count = tracing::field::Empty)
+)]
+pub(super) async fn attachment_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<AttachmentRecord>> {
+    let mut attachments: Vec<_> = state
+        .catalog
+        .grantable_attachments()
+        .map(|entry| AttachmentRecord {
+            id: entry.id,
+            name: entry.name.to_owned(),
+            max_owned: entry.max_owned,
+        })
+        .collect();
+    attachments.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    tracing::Span::current().record("output.items.count", attachments.len());
+    Json(attachments)
 }
 
 #[tracing::instrument(name = "admin.garage.grant", skip_all, fields(ddd.bounded_context.name = "player_administration", input.id.bytes = id.len(), input.grant = tracing::field::Empty), err)]

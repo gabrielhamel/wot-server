@@ -2,6 +2,7 @@ use super::{
     GarageCatalog, item_defs,
     item_prices::{ItemPrices, Price},
     items::{IntCompactDescr, item_type},
+    localization::localized_names,
     vehicle_defs::VehicleOffer,
 };
 use crate::{
@@ -37,6 +38,7 @@ pub(super) const CAMOUFLAGE_TYPE: u8 = 2;
 pub(super) struct CosmeticCatalog {
     definitions: BTreeMap<CosmeticItem, CosmeticDefinition>,
     prohibited_numbers: BTreeSet<String>,
+    attachment_names: BTreeMap<u16, String>,
 }
 
 struct CosmeticDefinition {
@@ -178,6 +180,8 @@ impl CosmeticCatalog {
             .filter_map(|(_, group)| Some((group.get_child_string("name")?, group)))
             .collect();
         let mut catalog = Self::default();
+        let names =
+            localized_names(fs, "text/lc_messages/vehicle_customization.mo").unwrap_or_default();
         let mut progressive_decals = BTreeSet::new();
         if fs.has_file(PROJECTION_DECALS) {
             let progression = item_defs::read_xml(fs, PROJECTION_DECAL_PROGRESSION)?;
@@ -221,6 +225,20 @@ impl CosmeticCatalog {
                 }
                 let (definition, display_price) = read_definition(item, group, &groups, kind)
                     .with_context(|| format!("Read cosmetic {kind:?} {id}"))?;
+                if kind == CosmeticKind::Attachment && definition.available_for_custom_outfits {
+                    let name = item
+                        .get_child_string("userString")
+                        .and_then(|label| label.strip_prefix("#vehicle_customization:"))
+                        .and_then(|label| names.get(label))
+                        .filter(|name| !name.trim().is_empty())
+                        .cloned()
+                        .or_else(|| {
+                            item.get_child_string("name")
+                                .map(|name| name.replace('_', " "))
+                        })
+                        .unwrap_or_else(|| format!("Attachment {id}"));
+                    catalog.attachment_names.insert(id, name);
+                }
                 prices.prices.push((descriptor, display_price));
                 if definition.rule.price.is_none() {
                     prices.not_in_shop.push(descriptor);
@@ -241,6 +259,12 @@ impl CosmeticCatalog {
                 .collect();
         }
         Ok(catalog)
+    }
+
+    pub(super) fn attachment_names(&self) -> impl Iterator<Item = (u16, &str)> {
+        self.attachment_names
+            .iter()
+            .map(|(&id, name)| (id, name.as_str()))
     }
 
     pub(super) fn grantable_attachment(&self, id: u16) -> Option<&CosmeticRule> {

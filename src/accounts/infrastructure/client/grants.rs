@@ -11,6 +11,12 @@ pub struct VehicleCatalogEntry<'a> {
     pub tier: Option<i64>,
 }
 
+pub struct AttachmentCatalogEntry<'a> {
+    pub id: u16,
+    pub name: &'a str,
+    pub max_owned: Option<u32>,
+}
+
 impl GarageCatalog {
     pub fn grantable_vehicles(&self) -> impl Iterator<Item = VehicleCatalogEntry<'_>> {
         self.offers
@@ -32,6 +38,17 @@ impl GarageCatalog {
             key: &offer.key,
             name: &offer.name,
             tier: offer.level,
+        })
+    }
+
+    pub fn grantable_attachments(&self) -> impl Iterator<Item = AttachmentCatalogEntry<'_>> {
+        self.cosmetics.attachment_names().filter_map(|(id, name)| {
+            let rule = self.cosmetics.grantable_attachment(id)?;
+            Some(AttachmentCatalogEntry {
+                id,
+                name,
+                max_owned: rule.max_owned,
+            })
         })
     }
 
