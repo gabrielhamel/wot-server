@@ -70,6 +70,26 @@ pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
             }),
         "requests without identity payloads must not inherit names or emails"
     );
+    for name in ["game.authenticate", "game.command", "xmpp.request"] {
+        let roots: Vec<_> = spans.iter().filter(|span| span.name == name).collect();
+        assert!(!roots.is_empty(), "missing {name}");
+        for span in roots {
+            assert!(
+                has(span, "client.address", "127.0.0.1"),
+                "missing IP on {name}"
+            );
+            assert!(has(span, "network.peer.address", "127.0.0.1"));
+            for key in ["client.port", "network.peer.port"] {
+                assert!(span.attributes.iter().any(|a| {
+                    a.key.as_str() == key
+                        && a.value
+                            .to_string()
+                            .parse::<u16>()
+                            .is_ok_and(|port| port != 0)
+                }));
+            }
+        }
+    }
     assert!(spans.iter().any(|span| has(span, "outcome", "rejected")));
     assert!(
         spans

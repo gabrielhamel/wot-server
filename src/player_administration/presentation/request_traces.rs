@@ -33,6 +33,7 @@ async fn exports_admin_http_request_inputs() {
         grants,
         AdminToken::new("test-bearer-secret"),
         None,
+        vec!["192.0.2.10".parse().unwrap()],
     ));
 
     let exporter = InMemorySpanExporter::default();
@@ -45,6 +46,8 @@ async fn exports_admin_http_request_inputs() {
     let subscriber_guard = tracing::subscriber::set_default(subscriber);
     let send = |method, uri, token, body: &str| {
         let request = Request::builder()
+            .extension("192.0.2.10:2345".parse::<SocketAddr>().unwrap())
+            .header("x-forwarded-for", "198.51.100.7")
             .method(method)
             .uri(uri)
             .header(header::AUTHORIZATION, token)
@@ -221,6 +224,21 @@ async fn exports_admin_http_request_inputs() {
         for (key, value) in expected {
             assert_eq!(attribute(root, key).as_deref(), Some(*value), "{key}");
         }
+    }
+    for root in &roots {
+        assert_eq!(
+            attribute(root, "client.address").as_deref(),
+            Some("198.51.100.7")
+        );
+        assert_eq!(
+            attribute(root, "network.peer.address").as_deref(),
+            Some("192.0.2.10")
+        );
+        assert_eq!(
+            attribute(root, "network.peer.port").as_deref(),
+            Some("2345")
+        );
+        assert_eq!(attribute(root, "client.port"), None);
     }
     assert_eq!(attribute(roots[1], "input.per_page"), None);
     for root in &roots[2..4] {

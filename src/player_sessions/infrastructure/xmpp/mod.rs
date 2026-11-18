@@ -256,6 +256,9 @@ async fn serve(
                             let span = tracing::info_span!(
                                 parent: None, "xmpp.request", "ddd.bounded_context.name" = "player_sessions",
                                 "input.bytes" = stanza.len(), "network.protocol.name" = "xmpp",
+                                "client.address" = %address.ip(), "client.port" = address.port(),
+                                "network.peer.address" = %address.ip(), "network.peer.port" = address.port(),
+                                "network.transport" = "tcp",
                                 "user.id" = connection.identity.as_ref().map(|(id, _)| id.to_string()),
                                 "output.stanza_count" = tracing::field::Empty,
                             );

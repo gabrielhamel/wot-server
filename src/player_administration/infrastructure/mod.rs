@@ -23,7 +23,7 @@ pub(crate) async fn serve(listener: TcpListener, router: Router, mut stop: onesh
             accepted = listener.accept(), if connections.len() < MAX_CONNECTIONS => {
                 match accepted {
                     Ok((stream, peer)) => {
-                        let service = TowerToHyperService::new(router.clone());
+                        let service = TowerToHyperService::new(router.clone().layer(axum::Extension(peer)));
                         connections.spawn(async move {
                             let connection = http1::Builder::new()
                                 .timer(TokioTimer::new())

@@ -139,3 +139,11 @@ client's `client/gui/game_control/SoundEventChecker.py` listens for `stats`
 changes and plays native earn sounds for credits, gold and bonds. The money
 currency set in `client/gui/shared/money.py` excludes free XP, whose balance
 refreshes via the wallet callback.
+
+### Client IP telemetry behind a proxy
+
+Set `WOT_ADMIN_TRUSTED_PROXY_IPS` to the exact comma-separated proxy peer IPs
+only when your proxy replaces `X-Forwarded-For` with the visitor's socket IP.
+The server otherwise records the direct peer, including on authentication
+failures and static dashboard requests. See [request source IP](telemetry.md#request-source-ip)
+for Kubernetes routing, validation, and the trust boundary.

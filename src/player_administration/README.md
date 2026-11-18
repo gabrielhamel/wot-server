@@ -23,7 +23,7 @@ The [admin guide](../../docs/admin.md) describes configuration and the HTTP
 contract.
 
 Player Administration HTTP traces cover method, route, status, allowlisted
-request inputs, presentation handlers, Accounts operations, and Player
+request inputs, validated caller and immediate peer IPs, presentation handlers, Accounts operations, and Player
 Sessions grant delivery. The grant queue preserves the HTTP parent through
 gateway execution and response. See the
 [telemetry contract](../../docs/telemetry.md).

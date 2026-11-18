@@ -260,6 +260,11 @@ impl Gateway {
                                 "ddd.bounded_context.name" = "player_sessions",
                                 "user.id" = %session.account.snapshot.id,
                                 "rpc.method" = %name,
+                                "client.address" = %event.client.addr().ip(),
+                                "client.port" = event.client.addr().port(),
+                                "network.peer.address" = %event.client.addr().ip(),
+                                "network.peer.port" = event.client.addr().port(),
+                                "network.transport" = "udp",
                                 "network.protocol.name" = "mercury",
                             )
                         })
@@ -353,6 +358,11 @@ impl Gateway {
             "wot.client.resource_digest" = digest.as_deref(),
             "wot.client.language" = language.as_deref(),
             "network.protocol.name" = "mercury",
+            "client.address" = %addr.ip(),
+            "client.port" = addr.port(),
+            "network.peer.address" = %addr.ip(),
+            "network.peer.port" = addr.port(),
+            "network.transport" = "udp",
         );
         self.runtime.spawn(
             async move {

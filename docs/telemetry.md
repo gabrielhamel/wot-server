@@ -142,3 +142,39 @@ Contributions must extend these checks for changed workflows. The PR must
 record the request-to-response trace shape and verification results,
 including relevant errors and rejections. See the
 [testing guide](testing.md) for the opt-in PostgreSQL setup.
+
+## Request source IP
+
+Request roots (`admin.http.request`, `game.authenticate`, `game.command`, and
+`xmpp.request`) expose `client.address` for searching by caller IP and
+`network.peer.address` for the immediate socket peer. Source ports are separate
+attributes; a forwarded HTTP caller has no `client.port` because the proxy
+header supplies only an IP. Child operations keep their existing trace ancestry.
+See the [attribute reference](telemetry-attributes.md#source-addresses).
+
+For HTTP behind a reverse proxy, set `WOT_ADMIN_TRUSTED_PROXY_IPS` to a
+comma-separated list of exact IPv4/IPv6 proxy socket addresses. The default
+(empty/unset) trusts no forwarding headers. Invalid configuration fails startup.
+Only a single valid IP in a single `X-Forwarded-For` header is accepted from a
+trusted peer. Missing, malformed, repeated, oversized, or comma-separated values
+fall back to that peer's socket address. Raw header text is never exported.
+`Forwarded` and `X-Real-IP` are ignored. The trusted edge proxy must overwrite
+`X-Forwarded-For` from its accepted socket, rather than forwarding visitor input.
+Do not trust a broad subnet or a shared gateway used by untrusted clients.
+
+Caddy can use `header_up X-Forwarded-For {remote_host}` inside `reverse_proxy`.
+Keep Caddy's incoming proxy trust disabled when it is the public edge. The
+[official Caddy documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#defaults)
+describes its default header protection. Configure the server with the address
+it actually sees from Caddy after Kubernetes routing, which can be the node's
+CNI bridge IP when Caddy uses host networking.
+
+Mercury and XMPP always use the socket source and do not parse proxy headers.
+Preserve source IPs through router forwarding and Kubernetes: host-port DNAT
+must avoid external SNAT; NodePort/LoadBalancer Services need
+[`externalTrafficPolicy: Local`](https://kubernetes.io/docs/tutorials/services/source-ip/).
+An upstream NAT that replaces the source limits visibility to that NAT address.
+After deployment, compare request roots with the known caller address, including
+a dashboard request with a forged forwarding header and an external game login,
+command, and XMPP stanza. Local NAT-loopback tests alone cannot establish public
+source preservation.
