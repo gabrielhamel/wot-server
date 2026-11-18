@@ -44,7 +44,7 @@ export function AttachmentGrant({ api, busy, owned, onGrant }) {
         <Autocomplete options={catalog ?? []} value={attachment}
           onChange={(_, selection) => { setAttachment(selection); setCount('1'); }}
           getOptionKey={item => item.id} isOptionEqualToValue={(a, b) => a.id === b.id}
-          getOptionLabel={item => `${item.name} (#${item.id})`}
+          getOptionLabel={item => item.name}
           getOptionDisabled={item => remaining(item) === 0}
           loading={catalog === null && !loadError} disabled={busy || !!loadError}
           noOptionsText={catalog?.length === 0 ? 'No grantable attachments in the server catalog' : 'No matching attachments'}
@@ -54,12 +54,12 @@ export function AttachmentGrant({ api, busy, owned, onGrant }) {
               <Stack>
                 <span>{item.name}</span>
                 <Typography variant="caption" color="text.secondary">
-                  #{item.id} · {ownedCount(item.id)} owned
+                  {ownedCount(item.id)} owned
                 </Typography>
               </Stack>
             </li>;
           }}
-          renderInput={params => <TextField {...params} label="3D attachment" placeholder="Search by name or ID" />} />
+          renderInput={params => <TextField {...params} label="3D attachment" placeholder="Search by name" />} />
         <TextField label="Copies to add" value={count} onChange={event => setCount(event.target.value)}
           slotProps={{ htmlInput: { inputMode: 'numeric', maxLength: 3 } }}
           helperText={attachment && `${ownedCount(attachment.id)} owned · Up to ${limit} per grant`}

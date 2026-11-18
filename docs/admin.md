@@ -51,7 +51,7 @@ positive whole amount, or search for a tank by name and use **Grant
 tank**. Tank grants include stock modules, standard ammunition and basic crew.
 The player is charged nothing and needs a free garage slot. The picker lists
 tanks eligible for Random Battles and identifies already-owned tanks. Use
-**Grant a 3D attachment** to search by name or item ID, see how many copies
+**Grant a 3D attachment** to search by name, see how many copies
 the player owns, and add copies to the depot. Ownership includes fitted copies.
 The picker includes reward attachments such as Zongzi Jubilee. The browser
 stores the admin token in tab session storage.
@@ -63,7 +63,9 @@ with a local API proxy to the default admin listener.
 
 When implementing a player-usable item that the normal shop cannot sell,
 include an authenticated admin dashboard grant. Grants preserve the
-item's ownership limits and leave its shop availability unchanged.
+item's ownership limits and leave its shop availability unchanged. The dashboard
+uses display names and descriptive fallbacks. Technical IDs and internal keys
+belong in the API and application state.
 
 ## API
 

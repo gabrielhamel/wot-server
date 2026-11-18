@@ -77,6 +77,11 @@ dashboard. Use the server catalog to populate the picker and the normal account
 grant transaction to update ownership and sync the garage. Preserve item
 eligibility, ownership limits and in-game purchase restrictions.
 
+Use human-readable names and labels throughout the admin dashboard, including
+pickers, selected values, tables and search hints. Keep technical IDs and
+internal keys in API requests and application state. Use a descriptive fallback
+when a display name is unavailable.
+
 ## Architecture
 
 Use `docs/references/wg-launcher` as the reference for file

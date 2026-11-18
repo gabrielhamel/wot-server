@@ -234,9 +234,10 @@ impl CosmeticCatalog {
                         .cloned()
                         .or_else(|| {
                             item.get_child_string("name")
+                                .filter(|name| !name.trim().is_empty())
                                 .map(|name| name.replace('_', " "))
                         })
-                        .unwrap_or_else(|| format!("Attachment {id}"));
+                        .unwrap_or_else(|| "Unnamed attachment".to_owned());
                     catalog.attachment_names.insert(id, name);
                 }
                 prices.prices.push((descriptor, display_price));
