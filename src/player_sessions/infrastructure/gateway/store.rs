@@ -10,6 +10,7 @@ use tracing::Instrument;
 
 pub(super) struct StoreAccess {
     pub origin: String,
+    pub host: String,
     pub requests: mpsc::Receiver<StoreRequest>,
 }
 
@@ -20,10 +21,27 @@ pub(super) struct Completion {
 }
 
 impl Gateway {
-    pub fn enable_store(&mut self, origin: String) -> axum::Router {
+    pub fn enable_store(&mut self, origin: String) -> anyhow::Result<axum::Router> {
+        let uri: axum::http::Uri = origin.parse()?;
+        let host = uri
+            .host()
+            .ok_or_else(|| anyhow::anyhow!("Store origin requires a host"))?;
+        anyhow::ensure!(
+            host.bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+                || host
+                    .strip_prefix('[')
+                    .and_then(|host| host.strip_suffix(']'))
+                    .is_some_and(|host| host.parse::<std::net::Ipv6Addr>().is_ok()),
+            "Store origin requires an exact hostname or IP address"
+        );
         let (handle, requests) = StoreRequests::channel();
-        self.store = Some(StoreAccess { origin, requests });
-        crate::player_sessions::presentation::store::router(handle)
+        self.store = Some(StoreAccess {
+            origin,
+            host: host.to_ascii_lowercase(),
+            requests,
+        });
+        Ok(crate::player_sessions::presentation::store::router(handle))
     }
 
     pub(super) fn handle_store(&mut self, request: StoreRequest) {

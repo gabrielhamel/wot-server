@@ -44,6 +44,16 @@ reported EU `v.2.4.1.1 #993`, launcher executable SHA-256
 and `win64/WorldOfTanks.exe` SHA-256
 `58325ded3e2db7134638971e33de1eab09737f8b66401554d9723a2bf246bb11`.
 
+The compiled client also reads `Account.initialServerSettings.igbWhitelist`
+before the browser opens. When Store is enabled, the server sets `isEnabled`
+to true and sends the configured hostname or IP as a single exact entry in
+the Python `set` named `defaultWhitelist`. The client has no remote allowlist
+URL to fetch for this server. In the installed executable above, the settings
+reader at RVA `0x232fe70` reads these keys and checks `PySet_Type` before
+iterating the entries. Without the host entry, the game log showed HTTP 418
+for the embedded Store while the same URL returned HTTP 200 from the server
+in an ordinary HTTP client.
+
 The authenticated garage receives a random token as a URL fragment for the
 Store page. URL fragments stay in the client. The page sends the token in the
 `Authorization` header for same-origin requests. Gateway lookups require a

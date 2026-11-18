@@ -29,7 +29,7 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | `infrastructure/xmpp/` | Bounded TCP/XML handling, game-issued token admission, native roster, presence, offline/history and WG extension translation. |
 | `infrastructure/credentials.rs` | Translate the basic-login JSON envelope into an account identity; reject official token methods. |
 | `infrastructure/schema.rs` | Version-bound Account wire schema; separate from account domain models. |
-| `infrastructure/bootstrap.rs` | Client bootstrap settings, account-specific GUI context and placeholder web-service token responses. |
+| `infrastructure/bootstrap.rs` | Client bootstrap settings, the Store hostname allowlist, account-specific GUI context and placeholder web-service token responses. |
 | `infrastructure/endpoint.rs` | Resolve the BaseApp handoff: loopback for local peers when bound, then the configured destination or route to each client. |
 
 Player Sessions traces game commands, XMPP requests, worker scheduling, completion

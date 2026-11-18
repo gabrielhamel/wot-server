@@ -130,12 +130,25 @@ pub fn token_data(token_type: u8, database_id: i64) -> Pickle {
     ]))
 }
 
-pub fn server_settings_with_chat(address: std::net::SocketAddrV4, store_url: &str) -> Pickle {
-    let mut settings = server_settings(store_url);
+pub fn server_settings_with_chat(
+    address: std::net::SocketAddrV4,
+    store: Option<(&str, &str)>,
+) -> Pickle {
+    let mut settings = server_settings(store.map_or("", |(url, _)| url));
     if let PickleValue::Dict(ref mut dict) = settings.0 {
         let values = crate::pickle!({"xmpp_enabled": true, "xmpp_host": (super::xmpp::DOMAIN), "xmpp_port": (i32::from(address.port())), "xmpp_resource": (super::xmpp::RESOURCE), "xmpp_connections": [((address.ip().to_string().as_str()), (i32::from(address.port())))], "xmpp_muc_services": []});
         if let PickleValue::Dict(values) = values {
             dict.extend(values);
+        }
+        if let Some((_, host)) = store {
+            dict.insert(
+                PickleValue::from("igbWhitelist"),
+                crate::pickle!({
+                    "isEnabled": true,
+                    "defaultWhitelist": {(host)},
+                    "whitelistUrl": "",
+                }),
+            );
         }
     }
     settings

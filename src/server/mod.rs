@@ -103,7 +103,7 @@ async fn serve(config: Configuration) -> Result<()> {
         let listener = tokio::net::TcpListener::bind(settings.bind)
             .await
             .with_context(|| format!("Bind Store HTTP listener at {}", settings.bind))?;
-        Some((listener, gateway.enable_store(settings.origin)))
+        Some((listener, gateway.enable_store(settings.origin)?))
     } else {
         None
     };
