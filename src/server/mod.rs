@@ -1,5 +1,6 @@
 use crate::{
     accounts::{Accounts, GarageCatalog, PlayerAccounts, PostgresAccounts, PostgresPlayers},
+    platform::http,
     player_administration,
     player_sessions::{Gateway, GatewayConfig},
 };
@@ -84,7 +85,7 @@ async fn serve(config: Configuration) -> Result<()> {
         }))
         .await??;
     let accounts = Accounts::new(repository.clone());
-    let gateway = Gateway::bind(
+    let mut gateway = Gateway::bind(
         GatewayConfig {
             login_bind: config.login_bind,
             base_bind: config.base_bind,
@@ -98,6 +99,15 @@ async fn serve(config: Configuration) -> Result<()> {
         accounts.clone(),
         tokio::runtime::Handle::current(),
     )?;
+    let store_listener = if let Some(settings) = config.store {
+        let listener = tokio::net::TcpListener::bind(settings.bind)
+            .await
+            .with_context(|| format!("Bind Store HTTP listener at {}", settings.bind))?;
+        Some((listener, gateway.enable_store(settings.origin)))
+    } else {
+        None
+    };
+    let (store_stop, store_shutdown) = tokio::sync::oneshot::channel();
     let (admin_stop, admin_shutdown) = tokio::sync::oneshot::channel();
     let admin_listener = if let Some(settings) = config.admin {
         if let Some(dashboard) = &settings.dashboard_dir {
@@ -134,10 +144,22 @@ async fn serve(config: Configuration) -> Result<()> {
     let worker_stop = stop.clone();
     let admin_worker = if let Some((listener, router)) = admin_listener {
         tracing::info!(address = %listener.local_addr()?, "Admin HTTP listener started");
-        Some(tokio::spawn(player_administration::serve(
+        Some(tokio::spawn(http::serve(
             listener,
             router,
+            "admin",
             admin_shutdown,
+        )))
+    } else {
+        None
+    };
+    let store_worker = if let Some((listener, router)) = store_listener {
+        tracing::info!(address = %listener.local_addr()?, "Store HTTP listener started");
+        Some(tokio::spawn(http::serve(
+            listener,
+            router,
+            "store",
+            store_shutdown,
         )))
     } else {
         None
@@ -155,8 +177,12 @@ async fn serve(config: Configuration) -> Result<()> {
         }
     };
     let _ = admin_stop.send(());
+    let _ = store_stop.send(());
     if let Some(admin_worker) = admin_worker {
         admin_worker.await.context("Join admin HTTP listener")?;
+    }
+    if let Some(store_worker) = store_worker {
+        store_worker.await.context("Join Store HTTP listener")?;
     }
     result
 }

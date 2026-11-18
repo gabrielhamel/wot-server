@@ -45,6 +45,7 @@ The generated JSON contains the following settings:
 | `max_pending` | `32`, authentication worker capacity, allowed range 1–256 |
 | `log_level` | `"warn"`; also accepts `"error"`, `"info"`, `"debug"`, `"trace"` |
 | `admin` | `null`; set an [admin configuration object](admin.md) to enable HTTP |
+| `store` | `null`; set a [Store listener and origin](store.md#configuration) to enable the in-game Store |
 
 Unknown fields, invalid types and invalid limits stop startup with a diagnostic.
 Missing fields use defaults. In an existing configuration, replace `game_dir`

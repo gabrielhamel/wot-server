@@ -3,6 +3,7 @@ use crate::accounts::{
 };
 use std::collections::BTreeMap;
 pub(crate) mod grants;
+pub(crate) mod store;
 pub use grants::{GrantDelivery, GrantRequestError, PlayerGrants};
 
 #[derive(Clone)]

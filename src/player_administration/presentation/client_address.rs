@@ -139,8 +139,8 @@ mod tests {
                     set_browser_headers,
                 ));
         let (stop, stopped) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(crate::player_administration::serve(
-            listener, router, stopped,
+        let server = tokio::spawn(crate::platform::http::serve(
+            listener, router, "admin", stopped,
         ));
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();

@@ -12,6 +12,7 @@ use rsa::{
     RsaPrivateKey,
     rand_core::{OsRng, RngCore},
 };
+mod account_updates;
 mod ammunition;
 mod commands;
 mod cosmetics;
@@ -21,6 +22,8 @@ mod grants;
 mod progression;
 mod settings;
 mod social;
+mod store;
+use crate::player_sessions::application::store::StoreToken;
 use crate::social::{Contact, Conversations, Player, PostgresSocial, Social};
 
 use crate::platform::client_formats::pickle::{self, Value};
@@ -77,6 +80,7 @@ struct Session {
     account: PreparedAccount,
     entity: Option<EntityKey<Account>>,
     garage_synced: bool,
+    store_token: Option<StoreToken>,
     saving: bool,
     crew_running: bool,
     crew_queue: VecDeque<crew::QueuedCrewCommand>,
@@ -112,7 +116,7 @@ enum Completion {
     Login {
         addr: SocketAddr,
         generation: u64,
-        grant_epoch: u64,
+        account_change_epoch: u64,
         blowfish: Arc<Blowfish>,
         result: Result<Option<PreparedAccount>>,
     },
@@ -126,6 +130,7 @@ enum Completion {
         result: Result<PreparedAccount>,
     },
     Grant(grants::Completion),
+    Store(store::Completion),
 }
 
 pub struct Gateway {
@@ -141,9 +146,10 @@ pub struct Gateway {
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
     pending_writes: HashSet<i64>,
-    grant_epoch: u64,
+    account_change_epoch: u64,
     grants: tokio::sync::mpsc::Receiver<crate::player_sessions::application::grants::GrantRequest>,
     grant_handle: crate::player_sessions::PlayerGrants,
+    store: Option<store::StoreAccess>,
     completions: mpsc::Receiver<TracedCompletion>,
     sender: mpsc::SyncSender<TracedCompletion>,
     workers: Arc<Semaphore>,
@@ -204,9 +210,10 @@ impl Gateway {
             tickets: HashMap::new(),
             sessions: HashMap::new(),
             pending_writes: HashSet::new(),
-            grant_epoch: 0,
+            account_change_epoch: 0,
             grants,
             grant_handle,
+            store: None,
             completions,
             sender,
             workers,
@@ -231,6 +238,13 @@ impl Gateway {
             }
             if let Ok(request) = self.grants.try_recv() {
                 self.start_grant(request);
+            }
+            if let Some(request) = self
+                .store
+                .as_mut()
+                .and_then(|store| store.requests.try_recv().ok())
+            {
+                self.handle_store(request);
             }
             self.tickets
                 .retain(|_, ticket| ticket.expires > Instant::now());
@@ -341,7 +355,7 @@ impl Gateway {
         let accounts = self.accounts.clone();
         let catalog = self.catalog.clone();
         let sender = self.sender.clone();
-        let grant_epoch = self.grant_epoch;
+        let account_change_epoch = self.account_change_epoch;
         self.runtime.spawn(
             async move {
                 let result = async {
@@ -382,7 +396,7 @@ impl Gateway {
                     .try_send(TracedCompletion::new(Completion::Login {
                         addr,
                         generation,
-                        grant_epoch,
+                        account_change_epoch,
                         blowfish: Arc::new(blowfish),
                         result,
                     }))
@@ -412,13 +426,13 @@ impl Gateway {
             Completion::Login {
                 addr,
                 generation,
-                grant_epoch,
+                account_change_epoch,
                 blowfish,
                 result,
             } => {
                 let result = match result {
                     Ok(Some(account))
-                        if grant_epoch != self.grant_epoch
+                        if account_change_epoch != self.account_change_epoch
                             && self.admissions.is_pending(addr, generation, Instant::now()) =>
                     {
                         self.refresh_admission(addr, generation, blowfish, account.snapshot.id);
@@ -504,6 +518,7 @@ impl Gateway {
             Completion::Progression(completion) => self.complete_progression(completion),
             Completion::Ammunition(completion) => self.complete_ammunition(completion),
             Completion::Grant(completion) => self.complete_grant(completion),
+            Completion::Store(completion) => self.complete_store(completion),
             Completion::Settings {
                 client,
                 account_id,
@@ -534,6 +549,7 @@ impl Gateway {
                     account: ticket.account,
                     entity: None,
                     garage_synced: false,
+                    store_token: None,
                     saving,
                     crew_running: false,
                     crew_queue: VecDeque::new(),
@@ -557,6 +573,14 @@ impl Gateway {
         if session.entity.is_some() {
             return Ok(());
         }
+        let store_url = if let Some(store) = &self.store {
+            let token = StoreToken::generate()?;
+            let url = format!("{}/store/#{}", store.origin, token.encode());
+            session.store_token = Some(token);
+            url
+        } else {
+            String::new()
+        };
         let snapshot = &session.account.snapshot;
         let entity = self.base.create_base_player::<Account>(
             client,
@@ -570,6 +594,7 @@ impl Gateway {
                         self.base.addr()?,
                         client.addr(),
                     )?,
+                    &store_url,
                 ),
             },
         )?;

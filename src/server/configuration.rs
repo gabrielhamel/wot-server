@@ -43,6 +43,35 @@ fn admin_bind() -> SocketAddrV4 {
 }
 
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct StoreConfiguration {
+    pub bind: SocketAddrV4,
+    pub origin: String,
+}
+
+impl StoreConfiguration {
+    fn validate(&mut self) -> Result<()> {
+        let uri = self
+            .origin
+            .parse::<axum::http::Uri>()
+            .context("Invalid Store origin")?;
+        let host = uri.host().context("Store origin requires a host")?;
+        let loopback = matches!(host, "localhost" | "127.0.0.1" | "[::1]");
+        ensure!(
+            uri.scheme_str() == Some("https") || (uri.scheme_str() == Some("http") && loopback),
+            "Store origin requires HTTPS or loopback HTTP"
+        );
+        ensure!(
+            uri.path() == "/" && uri.query().is_none() && !self.origin.contains(['@', '#']),
+            "Store origin must contain only a scheme, host and optional port"
+        );
+        self.origin
+            .truncate(self.origin.trim_end_matches('/').len());
+        Ok(())
+    }
+}
+
+#[derive(Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub(super) struct Configuration {
     pub resource_dir: PathBuf,
@@ -58,6 +87,7 @@ pub(super) struct Configuration {
     #[serde(rename = "log_file", skip_serializing)]
     _legacy_log_file: serde::de::IgnoredAny,
     pub admin: Option<AdminConfiguration>,
+    pub store: Option<StoreConfiguration>,
 }
 
 impl Default for Configuration {
@@ -76,6 +106,7 @@ impl Default for Configuration {
             log_level: LogLevel::default(),
             _legacy_log_file: serde::de::IgnoredAny,
             admin: None,
+            store: None,
         }
     }
 }
@@ -151,6 +182,9 @@ impl Configuration {
                     *dashboard = directory.join(&*dashboard);
                 }
             }
+        }
+        if let Some(store) = &mut config.store {
+            store.validate()?;
         }
         Ok(config)
     }

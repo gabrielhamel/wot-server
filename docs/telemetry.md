@@ -8,7 +8,7 @@ for endpoint configuration, resource attributes and console filtering.
 
 ## Trace structure
 
-Each game command, XMPP stanza and admin request starts an operation trace.
+Each game command, XMPP stanza, admin request and Store request starts an operation trace.
 Spans below it represent meaningful boundaries and decisions in the owning
 bounded context. The custom attribute `ddd.bounded_context.name` identifies
 `player_sessions`, `accounts`, `social`, `player_administration`, or `server`
@@ -22,6 +22,26 @@ prefix. Historical traces may use `access` or `client_gateway`.
 Player Administration traces use the context value `player_administration`
 in place of `admin`. The `admin.*`, `game.command`, and `xmpp.request`
 operation names remain stable.
+
+A Store checkout joins the HTTP request to the account transaction and garage
+delivery even though they run on separate workers.
+
+    store.http.request                            [POST /store/orders, 200]
+      player_sessions.store.purchase_request
+        player_sessions.store.purchase
+          accounts.store.plan_purchase
+            accounts.progression.plan_progression
+              accounts.equipment.buy
+          player_sessions.commit_progression
+            accounts.save_progression
+              accounts.postgres.save_progression
+                postgresql.query                  [BEGIN / UPDATE / COMMIT]
+          player_sessions.store.complete_purchase
+            player_sessions.publish_account_change
+              mercury.response                    [update, sent]
+
+A stale quote produces HTTP 409 with `output.outcome=stale` and no account
+write. Store tokens and authorization headers are excluded from traces.
 
 An online XMPP private message follows this hierarchy. Repository operations
 can contain several query and transaction spans.

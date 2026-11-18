@@ -1,6 +1,6 @@
 # Span attribute reference
 
-This is the inventory of all 114 fields explicitly declared by server spans,
+This is the inventory of all 116 fields explicitly declared by server spans,
 including the two OpenTelemetry control fields described below. It documents
 current instrumentation, rather than promising that every field appears on
 every span. See the [telemetry contract](telemetry.md) for tracing requirements
@@ -10,13 +10,14 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| `client.address` | Caller IP without port on `admin.http.request`, `game.authenticate`, `game.command`, and `xmpp.request`. HTTP uses a valid single `X-Forwarded-For` IP only from a configured trusted peer; otherwise the socket IP. Omitted only when an HTTP request has no socket metadata (for example, an in-process router call). |
+| `client.address` | Caller IP without port on `admin.http.request`, `game.authenticate`, `game.command`, and `xmpp.request`. Store HTTP records only its immediate network peer. Admin HTTP uses a valid single `X-Forwarded-For` IP only from a configured trusted peer; otherwise the socket IP. Omitted only when an HTTP request has no socket metadata (for example, an in-process router call). |
 | `client.port` | Caller source port, in TCP/UDP port units, on the same roots when the socket identifies the caller. Omitted for forwarded HTTP callers because the header supplies no source port. |
-| `network.peer.address` | Immediate socket peer IP without port on those roots; remains the proxy address for forwarded HTTP requests. |
-| `network.peer.port` | Immediate socket peer TCP/UDP source port on those roots. |
-| `network.transport` | `tcp` for HTTP/XMPP and `udp` for Mercury on those roots. |
+| `network.peer.address` | Immediate socket peer IP without port on those roots and `store.http.request`; remains the proxy address for forwarded HTTP requests. |
+| `network.peer.port` | Immediate socket peer TCP/UDP source port on those roots and `store.http.request`. |
+| `network.transport` | `tcp` for HTTP/XMPP and `udp` for Mercury on those roots and `store.http.request` as applicable. |
 
-Supporting sources: [HTTP request middleware](../src/player_administration/presentation/mod.rs),
+Supporting sources: [Admin HTTP middleware](../src/player_administration/presentation/mod.rs),
+[Store HTTP middleware](../src/player_sessions/presentation/store/mod.rs),
 [HTTP address validation](../src/player_administration/presentation/client_address.rs),
 [Mercury gateway](../src/player_sessions/infrastructure/gateway/mod.rs), and
 [XMPP listener](../src/player_sessions/infrastructure/xmpp/mod.rs).
@@ -50,7 +51,7 @@ meanings on different operations; those differences are listed explicitly.
 | Attribute | Meaning and emission |
 | --- | --- |
 | [`ddd.bounded_context.name`](../src/player_sessions/application/grants.rs) | Custom DDD attribute naming the owning context: `player_sessions`, `accounts`, `social`, `player_administration`, or `server`. |
-| [`user.id`](../src/player_sessions/application/mod.rs) | Local account ID when known: authenticated login, session, account operation, or authenticated XMPP handler. It identifies the affected account, not necessarily an admin caller. Login records it only after authentication succeeds. |
+| [`user.id`](../src/player_sessions/application/mod.rs) | Local account ID when known: authenticated login, session, account operation, authenticated XMPP handler, or Store request authorized by a live session. It identifies the affected account, not necessarily an admin caller. Login records it only after authentication succeeds. |
 | [`user.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | Nonempty player display name from the account snapshot already returned by successful game authentication. Never copied from the login email; omitted if unavailable. No extra database query. |
 | [`user.email`](../src/player_sessions/infrastructure/gateway/mod.rs) | Email-shaped login supplied by the current game authentication payload, recorded after authentication succeeds. Requires nonempty local part, a dot in the domain, and no whitespace; this is a shape check, not proof of ownership. Omitted for non-email logins and requests without an email payload. |
 | [`network.protocol.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | `mercury` for game authentication/commands, `xmpp` for incoming XMPP requests. |
@@ -64,12 +65,12 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`http.request.method`](../src/player_administration/presentation/mod.rs) | HTTP method on the root admin request span. |
+| [`http.request.method`](../src/player_administration/presentation/mod.rs) | HTTP method on the root admin or Store request span. |
 | [`url.path`](../src/player_administration/presentation/mod.rs) | Admin request URI path, excluding its query string. |
 | [`http.route`](../src/player_administration/presentation/mod.rs) | Matched route template on the root HTTP span when available, with path parameters left as placeholders. |
 | [`input.query.bytes`](../src/player_administration/presentation/mod.rs) | Length in bytes of the encoded URI query, when present. Query text is excluded. |
 | [`input.content_length`](../src/player_administration/presentation/mod.rs) | Declared body length in bytes when a valid nonnegative `Content-Length` fits in a signed 64-bit integer. This is request metadata and does not count bytes read. |
-| [`http.response.status_code`](../src/player_administration/presentation/mod.rs) | HTTP response status, recorded after the admin handler returns a response. |
+| [`http.response.status_code`](../src/player_administration/presentation/mod.rs) | HTTP response status after the admin or Store handler returns. |
 | [`input.method`](../src/player_administration/presentation/mod.rs) | HTTP method checked by admin authentication. |
 | [`input.id.bytes`](../src/player_administration/presentation/garage.rs) | Byte length of the admin account-ID path parameter before parsing. |
 | [`input.page`](../src/player_administration/presentation/players.rs) | Requested player-list page after query decoding. The root span records supplied values only. The list operation records default `1` when omitted. |
@@ -133,7 +134,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.username.bytes`](../src/player_sessions/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, or player creation. Recorded on the root HTTP span after successful player-creation JSON decoding. |
 | [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. |
 | [`input.algorithm`](../src/accounts/application/players.rs) | Password hashing algorithm on `accounts.players.hash_password`, currently `argon2id`. Password and hash are omitted. |
-| [`input.previous_revision`](../src/player_sessions/application/mod.rs) | Expected persisted revision for an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
+| [`input.previous_revision`](../src/player_sessions/application/mod.rs) | Expected persisted revision for a Store quote, an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
 | [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input snapshot used for catalog preparation or mutation planning. On garage sync, the revision requested by the client. |
 | [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case or completion, after deduplication by key. |
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
@@ -145,7 +146,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
 | [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles`, `attachments` or `stat_trackers` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`). |
 | [`input.count`](../src/accounts/domain/consumables.rs) | Requested purchase quantity, equipment charge quantity, or cost multiplier, depending on the operation. |
-| [`input.item`](../src/accounts/domain/consumables.rs) | Compact item descriptor for a module, equipment, consumable, or directive involved in the operation. |
+| [`input.item`](../src/accounts/domain/consumables.rs) | Compact item descriptor for a module, equipment, consumable, or directive involved in the operation. Store orders also record the submitted equipment descriptor. |
+| [`input.price.credits`](../src/accounts/infrastructure/client/store.rs) | Credits per item submitted with a Store order. Accounts compares it with the catalog price before charging. |
 | [`input.index`](../src/accounts/domain/modules.rs) | Zero-based index into a vehicle module research plan. |
 | [`input.gun`](../src/accounts/domain/modules.rs) | Gun descriptor supplied with a module equip request. |
 | [`input.buy`](../src/accounts/domain/modules.rs) | Whether module equip may buy the requested module rather than requiring depot stock. |
@@ -187,6 +189,9 @@ meanings on different operations; those differences are listed explicitly.
 | --- | --- |
 | [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Encoded outgoing XMPP stanza, compressed garage cache or Mercury resource response byte length. Excludes transport framing. |
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
+| [`output.offers.count`](../src/player_sessions/infrastructure/gateway/store.rs) | Number of equipment offers included in a Store catalog response. |
+| [`output.outcome`](../src/player_sessions/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_credits` or `failed`. |
+| [`output.delivery`](../src/player_sessions/infrastructure/gateway/account_updates.rs) | Account update `queued` on the live garage connection or `next_sync` when recovered from persisted state on a later sync. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/commands.rs) | Mercury dispatch records `dispatched`, `wire_decode_failed`, `decode_failed`, `unknown_method`, `entity_unavailable` or `dispatch_failed` on the root. Unsupported or compatibility commands record `unimplemented`, `ignored` or `acknowledged_without_change` on the decoded command span. Garage and shop sync record `up_to_date`, `cache_hit` or `stream` as applicable. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage completions record `committed`, `unchanged`, `rejected`, `stale` or `error`. The Exterior decision records `changed`, `unchanged` or `rejected`. Mutation dispatch records `invalid_request`, `stale_shop`, `busy`, `queued` or `started` as applicable. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/social.rs) | Mercury Social dispatch records early rejection reasons. Its worker records `busy`, `started` or `completion_unavailable`. XMPP roots record `handled`, `rate_limited` or `failed`. Admin token checks record `authorized` or `rejected`. |

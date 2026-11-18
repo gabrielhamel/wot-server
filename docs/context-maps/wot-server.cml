@@ -15,7 +15,10 @@ ContextMap Server {
     implementationTechnology = "Common client-format codecs and PostgreSQL span adapter"
   }
   Platform [U] -> [D] PlayerSessions {
-    implementationTechnology = "Common client-format codecs and blocking-work span propagation"
+    implementationTechnology = "Common client-format codecs, bounded HTTP connection serving and blocking-work span propagation"
+  }
+  Platform [U] -> [D] PlayerAdministration {
+    implementationTechnology = "Shared bounded HTTP connection serving"
   }
   Platform [U] -> [D] Social {
     implementationTechnology = "Common PostgreSQL span adapter"
@@ -33,7 +36,7 @@ ContextMap Server {
     implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
   }
   GameClient [U] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Mercury UDP wire messages translated into login, handoff, and garage RPCs"
+    implementationTechnology = "Mercury UDP wire messages translated into login, handoff and garage RPCs; session-authorized HTTP Store in the native embedded browser"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccounts API for identity listing and provisioning, plus account snapshots and the vehicle catalog for the operator garage"
@@ -48,7 +51,7 @@ ContextMap Server {
     implementationTechnology = "Published contacts/search and durable private message APIs adapted to native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Published account application API and immutable snapshots adapted to authenticated sessions, preferences, inventory, progression and garage projections"
+    implementationTechnology = "Published account application API and immutable snapshots adapted to authenticated sessions, preferences, inventory, progression, Store offer purchases and garage projections"
   }
 }
 BoundedContext GameClient {
@@ -64,7 +67,7 @@ BoundedContext Accounts {
   domainVisionStatement = "Own durable identity, password hashes, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, cosmetic ownership and seasonal and common outfits, crew rosters and training, and revisions in PostgreSQL; project snapshots into versioned garage caches."
 }
 BoundedContext PlayerSessions {
-  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle and delivery of committed garage and chat updates."
+  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle, Store browser access and delivery of committed garage and chat updates."
 }
 
 BoundedContext Social {

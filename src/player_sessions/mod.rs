@@ -6,3 +6,5 @@ pub use infrastructure::{Gateway, GatewayConfig};
 
 #[doc(hidden)]
 pub use infrastructure::mercury;
+
+mod presentation;
