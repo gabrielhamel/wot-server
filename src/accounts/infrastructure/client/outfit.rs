@@ -1,11 +1,12 @@
 use crate::accounts::{
-    Camouflage, Inscription, InscriptionSlot, MAX_PROJECTION_DECALS, OutfitSeason, ProjectionDecal,
-    VehicleOutfit, VehicleSurface,
+    Camouflage, Inscription, InscriptionSlot, MAX_PROJECTION_DECALS, OutfitSeason, Paint,
+    PaintRegion, ProjectionDecal, VehicleOutfit, VehicleSurface,
 };
 use std::collections::BTreeMap;
 
 const OUTFIT: u16 = 4;
 const EFFECTS: u16 = 1;
+const PAINTS: u16 = 1 << 1;
 const CAMOUFLAGES: u16 = 1 << 2;
 const DECALS: u16 = 1 << 3;
 const PROJECTION_DECALS: u16 = 1 << 5;
@@ -14,13 +15,22 @@ const PERSONAL_NUMBERS: u16 = 1 << 7;
 const MAX_NUMBER_DIGITS: usize = 8;
 const EMPTY_ITEM: u16 = 22222;
 const ALL_SEASONS: i64 = 15;
-const MAX_OUTFIT_BYTES: usize = 192;
+const MAX_OUTFIT_BYTES: usize = 224;
 
 const SURFACES: [(u16, VehicleSurface); 3] = [
     (1 << 4, VehicleSurface::Hull),
     (1 << 8, VehicleSurface::Turret),
     (1 << 12, VehicleSurface::Gun),
 ];
+const PAINT_REGIONS: [(u16, PaintRegion); 5] = [
+    (1 << 0, PaintRegion::Chassis),
+    (1 << 4, PaintRegion::Hull),
+    (1 << 8, PaintRegion::Turret),
+    (1 << 12, PaintRegion::Gun),
+    (1 << 14, PaintRegion::Mantlet),
+];
+const PAINT_AREAS: u16 = 0x5111;
+
 const INSCRIPTION_SLOTS: [(u16, InscriptionSlot); 6] = [
     (1 << 6, InscriptionSlot::HullFirst),
     (1 << 7, InscriptionSlot::HullSecond),
@@ -80,7 +90,8 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
         return None;
     }
     let mask = read_varint(&mut bytes)?;
-    if mask & !(EFFECTS | CAMOUFLAGES | DECALS | PROJECTION_DECALS | PERSONAL_NUMBERS) != 0 {
+    if mask & !(EFFECTS | PAINTS | CAMOUFLAGES | DECALS | PROJECTION_DECALS | PERSONAL_NUMBERS) != 0
+    {
         return None;
     }
     if mask & EFFECTS != 0 {
@@ -94,6 +105,32 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
                 layout.effect = (id != EMPTY_ITEM).then_some(id);
             }
             _ => return None,
+        }
+    }
+    if mask & PAINTS != 0 {
+        let count = usize::from(read_varint(&mut bytes)?);
+        if count > PAINT_REGIONS.len() {
+            return None;
+        }
+        let mut painted = 0;
+        for _ in 0..count {
+            let fields = read_varint(&mut bytes)?;
+            if fields & !3 != 0 || fields & 1 == 0 {
+                return None;
+            }
+            let id = read_varint(&mut bytes)?;
+            let areas = read_field(&mut bytes, fields, 2, PAINT_AREAS)?;
+            if id == 0 || areas == 0 || areas & !PAINT_AREAS != 0 || painted & areas != 0 {
+                return None;
+            }
+            painted |= areas;
+            if id != EMPTY_ITEM {
+                for (mask, region) in PAINT_REGIONS {
+                    if areas & mask != 0 {
+                        layout.paints.insert(region, Paint { id, units: 1 });
+                    }
+                }
+            }
         }
     }
     if mask & CAMOUFLAGES != 0 {
@@ -266,6 +303,9 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
         .count() as u16;
     let numbers = layout.inscriptions.len() as u16 - presets;
     let mut fields = if layout.effect.is_some() { EFFECTS } else { 0 };
+    if !layout.paints.is_empty() {
+        fields |= PAINTS;
+    }
     if !layout.camouflage.is_empty() {
         fields |= CAMOUFLAGES;
     }
@@ -285,6 +325,16 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
         write_varint(&mut bytes, effect);
     }
 
+    if fields & PAINTS != 0 {
+        write_varint(&mut bytes, layout.paints.len() as u16);
+        for (area, region) in PAINT_REGIONS {
+            if let Some(paint) = layout.paints.get(&region) {
+                write_varint(&mut bytes, 3);
+                write_varint(&mut bytes, paint.id);
+                write_varint(&mut bytes, area);
+            }
+        }
+    }
     if fields & CAMOUFLAGES != 0 {
         write_varint(&mut bytes, layout.camouflage.len() as u16);
         for (area, surface) in SURFACES {

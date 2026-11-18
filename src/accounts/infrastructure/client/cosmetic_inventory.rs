@@ -24,13 +24,15 @@ pub(super) struct CosmeticInventory {
 impl CosmeticInventory {
     pub(super) fn project(state: &CosmeticState, vehicle_types: &BTreeMap<i64, i32>) -> Self {
         let mut fitted = BTreeMap::<CosmeticItem, BTreeMap<i32, u32>>::new();
-        for (vehicle, item) in state.mounted() {
-            if let Some(&vehicle_type) = vehicle_types.get(&vehicle) {
+        for (vehicle, item, units) in state.mounted() {
+            if units > 0
+                && let Some(&vehicle_type) = vehicle_types.get(&vehicle)
+            {
                 *fitted
                     .entry(item)
                     .or_default()
                     .entry(vehicle_type)
-                    .or_default() += 1;
+                    .or_default() += units;
             }
         }
         let mut stock = ItemRows::from([(CAMOUFLAGE_TYPE, BTreeMap::new())]);

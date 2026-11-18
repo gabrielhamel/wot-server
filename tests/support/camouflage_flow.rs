@@ -5,7 +5,9 @@ use super::{
     dict, telemetry_capture,
 };
 use wot_server::{
-    accounts::{Inscription, InscriptionSlot, ProjectionDecal, VehicleSurface, decode_outfits},
+    accounts::{
+        Inscription, InscriptionSlot, PaintRegion, ProjectionDecal, VehicleSurface, decode_outfits,
+    },
     pickle,
     player_sessions::mercury::{app::dispatch::ScriptDispatch, script::StringValue},
 };
@@ -15,12 +17,14 @@ const WINTER: i32 = 15_202;
 const GERMAN: i32 = 15_116;
 const USA_STARTER: i32 = 545;
 
+#[derive(Clone, Copy)]
 pub struct CosmeticFixtures {
     pub has_exterior_styles: bool,
     pub has_extension_styles: bool,
     pub has_inscriptions: bool,
     pub has_effects: bool,
     pub has_decals: bool,
+    pub has_paints: bool,
 }
 
 pub fn exercise(
@@ -35,6 +39,7 @@ pub fn exercise(
         has_inscriptions,
         has_effects,
         has_decals,
+        has_paints,
     } = fixtures;
     let Pickle::I64(mut revision) = dict(before, "rev") else {
         panic!("Missing garage revision");
@@ -105,6 +110,11 @@ pub fn exercise(
             panic!("Missing shop exclusions");
         };
         assert!(hidden.contains(&((501 << 8) | 0x7c).into()));
+    }
+
+    if has_paints {
+        let price_rows = dict(prices.state.as_ref().unwrap(), "_itemsPriceInfo");
+        assert_eq!(row(&price_rows, (141 << 8) | 0x1c), pickle!({"gold": 20}));
     }
 
     send_array(
@@ -339,6 +349,9 @@ pub fn exercise(
                     dict(&update(peer, revision), "stats"),
                     dict(&bought, "stats")
                 );
+                if has_paints {
+                    exercise_paint(peer, dispatch, &moved, gold - 910, &mut revision);
+                }
             }
         }
     }
@@ -350,7 +363,12 @@ pub fn exercise(
     let outfits = row(&row(&cosmetics, 2), USA_STARTER);
     assert_eq!(row(&outfits, 2), Pickle::Bytes(saved_summer));
     assert!(matches!(row(&outfits, 1), Pickle::Bytes(_)));
-    assert_eq!(row(&cosmetics, 1), pickle!({2: {}}));
+    let depot = if has_paints {
+        pickle!({1: {141: {0: 3}}, 2: {}})
+    } else {
+        pickle!({2: {}})
+    };
+    assert_eq!(row(&cosmetics, 1), depot);
     let mut fitted = std::collections::BTreeMap::from([
         (SUMMER.into(), pickle!({(USA_STARTER): 3})),
         (WINTER.into(), pickle!({(USA_STARTER): 1})),
@@ -377,6 +395,10 @@ pub fn exercise(
                 }]
             );
         }
+        if has_paints {
+            assert_eq!(winter_outfit.paints.len(), 1);
+            assert_eq!(winter_outfit.paints[&PaintRegion::Hull].id, 141);
+        }
         let winter = &winter_outfit.inscriptions;
         assert_eq!(
             winter[&InscriptionSlot::TurretFirst],
@@ -390,7 +412,9 @@ pub fn exercise(
             Inscription::Preset(15_001)
         );
         assert!(matches!(row(&executor, 2), Pickle::Bytes(_)));
-        let expected = if has_decals {
+        let expected = if has_paints {
+            pickle!({1: {141: {26705: 1}}, 2: (Pickle::Dict(fitted)), 3: {15001: {26705: 1}}, 5: {1: {26705: 1}}, 7: {8: {26705: 1}}, 9: {3: {26705: 1}}})
+        } else if has_decals {
             pickle!({2: (Pickle::Dict(fitted)), 3: {15001: {26705: 1}}, 5: {1: {26705: 1}}, 7: {8: {26705: 1}}, 9: {3: {26705: 1}}})
         } else if has_effects {
             pickle!({2: (Pickle::Dict(fitted)), 3: {15001: {26705: 1}}, 5: {1: {26705: 1}}, 9: {3: {26705: 1}}})
@@ -404,7 +428,54 @@ pub fn exercise(
     cache
 }
 
-pub fn assert_traces(account: i64, has_inscriptions: bool, has_effects: bool, has_decals: bool) {
+fn exercise_paint(
+    peer: &mut Peer,
+    dispatch: &ScriptDispatch,
+    winter: &[u8],
+    gold: i64,
+    revision: &mut i64,
+) {
+    let hull_only = [4, 2, 1, 3, 141, 1, 16];
+    let gun_2_only = [4, 2, 1, 3, 141, 1, 128, 128, 1];
+    send_outfits(peer, dispatch, 814, 42, &[(1, &hull_only)], -1);
+    send_outfits(peer, dispatch, 815, 43, &[(1, &gun_2_only)], -1);
+
+    let with_paint = |entry: &[u8]| {
+        let mut outfit = winter.to_vec();
+        outfit[1] |= 2;
+        outfit.splice(5..5, entry.iter().copied());
+        outfit
+    };
+    let all_surfaces = with_paint(&[1, 3, 141, 1, 145, 34]);
+    send_outfits(peer, dispatch, 816, 43, &[(1, &all_surfaces)], 0);
+    *revision += 1;
+    let bought = update(peer, *revision);
+    assert_eq!(dict(&dict(&bought, "stats"), "gold"), (gold - 80).into());
+    let replacement = Pickle::Tuple(vec![141.into(), "_r".into()]);
+    assert_eq!(
+        row(&row(&dict(&bought, "inventory"), 12), 4),
+        pickle!({1: {(replacement.clone()): {26705: 4}}})
+    );
+    send_outfits(peer, dispatch, 817, 43, &[(1, &all_surfaces)], 0);
+
+    send_outfits(peer, dispatch, 818, 43, &[(1, winter)], 0);
+    *revision += 1;
+    let removed = update(peer, *revision);
+    assert_eq!(
+        row(&row(&dict(&removed, "inventory"), 12), 1),
+        pickle!({1: {(replacement): {0: 4}}})
+    );
+
+    let hull = with_paint(&hull_only[2..]);
+    send_outfits(peer, dispatch, 819, 43, &[(1, &hull)], 0);
+    *revision += 1;
+    assert_eq!(
+        dict(&update(peer, *revision), "stats"),
+        dict(&bought, "stats")
+    );
+}
+
+pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
     let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
     let field = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
         span.attributes
@@ -416,14 +487,23 @@ pub fn assert_traces(account: i64, has_inscriptions: bool, has_effects: bool, ha
         (787, "42", "committed"),
         (788, "42", "unchanged"),
     ];
-    if has_inscriptions {
+    if fixtures.has_inscriptions {
         requests.extend([(795, "43", "rejected"), (796, "43", "committed")]);
     }
-    if has_effects {
+    if fixtures.has_effects {
         requests.extend([(801, "43", "rejected"), (803, "43", "committed")]);
     }
-    if has_decals {
+    if fixtures.has_decals {
         requests.extend([(807, "43", "rejected"), (810, "43", "committed")]);
+    }
+    if fixtures.has_paints {
+        requests.extend([
+            (814, "42", "rejected"),
+            (815, "43", "rejected"),
+            (816, "43", "committed"),
+            (817, "43", "unchanged"),
+            (819, "43", "committed"),
+        ]);
     }
     for (request, inventory_id, outcome) in requests {
         let apply = spans
@@ -462,6 +542,8 @@ pub fn assert_traces(account: i64, has_inscriptions: bool, has_effects: bool, ha
                 796 => ("1", "12", "1"),
                 803 => ("1", "20", "1"),
                 810 => ("1", "27", "1"),
+                816 => ("1", "33", "4"),
+                819 => ("1", "32", "0"),
                 _ => ("4", "17", "3"),
             };
             assert!(field(apply, "input.outfits.count", count));

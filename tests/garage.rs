@@ -84,6 +84,7 @@ async fn exercise_garage(encrypted_login: bool) {
         format!("{prefix}_a@example.test")
     };
     let second = format!("{prefix}_b@example.test");
+    let has_exterior_styles = resources.has_file("scripts/item_defs/customization/styles/list.xml");
     let has_extension_styles =
         resources.has_file("last_stand/scripts/item_defs/customization/styles/list.xml");
     let has_inscriptions = has_extension_styles
@@ -92,6 +93,16 @@ async fn exercise_garage(encrypted_login: bool) {
         && resources.has_file("scripts/item_defs/customization/modifications/list.xml");
     let has_decals = has_effects
         && resources.has_file("scripts/item_defs/customization/projection_decals/list.xml");
+    let has_paints =
+        has_decals && resources.has_file("scripts/item_defs/customization/paints/list.xml");
+    let cosmetic_fixtures = camouflage_flow::CosmeticFixtures {
+        has_exterior_styles,
+        has_extension_styles,
+        has_inscriptions,
+        has_effects,
+        has_decals,
+        has_paints,
+    };
     let tank_a = "usa:A01_T1_Cunningham".to_string();
     let tank_b = "germany:G12_Ltraktor".to_string();
     player_fixture::insert_player(
@@ -216,7 +227,6 @@ async fn exercise_garage(encrypted_login: bool) {
     );
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[tank_a, tank_b]).unwrap());
     let has_camouflage = resources.has_file("scripts/item_defs/customization/camouflages/list.xml");
-    let has_exterior_styles = resources.has_file("scripts/item_defs/customization/styles/list.xml");
     let script = ScriptDispatch::new(
         wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
     );
@@ -356,18 +366,8 @@ async fn exercise_garage(encrypted_login: bool) {
             vehicles_flow::buy_with_consumables(&mut second_peer, &script, &module_cache);
         let mut last_cache = ammunition_flow::exercise(&mut first_peer, &script);
         if has_camouflage {
-            last_cache = camouflage_flow::exercise(
-                &mut first_peer,
-                &script,
-                &last_cache,
-                camouflage_flow::CosmeticFixtures {
-                    has_exterior_styles,
-                    has_extension_styles,
-                    has_inscriptions,
-                    has_effects,
-                    has_decals,
-                },
-            );
+            last_cache =
+                camouflage_flow::exercise(&mut first_peer, &script, &last_cache, cosmetic_fixtures);
         }
         first_peer.disconnect();
         social_flow::wait_presence(&mut second_peer, &script, a.id, false);
@@ -422,7 +422,7 @@ async fn exercise_garage(encrypted_login: bool) {
         telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
         telemetry_capture::assert_operation_traces(b.id);
         if has_camouflage {
-            camouflage_flow::assert_traces(a.id, has_inscriptions, has_effects, has_decals);
+            camouflage_flow::assert_traces(a.id, cosmetic_fixtures);
         }
     }
     let fresh_social = wot_server::social::Social::new(wot_server::social::PostgresSocial::new(
@@ -441,6 +441,7 @@ async fn exercise_garage(encrypted_login: bool) {
                     + 5 * i64::from(has_inscriptions)
                     + 3 * i64::from(has_effects)
                     + 4 * i64::from(has_decals)
+                    + 3 * i64::from(has_paints)
             } else {
                 7
             }

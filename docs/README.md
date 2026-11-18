@@ -33,7 +33,7 @@ establish compatibility with the current client.
 | Loading, unloading and buying tank shells | [Garage ammunition](ammunition.md) |
 | Buying, mounting and demounting equipment | [Garage equipment](equipment.md) |
 | Buying and mounting consumables and setting auto-resupply | [Garage consumables](consumables.md) |
-| Buying, applying and removing seasonal camouflage, decals, inscriptions and effects | [Garage camouflage, decals, inscriptions and effects](camouflage.md) |
+| Buying, applying and removing seasonal camouflage, paints, decals, inscriptions and effects | [Garage camouflage, paints, decals, inscriptions and effects](camouflage.md) |
 | Buying and mounting equipment and crew directives | [Garage directives](directives.md) |
 | Managing crew, perks, training and barracks | [Garage crew](crew.md) |
 | Viewing and selling unmounted stock | [Garage Depot](depot.md) |

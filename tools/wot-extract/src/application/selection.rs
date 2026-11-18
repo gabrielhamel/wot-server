@@ -10,6 +10,7 @@ const ABI_FILES: &[&str] = &[
 
 const GARAGE_FILES: &[&str] = &[
     "scripts/item_defs/customization/camouflages/list.xml",
+    "scripts/item_defs/customization/paints/list.xml",
     "scripts/item_defs/customization/styles/list.xml",
     "scripts/item_defs/customization/decals/list.xml",
     "scripts/item_defs/customization/modifications/list.xml",
@@ -59,6 +60,7 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
             path,
             "scripts/item_defs/customization/styles/list.xml"
                 | "scripts/item_defs/customization/camouflages/list.xml"
+                | "scripts/item_defs/customization/paints/list.xml"
                 | "scripts/item_defs/customization/decals/list.xml"
                 | "scripts/item_defs/customization/modifications/list.xml"
                 | "scripts/item_defs/customization/projection_decals/list.xml"

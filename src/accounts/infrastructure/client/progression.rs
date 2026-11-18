@@ -359,9 +359,10 @@ impl GarageCatalog {
                     snapshot.progression.cosmetics.retain_supported_slots(
                         inventory_id,
                         &slots.camouflage,
+                        &slots.paints,
                         &slots.inscriptions,
-                        template.modules.supports_effect(&next, slots),
-                        &template.modules.projection_slots(&next, slots),
+                        slots.effect_slot,
+                        &slots.projection_slots,
                     );
                 }
             }

@@ -6,7 +6,7 @@ use super::{
 use crate::{
     accounts::{
         AmmunitionRules, InscriptionSlot, ModuleDefinition, ModuleKind, ModuleLoadout, ModuleRules,
-        ProjectionDecalSlot, ResearchStep, ShellPrice, VehicleSurface,
+        PaintRegion, ProjectionDecalSlot, ResearchStep, ShellPrice, VehicleSurface,
     },
     platform::client_formats::pxml::Element,
 };
@@ -18,49 +18,49 @@ pub(super) struct VehicleModules {
     pub rules: ModuleRules,
     pub ammunition: BTreeMap<(i32, i32), AmmunitionRules>,
     exterior_slots: BTreeMap<(i32, i32), ExteriorSlots>,
-    chassis_with_effect_slots: BTreeSet<i32>,
-    chassis_projection_slots: BTreeMap<i32, BTreeMap<u16, ProjectionDecalSlot>>,
+    chassis_exteriors: BTreeMap<i32, ChassisExterior>,
 }
 
-pub(super) struct ExteriorSlots {
-    pub camouflage: BTreeSet<VehicleSurface>,
-    pub inscriptions: BTreeSet<InscriptionSlot>,
+struct ChassisExterior {
+    paintable: bool,
     effect_slot: bool,
     projection_slots: BTreeMap<u16, ProjectionDecalSlot>,
 }
 
+#[derive(Clone)]
+pub(super) struct ExteriorSlots {
+    pub camouflage: BTreeSet<VehicleSurface>,
+    pub paints: BTreeSet<PaintRegion>,
+    pub inscriptions: BTreeSet<InscriptionSlot>,
+    pub effect_slot: bool,
+    pub projection_slots: BTreeMap<u16, ProjectionDecalSlot>,
+}
+
 impl VehicleModules {
-    pub(super) fn exterior_slots(&self, modules: &ModuleLoadout) -> Option<&ExteriorSlots> {
-        self.exterior_slots.get(&(
-            *modules.get(&ModuleKind::Turret)?,
-            *modules.get(&ModuleKind::Gun)?,
-        ))
-    }
-
-    pub(super) fn supports_effect(
-        &self,
-        modules: &ModuleLoadout,
-        exterior: &ExteriorSlots,
-    ) -> bool {
-        exterior.effect_slot
-            || modules
-                .get(&ModuleKind::Chassis)
-                .is_some_and(|chassis| self.chassis_with_effect_slots.contains(chassis))
-    }
-
-    pub(super) fn projection_slots(
-        &self,
-        modules: &ModuleLoadout,
-        exterior: &ExteriorSlots,
-    ) -> BTreeMap<u16, ProjectionDecalSlot> {
-        let mut slots = exterior.projection_slots.clone();
+    pub(super) fn exterior_slots(&self, modules: &ModuleLoadout) -> Option<ExteriorSlots> {
+        let mut exterior = self
+            .exterior_slots
+            .get(&(
+                *modules.get(&ModuleKind::Turret)?,
+                *modules.get(&ModuleKind::Gun)?,
+            ))?
+            .clone();
         if let Some(chassis) = modules
             .get(&ModuleKind::Chassis)
-            .and_then(|id| self.chassis_projection_slots.get(id))
+            .and_then(|id| self.chassis_exteriors.get(id))
         {
-            slots.extend(chassis.iter().map(|(&id, slot)| (id, slot.clone())));
+            if chassis.paintable {
+                exterior.paints.insert(PaintRegion::Chassis);
+            }
+            exterior.effect_slot |= chassis.effect_slot;
+            exterior.projection_slots.extend(
+                chassis
+                    .projection_slots
+                    .iter()
+                    .map(|(&id, slot)| (id, slot.clone())),
+            );
         }
-        slots
+        Some(exterior)
     }
 
     pub fn load(
@@ -137,8 +137,8 @@ impl VehicleModules {
         read_research(&vehicle, &ids, &[], &mut rules.research)?;
         let mut ammunition = BTreeMap::new();
         let mut exterior_slots = BTreeMap::new();
-        let mut chassis_with_effect_slots = BTreeSet::new();
-        let mut chassis_projection_slots = BTreeMap::new();
+        let mut chassis_exteriors = BTreeMap::new();
+        let hull_paints: BTreeSet<_> = paint_regions(vehicle.get_child_element("hull")).collect();
         let hull_projection_slots =
             projection_decal_slots(vehicle.get_child_element("hull")).collect::<BTreeMap<_, _>>();
         let hull_effect_slot = has_effect_slot(vehicle.get_child_element("hull"));
@@ -189,11 +189,15 @@ impl VehicleModules {
                     },
                 );
                 if kind == 2 {
-                    if has_effect_slot(Some(base)) {
-                        chassis_with_effect_slots.insert(id);
-                    }
-                    chassis_projection_slots
-                        .insert(id, projection_decal_slots(Some(base)).collect());
+                    chassis_exteriors.insert(
+                        id,
+                        ChassisExterior {
+                            paintable: paint_regions(Some(base))
+                                .any(|region| region == PaintRegion::Chassis),
+                            effect_slot: has_effect_slot(Some(base)),
+                            projection_slots: projection_decal_slots(Some(base)).collect(),
+                        },
+                    );
                 }
                 if kind == 3 {
                     let guns = local
@@ -248,6 +252,12 @@ impl VehicleModules {
                         exterior_slots.insert(
                             (id, gun),
                             ExteriorSlots {
+                                paints: hull_paints
+                                    .iter()
+                                    .copied()
+                                    .chain(paint_regions(Some(base)))
+                                    .chain(paint_regions(gun_local))
+                                    .collect(),
                                 effect_slot: hull_effect_slot
                                     || has_effect_slot(Some(base))
                                     || has_effect_slot(Some(gun_slot_definition)),
@@ -380,8 +390,7 @@ impl VehicleModules {
             rules,
             ammunition,
             exterior_slots,
-            chassis_with_effect_slots,
-            chassis_projection_slots,
+            chassis_exteriors,
         })
     }
 
@@ -403,6 +412,16 @@ impl VehicleModules {
         }
         Ok(())
     }
+}
+
+fn paint_regions(part: Option<&Element>) -> impl Iterator<Item = PaintRegion> + '_ {
+    part.and_then(|part| {
+        part.get_child_value_at(&["customization", "customizableVehicleAreas", "paint"])
+    })
+    .and_then(|areas| areas.as_string())
+    .unwrap_or_default()
+    .split_whitespace()
+    .filter_map(super::cosmetic_catalog::paint_region)
 }
 
 fn has_effect_slot(part: Option<&Element>) -> bool {

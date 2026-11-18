@@ -8,8 +8,8 @@ use super::{
 use crate::{
     accounts::{
         AccountSnapshot, CosmeticChange, CosmeticItem, CosmeticKind, CosmeticPlacement,
-        CosmeticRule, InscriptionSlot, ProgressionError, ProjectionDecalSlot, VehicleCost,
-        VehicleSurface, change_cosmetics,
+        CosmeticRule, InscriptionSlot, PaintRegion, ProgressionError, VehicleCost, VehicleSurface,
+        change_cosmetics,
     },
     platform::client_formats::pxml::Element,
 };
@@ -17,6 +17,7 @@ use anyhow::{Context, Result, bail, ensure};
 use std::collections::{BTreeMap, BTreeSet};
 use wot_resources::ResourceBundle;
 
+const PAINTS: &str = "scripts/item_defs/customization/paints/list.xml";
 const CAMOUFLAGES: &str = "scripts/item_defs/customization/camouflages/list.xml";
 const DECALS: &str = "scripts/item_defs/customization/decals/list.xml";
 const NUMBERS: &str = "scripts/item_defs/customization/personal_numbers/list.xml";
@@ -110,6 +111,7 @@ pub(super) fn index_exterior_shop(fs: &ResourceBundle, prices: &mut ItemPrices) 
         for (path, item, subtype) in [
             (STYLES, "style", STYLE_TYPE),
             (CAMOUFLAGES, "camouflage", CAMOUFLAGE_TYPE),
+            (PAINTS, "paint", 1),
             (DECALS, "decal", 3),
             (NUMBERS, "personal_number", 9),
             (EFFECTS, "modification", 5),
@@ -186,6 +188,7 @@ impl CosmeticCatalog {
         }
         for (path, item_name, kind) in [
             (CAMOUFLAGES, "camouflage", CosmeticKind::Camouflage),
+            (PAINTS, "paint", CosmeticKind::Paint),
             (DECALS, "decal", CosmeticKind::Inscription),
             (NUMBERS, "personal_number", CosmeticKind::PersonalNumber),
             (EFFECTS, "modification", CosmeticKind::Effect),
@@ -243,8 +246,6 @@ impl CosmeticCatalog {
         nation: &str,
         vehicle: &VehicleOffer,
         exterior: &ExteriorSlots,
-        supports_effect: bool,
-        projection_slots: &BTreeMap<u16, ProjectionDecalSlot>,
     ) -> BTreeMap<CosmeticItem, CosmeticRule> {
         if ["lockOutfit", "lockExceptProgression", "event_battles"]
             .iter()
@@ -272,8 +273,13 @@ impl CosmeticCatalog {
                         slots.retain(|slot| exterior.inscriptions.contains(slot));
                         !slots.is_empty()
                     }
-                    CosmeticPlacement::Effect => supports_effect,
-                    CosmeticPlacement::ProjectionDecal { form, .. } => projection_slots
+                    CosmeticPlacement::Paint { units_by_region } => {
+                        units_by_region.retain(|region, _| exterior.paints.contains(region));
+                        !units_by_region.is_empty()
+                    }
+                    CosmeticPlacement::Effect => exterior.effect_slot,
+                    CosmeticPlacement::ProjectionDecal { form, .. } => exterior
+                        .projection_slots
                         .values()
                         .any(|slot| slot.supports_form(form.as_deref())),
                 };
@@ -401,6 +407,12 @@ fn read_definition(
             )
         }
         CosmeticKind::Effect => (CosmeticPlacement::Effect, true),
+        CosmeticKind::Paint => (
+            CosmeticPlacement::Paint {
+                units_by_region: paint_usage(item, group)?,
+            },
+            true,
+        ),
         CosmeticKind::ProjectionDecal => {
             let tags = text("tags").unwrap_or_default();
             let has_tag = |wanted| tags.split_whitespace().any(|tag| tag == wanted);
@@ -466,6 +478,42 @@ fn read_definition(
     ))
 }
 
+pub(super) fn paint_region(name: &str) -> Option<PaintRegion> {
+    match name {
+        "CHASSIS" => Some(PaintRegion::Chassis),
+        "HULL" => Some(PaintRegion::Hull),
+        "TURRET" => Some(PaintRegion::Turret),
+        "GUN" => Some(PaintRegion::Gun),
+        "GUN_2" => Some(PaintRegion::Mantlet),
+        _ => None,
+    }
+}
+
+fn paint_usage(item: &Element, group: &Element) -> Result<BTreeMap<PaintRegion, u32>> {
+    use PaintRegion::*;
+    let regions = [Chassis, Hull, Turret, Gun, Mantlet];
+    let mut costs = BTreeMap::from(regions.map(|region| (region, 1)));
+    for section in [group, item] {
+        for (_, usage) in section
+            .get_child_element("usages")
+            .into_iter()
+            .flat_map(Element::iter_child_elements)
+        {
+            let units = u32::try_from(usage.get_child_integer("cost").unwrap_or(1))?;
+            ensure!(units <= 100, "Paint usage exceeds 100 units");
+            let components = usage.get_child_string("componentType").unwrap_or_default();
+            for area in components.split_whitespace() {
+                if area.eq_ignore_ascii_case("ALL") {
+                    costs.extend(regions.map(|region| (region, units)));
+                } else if let Some(region) = paint_region(&area.to_ascii_uppercase()) {
+                    costs.insert(region, units);
+                }
+            }
+        }
+    }
+    Ok(costs)
+}
+
 fn cosmetic_descriptor(subtype: u8, id: u16) -> IntCompactDescr {
     IntCompactDescr {
         id,
@@ -477,6 +525,7 @@ fn cosmetic_descriptor(subtype: u8, id: u16) -> IntCompactDescr {
 pub(super) fn cosmetic_subtype(kind: CosmeticKind) -> u8 {
     match kind {
         CosmeticKind::Camouflage => CAMOUFLAGE_TYPE,
+        CosmeticKind::Paint => 1,
         CosmeticKind::Inscription => 3,
         CosmeticKind::PersonalNumber => 9,
         CosmeticKind::Effect => 5,
@@ -488,6 +537,7 @@ pub fn cosmetic_item(descriptor: i32) -> Option<CosmeticItem> {
     let decoded = IntCompactDescr::from_int(descriptor.into());
     let kind = match decoded.nation {
         CAMOUFLAGE_TYPE => CosmeticKind::Camouflage,
+        1 => CosmeticKind::Paint,
         3 => CosmeticKind::Inscription,
         9 => CosmeticKind::PersonalNumber,
         5 => CosmeticKind::Effect,
@@ -548,14 +598,11 @@ impl GarageCatalog {
             .offers
             .get(&vehicle.modules.rules.vehicle)
             .ok_or(ProgressionError::VehicleNotFound)?;
-        let projection_slots = vehicle.modules.projection_slots(&modules, exterior);
         let rules = self.cosmetics.rules_for(
             &owned.catalog_key,
             &vehicle.customization_nation,
             offer,
-            exterior,
-            vehicle.modules.supports_effect(&modules, exterior),
-            &projection_slots,
+            &exterior,
         );
         change_cosmetics(
             snapshot,
@@ -563,7 +610,7 @@ impl GarageCatalog {
             change,
             &rules,
             &self.cosmetics.prohibited_numbers,
-            &projection_slots,
+            &exterior.projection_slots,
         )
     }
 }

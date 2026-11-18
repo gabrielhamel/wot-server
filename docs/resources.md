@@ -35,7 +35,7 @@ server. Older manifests without the field remain supported.
 - **Player Sessions** uses Packed XML aliases, entity and component lists and definitions,
   interface definitions and extension descriptors for the protocol ABI.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
-  item definitions, camouflage definitions and price groups, style, camouflage, decal, projected decal, effect and personal-number definitions from the client, plus
+  item definitions, customization price groups, style, camouflage, paint, decal, projected decal, effect and personal-number definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle
   name catalogs for admin labels.
 
@@ -51,7 +51,7 @@ requirements come from the current [garage catalog](../src/accounts/infrastructu
 and [script ABI loader](../src/player_sessions/infrastructure/mercury/script/load.rs).
 Regenerate the bundle when changing the game build or updating to a server
 that reads different resource paths. For [garage camouflage](camouflage.md),
-regenerate existing bundles with the updated extractor. Older bundles load with
-camouflage purchases unavailable. The format version identifies the bundle
+regenerate existing bundles with the updated extractor. Each cosmetic category
+requires its extracted definition list for purchases. The format version identifies the bundle
 contract and the extracted Account definition supplies the protocol's required
 client version.

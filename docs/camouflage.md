@@ -1,4 +1,4 @@
-# Garage camouflage, decals, inscriptions and effects
+# Garage camouflage, paints, decals, inscriptions and effects
 
 Exterior can buy permanent camouflage into shared stock or buy missing copies
 while applying an outfit. A placement consumes one copy per surface per season.
@@ -8,7 +8,7 @@ Scale and palette selections persist with each placement.
 
 Accounts stores total owned quantities and seasonal outfits by vehicle inventory
 ID in the existing progression JSON. It derives unmounted stock from ownership
-minus placements across all vehicles. Removing camouflage, selling a vehicle while keeping
+minus the units fitted across all vehicles. Removing a cosmetic, selling a vehicle while keeping
 its cosmetics, or swapping to a module without the corresponding
 surface frees the copies for reuse. The wallet, ownership, and layout commit
 together against the current account revision. Reapplying the saved layout
@@ -24,6 +24,21 @@ scale before saving. Offer restrictions include unavailable items, token-gated
 items and style-only components. This implementation covers unbound, permanent
 camouflage and its garage layouts. Styles, attachments, cosmetic resale,
 rental and reward grants are outside this workflow.
+
+## Paints
+
+The Paints tab uses the base `customization/paints/list.xml` and its price
+groups. Paint Colour N1A (ID 141) costs 20 gold per unit in the installed EU
+catalog and is available for eligible UK vehicles. The XI Executor accepts it
+on its chassis, hull, turret and gun. The installed modules' paint regions
+determine which placements the server accepts.
+
+The catalog specifies how many units each region uses, with a default of one.
+Each of the Executor's four regions uses one N1A unit per season. Applying
+paint consumes owned units first and buys any deficit in the same transaction.
+Removing paint or changing to a module that lacks the region releases the
+units to the depot. Paint shares the seasonal outfit with camouflage,
+inscriptions, effects and projected decals.
 
 ## Inscriptions
 
@@ -95,7 +110,10 @@ field mask, camouflage array length and component fields. The camouflage field
 uses mask bit 2 and encodes item ID, pattern size, applied-area mask and palette
 index in that order when present. Camouflage regions use bits 4, 8 and 12.
 The native customization dialog can send an empty common outfit (season 15)
-alongside the regular seasons. Effects use the modification ID array (bit 0). Preset inscriptions use the
+alongside the regular seasons. Effects use the modification ID array (bit 0).
+Paint uses bit 1 and encodes the paint ID and its region mask. Paint regions
+use bits 0, 4, 8, 12 and 14 for chassis, hull, turret, gun and the second gun
+region. A single entry can cover several regions. Preset inscriptions use the
 decal field (bit 3), projected decals use bit 5 and personal numbers use bit 7.
 Projected decal entries carry an item ID, options, slot ID and scale in that order.
 A personal number carries the item ID, length-prefixed digit string and region mask.
@@ -120,7 +138,7 @@ Protocol and filter behavior were traced in the pinned `wot-src` revision
 - `client/account_helpers/Shop.py` for commands 118 and 119 and their argument order.
 - `client/gui/Scaleform/daapi/view/lobby/customization/context/custom_mode.py` for seasonal outfit replacements and the common outfit entry.
 - `common/serializable_types/customizations/customization_outfit.py`,
-  `camouflage.py` in the same directory and
+  `camouflage.py` and `paint.py` in the same directory and
   `common/serialization/component_bin_serializer.py` for descriptor types, masks and field defaults.
 - `common/items/readers/c11n_readers.py`, `common/items/components/c11n_components.py`
   and `common/items/vehicles.py` for inherited definitions, vehicle filters and customizable vehicle areas.
@@ -144,3 +162,7 @@ The Executor effect regression checks the 300-gold price, a rejected unavailable
 effect, preservation of inscriptions, removal, stock reuse and reconnect.
 The Tiger regression exercises the extracted price, invalid anchors and mirroring,
 stock reuse and persistence of its anchor, scale and orientation.
+The Colour N1A regression checks the 20-gold shop price, rejects an
+ineligible nation and an unavailable region, and applies paint to four regions
+while preserving other fitted cosmetics. It verifies no extra charge on retry,
+depot reuse, reconnect persistence and trace parentage for successful and rejected requests.

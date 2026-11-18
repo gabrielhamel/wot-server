@@ -13,6 +13,7 @@ pub enum CosmeticKind {
     PersonalNumber,
     Effect,
     ProjectionDecal,
+    Paint,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -83,11 +84,28 @@ impl ProjectionDecalSlot {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum PaintRegion {
+    Chassis,
+    Hull,
+    Turret,
+    Gun,
+    Mantlet,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Paint {
+    pub id: u16,
+    pub units: u32,
+}
+
 pub type CamouflageLayout = BTreeMap<VehicleSurface, Camouflage>;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VehicleOutfit {
     pub camouflage: CamouflageLayout,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub paints: BTreeMap<PaintRegion, Paint>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub inscriptions: BTreeMap<InscriptionSlot, Inscription>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -99,12 +117,13 @@ pub struct VehicleOutfit {
 impl VehicleOutfit {
     pub fn is_empty(&self) -> bool {
         self.camouflage.is_empty()
+            && self.paints.is_empty()
             && self.inscriptions.is_empty()
             && self.effect.is_none()
             && self.projection_decals.is_empty()
     }
 
-    fn items(&self) -> impl Iterator<Item = CosmeticItem> + '_ {
+    fn items(&self) -> impl Iterator<Item = (CosmeticItem, u32)> + '_ {
         self.camouflage
             .values()
             .map(|item| (CosmeticKind::Camouflage, item.id))
@@ -114,6 +133,12 @@ impl VehicleOutfit {
                 self.projection_decals
                     .iter()
                     .map(|decal| (CosmeticKind::ProjectionDecal, decal.id)),
+            )
+            .map(|item| (item, 1))
+            .chain(
+                self.paints
+                    .values()
+                    .map(|paint| ((CosmeticKind::Paint, paint.id), paint.units)),
             )
     }
 }
@@ -130,6 +155,7 @@ impl CosmeticState {
         &mut self,
         vehicle: i64,
         supported: &BTreeSet<VehicleSurface>,
+        paint_regions: &BTreeSet<PaintRegion>,
         inscription_slots: &BTreeSet<InscriptionSlot>,
         supports_effect: bool,
         projection_slots: &BTreeMap<u16, ProjectionDecalSlot>,
@@ -139,6 +165,9 @@ impl CosmeticState {
                 outfit
                     .camouflage
                     .retain(|surface, _| supported.contains(surface));
+                outfit
+                    .paints
+                    .retain(|region, _| paint_regions.contains(region));
                 outfit
                     .inscriptions
                     .retain(|slot, _| inscription_slots.contains(slot));
@@ -160,11 +189,13 @@ impl CosmeticState {
         &self.owned
     }
 
-    pub fn mounted(&self) -> impl Iterator<Item = (i64, CosmeticItem)> + '_ {
+    pub fn mounted(&self) -> impl Iterator<Item = (i64, CosmeticItem, u32)> + '_ {
         self.outfits.iter().flat_map(|(&vehicle, seasons)| {
-            seasons
-                .values()
-                .flat_map(move |outfit| outfit.items().map(move |item| (vehicle, item)))
+            seasons.values().flat_map(move |outfit| {
+                outfit
+                    .items()
+                    .map(move |(item, units)| (vehicle, item, units))
+            })
         })
     }
 }
@@ -183,6 +214,7 @@ impl CosmeticChange {
                 .values()
                 .map(|outfit| {
                     outfit.camouflage.len()
+                        + outfit.paints.len()
                         + outfit.inscriptions.len()
                         + usize::from(outfit.effect.is_some())
                         + outfit.projection_decals.len()
@@ -209,6 +241,9 @@ pub struct CosmeticRule {
 
 #[derive(Clone)]
 pub enum CosmeticPlacement {
+    Paint {
+        units_by_region: BTreeMap<PaintRegion, u32>,
+    },
     Camouflage {
         surfaces: BTreeSet<VehicleSurface>,
         palettes: usize,
@@ -311,7 +346,19 @@ fn plan_cosmetics(
         CosmeticChange::Apply(seasons) => {
             let current = state.outfits.get(&vehicle);
             let mut outfits = current.cloned().unwrap_or_default();
-            for (season, outfit) in seasons {
+            for (season, mut outfit) in seasons {
+                for (region, paint) in &mut outfit.paints {
+                    let rule = rules
+                        .get(&(CosmeticKind::Paint, paint.id))
+                        .ok_or(InvalidCosmetic)?;
+                    let CosmeticPlacement::Paint { units_by_region } = &rule.placement else {
+                        return Err(InvalidCosmetic);
+                    };
+                    if !rule.seasons.contains(&season) {
+                        return Err(InvalidCosmetic);
+                    }
+                    paint.units = *units_by_region.get(region).ok_or(InvalidCosmetic)?;
+                }
                 for (&surface, item) in &outfit.camouflage {
                     let rule = rules
                         .get(&(CosmeticKind::Camouflage, item.id))
@@ -409,18 +456,20 @@ fn plan_cosmetics(
                     items.iter().map(move |(&id, &count)| ((kind, id), count))
                 })
                 .collect();
-            for (other, item) in state.mounted() {
+            for (other, item, units) in state.mounted() {
                 if other != vehicle
                     && let Some(count) = free.get_mut(&item)
                 {
-                    *count = count.saturating_sub(1);
+                    *count = count.saturating_sub(units);
                 }
             }
-            for item in outfits.values().flat_map(VehicleOutfit::items) {
-                if let Some(count) = free.get_mut(&item).filter(|count| **count > 0) {
-                    *count -= 1;
-                } else {
-                    *purchases.entry(item).or_default() += 1;
+            for (item, units) in outfits.values().flat_map(VehicleOutfit::items) {
+                let stock = free.entry(item).or_default();
+                let used = units.min(*stock);
+                *stock -= used;
+                if units > used {
+                    let missing: &mut u32 = purchases.entry(item).or_default();
+                    *missing = missing.checked_add(units - used).ok_or(InvalidCosmetic)?;
                 }
             }
             next_outfits = Some(outfits);
@@ -612,7 +661,7 @@ mod tests {
         let state = snapshot.progression.cosmetics;
         assert_eq!(
             state.mounted().collect::<Vec<_>>(),
-            vec![(2, (CosmeticKind::Camouflage, 10))]
+            vec![(2, (CosmeticKind::Camouflage, 10), 1)]
         );
         assert_eq!(
             serde_json::from_value::<CosmeticState>(serde_json::to_value(&state).unwrap()).unwrap(),
