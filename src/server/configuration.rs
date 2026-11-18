@@ -96,6 +96,7 @@ pub(super) struct Configuration {
     pub db_connections: u32,
     pub max_clients: usize,
     pub max_pending: usize,
+    pub training_room_visible: bool,
     pub log_level: LogLevel,
     pub web: Option<WebConfiguration>,
     pub admin: Option<AdminConfiguration>,
@@ -115,6 +116,7 @@ impl Default for Configuration {
             db_connections: 16,
             max_clients: 256,
             max_pending: 32,
+            training_room_visible: true,
             log_level: LogLevel::default(),
             web: None,
             admin: None,
@@ -274,6 +276,7 @@ mod tests {
         assert_eq!(defaults.base_bind, "0.0.0.0:20017".parse().unwrap());
         assert_eq!(defaults.resource_dir, directory.join("resources"));
         assert_eq!(defaults.private_key, directory.join("login.pem"));
+        assert!(defaults.training_room_visible);
         assert_eq!(
             defaults.log_level.filter(),
             tracing::level_filters::LevelFilter::WARN
@@ -283,10 +286,18 @@ mod tests {
         assert!(settings.get("log_file").is_none());
         settings["log_level"] = "trace".into();
         settings["max_clients"] = 7.into();
+        settings["training_room_visible"] = false.into();
         let edited = serde_json::to_vec_pretty(&settings).unwrap();
         std::fs::write(&path, &edited).unwrap();
         assert_eq!(Configuration::load(&path).unwrap().max_clients, 7);
+        assert!(!Configuration::load(&path).unwrap().training_room_visible);
         assert_eq!(std::fs::read(&path).unwrap(), edited);
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("training_room_visible");
+        std::fs::write(&path, serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert!(Configuration::load(&path).unwrap().training_room_visible);
         for (field, value) in [
             ("log_level", serde_json::json!("verbose")),
             ("db_connections", serde_json::json!(0)),

@@ -33,10 +33,10 @@ ContextMap Server {
     implementationTechnology = "Versioned resource bundle containing garage definitions, camouflage price groups, regular tech trees and vehicle labels"
   }
   ResourceExtraction [U,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
+    implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch plus arena definitions for Training Room map validation"
   }
   GameClient [U] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Mercury UDP login, handoff, session replacement notices and garage RPCs; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
+    implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage and host-only Training Room RPCs; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccounts API for identity listing, provisioning, roles and dashboard sessions, plus snapshots and the vehicle catalog for the operator garage"
@@ -51,7 +51,7 @@ ContextMap Server {
     implementationTechnology = "Published contacts/search and durable private message APIs adapted to native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Published account application API and immutable snapshots adapted to authenticated sessions, preferences, inventory, progression, Store offer purchases, Premium Account entitlement and garage projections"
+    implementationTechnology = "Published account application API and immutable snapshots adapted to authenticated sessions, preferences, inventory, progression, Store offer purchases, Premium Account entitlement, garage projections and the projected descriptor for an owned Training Room vehicle"
   }
 }
 BoundedContext GameClient {
@@ -67,7 +67,7 @@ BoundedContext Accounts {
   domainVisionStatement = "Own durable identity, password hashes, player roles, dashboard sessions, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, cosmetic ownership and seasonal and common outfits, crew rosters and training, Premium Account expiry, and revisions in PostgreSQL; project snapshots into versioned garage caches."
 }
 BoundedContext PlayerSessions {
-  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle, Store browser access and delivery of committed garage and chat updates and Premium Account expiry notifications."
+  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle, host-only Training Rooms, Store browser access and delivery of committed garage and chat updates and Premium Account expiry notifications."
 }
 
 BoundedContext Social {

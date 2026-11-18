@@ -12,10 +12,12 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | Layer | Responsibilities |
 | --- | --- |
 | `domain/` | Bounded admission generations, expiry and stale completion rejection. |
+| `domain/training.rs` | Training Room duration and comment limits. |
 | `application/` | Credential input policy, preferences, and ammunition/progression commit use cases, using Accounts' published application API. |
 | `infrastructure/mercury/` | Mercury UDP framing, reliability, RSA and Blowfish, LoginApp/BaseApp wire sessions, and Account RPC binding from the [resource bundle](../../docs/resources.md). |
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
+| `infrastructure/gateway/training.rs` | Validate bundled map IDs and deliver the host-only room settings, roster, readiness and leave events. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
 | `infrastructure/gateway/progression.rs` | Equipment, directive, module, tank and depot request validation, bounded progression jobs and committed cache delivery. |
 | `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes. |
@@ -54,6 +56,7 @@ with Accounts.
 | Store session token | Random credential issued in the Store URL fragment and scoped to the synchronized garage session. |
 | Account entity | Client protocol representation created after the client enables entities. |
 | Resource stream | CRC-described, fragmented transfer correlated with an account command request ID. |
+| Training Room | A host-only lobby owned by one live session. It ends when the host leaves or the session is removed. |
 
 A successful login replaces the previous session or pending handoff for that
 account, including a session whose client crashed. The gateway waits for

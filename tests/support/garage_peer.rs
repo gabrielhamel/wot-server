@@ -56,6 +56,7 @@ pub struct Peer {
     session: u32,
     pub created: bool,
     pub shown: bool,
+    pub training_room_visible: Option<bool>,
     pub shop_url: Option<String>,
     resources: BTreeMap<u16, BTreeMap<u8, Vec<u8>>>,
     completed: BTreeMap<u16, Vec<u8>>,
@@ -84,6 +85,7 @@ impl Peer {
             session: 0,
             created: false,
             shown: false,
+            training_room_visible: None,
             shop_url: None,
             resources: BTreeMap::new(),
             completed: BTreeMap::new(),
@@ -296,6 +298,12 @@ impl Peer {
                             ) = &properties["initialServerSettings"]
                             else {
                                 panic!("Account initial server settings")
+                            };
+                            self.training_room_visible = match settings
+                                .get(&pickle::Value::from("isTrainingBattleEnabled"))
+                            {
+                                Some(pickle::Value::Bool(visible)) => Some(*visible),
+                                _ => None,
                             };
                             for name in [
                                 "comp7_config",

@@ -43,6 +43,7 @@ The generated JSON contains the following settings:
 | `db_connections` | `16`, allowed range 1–256 |
 | `max_clients` | `256`, admitted/pending handoff capacity, allowed range 1–256 |
 | `max_pending` | `32`, authentication worker capacity, allowed range 1–256 |
+| `training_room_visible` | `true`. Advertises the Training Room card at login and allows host-only room creation when the resource bundle contains arena definitions. Set to `false` and restart the server to disable creation and hide the card for new logins. |
 | `log_level` | `"warn"`; also accepts `"error"`, `"info"`, `"debug"`, `"trace"` |
 | `web` | `null`; shared HTTP bind and compiled UI directory for `/admin/` and `/shop/` |
 | `admin` | `null`; set to `{}` to enable the [admin API](admin.md) with secure session cookies by default |

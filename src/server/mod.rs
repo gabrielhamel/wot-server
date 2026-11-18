@@ -95,6 +95,7 @@ async fn serve(config: Configuration) -> Result<()> {
             private_key: Some(private_key),
             max_clients: config.max_clients,
             max_pending: config.max_pending,
+            training_room_visible: config.training_room_visible,
         },
         &resources,
         catalog.clone(),

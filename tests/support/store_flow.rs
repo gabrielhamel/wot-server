@@ -75,6 +75,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     );
     let mut gateway = Gateway::bind(
         GatewayConfig {
+            training_room_visible: true,
             login_bind: "127.0.0.1:0".parse().unwrap(),
             base_bind: "127.0.0.1:0".parse().unwrap(),
             advertised_base: None,

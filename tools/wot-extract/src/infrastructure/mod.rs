@@ -169,7 +169,7 @@ fn is_candidate(path: &str) -> bool {
     };
     match relative.split_once('/') {
         Some(("client", file)) => file.ends_with(".pyc") && !file.contains('/'),
-        Some(("entity_defs" | "component_defs" | "item_defs", _)) => true,
+        Some(("entity_defs" | "component_defs" | "item_defs" | "arena_defs", _)) => true,
         _ => matches!(relative, "entities.xml" | "components.xml"),
     }
 }

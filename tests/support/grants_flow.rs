@@ -75,6 +75,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
     );
     let gateway = Gateway::bind(
         GatewayConfig {
+            training_room_visible: true,
             login_bind: "127.0.0.1:0".parse().unwrap(),
             base_bind: "127.0.0.1:0".parse().unwrap(),
             advertised_base: None,

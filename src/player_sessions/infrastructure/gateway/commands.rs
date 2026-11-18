@@ -1,5 +1,9 @@
 use super::*;
 
+const REQUEST_PREBATTLES: i16 = 520;
+const PREBATTLES_STREAM: i16 = 200;
+const TRAINING_PREBATTLE: i32 = 2;
+
 impl Gateway {
     pub(super) fn handle_base_method(&mut self, event: base::BaseMethodEvent) {
         let span = event.span;
@@ -138,6 +142,43 @@ impl Gateway {
             return Ok(());
         }
         match request {
+            AccountBase::AccountPrebattleCreateTraining {
+                arena_type_id,
+                round_length,
+                is_opened,
+                comment,
+            } => {
+                self.create_training_room(
+                    client,
+                    entity,
+                    arena_type_id,
+                    round_length,
+                    is_opened,
+                    &comment.0,
+                )?;
+            }
+            AccountBase::DoCmdInt3 {
+                request_id,
+                cmd: training::LEAVE,
+                ..
+            } => {
+                self.leave_training_room(client, entity, request_id)?;
+            }
+            AccountBase::DoCmdInt3 {
+                request_id,
+                cmd: training::READY,
+                arg0: vehicle_id,
+                ..
+            } => {
+                self.set_training_ready(client, entity, request_id, Some(vehicle_id))?;
+            }
+            AccountBase::DoCmdInt3 {
+                request_id,
+                cmd: training::NOT_READY,
+                ..
+            } => {
+                self.set_training_ready(client, entity, request_id, None)?;
+            }
             AccountBase::DoCmdIntArr {
                 request_id,
                 cmd: cosmetics::BUY_CUSTOMIZATIONS,
@@ -189,6 +230,13 @@ impl Gateway {
                 cmd: SERVER_STATS,
                 ..
             } => self.server_stats(entity, request_id)?,
+            AccountBase::DoCmdIntArr {
+                request_id,
+                cmd: REQUEST_PREBATTLES,
+                args,
+            } if request_id != REQUEST_NO_RESPONSE => {
+                self.list_training_rooms(client, entity, request_id, &args)?;
+            }
             AccountBase::RequestToken {
                 request_id,
                 token_type,
@@ -487,10 +535,52 @@ impl Gateway {
         entity: EntityKey<Account>,
         request_id: i16,
     ) -> Result<()> {
+        self.stream_pickle(client, entity, request_id, &crate::pickle!((1, [])))
+    }
+
+    #[tracing::instrument(name = "player_sessions.list_training_rooms", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.args.count = args.len(), output.rooms.count = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
+    fn list_training_rooms(
+        &mut self,
+        client: ClientKey,
+        entity: EntityKey<Account>,
+        request_id: i16,
+        args: &[i32],
+    ) -> Result<()> {
+        let span = tracing::Span::current();
+        if request_id != PREBATTLES_STREAM
+            || !matches!(args, [TRAINING_PREBATTLE, _, 0 | 1, start, end] if *start >= 0 && end >= start)
+        {
+            span.record("output.outcome", "invalid_request");
+            self.base.entity(entity)?.onCmdResponse(
+                request_id,
+                FAILURE,
+                "Invalid or unsupported Training Rooms list request".into(),
+            )?;
+            return Ok(());
+        }
+
+        self.stream_pickle(
+            client,
+            entity,
+            request_id,
+            &crate::pickle!(((TRAINING_PREBATTLE), 0, [])),
+        )?;
+        span.record("output.rooms.count", 0);
+        span.record("output.outcome", "empty");
+        Ok(())
+    }
+
+    fn stream_pickle(
+        &mut self,
+        client: ClientKey,
+        entity: EntityKey<Account>,
+        request_id: i16,
+        value: &pickle::Value,
+    ) -> Result<()> {
         use std::io::Write;
         let mut encoder =
             flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder.write_all(&pickle::to_bytes(&crate::pickle!((1, []))))?;
+        encoder.write_all(&pickle::to_bytes(value))?;
         self.stream(client, entity, request_id, &encoder.finish()?)
     }
 

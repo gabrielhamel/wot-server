@@ -139,6 +139,23 @@ pub struct PreparedAccount {
 }
 
 impl GarageCatalog {
+    #[tracing::instrument(name = "accounts.training_vehicle_descriptor", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id), err)]
+    pub fn training_vehicle_descriptor(
+        &self,
+        snapshot: &AccountSnapshot,
+        inventory_id: i64,
+    ) -> Result<Option<Vec<u8>>> {
+        let Some(owned) = snapshot
+            .vehicles
+            .iter()
+            .find(|vehicle| vehicle.inventory_id == inventory_id)
+        else {
+            return Ok(None);
+        };
+        let vehicle = self.vehicle(&owned.catalog_key)?.project(owned, snapshot)?;
+        Ok(Some(vehicle.descr.encode()))
+    }
+
     pub fn load(fs: ResourceBundle, keys: &[String]) -> Result<Self> {
         let def = item_defs::read_xml(&fs, "scripts/entity_defs/interfaces/AccountVersion.def")?;
         let required_version = def

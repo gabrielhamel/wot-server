@@ -57,6 +57,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`user.email`](../src/player_sessions/infrastructure/gateway/mod.rs) | Email-shaped login supplied by the current game authentication payload, recorded after authentication succeeds. Requires nonempty local part, a dot in the domain, and no whitespace; this is a shape check, not proof of ownership. Omitted for non-email logins and requests without an email payload. |
 | [`network.protocol.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | `mercury` for game authentication/commands, `xmpp` for incoming XMPP requests. |
 | [`output.store.host`](../src/player_sessions/infrastructure/gateway/mod.rs) | Exact Store hostname or IP included in the client browser allowlist when the Account entity is created. Omitted when the Store is disabled. |
+| [`output.training_room.visible`](../src/player_sessions/infrastructure/gateway/mod.rs) | Boolean Training Room visibility flag on `player_sessions.enable` after the Account creation is queued. |
 | [`rpc.method`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Known incoming entity method on `game.command` or outbound entity method on `mercury.response`. |
 | [`wot.client.protocol_version`](../src/player_sessions/infrastructure/gateway/mod.rs) | Protocol number supplied by the game login request; not a confirmed game release version. |
 | [`wot.client.resource_digest`](../src/player_sessions/infrastructure/gateway/mod.rs) | Optional login digest encoded as hexadecimal. Omitted when the request does not supply a digest. |
@@ -101,7 +102,10 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.command_id`](../src/player_sessions/infrastructure/gateway/commands.rs) | Decoded account command number on `game.command` and `player_sessions.commands.command`. |
 | [`input.method_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Numeric exposed Mercury method ID after wire decoding. |
 | [`input.entity_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Protocol entity ID of the player's target entity. |
-| [`input.string.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | UTF-8 byte length of the `doCmdStr` argument. |
+| [`input.string.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Byte length of the `doCmdStr` argument or the Training Room creation comment. The comment itself stays out of telemetry. |
+| [`input.arena_type_id`](../src/player_sessions/infrastructure/gateway/training.rs) | Client-supplied arena type ID on Training Room creation. |
+| [`input.round_length.seconds`](../src/player_sessions/infrastructure/gateway/training.rs) | Requested Training Room duration in seconds on creation. |
+| [`input.room.open_flag`](../src/player_sessions/infrastructure/gateway/training.rs) | Wire privacy flag on Training Room creation. `0` denotes invite-only and `1` denotes open. |
 | [`input.cache.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Cached shop length in bytes reported by the client. |
 | [`input.cache.crc`](../src/player_sessions/infrastructure/gateway/commands.rs) | Signed CRC32 of the shop cache reported by the client. |
 | [`input.token_type`](../src/player_sessions/infrastructure/gateway/commands.rs) | Numeric token kind from the Mercury request. Credential material stays out of telemetry. |
@@ -109,7 +113,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.arg1`](../src/player_sessions/infrastructure/gateway/commands.rs) | Second decoded scalar argument, when the command form supplies it. |
 | [`input.arg2`](../src/player_sessions/infrastructure/gateway/commands.rs) | Third decoded scalar argument, when the command form supplies it. |
 | [`input.arg3`](../src/player_sessions/infrastructure/gateway/commands.rs) | Fourth decoded scalar argument, when the command form supplies it. |
-| [`input.args.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of wire method arguments on `game.command`; number of integers on decoded array commands, settings and ammunition spans. Array contents stay out of telemetry. |
+| [`input.args.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of wire method arguments on `game.command`; number of integers on decoded array commands, Training Room listing, settings and ammunition spans. Array contents stay out of telemetry. |
 | [`input.outfits.count`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Number of outfit descriptors in a decoded array command, including empty descriptors. |
 | [`input.outfit.bytes`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Total length in bytes of all outfit descriptors passed to the Exterior adapter. Descriptor contents are omitted. |
 | [`input.shop_revision`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Requested shop revision on a cosmetic purchase or apply command, or on progression and ammunition dispatch when supplied. |
@@ -142,7 +146,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input snapshot used for catalog preparation or mutation planning. On garage sync, the revision requested by the client. |
 | [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case or completion, after deduplication by key. |
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
-| [`input.inventory_id`](../src/accounts/application/mod.rs) | Owned vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables, outfit changes or a bound stat tracker grant. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
+| [`input.inventory_id`](../src/accounts/application/mod.rs) | Vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables, outfit changes, a bound stat tracker grant or Training Room readiness. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
 | [`input.operation`](../src/accounts/domain/cosmetics.rs) | Exterior action on the ownership decision span, `buy` or `apply`. On progression planning, a server-defined operation label such as `research`, `buy_vehicle` or `crew`. Admin access uses `status` for session checks and `post` for the required write header check. |
 | [`input.items.count`](../src/accounts/domain/cosmetics.rs) | Number of purchase lines or requested placements across the supplied seasons. Each painted region counts as one placement. |
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
@@ -197,6 +201,8 @@ meanings on different operations; those differences are listed explicitly.
 | Attribute | Meaning and emission |
 | --- | --- |
 | [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Encoded outgoing XMPP stanza, compressed garage cache or Mercury resource response byte length. Excludes transport framing. |
+| [`output.rooms.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of Training Rooms returned by a successful list request. Omitted on rejection or a failed send. |
+| [`output.room.id`](../src/player_sessions/infrastructure/gateway/training.rs) | Server-assigned Training Room ID when a creation, readiness or leave operation has a room. |
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
 | [`output.unlocked_vehicle_count`](../src/accounts/infrastructure/client/store.rs) | Number of purchasable gold vehicle descriptors projected in the Tech Tree economics unlock set during garage sync. |
 | [`output.offers.count`](../src/player_sessions/infrastructure/gateway/store.rs) | Number of offers included in a Store catalog response. |
@@ -206,6 +212,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.outcome`](../src/player_sessions/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_funds`, `research_required` or `failed`. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/account_updates.rs) | Account update `queued` on the live garage connection or `next_sync` when recovered from persisted state on a later sync. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/commands.rs) | Mercury dispatch records `dispatched`, `wire_decode_failed`, `decode_failed`, `unknown_method`, `entity_unavailable` or `dispatch_failed` on the root. Unsupported or compatibility commands record `unimplemented`, `ignored` or `acknowledged_without_change` on the decoded command span. Garage and shop sync record `up_to_date`, `cache_hit` or `stream` as applicable. |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/commands.rs) | Training Room listing records `empty` after sending a zero-room list or `invalid_request` for malformed or unsupported queries. |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/training.rs) | Training Room creation records `created`, `already_hosting`, `invalid_request` or `unavailable`. Readiness records `ready`, `not_ready`, `room_unavailable` or `vehicle_unavailable`. Leave records `left` or `already_left`. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage completions record `committed`, `unchanged`, `rejected`, `stale` or `error`. The Exterior decision records `changed`, `unchanged` or `rejected`. Mutation dispatch records `invalid_request`, `stale_shop`, `busy`, `queued` or `started` as applicable. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/social.rs) | Mercury Social dispatch records early rejection reasons. Its worker records `busy`, `started` or `completion_unavailable`. XMPP roots record `handled`, `rate_limited` or `failed`. Admin session checks, write-header checks and credential verification record `authorized` or `rejected`. Session status records `setup_required`, `signed_out`, or `authenticated`. Role changes record `updated`, `unchanged`, `actor_not_admin`, `own_role`, `player_not_found`, `email_required`, or `last_admin`. |
 | [`output.session_count`](../src/accounts/infrastructure/player_access.rs) | Number of sessions removed by a sign-out request with a well-formed cookie. |

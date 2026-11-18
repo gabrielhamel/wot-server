@@ -94,7 +94,78 @@ builds compressed shop data with resource prices and captured EU constants.
 Required server settings include disabled/empty feature configurations and
 historical dates, not current official configuration.
 
+## Training Room visibility
+
+The decompiled EU client checks the global `isTrainingBattleEnabled` setting
+when building and refreshing the Training Room item. The setting defaults to
+`false`, and the mode selector skips items marked invisible. See
+[`helpers/server_settings.py`](../references/wot-src/sources/res/scripts/client/helpers/server_settings.py#L2283),
+[`battle_selector_items.py`](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/header/battle_selector_items.py#L956),
+and [`mode_selector_data_provider.py`](../references/wot-src/sources/res/scripts/client/gui/impl/lobby/mode_selector/mode_selector_data_provider.py#L171).
+
+The previous account bootstrap omitted that key from `initialServerSettings`,
+which explains the missing card. The current
+[account bootstrap](../../src/player_sessions/infrastructure/bootstrap.rs#L13)
+sends the [`training_room_visible` setting](../server.md#running), which
+defaults to `true`. The client reads the same server-wide setting regardless
+of the player's inventory, battle count or access level.
+Opening Training Rooms requests command `520` with reserved stream ID `200`
+and `[2, 7, 0, 0, 50]` for type, sort key, idle filter and page bounds. The
+[client Account](../references/wot-src/sources/res/scripts/client/Account.py#L600)
+decodes a zlib-compressed pickle of `(prebattle_type, total_count, rooms)`.
+The [Training list requester](../references/wot-src/sources/res/scripts/client/gui/prb_control/entities/training/legacy/requester.py#L43)
+only accepts type `2`. The [list view](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/trainings_list_base.py#L49)
+then closes its waiting overlay, including for an empty list. A generic command
+error alone leaves the overlay waiting. The server streams `(2, 0, [])` for a
+valid request and rejects malformed or unsupported requests. Host-only rooms
+are entered directly by their creators and the shared room list stays empty.
+
+This is a source-level diagnosis using the pinned decompiled client revision
+`447437a25a2222a0d10dde96f65a20254d3a7d0d`. The registered executable reported
+EU `v.2.4.1.1 #993` with SHA-256
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
+The garage integration test verifies the streamed payload and trace using the
+UDP test peer. Live behavior was not tested with that executable.
+
+## Creating a Training Room
+
+The client sends [`accountPrebattle_createTraining`](../references/wot-src/sources/res/scripts/entity_defs/interfaces/AccountPrebattle.def#L33)
+with an arena type, duration in seconds, open flag and comment. The server
+checks the arena ID against the selected resource bundle. The low 16 bits
+identify the geometry and the high bits identify the gameplay variant. Creation
+accepts durations from 5 through 30 minutes in whole minutes and UTF-8 comments
+up to 400 characters. Creation is unavailable on bundles without arena definitions.
+The server logs a startup warning if the card is enabled and the bundle has no
+eligible arenas. A creation attempt then returns `EVENT_DISABLED` (14), which
+the client displays as “This event is currently unavailable.” Earlier builds
+sent `CANNOT_CREATE` (9), which the EU client translated as “wrong team number.”
+
+The server sends `onPrebattleJoined`, then `updatePrebattle` with settings (7),
+properties (10) and the one-host roster (1). The client creates its prebattle
+object on the join event and waits for both settings and roster before switching
+to the room. The client automatically sends ready command `402` for the selected
+vehicle before opening the view. The server projects an owned vehicle's current
+descriptor from the account snapshot, emits player-state update (4), and acknowledges
+the command. Not-ready command `403` clears the roster's ready vehicle.
+The [client init flow](../references/wot-src/sources/res/scripts/client/gui/prb_control/entities/base/legacy/entity.py#L207)
+and [training entry](../references/wot-src/sources/res/scripts/client/gui/prb_control/entities/training/legacy/entity.py#L369)
+show these boundaries.
+
+Invalid creation sends `onPrebattleJoinFailure`, which dismisses the creation
+overlay. Repeat requests replay the existing room snapshot. Leaving via command
+`401` removes the room and emits `onPrebattleLeft`. Disconnect or replacement
+also reclaims the room. The session owns the room and its ready state in memory.
+Inviting other players, joining another host and launching a battle are pending.
+
 ## Battle entry and return
+
+The sequence below describes the historical Toolkit prototype. At the pinned
+revision `f857926b91fa88bcb8e9ddab9a9c29687834682c`, the
+[base app](https://github.com/theorzr/wg-toolkit-rs/blob/f857926b91fa88bcb8e9ddab9a9c29687834682c/wg-toolkit-wot/src/base/mod.rs#L477)
+uses a timed queue. It gathers reconnecting participants into a shared battle
+space and destroys the space when its last client leaves. Queue-info requests
+report queue size. The pinned prototype has battle entry and return via the
+queue, while Training Room discovery and creation have no corresponding handlers.
 
 Implemented in [base/mod.rs](../references/wg-toolkit-rs/wg-toolkit-wot/src/base/mod.rs)
 and [battle.rs](https://github.com/theorzr/wg-toolkit-rs/blob/357a7f556a197079c21a371be5718e5211b41eda/wg-toolkit-wot/src/base/battle.rs).

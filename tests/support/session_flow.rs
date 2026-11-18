@@ -68,6 +68,7 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
     );
     let gateway = Gateway::bind(
         GatewayConfig {
+            training_room_visible: true,
             login_bind: "127.0.0.1:0".parse().unwrap(),
             base_bind: "127.0.0.1:0".parse().unwrap(),
             advertised_base: None,

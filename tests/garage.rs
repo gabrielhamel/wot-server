@@ -33,6 +33,8 @@ mod social_flow;
 mod store_flow;
 #[path = "support/telemetry_capture.rs"]
 mod telemetry_capture;
+#[path = "support/training_room_flow.rs"]
+mod training_room_flow;
 #[path = "support/web_flow.rs"]
 mod web_flow;
 #[path = "support/xmpp_flow.rs"]
@@ -65,11 +67,11 @@ fn dict(value: &Pickle, name: &str) -> Pickle {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR; uses temporary accounts in that database"]
 async fn postgres_to_encrypted_garage_with_isolated_clients() {
-    exercise_garage(false).await;
-    exercise_garage(true).await;
+    exercise_garage(false, false).await;
+    exercise_garage(true, true).await;
 }
 
-async fn exercise_garage(encrypted_login: bool) {
+async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     telemetry_capture::exporter();
     let url = std::env::var("WG_TEST_DATABASE_URL").expect("WG_TEST_DATABASE_URL");
     let resources = wot_resources::ResourceBundle::open(std::path::Path::new(
@@ -91,6 +93,8 @@ async fn exercise_garage(encrypted_login: bool) {
     };
     let second = format!("{prefix}_b@example.test");
     let has_exterior_styles = resources.has_file("scripts/item_defs/customization/styles/list.xml");
+    let training_room_available =
+        training_room_visible && resources.has_file("scripts/arena_defs/_list_.xml");
     let has_extension_styles =
         resources.has_file("last_stand/scripts/item_defs/customization/styles/list.xml");
     let has_inscriptions = has_extension_styles
@@ -229,6 +233,7 @@ async fn exercise_garage(encrypted_login: bool) {
     );
     assert_ne!(r1.unwrap(), r2.unwrap());
     let stored = repository.snapshot(a.id).await.unwrap();
+    let training_vehicle_id = stored.vehicles[0].inventory_id;
     assert_eq!(stored.revision, 3);
     assert_eq!(stored.settings, BTreeMap::from([(10, 20), (11, 21)]));
     assert!(repository.snapshot(b.id).await.unwrap().settings.is_empty());
@@ -255,6 +260,7 @@ async fn exercise_garage(encrypted_login: bool) {
             private_key,
             max_clients: 2,
             max_pending: 4,
+            training_room_visible,
         },
         &resources,
         catalog.clone(),
@@ -278,6 +284,31 @@ async fn exercise_garage(encrypted_login: bool) {
         let mut first_peer = Peer::new(public_key.clone());
         first_peer.connect(login, &first_peer_name, "password-a");
         first_peer.until(&script, |p| p.created && p.shown);
+        assert_eq!(
+            first_peer.training_room_visible,
+            Some(training_room_visible)
+        );
+        for (args, result) in [(&[2, 7, 0, 50, 0][..], -1), (&[2, 7, 0, 0, 50][..], 1)] {
+            first_peer.command(
+                &script,
+                "doCmdIntArr",
+                vec![
+                    Value::Int16(200),
+                    Value::Int16(520),
+                    Value::Seq(args.iter().copied().map(Value::Int32).collect()),
+                ],
+            );
+            first_peer.until(&script, |p| p.responses.contains(&(200, result)));
+        }
+        first_peer.until(&script, |p| p.has_resource(200));
+        assert_eq!(first_peer.resource(200), wot_server::pickle!((2, 0, [])));
+        training_room_flow::exercise(
+            &mut first_peer,
+            &script,
+            a.id,
+            training_vehicle_id,
+            training_room_available,
+        );
         let mut second_peer = Peer::new(public_key.clone());
         second_peer.connect(login, &second, "password-b");
         second_peer.until(&script, |p| p.created && p.shown);
@@ -318,6 +349,9 @@ async fn exercise_garage(encrypted_login: bool) {
         replacement.until(&script, |p| p.created && p.shown);
         pending_peer.assert_handoff_rejected(&superseded);
         let mut first_peer = replacement;
+        if training_room_available {
+            training_room_flow::assert_room_gone(&mut first_peer, &script, training_vehicle_id);
+        }
         let sync = |id, cmd| {
             vec![
                 Value::Int16(id),
@@ -474,6 +508,8 @@ async fn exercise_garage(encrypted_login: bool) {
     worker.await.unwrap().unwrap();
     if result.is_ok() {
         telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
+        telemetry_capture::assert_training_room_bootstrap(training_room_visible);
+        training_room_flow::assert_traces(a.id, training_room_available);
         telemetry_capture::assert_operation_traces(a.id, b.id);
         if has_camouflage {
             camouflage_flow::assert_traces(a.id, cosmetic_fixtures);

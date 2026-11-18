@@ -101,6 +101,10 @@ worker ends. Use a development database. It uses the client's basic-login JSON e
 cache isolation, all three resource streams, committed settings/revisions, explicit
 unsupported-command failure, duplicate-login refusal and disconnect/reconnect with
 capacity reclamation. A fresh connection pool also reads committed preferences.
+With a freshly extracted bundle containing `scripts/arena_defs/`, the suite also
+verifies Training Room creation for Studzianki, the host roster, the owned-vehicle
+ready response, leave and recreation, and parent links for successful and rejected
+requests. Older bundles exercise the unavailable response.
 The same peers exercise [garage ammunition](ammunition.md): rejected requests
 followed by valid unload/reload/purchase, depot conservation/deletions, balances,
 receipts, idempotency and identical cache after reconnect. A fresh pool confirms

@@ -76,6 +76,14 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
     if path == "extension.xml" {
         return !root.is_empty();
     }
+    if root.is_empty()
+        && path
+            .strip_prefix("scripts/arena_defs/")
+            .and_then(|file| leaf(file, ".xml"))
+            .is_some()
+    {
+        return true;
+    }
     if ["scripts/entity_defs/", "scripts/component_defs/"]
         .into_iter()
         .filter_map(|prefix| path.strip_prefix(prefix))

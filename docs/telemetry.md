@@ -35,6 +35,10 @@ same authentication trace.
           mercury.response                      [onKickedFromServer, sent]
         mercury.login.response                  [success, sent]
 
+When the client enables entities, `player_sessions.enable` records the
+Training Room visibility sent in the queued Account creation. Its
+`mercury.response` child records delivery of `showGUI`.
+
 The shared web listener composes the admin and Store APIs. Page shells and
 shared assets emit `web.ui.request` with their matched route and HTTP status.
 Admin and Store API requests keep their own request spans.
@@ -93,6 +97,28 @@ actually ran. For example, command 501 returns the current in-memory count.
       player_sessions.commands.command
         player_sessions.server_stats              [online count]
           mercury.response                        [receiveServerStats, sent]
+
+Training Room discovery records `empty` for a successful zero-room list and
+`invalid_request` for a malformed or unsupported request. A valid request
+uses the garage resource stream. A rejected request sends a command error.
+
+    game.command                                  [command 520]
+      player_sessions.commands.command
+        player_sessions.list_training_rooms       [empty, 0 rooms]
+          mercury.response.resource
+            mercury.response                      [onCmdResponse, sent]
+
+Training Room creation records the requested arena, duration, open flag and
+comment length. The join and room updates retain the original game-command
+parent. A rejection sends `onPrebattleJoinFailure` under the same operation.
+The subsequent ready command traces the owned-vehicle descriptor projection
+and sends the roster update and command response under its own trace.
+
+    game.command                                  [accountPrebattle_createTraining]
+      player_sessions.commands.command
+        player_sessions.create_training_room      [created, room ID]
+          mercury.response                        [onPrebattleJoined, sent]
+          mercury.response                        [updatePrebattle, sent]
 
 A committed research command follows this path. Intermediate Accounts and
 Player Sessions spans retain their own bounded context.

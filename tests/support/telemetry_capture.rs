@@ -104,6 +104,33 @@ pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
     );
 }
 
+pub fn assert_training_room_bootstrap(visible: bool) {
+    let spans = exporter().get_finished_spans().unwrap();
+    let has = |span: &opentelemetry_sdk::trace::SpanData, key, expected: &str| {
+        span.attributes.iter().any(|attribute| {
+            attribute.key.as_str() == key && attribute.value.to_string() == expected
+        })
+    };
+    assert!(
+        spans.iter().any(|bootstrap| {
+            bootstrap.name == "player_sessions.enable"
+                && has(
+                    bootstrap,
+                    "output.training_room.visible",
+                    &visible.to_string(),
+                )
+                && spans.iter().any(|response| {
+                    response.name == "mercury.response"
+                        && response.span_context.trace_id() == bootstrap.span_context.trace_id()
+                        && response.parent_span_id == bootstrap.span_context.span_id()
+                        && has(response, "rpc.method", "showGUI")
+                        && has(response, "output.delivery", "sent")
+                })
+        }),
+        "Missing Training Room visibility on a delivered garage bootstrap trace"
+    );
+}
+
 pub fn assert_operation_traces(account: i64, research_account: i64) {
     let spans = exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
@@ -145,6 +172,41 @@ pub fn assert_operation_traces(account: i64, research_account: i64) {
         }),
         "every exported operation must identify its bounded context"
     );
+    for (outcome, response_code) in [("empty", "1"), ("invalid_request", "-1")] {
+        let listing = spans
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.list_training_rooms"
+                    && has(span, "input.args.count", "5")
+                    && has(span, "output.outcome", outcome)
+                    && spans.iter().any(|root| {
+                        root.name == "game.command"
+                            && has(root, "user.id", &account.to_string())
+                            && has(root, "input.command_id", "520")
+                            && has(root, "input.request_id", "200")
+                            && descendant(span, root)
+                    })
+            })
+            .unwrap_or_else(|| panic!("Missing Training Rooms list trace for {outcome}"));
+        assert!(spans.iter().any(|span| {
+            span.name == "mercury.response"
+                && has(span, "output.response_code", response_code)
+                && has(span, "output.delivery", "sent")
+                && descendant(span, listing)
+        }));
+        let resource = spans
+            .iter()
+            .find(|span| span.name == "mercury.response.resource" && descendant(span, listing));
+        if outcome == "empty" {
+            assert!(has(listing, "output.rooms.count", "0"));
+            assert_eq!(
+                resource.unwrap().parent_span_id,
+                listing.span_context.span_id()
+            );
+        } else {
+            assert!(resource.is_none());
+        }
+    }
     let command = spans
         .iter()
         .find(|root| {

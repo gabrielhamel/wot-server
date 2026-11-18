@@ -22,6 +22,7 @@ mod progression;
 mod settings;
 mod social;
 mod store;
+mod training;
 use crate::player_sessions::application::store::StoreToken;
 use crate::social::{Contact, Conversations, Player, PostgresSocial, Social};
 use admission::{DeferredLogin, LoginAttempt};
@@ -68,6 +69,7 @@ pub struct GatewayConfig {
     pub private_key: Option<Arc<RsaPrivateKey>>,
     pub max_clients: usize,
     pub max_pending: usize,
+    pub training_room_visible: bool,
 }
 
 struct Ticket {
@@ -81,6 +83,7 @@ struct Session {
     generation: u64,
     account: PreparedAccount,
     entity: Option<EntityKey<Account>>,
+    training_room: Option<training::HostedRoom>,
     garage_synced: bool,
     reported_premium_expiry: Option<u32>,
     store_token: Option<StoreToken>,
@@ -146,6 +149,8 @@ pub struct Gateway {
     deferred_logins: HashMap<SocketAddr, DeferredLogin>,
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
+    training_arenas: HashSet<i32>,
+    last_training_room_id: u32,
     pending_writes: HashSet<i64>,
     account_change_epoch: u64,
     grants: tokio::sync::mpsc::Receiver<crate::player_sessions::application::grants::GrantRequest>,
@@ -186,6 +191,13 @@ impl Gateway {
             base::App::new(config.base_bind.into(), script).context("Bind BaseApp UDP socket")?;
         base.register::<Account>()
             .context("Bind garage Account schema")?;
+        let training_arenas =
+            training::load_arenas(resources).context("Load Training Room maps")?;
+        if config.training_room_visible && training_arenas.is_empty() {
+            tracing::warn!(
+                "Training Room creation is unavailable. Re-extract the resource bundle with arena definitions."
+            );
+        }
         let (sender, completions) = mpsc::sync_channel(config.max_pending + 2 * config.max_clients);
         let workers = Arc::new(Semaphore::new(config.max_pending));
         let (grant_handle, grants) = crate::player_sessions::PlayerGrants::channel();
@@ -211,6 +223,8 @@ impl Gateway {
             deferred_logins: HashMap::new(),
             tickets: HashMap::new(),
             sessions: HashMap::new(),
+            training_arenas,
+            last_training_room_id: 0,
             pending_writes: HashSet::new(),
             account_change_epoch: 0,
             grants,
@@ -461,6 +475,7 @@ impl Gateway {
                     generation: ticket.generation,
                     account: ticket.account,
                     entity: None,
+                    training_room: None,
                     garage_synced: false,
                     reported_premium_expiry: None,
                     store_token: None,
@@ -479,7 +494,7 @@ impl Gateway {
         }
     }
 
-    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.store.host = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty), err)]
     fn enable(&mut self, client: ClientKey) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
@@ -511,9 +526,14 @@ impl Gateway {
                     store_settings
                         .as_ref()
                         .map(|(url, host)| (url.as_str(), *host)),
+                    self.config.training_room_visible,
                 ),
             },
         )?;
+        tracing::Span::current().record(
+            "output.training_room.visible",
+            self.config.training_room_visible,
+        );
         if let Some((_, host)) = store_settings {
             tracing::Span::current().record("output.store.host", host);
         }
