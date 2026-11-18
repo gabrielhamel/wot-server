@@ -1,7 +1,7 @@
 # In-game Store
 
 The garage’s Store tab opens the embedded page. The catalog follows the
-regular EU offers mapped in [PR #45](https://github.com/gabrielhamel/wot-server/pull/45).
+regular offers in the [EU Store catalog](store-eu-catalog.md).
 The garage HUD displays the account balances. The Store displays each offer’s
 price, stock, and purchase eligibility.
 
