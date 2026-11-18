@@ -1,12 +1,43 @@
 import ShieldOutlined from "@mui/icons-material/ShieldOutlined";
-import { Typography } from "@mui/material";
-import { AppBar, Layout, TitlePortal } from "react-admin";
+import { MenuItem, Typography } from "@mui/material";
+import {
+  AppBar,
+  Layout,
+  TitlePortal,
+  UserMenu,
+  useLogout,
+  useNotify,
+  useUserMenu,
+} from "react-admin";
 import type { AppBarProps, LayoutProps } from "react-admin";
+import { errorMessage } from "../../../platform/infrastructure/web/http";
+
+function SignOut() {
+  const logout = useLogout();
+  const notify = useNotify();
+  const menu = useUserMenu();
+
+  async function signOut() {
+    menu?.onClose();
+    try {
+      await logout({ revokeSession: true }, undefined, false);
+    } catch (error) {
+      notify(errorMessage(error, "Could not sign out."), { type: "error" });
+    }
+  }
+
+  return <MenuItem onClick={signOut}>Sign out</MenuItem>;
+}
 
 function ServerBar(props: AppBarProps) {
   return (
     <AppBar
       {...props}
+      userMenu={
+        <UserMenu>
+          <SignOut />
+        </UserMenu>
+      }
       color="transparent"
       elevation={0}
       sx={{ bgcolor: "background.paper", borderBottom: 1, borderColor: "divider" }}

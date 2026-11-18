@@ -39,7 +39,7 @@ ContextMap Server {
     implementationTechnology = "Mercury UDP login, handoff, session replacement notices and garage RPCs; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "PlayerAccounts API for identity listing and provisioning, plus account snapshots and the vehicle catalog for the operator garage"
+    implementationTechnology = "PlayerAccounts API for identity listing, provisioning, roles and dashboard sessions, plus snapshots and the vehicle catalog for the operator garage"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "Bounded PlayerGrants application API coordinates currency, vehicle and cosmetic grants with garage writes and publishes committed updates to game sessions"
@@ -64,7 +64,7 @@ BoundedContext BinaryMapping {
   domainVisionStatement = "Recover supported native type and network framing metadata, retain evidence and unknowns, and emit offline Rust declarations and JSON mappings."
 }
 BoundedContext Accounts {
-  domainVisionStatement = "Own durable identity, password hashes, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, cosmetic ownership and seasonal and common outfits, crew rosters and training, and revisions in PostgreSQL; project snapshots into versioned garage caches."
+  domainVisionStatement = "Own durable identity, password hashes, player roles, dashboard sessions, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, cosmetic ownership and seasonal and common outfits, crew rosters and training, and revisions in PostgreSQL; project snapshots into versioned garage caches."
 }
 BoundedContext PlayerSessions {
   domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle, Store browser access and delivery of committed garage and chat updates."
@@ -75,7 +75,7 @@ BoundedContext Social {
 }
 
 BoundedContext PlayerAdministration {
-  domainVisionStatement = "Authorize operators to find and provision player accounts, inspect garages and grant currency, vehicles or cosmetics through the admin API and browser dashboard."
+  domainVisionStatement = "Authenticate administrators and enable them to provision players, manage roles, inspect garages and grant currency, vehicles or cosmetics through the admin API and browser dashboard."
 }
 
 BoundedContext SharedKernel {

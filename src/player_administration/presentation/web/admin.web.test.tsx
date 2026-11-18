@@ -1,15 +1,27 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vite-plus/test";
 import { httpServer } from "../../../../tools/web/test/setup";
 import { captureTraces } from "../../../../tools/web/test/traces";
-import type { Garage, Grant } from "../../application/admin-contracts";
+import type { AdminSession, Garage, Grant, PlayerRecord } from "../../application/admin-contracts";
 import Admin from "./admin-page";
 
 const origin = "http://localhost:8080/api/admin";
-const token = "private-admin-token";
-const player = { id: "123", username: "private-login@example.test", display_name: "Commander" };
+const password = "private-admin-password";
+const admin: PlayerRecord = {
+  id: "1",
+  username: "admin@example.test",
+  display_name: "Administrator One",
+  role: "admin",
+};
+const player: PlayerRecord = {
+  id: "123",
+  username: "private-login@example.test",
+  display_name: "Commander",
+  role: "player",
+};
+const authenticated: AdminSession = { status: "authenticated", player: admin };
 const garage: Garage = {
   display_name: player.display_name,
   credits: "100",
@@ -31,43 +43,62 @@ const garage: Garage = {
 
 function openAdmin(signedIn = false) {
   window.history.replaceState(null, "", "/admin/");
-  if (signedIn) sessionStorage.setItem("wot-server.admin-token", token);
+  if (signedIn)
+    httpServer.use(http.get(`${origin}/session`, () => HttpResponse.json(authenticated)));
   return { user: userEvent.setup(), ...render(<Admin />) };
 }
 
 function players(records = [player]) {
-  return http.get(`${origin}/players`, ({ request }) =>
-    request.headers.get("authorization") === `Bearer ${token}`
-      ? HttpResponse.json({ data: records, total: records.length })
-      : HttpResponse.json({ message: "A valid admin token is required." }, { status: 401 }),
+  return http.get(`${origin}/players`, () =>
+    HttpResponse.json({ data: records, total: records.length }),
   );
 }
 
+const passwordInput = () => screen.getByLabelText("Password", { selector: "input", exact: false });
+
 describe("Server Administration", () => {
-  it("rejects a bad token, then signs in and lists a player", async () => {
+  it("rejects incorrect credentials, then signs in and signs out", async () => {
     const telemetry = captureTraces();
-    const attempts: Array<{ auth: string | null; trace: string | null }> = [];
+    const attempts: Array<{ body: unknown; trace: string | null }> = [];
+    let session: AdminSession = { status: "signed_out" };
+    let signOutTrace: string | null = null;
     httpServer.use(
       players(),
-      http.get(`${origin}/session`, ({ request }) => {
-        const auth = request.headers.get("authorization");
-        attempts.push({ auth, trace: request.headers.get("traceparent") });
-        return auth === `Bearer ${token}`
-          ? new HttpResponse(null, { status: 204 })
-          : HttpResponse.json({ message: "A valid admin token is required." }, { status: 401 });
+      http.get(`${origin}/session`, () => HttpResponse.json(session)),
+      http.post(`${origin}/logout`, ({ request }) => {
+        signOutTrace = request.headers.get("traceparent");
+        expect(request.headers.get("x-wot-admin")).toBe("1");
+        session = { status: "signed_out" };
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.post(`${origin}/session`, async ({ request }) => {
+        const body = (await request.json()) as { email: string; password: string };
+        attempts.push({ body, trace: request.headers.get("traceparent") });
+        expect(request.headers.get("x-wot-admin")).toBe("1");
+        if (body.email === admin.username && body.password === password) {
+          session = authenticated;
+          return new HttpResponse(null, { status: 204 });
+        }
+        return HttpResponse.json(
+          { message: "Invalid administrator email or password." },
+          { status: 401 },
+        );
       }),
     );
     try {
       const { user } = openAdmin();
-      const input = await screen.findByLabelText("Admin token", { exact: false });
-      await user.type(input, "bad-token");
+      await user.type(await screen.findByRole("textbox", { name: "Email" }), admin.username);
+      await user.type(passwordInput(), "bad-password");
       await user.click(screen.getByRole("button", { name: "Sign in" }));
-      expect(await screen.findByText("A valid admin token is required.")).toBeVisible();
-      await user.clear(input);
-      await user.type(input, token);
+      expect(await screen.findByText("Invalid administrator email or password.")).toBeVisible();
+      await user.clear(passwordInput());
+      await user.type(passwordInput(), password);
       await user.click(screen.getByRole("button", { name: "Sign in" }));
       expect(await screen.findByText(player.display_name)).toBeVisible();
-      expect(attempts.map((item) => item.auth)).toEqual(["Bearer bad-token", `Bearer ${token}`]);
+      expect(attempts.map((item) => item.body)).toEqual([
+        { email: admin.username, password: "bad-password" },
+        { email: admin.username, password },
+      ]);
       const denied = telemetry.expectRequest(
         attempts[0].trace,
         "web.admin.sign_in",
@@ -76,7 +107,98 @@ describe("Server Administration", () => {
       );
       expect(denied.http?.attributes["output.outcome"]).toBe("rejected");
       telemetry.expectRequest(attempts[1].trace, "web.admin.sign_in", "/api/admin/session", 204);
-      expect(telemetry.serializedSpanData()).not.toContain(token);
+      await user.click(screen.getByRole("button", { name: "Profile" }));
+      await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
+      expect(await screen.findByRole("button", { name: "Sign in" })).toBeVisible();
+      telemetry.expectRequest(signOutTrace, "web.admin.sign_out", "/api/admin/logout", 204);
+      expect(telemetry.serializedSpanData()).not.toContain(password);
+      expect(telemetry.serializedSpanData()).not.toContain(admin.username);
+    } finally {
+      await telemetry.stop();
+    }
+  });
+
+  it("creates the first administrator and requires a separate sign-in", async () => {
+    const telemetry = captureTraces();
+    let session: AdminSession = { status: "setup_required" };
+    let setup: unknown;
+    let trace: string | null = null;
+    httpServer.use(
+      http.get(`${origin}/session`, () => HttpResponse.json(session)),
+      http.post(`${origin}/setup`, async ({ request }) => {
+        setup = await request.json();
+        trace = request.headers.get("traceparent");
+        session = { status: "signed_out" };
+        return HttpResponse.json(admin, { status: 201 });
+      }),
+    );
+    try {
+      const { user } = openAdmin();
+      expect(
+        await screen.findByRole("heading", { name: "Create the first administrator" }),
+      ).toBeVisible();
+      await user.type(screen.getByRole("textbox", { name: "Email" }), admin.username);
+      await user.type(screen.getByRole("textbox", { name: "Display name" }), admin.display_name);
+      await user.type(passwordInput(), password);
+      await user.click(screen.getByRole("button", { name: "Create administrator" }));
+      expect(await screen.findByText("Administrator created. Sign in to continue.")).toBeVisible();
+      expect(screen.getByRole("button", { name: "Sign in" })).toBeVisible();
+      expect(passwordInput()).toHaveValue("");
+      expect(setup).toEqual({
+        username: admin.username,
+        display_name: admin.display_name,
+        password,
+      });
+      telemetry.expectRequest(trace, "web.admin.bootstrap", "/api/admin/setup", 201);
+      expect(telemetry.serializedSpanData()).not.toContain(password);
+      expect(telemetry.serializedSpanData()).not.toContain(admin.username);
+    } finally {
+      await telemetry.stop();
+    }
+  });
+
+  it("promotes and demotes another player without exposing a self-role control", async () => {
+    const telemetry = captureTraces();
+    const records = [admin, { ...player }];
+    const changes: Array<{ body: unknown; trace: string | null }> = [];
+    httpServer.use(
+      players(records),
+      http.post(`${origin}/players/${player.id}/role`, async ({ request }) => {
+        const body = (await request.json()) as { role: PlayerRecord["role"] };
+        changes.push({ body, trace: request.headers.get("traceparent") });
+        records[1].role = body.role;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    try {
+      const { user } = openAdmin(true);
+      await user.click(
+        await screen.findByRole("button", { name: "Promote to administrator · Commander" }),
+      );
+      expect(
+        screen.queryByRole("button", { name: /demote.*administrator one/i }),
+      ).not.toBeInTheDocument();
+      await user.click(
+        within(screen.getByRole("dialog")).getByRole("button", {
+          name: "Promote to administrator",
+        }),
+      );
+      await user.click(await screen.findByRole("button", { name: "Demote to player · Commander" }));
+      await user.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Demote to player" }),
+      );
+      expect(
+        await screen.findByRole("button", { name: "Promote to administrator · Commander" }),
+      ).toBeVisible();
+      expect(changes.map(({ body }) => body)).toEqual([{ role: "admin" }, { role: "player" }]);
+      for (const { trace } of changes) {
+        telemetry.expectRequest(
+          trace,
+          "web.admin.change_role",
+          "/api/admin/players/{id}/role",
+          204,
+        );
+      }
     } finally {
       await telemetry.stop();
     }
@@ -101,6 +223,7 @@ describe("Server Administration", () => {
           id: "124",
           display_name: newPlayer.display_name,
           username: newPlayer.username,
+          role: "player" as const,
         };
         records.push(record);
         return HttpResponse.json(record, { status: 201 });

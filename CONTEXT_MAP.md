@@ -38,7 +38,7 @@ consumes Social application operations and adapts native XMPP, both legacy
 messenger RPC versions, presence and committed participant delivery. See [social protocol](docs/social.md).
 
 [Player Administration](src/player_administration/README.md) authenticates operators and adapts Accounts' player
-listing and creation contract to HTTP and the React Admin dashboard. It submits
+listing, bootstrap, provisioning, roles and dashboard sessions to HTTP and the React Admin dashboard. It submits
 currency, vehicle and cosmetic grants through Player Sessions for serialized
 garage updates.
 

@@ -1,3 +1,4 @@
+mod access;
 #[cfg(test)]
 mod client_address;
 mod garage;
@@ -12,36 +13,23 @@ use crate::{
 use axum::{
     Router,
     extract::{DefaultBodyLimit, MatchedPath, Request, State},
-    http::{HeaderValue, StatusCode, header},
+    http::{HeaderValue, header},
     middleware::{self, Next},
-    response::{IntoResponse, Response},
-    routing::get,
+    response::Response,
+    routing::{get, post},
 };
-use sha2::{Digest, Sha256};
 use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
 };
-use subtle::ConstantTimeEq;
 use tokio::sync::Semaphore;
 use tracing::Instrument;
 
 #[derive(Clone)]
-pub(crate) struct AdminToken([u8; 32]);
-
-impl AdminToken {
-    pub(crate) fn new(value: &str) -> Self {
-        Self(Sha256::digest(value.as_bytes()).into())
-    }
-
-    fn matches(&self, value: &[u8]) -> bool {
-        bool::from(self.0.as_slice().ct_eq(Sha256::digest(value).as_slice()))
-    }
-}
-
-#[derive(Clone)]
 struct AdminState {
     accounts: PlayerAccounts<PostgresPlayers>,
+    secure_cookies: bool,
+    sign_in_slots: Arc<Semaphore>,
     garage_accounts: Accounts<PostgresAccounts>,
     catalog: Arc<GarageCatalog>,
     grants: PlayerGrants,
@@ -52,31 +40,42 @@ struct AdminState {
 struct RequestSpan(tracing::Span);
 
 pub(crate) fn router(
-    accounts: PlayerAccounts<PostgresPlayers>,
+    players: PostgresPlayers,
     garage_accounts: Accounts<PostgresAccounts>,
     catalog: Arc<GarageCatalog>,
     grants: PlayerGrants,
-    token: AdminToken,
+    secure_cookies: bool,
     trusted_proxies: Vec<IpAddr>,
 ) -> Router {
-    let api = Router::new()
+    let state = AdminState {
+        accounts: PlayerAccounts::new(players),
+        secure_cookies,
+        garage_accounts,
+        catalog,
+        grants,
+        create_slots: Arc::new(Semaphore::new(2)),
+        sign_in_slots: Arc::new(Semaphore::new(2)),
+    };
+    let protected = Router::new()
         .route("/players", get(players::list).post(players::create))
+        .route("/players/{id}/role", post(access::change_role))
         .route("/players/{id}/garage", get(garage::show))
-        .route("/players/{id}/grants", axum::routing::post(garage::grant))
+        .route("/players/{id}/grants", post(garage::grant))
         .route("/vehicles", get(garage::catalog))
         .route("/attachments", get(garage::attachment_catalog))
         .route("/stat-trackers", get(garage::stat_tracker_catalog))
-        .route("/session", get(|| async { StatusCode::NO_CONTENT }))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            access::authenticate,
+        ));
+    let api = protected
+        .route("/session", get(access::session).post(access::sign_in))
+        .route("/logout", post(access::sign_out))
+        .route("/setup", post(players::bootstrap))
         .layer(DefaultBodyLimit::max(8 * 1024))
-        .layer(middleware::from_fn_with_state(token, authenticate))
+        .layer(middleware::from_fn(access::protect_writes))
         .layer(middleware::from_fn(prevent_caching))
-        .with_state(AdminState {
-            accounts,
-            garage_accounts,
-            catalog,
-            grants,
-            create_slots: Arc::new(Semaphore::new(2)),
-        });
+        .with_state(state);
 
     Router::new()
         .nest("/api/admin", api)
@@ -84,36 +83,6 @@ pub(crate) fn router(
             trusted_proxies,
             set_browser_headers,
         ))
-}
-
-async fn authenticate(State(token): State<AdminToken>, request: Request, next: Next) -> Response {
-    let authenticated = check_admin_token(&token, &request);
-    if authenticated {
-        return next.run(request).await;
-    }
-    (
-        [(header::WWW_AUTHENTICATE, "Bearer")],
-        players::ApiError::new(StatusCode::UNAUTHORIZED, "A valid admin token is required."),
-    )
-        .into_response()
-}
-
-#[tracing::instrument(name = "admin.authenticate", skip_all, fields(ddd.bounded_context.name = "player_administration", input.method = request.method().as_str(), output.outcome = tracing::field::Empty))]
-fn check_admin_token(token: &AdminToken, request: &Request) -> bool {
-    let authenticated = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.as_bytes().strip_prefix(b"Bearer "))
-        .is_some_and(|value| token.matches(value));
-    tracing::Span::current().record(
-        "output.outcome",
-        if authenticated {
-            "authorized"
-        } else {
-            "rejected"
-        },
-    );
-    authenticated
 }
 
 async fn prevent_caching(request: Request, next: Next) -> Response {
@@ -151,6 +120,7 @@ async fn set_browser_headers(
         input.page = tracing::field::Empty,
         input.per_page = tracing::field::Empty,
         input.account_id = tracing::field::Empty,
+        input.role = tracing::field::Empty,
         input.username.bytes = tracing::field::Empty,
         input.display_name.bytes = tracing::field::Empty,
         input.grant.kind = tracing::field::Empty,

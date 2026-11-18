@@ -19,11 +19,10 @@ From the repository root, build the SPA with Node.js 22.12 or later.
 ```sh
 npm ci
 npm run build --workspace tools/web
-openssl rand -hex 32
 ```
 
 Add these top-level settings to the `server.json` beside the game server
-executable. Replace the example token with the generated value.
+executable for local HTTP development.
 
 ```json
 {
@@ -32,7 +31,7 @@ executable. Replace the example token with the generated value.
     "ui_dir": "../../tools/web/dist"
   },
   "admin": {
-    "token": "REPLACE_WITH_THE_GENERATED_TOKEN"
+    "secure_cookies": false
   }
 }
 ```
@@ -43,9 +42,22 @@ for admin API-only mode. The shared listener defaults to `127.0.0.1:8080`.
 Legacy `admin.bind` and `admin.dashboard_dir` still supply the listener
 settings when there is no `web` object.
 
-Restart the server, open <http://127.0.0.1:8080/admin/> and sign in with the
-admin token. The old root URL redirects to the dashboard. Use **Create** in **Player accounts** to enter the game login, display
-name and password. The list displays player names and logins,
+Restart the server and open <http://127.0.0.1:8080/admin/>. If the database has
+no players, the dashboard opens the first administrator form. Enter an email,
+a display name and a password, then sign in with those credentials. Limit
+access to the listener until setup is complete.
+
+Administrators sign in with the email and password they use in the game.
+The dashboard keeps the session for 60 days from sign-in, across browser
+and server restarts. Choose **Sign out** from the profile menu to revoke
+that browser session. Demoting an
+administrator revokes all their dashboard sessions immediately.
+
+In **Player accounts**, use **Create** to add a player. Use the role action in
+another player's row to promote them to **Administrator** or demote them to
+**Player**. Promotion requires an email address as the player's game login.
+Administrators can change other players' roles only, so at least one
+administrator always retains access. The list displays player names and logins,
 newest first. Select a player to open **Resources & Garage**. The page displays
 credits, gold, bonds, free XP and owned tanks. Use **Grant resource** to add a
 positive whole amount, or search for a tank by name and use **Grant
@@ -56,10 +68,26 @@ tanks eligible for Random Battles and identifies already-owned tanks. Use
 the player owns, and add copies to the depot. Ownership includes fitted copies.
 The picker includes reward attachments such as Zongzi Jubilee. Use **Grant a
 stat tracker** to select a compatible owned tank and add a vehicle-bound copy
-to its depot stock. The browser
-stores the admin token in tab session storage.
-For remote administration, keep the server on loopback and use an HTTPS
-reverse proxy or an SSH tunnel. The built-in listener serves plain HTTP.
+to its depot stock.
+
+For remote administration, serve the dashboard through an HTTPS reverse
+proxy and use `"admin": {}` in `server.json`. Secure cookies are enabled by
+default. Use `"secure_cookies": false` only when accessing the listener over
+local HTTP, including an SSH tunnel to the loopback listener.
+
+### Upgrade an existing database
+
+Existing accounts start with the **Player** role. If the database already has
+players, apply the server migrations and use a trusted PostgreSQL connection
+to promote a known account. Choose a player whose game login is an email
+address and whose password you know. Confirm that the statement updated one
+row before signing in.
+
+```sql
+UPDATE accounts SET role = 'admin' WHERE username = 'operator@example.com';
+```
+
+### Frontend development
 
 For frontend development, `npm run dev --workspace tools/web` starts Vite
 with a local API proxy to the default web listener. Open `/admin/` for the dashboard or `/shop/` for the Store.
@@ -72,13 +100,19 @@ belong in the API and application state.
 
 ## API
 
-Send `Authorization: Bearer <admin-token>` with every request.
+Protected routes require the session cookie returned by sign-in. Send
+`X-Wot-Admin: 1` on every POST and `Content-Type: application/json` when
+sending a JSON body. The browser sends the cookie on same-origin API calls.
 
 | Method and path | Response |
 | --- | --- |
-| `GET /api/admin/session` | `204 No Content` for a valid token. |
+| `GET /api/admin/session` | `200 OK` with `status` set to `setup_required`, `signed_out`, or `authenticated`. An authenticated response includes the current `player` record. |
+| `POST /api/admin/setup` | Creates the first administrator with the player creation fields below. Returns `201 Created` without signing in, or `409 Conflict` when the database already has players. |
+| `POST /api/admin/session` | Accepts `{ "email": "...", "password": "..." }`. Returns `204 No Content` and sets the session cookie on success, or `401 Unauthorized` for invalid credentials or a player without the administrator role. |
+| `POST /api/admin/logout` | Revokes the current browser session and clears its cookie. Returns `204 No Content`. |
 | `GET /api/admin/players?page=1&per_page=25` | `200 OK` with `{ "data": [player records], "total": 2 }`. Pages start at 1. Page size is 1–100. Defaults are page 1 and 25 records. |
-| `POST /api/admin/players` | `201 Created` with the new player record. |
+| `POST /api/admin/players` | `201 Created` with the new player record. The new account has the `player` role. |
+| `POST /api/admin/players/{id}/role` | Accepts `{ "role": "admin" }` or `{ "role": "player" }` and returns `204 No Content`. Self-role changes return `403 Forbidden`. |
 | `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks and an `attachments` map from item ID to total owned copies. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |
 | `GET /api/admin/attachments` | `200 OK` with grantable 3D attachments containing `id`, `name`, and `max_owned` (null if the catalog sets no limit). |
@@ -101,7 +135,8 @@ protocol's login envelope. Display names are 1–128 characters with no control
 characters or surrounding whitespace. Passwords are 1–1024 bytes and contain
 no control characters. The API stores salted Argon2id hashes in PostgreSQL.
 
-Player records contain `id` (a decimal string), `username` and `display_name`.
+Player records contain `id` (a decimal string), `username`, `display_name`
+and `role` (either `player` or `admin`).
 Errors include a `message` and may include field-specific `errors`. Invalid
 credentials yield `401`, invalid account fields yield `422`, and duplicate
 logins yield `409`. Creation returns `503` while two other creations are in

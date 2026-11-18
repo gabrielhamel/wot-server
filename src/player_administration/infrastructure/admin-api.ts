@@ -4,6 +4,7 @@ import type { AuthProvider, CreateParams, DataProvider, Identifier, RaRecord } f
 import { request, responseStatus } from "../../platform/infrastructure/web/http";
 import { webOperation } from "../../platform/infrastructure/web/telemetry";
 import type {
+  AdminSession,
   CatalogVehicle,
   Cosmetic,
   Garage,
@@ -11,15 +12,15 @@ import type {
   GrantResult,
   NewPlayer,
   PlayerRecord,
+  PlayerRole,
 } from "../application/admin-contracts";
 
-const tokenKey = "wot-server.admin-token";
 const owner = "player_administration";
 
 function adminRequest<T>(
   parent: Context,
   endpoint: string,
-  options: { path?: string; token?: string; body?: object; signal?: AbortSignal } = {},
+  options: { path?: string; body?: object; signal?: AbortSignal } = {},
 ) {
   return request<T>({
     owner,
@@ -27,32 +28,62 @@ function adminRequest<T>(
     route: `/api/admin${endpoint}`,
     path: `/api/admin${options.path ?? endpoint}`,
     method: options.body ? "POST" : "GET",
-    token: options.token ?? sessionStorage.getItem(tokenKey),
+    headers: options.body ? { "X-Wot-Admin": "1" } : undefined,
     body: options.body,
     signal: options.signal,
     errorFormat: "json",
   });
 }
 
+export function getSession(signal?: AbortSignal) {
+  return webOperation(owner, "web.admin.session_status", {}, async (parent, span) => {
+    const session = await adminRequest<AdminSession>(parent, "/session", { signal });
+    span.setAttribute("output.session.status", session.status);
+    return session;
+  });
+}
+
+export function createFirstAdmin(body: NewPlayer) {
+  return webOperation(owner, "web.admin.bootstrap", { "input.role": "admin" }, (parent) =>
+    adminRequest<PlayerRecord>(parent, "/setup", { body }),
+  );
+}
+
+function changePlayerRole(id: Identifier, role: PlayerRole) {
+  return webOperation(
+    owner,
+    "web.admin.change_role",
+    { "input.account_id": inputAccountId(id), "input.role": role },
+    (parent) =>
+      adminRequest<void>(parent, "/players/{id}/role", {
+        path: `/players/${encodeURIComponent(id)}/role`,
+        body: { role },
+      }),
+  );
+}
+
 export const authProvider: AuthProvider = {
-  async login({ token }: { token: string }) {
-    const value = token.trim();
+  async login({ email, password }: { email: string; password: string }) {
     await webOperation(owner, "web.admin.sign_in", {}, (parent) =>
-      adminRequest<void>(parent, "/session", { token: value }),
+      adminRequest<void>(parent, "/session", { body: { email, password } }),
     );
-    sessionStorage.setItem(tokenKey, value);
   },
-  async logout() {
-    sessionStorage.removeItem(tokenKey);
+  async logout(params?: { revokeSession?: boolean }) {
+    if (!params?.revokeSession) return;
+    await webOperation(owner, "web.admin.sign_out", {}, (parent) =>
+      adminRequest<void>(parent, "/logout", { body: {} }),
+    );
   },
   async checkAuth() {
-    if (!sessionStorage.getItem(tokenKey)) throw new Error();
+    if ((await getSession()).status !== "authenticated") throw new Error();
+  },
+  async getIdentity() {
+    const session = await getSession();
+    if (session.status !== "authenticated") throw new Error();
+    return { id: session.player.id, fullName: session.player.display_name };
   },
   async checkError(error: unknown) {
-    if (responseStatus(error) === 401) {
-      sessionStorage.removeItem(tokenKey);
-      throw error;
-    }
+    if (responseStatus(error) === 401) throw error;
   },
 };
 
@@ -140,11 +171,13 @@ function loadCatalog<T>(
   );
 }
 
-export type AdminDataProvider = DataProvider & typeof garageApi;
+export type AdminDataProvider = DataProvider &
+  typeof garageApi & { changePlayerRole: typeof changePlayerRole };
 
 export const dataProvider: AdminDataProvider = {
   ...defaultDataProvider,
   ...garageApi,
+  changePlayerRole,
   supportAbortSignal: true,
   async getList<RecordType extends RaRecord = PlayerRecord>(
     _resource: string,

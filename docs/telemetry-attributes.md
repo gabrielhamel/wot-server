@@ -73,7 +73,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.query.bytes`](../src/player_administration/presentation/mod.rs) | Length in bytes of the encoded URI query, when present. Query text is excluded. |
 | [`input.content_length`](../src/player_administration/presentation/mod.rs) | Declared body length in bytes when a valid nonnegative `Content-Length` fits in a signed 64-bit integer. This is request metadata and does not count bytes read. |
 | [`http.response.status_code`](../src/player_administration/presentation/mod.rs) | HTTP response status after the admin API, Store API or web UI handler returns. |
-| [`input.method`](../src/player_administration/presentation/mod.rs) | HTTP method checked by admin authentication. |
+| [`input.session.present`](../src/player_administration/presentation/access.rs) | Whether a well-formed session cookie was supplied on an admin session check or sign-out. |
+| [`input.session.lifetime_seconds`](../src/accounts/infrastructure/player_access.rs) | Configured admin session lifetime in seconds when a session is opened. |
+| [`input.role`](../src/player_administration/presentation/access.rs) | Requested account role (`player` or `admin`) on a role change. Bootstrap records `admin`. |
 | [`input.id.bytes`](../src/player_administration/presentation/garage.rs) | Byte length of the admin account-ID path parameter before parsing. |
 | [`input.page`](../src/player_administration/presentation/players.rs) | Requested player-list page after query decoding. The root span records supplied values only. The list operation records default `1` when omitted. |
 | [`input.per_page`](../src/player_administration/presentation/players.rs) | Requested player-list page size after query decoding. The root span records supplied values only. The list operation records default `25` when omitted. |
@@ -113,7 +115,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.shop_revision`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Requested shop revision on a cosmetic purchase or apply command, or on progression and ammunition dispatch when supplied. |
 | [`input.has_command`](../src/player_sessions/infrastructure/gateway/progression.rs) | Whether progression dispatch received a parsed progression command. |
 | [`input.id`](../src/player_sessions/application/mod.rs) | Operation-specific ID: account ID for account snapshot/settings and Social player lookup; target account for XMPP pushes/presence; crew member ID for crew dismissal/restoration; conversation ID for `social.conversations.load`. Interpret with the span name. |
-| [`input.account_id`](../src/player_sessions/application/grants.rs) | Target account ID passed to the Player Sessions admin-grant use case. Also recorded on the root HTTP span after an authenticated garage or grant route parses a positive account ID. |
+| [`input.account_id`](../src/player_sessions/application/grants.rs) | Target account ID on grants, garage reads or role changes. The HTTP root records the validated ID. |
 | [`input.owner`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Account owning a social operation, roster, friendship, or private conversation; authenticated account for XMPP roster/IQ operations. |
 | [`input.peer`](../src/player_sessions/infrastructure/xmpp/protocol.rs) | Other account in a friendship, roster-state, or private-conversation operation. |
 | [`input.player`](../src/social/application/mod.rs) | Account whose presence observers are being queried. |
@@ -133,20 +135,20 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`input.username.bytes`](../src/player_sessions/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, or player creation. Recorded on the root HTTP span after successful player-creation JSON decoding. |
+| [`input.username.bytes`](../src/player_sessions/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, or player creation. The root HTTP span records the length after decoding sign-in, player creation or first-admin setup JSON. |
 | [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. |
-| [`input.algorithm`](../src/accounts/application/players.rs) | Password hashing algorithm on `accounts.players.hash_password`, currently `argon2id`. Password and hash are omitted. |
+| [`input.algorithm`](../src/accounts/application/players.rs) | Password algorithm on `accounts.players.hash_password` and `accounts.verify_password`, currently `argon2id`. Password and hash are omitted. |
 | [`input.previous_revision`](../src/player_sessions/application/mod.rs) | Expected persisted revision for a Store quote, an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
 | [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input snapshot used for catalog preparation or mutation planning. On garage sync, the revision requested by the client. |
 | [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case or completion, after deduplication by key. |
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
 | [`input.inventory_id`](../src/accounts/application/mod.rs) | Owned vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables, outfit changes or a bound stat tracker grant. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
-| [`input.operation`](../src/accounts/domain/cosmetics.rs) | Exterior action on the ownership decision span, `buy` or `apply`. On progression planning, a server-defined operation label such as `research`, `buy_vehicle` or `crew`. |
+| [`input.operation`](../src/accounts/domain/cosmetics.rs) | Exterior action on the ownership decision span, `buy` or `apply`. On progression planning, a server-defined operation label such as `research`, `buy_vehicle` or `crew`. Admin access uses `status` for session checks and `post` for the required write header check. |
 | [`input.items.count`](../src/accounts/domain/cosmetics.rs) | Number of purchase lines or requested placements across the supplied seasons. Each painted region counts as one placement. |
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
 | [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor for a bound stat tracker grant or vehicle-specific outfit change, and on the root HTTP span for a decoded vehicle grant. |
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
-| [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles`, `attachments` or `stat_trackers` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`). |
+| [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles`, `attachments` or `stat_trackers` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`), `accounts` when checking first-admin eligibility, or `admin_sessions` when finding or closing a session. |
 | [`input.count`](../src/accounts/domain/consumables.rs) | Requested purchase quantity, equipment charge quantity, or cost multiplier, depending on the operation. |
 | [`input.item`](../src/accounts/domain/consumables.rs) | Compact item descriptor for a module, equipment, consumable, or directive involved in the operation. Store orders also record the submitted equipment descriptor. |
 | [`input.price.credits`](../src/accounts/infrastructure/client/store.rs) | Credits per item submitted with a Store order. Accounts compares it with the catalog price before charging. |
@@ -198,7 +200,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/account_updates.rs) | Account update `queued` on the live garage connection or `next_sync` when recovered from persisted state on a later sync. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/commands.rs) | Mercury dispatch records `dispatched`, `wire_decode_failed`, `decode_failed`, `unknown_method`, `entity_unavailable` or `dispatch_failed` on the root. Unsupported or compatibility commands record `unimplemented`, `ignored` or `acknowledged_without_change` on the decoded command span. Garage and shop sync record `up_to_date`, `cache_hit` or `stream` as applicable. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage completions record `committed`, `unchanged`, `rejected`, `stale` or `error`. The Exterior decision records `changed`, `unchanged` or `rejected`. Mutation dispatch records `invalid_request`, `stale_shop`, `busy`, `queued` or `started` as applicable. |
-| [`output.outcome`](../src/player_sessions/infrastructure/gateway/social.rs) | Mercury Social dispatch records early rejection reasons. Its worker records `busy`, `started` or `completion_unavailable`. XMPP roots record `handled`, `rate_limited` or `failed`. Admin token checks record `authorized` or `rejected`. |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/social.rs) | Mercury Social dispatch records early rejection reasons. Its worker records `busy`, `started` or `completion_unavailable`. XMPP roots record `handled`, `rate_limited` or `failed`. Admin session checks, write-header checks and credential verification record `authorized` or `rejected`. Session status records `setup_required`, `signed_out`, or `authenticated`. Role changes record `updated`, `unchanged`, `actor_not_admin`, `own_role`, `player_not_found`, `email_required`, or `last_admin`. |
+| [`output.session_count`](../src/accounts/infrastructure/player_access.rs) | Number of sessions removed by a sign-out request with a well-formed cookie. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/progression.rs) | Garage completion reports response enqueue (`queued`), absent session or entity (`unavailable`), or failure to enqueue (`failed`). XMPP enqueue reports `queued`, `offline` or `enqueue_failed`. |
 | [`output.delivery`](../src/player_sessions/infrastructure/mercury/app/outbox.rs) | Mercury transport records `sent` on a successful socket write, `send_failed` on write failure, `enqueue_failed` on method encoding or enqueue failure, or `discarded` on removal of an unsent bundle. Login responses record `sent` or `send_failed`. |
 | [`output.response_code`](../src/player_sessions/infrastructure/mercury/app/entity.rs) | On-wire result from `onCmdResponse`, `onCmdResponseExt`, or the LoginApp reply. |
@@ -320,11 +323,13 @@ code. On error, the exception event's `exception.type` is that failure code.
 | `http.request.body.size` | Serialized request payload size in UTF-8 bytes, on requests with bodies. |
 | `input.page.route` | Fixed page route on browser entry-module load. |
 | `input.page`, `input.per_page` | Requested admin list page and maximum rows per page. |
-| `input.account_id` | Account identifier for an admin garage load or grant. |
+| `input.account_id` | Account identifier for an admin garage load, grant or role change. |
+| `input.role` | Destination role on first-admin setup or a role change. |
 | `input.catalog` | Catalog selected by the admin grant form. |
 | `input.grant.kind`, `input.grant.currency`, `input.amount` | Grant type and, for a resource grant, currency and amount in units. |
 | `input.vehicle_type`, `input.attachment_id`, `input.stat_tracker_id`, `input.inventory_id`, `input.count` | Applicable grant item IDs and cosmetic quantity in copies. |
 | `output.player_count`, `output.vehicle_count`, `output.item_count` | Number of records returned by the admin list, garage or grant catalog. |
+| `output.session.status` | Admin session state returned by the status endpoint. |
 | `output.delivery` | Delivery outcome returned by the admin grant API. |
 | `input.item`, `input.revision`, `input.price.credits` | Store order item ID, revision string and offered price in credits. |
 | `output.offer_count` | Offers returned by a Store catalog load or purchase. |

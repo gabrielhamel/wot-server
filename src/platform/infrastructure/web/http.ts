@@ -27,6 +27,7 @@ interface WebRequest {
   method: "GET" | "POST";
   parent: Context;
   token?: string | null;
+  headers?: Record<string, string>;
   body?: object;
   signal?: AbortSignal;
   errorFormat: "json" | "text";
@@ -58,6 +59,7 @@ export async function request<T>(options: WebRequest): Promise<T> {
   );
   try {
     const headers = new Headers({ Accept: "application/json" });
+    for (const [name, value] of Object.entries(options.headers ?? {})) headers.set(name, value);
     if (token) headers.set("Authorization", `Bearer ${token}`);
     const payload = body === undefined ? undefined : JSON.stringify(body);
     if (payload !== undefined) {

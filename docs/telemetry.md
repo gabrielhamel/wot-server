@@ -132,8 +132,12 @@ records the LoginApp protocol code and the UDP send outcome. The later BaseApp
 handshake uses a separate protocol exchange.
 
 Admin grants carry the HTTP request parent into the gateway's bounded
-queue. The admin token check and handler are siblings under the HTTP root, so
-SQL and grant processing time are visible in the handler and request durations.
+queue. The admin session check and handler are siblings under the HTTP root.
+The session check traces database authorization, and the grant handler traces
+inventory processing. Browser session status, sign-in, sign-out, first-admin
+setup and role changes propagate the same W3C parent through HTTP and SQL.
+Email lengths, account IDs, role choices and outcomes are allowlisted. Passwords,
+email values and cookie secrets stay out of spans.
 A connected player's garage update has a Mercury response span under the grant
 completion.
 

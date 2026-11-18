@@ -2,7 +2,10 @@ use std::path::Path;
 
 use super::*;
 use crate::player_sessions::GrantRequestError;
-use axum::body::{Body, to_bytes};
+use axum::{
+    body::{Body, to_bytes},
+    http::StatusCode,
+};
 use hyper::service::Service;
 use hyper_util::service::TowerToHyperService;
 use opentelemetry::trace::{SpanId, TracerProvider};
@@ -31,13 +34,27 @@ async fn exports_admin_http_request_inputs() {
     let repository = PostgresAccounts::connect(&url, 2).await.unwrap();
     let accounts = Accounts::new(repository.clone());
     let players = PostgresPlayers::new(&repository, catalog.clone()).unwrap();
+    let admin: i64 = sqlx::query_scalar("INSERT INTO accounts(username, display_name, password_hash, role) VALUES ($1, 'Trace test admin', 'unused', 'admin') RETURNING id")
+        .bind(format!("trace_admin_{}@example.test", std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()))
+        .fetch_one(&repository.connection_pool()).await.unwrap();
+    let secret = super::super::application::SessionSecret::parse(
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    )
+    .unwrap();
+    assert!(
+        PlayerAccounts::new(players.clone())
+            .open_admin_session(admin, &secret.digest(), 60)
+            .await
+            .unwrap()
+    );
+    let cookie = format!("wot_admin_session={}", secret.value());
     let (grants, mut queued) = PlayerGrants::channel();
     let service = TowerToHyperService::new(router(
-        PlayerAccounts::new(players),
+        players,
         accounts.clone(),
         catalog,
         grants,
-        AdminToken::new("test-bearer-secret"),
+        true,
         vec!["192.0.2.10".parse().unwrap()],
     ));
 
@@ -49,20 +66,21 @@ async fn exports_admin_http_request_inputs() {
         .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("admin-http-test")));
     // This test uses the current-thread runtime, including the spawned creation task.
     let subscriber_guard = tracing::subscriber::set_default(subscriber);
-    let send = |method, uri, token, body: &str| {
+    let send = |method, uri, cookie, body: &str| {
         let request = Request::builder()
             .extension("192.0.2.10:2345".parse::<SocketAddr>().unwrap())
             .header("x-forwarded-for", "198.51.100.7")
             .method(method)
             .uri(uri)
-            .header(header::AUTHORIZATION, token)
+            .header(header::COOKIE, cookie)
+            .header("x-wot-admin", "1")
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::CONTENT_LENGTH, body.len().to_string())
             .body(Body::from(body.to_owned()))
             .unwrap();
         service.call(request)
     };
-    const TOKEN: &str = "Bearer test-bearer-secret";
+    let session_cookie = cookie.as_str();
     const PLAYER: &str = r#"{"username":"private-login@example.test","display_name":"Private Display","password":"test-password-secret\n"}"#;
     const PASSWORD: &str = "test-valid-password-secret";
     let username = format!(
@@ -74,34 +92,40 @@ async fn exports_admin_http_request_inputs() {
             (
                 "GET",
                 "/api/admin/players?page=2&per_page=7",
-                TOKEN,
+                session_cookie,
                 "",
                 200,
             ),
-            ("GET", "/api/admin/players?page=3", TOKEN, "", 200),
+            ("GET", "/api/admin/players?page=3", session_cookie, "", 200),
             (
                 "GET",
                 "/api/admin/players?page=query-secret",
-                TOKEN,
+                session_cookie,
                 "",
                 400,
             ),
             (
                 "GET",
                 "/api/admin/players?page=9",
-                "Bearer unauthorized-secret",
+                "wot_admin_session=unauthorized-secret",
                 "",
                 401,
             ),
-            ("POST", "/api/admin/players", TOKEN, PLAYER, 422),
+            ("POST", "/api/admin/players", session_cookie, PLAYER, 422),
             (
                 "POST",
                 "/api/admin/players",
-                TOKEN,
+                session_cookie,
                 r#"{"password":"malformed-body-secret"}"#,
                 422,
             ),
-            ("GET", "/api/admin/players/0/garage", TOKEN, "", 404),
+            (
+                "GET",
+                "/api/admin/players/0/garage",
+                session_cookie,
+                "",
+                404,
+            ),
         ] {
             assert_eq!(
                 send(method, uri, token, body).await.unwrap().status(),
@@ -113,7 +137,7 @@ async fn exports_admin_http_request_inputs() {
             r#"{"kind":"vehicle","vehicle":123}"#,
             r#"{"kind":"attachment","id":2033,"count":1}"#,
         ] {
-            let response = send("POST", "/api/admin/players/17/grants", TOKEN, body);
+            let response = send("POST", "/api/admin/players/17/grants", session_cookie, body);
             let (response, ()) = tokio::join!(response, async {
                 let request =
                     tokio::time::timeout(std::time::Duration::from_secs(5), queued.recv())
@@ -134,7 +158,7 @@ async fn exports_admin_http_request_inputs() {
         "password": PASSWORD,
     })
     .to_string();
-    let response = send("POST", "/api/admin/players", TOKEN, &body)
+    let response = send("POST", "/api/admin/players", session_cookie, &body)
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::CREATED);
@@ -144,13 +168,13 @@ async fn exports_admin_http_request_inputs() {
     let response = send(
         "GET",
         "/api/admin/attachments",
-        "Bearer unauthorized-secret",
+        "wot_admin_session=unauthorized-secret",
         "",
     )
     .await
     .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    let response = send("GET", "/api/admin/attachments", TOKEN, "")
+    let response = send("GET", "/api/admin/attachments", session_cookie, "")
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -170,13 +194,15 @@ async fn exports_admin_http_request_inputs() {
         "/api/admin/players/{}/garage",
         created["id"].as_str().unwrap()
     );
-    let response = send("GET", garage_path.as_str(), TOKEN, "").await.unwrap();
+    let response = send("GET", garage_path.as_str(), session_cookie, "")
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let garage: serde_json::Value =
         serde_json::from_slice(&to_bytes(response.into_body(), 32 * 1024).await.unwrap()).unwrap();
     assert_eq!(garage["attachments"], serde_json::json!({}));
 
-    let response = send("GET", "/api/admin/stat-trackers", TOKEN, "")
+    let response = send("GET", "/api/admin/stat-trackers", session_cookie, "")
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -192,7 +218,7 @@ async fn exports_admin_http_request_inputs() {
     let response = send(
         "POST",
         "/api/admin/players/17/grants",
-        TOKEN,
+        session_cookie,
         r#"{"kind":"stat_tracker","vehicle":43,"id":1,"count":1}"#,
     );
     let (response, ()) = tokio::join!(response, async {
@@ -223,6 +249,11 @@ async fn exports_admin_http_request_inputs() {
         .unwrap();
     sqlx::query("DELETE FROM accounts WHERE username = $1")
         .bind(&username)
+        .execute(&repository.connection_pool())
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM accounts WHERE id = $1")
+        .bind(admin)
         .execute(&repository.connection_pool())
         .await
         .unwrap();
@@ -431,7 +462,7 @@ async fn exports_admin_http_request_inputs() {
     ));
     let exported = format!("{spans:?}");
     for excluded in [
-        "test-bearer-secret",
+        secret.value(),
         "unauthorized-secret",
         "test-password-secret",
         PASSWORD,
@@ -442,4 +473,335 @@ async fn exports_admin_http_request_inputs() {
     ] {
         assert!(!exported.contains(excluded), "exported {excluded}");
     }
+}
+
+#[tokio::test]
+#[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR"]
+async fn exports_admin_http_access_lifecycle() {
+    let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
+    let directory = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+    let resources = wot_resources::ResourceBundle::open(Path::new(&directory)).unwrap();
+    let catalog = Arc::new(GarageCatalog::load(resources, &[]).unwrap());
+    let root_pool = sqlx::PgPool::connect(&url).await.unwrap();
+    let schema = format!(
+        "admin_access_{}",
+        std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+    );
+    sqlx::query(&format!("CREATE SCHEMA {schema}"))
+        .execute(&root_pool)
+        .await
+        .unwrap();
+    let separator = if url.contains('?') { '&' } else { '?' };
+    let scoped_url = format!("{url}{separator}options[search_path]={schema}");
+    let repository = PostgresAccounts::connect(&scoped_url, 4).await.unwrap();
+    let build_router = |repository: &PostgresAccounts| {
+        let (grants, _) = PlayerGrants::channel();
+        TowerToHyperService::new(router(
+            PostgresPlayers::new(repository, catalog.clone()).unwrap(),
+            Accounts::new(repository.clone()),
+            catalog.clone(),
+            grants,
+            true,
+            vec![],
+        ))
+    };
+    let service = build_router(&repository);
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("admin-access-test")));
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let request = |method, path: &str, cookie: &str, body: &str| {
+        Request::builder()
+            .method(method)
+            .uri(format!("/api/admin{path}"))
+            .header(header::COOKIE, cookie)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-wot-admin", "1")
+            .header(
+                "traceparent",
+                "00-abcdef0123456789abcdef0123456789-1234567890abcdef-01",
+            )
+            .body(Body::from(body.to_owned()))
+            .unwrap()
+    };
+    let send = |method, path, cookie, body| service.call(request(method, path, cookie, body));
+    let json = |response: Response| async {
+        serde_json::from_slice::<serde_json::Value>(
+            &to_bytes(response.into_body(), 8192).await.unwrap(),
+        )
+        .unwrap()
+    };
+    const OWNER: &str = r#"{"username":"owner@example.test","display_name":"Owner","password":"first-admin-password"}"#;
+    const OWNER_LOGIN: &str = r#"{"email":"owner@example.test","password":"first-admin-password"}"#;
+    const SECOND: &str = r#"{"username":"recruit@example.test","display_name":"Recruit","password":"other-player-password"}"#;
+    const SECOND_LOGIN: &str =
+        r#"{"email":"recruit@example.test","password":"other-player-password"}"#;
+    assert_eq!(
+        json(send("GET", "/session", "", "").await.unwrap()).await["status"],
+        "setup_required"
+    );
+    assert_eq!(send("GET", "/players", "", "").await.unwrap().status(), 401);
+
+    let (first, second) = tokio::join!(
+        send("POST", "/setup", "", OWNER),
+        send("POST", "/setup", "", SECOND)
+    );
+    let (first, second) = (first.unwrap(), second.unwrap());
+    let (created, conflict, first_login, second_account, second_login) = if first.status() == 201 {
+        (first, second, OWNER_LOGIN, SECOND, SECOND_LOGIN)
+    } else {
+        (second, first, SECOND_LOGIN, OWNER, OWNER_LOGIN)
+    };
+    assert_eq!(created.status(), 201);
+    assert_eq!(conflict.status(), 409);
+    assert!(!created.headers().contains_key(header::SET_COOKIE));
+    let owner = json(created).await;
+    assert_eq!(owner["role"], "admin");
+    let wrong_login =
+        serde_json::json!({"email": owner["username"], "password": "wrong-password"}).to_string();
+    assert_eq!(
+        json(send("GET", "/session", "", "").await.unwrap()).await["status"],
+        "signed_out"
+    );
+    assert_eq!(
+        send("POST", "/session", "", &wrong_login)
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let session_cookie = |response: Response| {
+        assert_eq!(response.status(), 204);
+        let cookie = response.headers()[header::SET_COOKIE].to_str().unwrap();
+        for attribute in [
+            "Secure",
+            "HttpOnly",
+            "SameSite=Strict",
+            "Path=/api/admin",
+            "Max-Age=5184000",
+        ] {
+            assert!(
+                cookie.split("; ").any(|part| part == attribute),
+                "{attribute}"
+            );
+        }
+        cookie.split(';').next().unwrap().to_owned()
+    };
+    let owner_cookie = session_cookie(send("POST", "/session", "", first_login).await.unwrap());
+    let restarted = PostgresAccounts::connect(&scoped_url, 2).await.unwrap();
+    let persisted = build_router(&restarted)
+        .call(request("GET", "/session", &owner_cookie, ""))
+        .await
+        .unwrap();
+    assert_eq!(json(persisted).await["player"], owner);
+    let remaining: f64 = sqlx::query_scalar(
+        "SELECT extract(epoch FROM expires_at - now())::float8 FROM admin_sessions",
+    )
+    .fetch_one(&repository.connection_pool())
+    .await
+    .unwrap();
+    assert!((5_183_900.0..=5_184_000.0).contains(&remaining));
+
+    let owner_role = format!("/players/{}/role", owner["id"].as_str().unwrap());
+    assert_eq!(
+        send("POST", &owner_role, &owner_cookie, r#"{"role":"player"}"#)
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+
+    let created = send("POST", "/players", &owner_cookie, second_account)
+        .await
+        .unwrap();
+    assert_eq!(created.status(), 201);
+    let second = json(created).await;
+    assert_eq!(second["role"], "player");
+    assert_eq!(
+        send("POST", "/session", "", second_login)
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let second_role = format!("/players/{}/role", second["id"].as_str().unwrap());
+    let mut without_header = request("POST", &second_role, &owner_cookie, r#"{"role":"admin"}"#);
+    without_header.headers_mut().remove("x-wot-admin");
+    assert_eq!(service.call(without_header).await.unwrap().status(), 403);
+    assert_eq!(
+        send("POST", &second_role, &owner_cookie, r#"{"role":"admin"}"#)
+            .await
+            .unwrap()
+            .status(),
+        204
+    );
+    let second_cookie = session_cookie(send("POST", "/session", "", second_login).await.unwrap());
+
+    let (first, second) = tokio::join!(
+        send("POST", &second_role, &owner_cookie, r#"{"role":"player"}"#),
+        send("POST", &owner_role, &second_cookie, r#"{"role":"player"}"#),
+    );
+    let (first, second) = (first.unwrap().status(), second.unwrap().status());
+    let (active_cookie, revoked_cookie, revoked_role, revoked_login) =
+        match (first.as_u16(), second.as_u16()) {
+            (204, 401) => (&owner_cookie, &second_cookie, &second_role, second_login),
+            (401, 204) => (&second_cookie, &owner_cookie, &owner_role, first_login),
+            result => panic!("unexpected concurrent demotion results: {result:?}"),
+        };
+    assert_eq!(
+        send("GET", "/players", revoked_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        send("POST", "/session", "", revoked_login)
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM accounts WHERE role = 'admin'")
+        .fetch_one(&repository.connection_pool())
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    assert_eq!(
+        send("POST", revoked_role, active_cookie, r#"{"role":"admin"}"#)
+            .await
+            .unwrap()
+            .status(),
+        204
+    );
+    assert_eq!(
+        send("GET", "/players", revoked_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+
+    let logout = send("POST", "/logout", active_cookie, "{}").await.unwrap();
+    assert_eq!(logout.status(), 204);
+    assert!(
+        logout.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .contains("Max-Age=0")
+    );
+    assert_eq!(
+        send("GET", "/players", active_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let expired_cookie = session_cookie(send("POST", "/session", "", first_login).await.unwrap());
+    sqlx::query("UPDATE admin_sessions SET expires_at = now() - interval '1 second'")
+        .execute(&repository.connection_pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        send("GET", "/players", &expired_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+
+    let mut wrong_case: serde_json::Value = serde_json::from_str(first_login).unwrap();
+    wrong_case["email"] = owner["username"]
+        .as_str()
+        .unwrap()
+        .to_ascii_uppercase()
+        .into();
+    let wrong_case = wrong_case.to_string();
+    assert_eq!(
+        send("POST", "/session", "", &wrong_case)
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    sqlx::query("UPDATE accounts SET role = 'player'")
+        .execute(&repository.connection_pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        json(send("GET", "/session", "", "").await.unwrap()).await["status"],
+        "signed_out"
+    );
+    assert_eq!(
+        send("POST", "/setup", "", OWNER).await.unwrap().status(),
+        409
+    );
+
+    let spans = exporter.get_finished_spans().unwrap();
+    for (name, outcome, status) in [
+        ("admin.sign_in", "authorized", "204"),
+        ("admin.sign_in", "rejected", "401"),
+        ("admin.players.change_role", "updated", "204"),
+        ("admin.players.change_role", "own_role", "403"),
+    ] {
+        let span = spans
+            .iter()
+            .find(|span| {
+                span.name == name && attribute(span, "output.outcome").as_deref() == Some(outcome)
+            })
+            .unwrap();
+        let root = spans
+            .iter()
+            .find(|root| {
+                root.name == "admin.http.request"
+                    && root.span_context.span_id() == span.parent_span_id
+            })
+            .unwrap();
+        assert_eq!(
+            root.parent_span_id,
+            SpanId::from_hex("1234567890abcdef").unwrap()
+        );
+        assert_eq!(
+            attribute(root, "http.response.status_code").as_deref(),
+            Some(status)
+        );
+        assert!(
+            spans
+                .iter()
+                .filter(|child| child.name == "postgresql.query")
+                .any(|child| {
+                    let mut parent = child.parent_span_id;
+                    while let Some(ancestor) = spans
+                        .iter()
+                        .find(|candidate| candidate.span_context.span_id() == parent)
+                    {
+                        if parent == span.span_context.span_id() {
+                            return true;
+                        }
+                        parent = ancestor.parent_span_id;
+                    }
+                    false
+                }),
+            "{name}: no SQL descendant"
+        );
+    }
+    let exported = format!("{spans:?}");
+    for excluded in [
+        "owner@example.test",
+        "recruit@example.test",
+        "first-admin-password",
+        "other-player-password",
+        "wrong-password",
+        owner_cookie.split_once('=').unwrap().1,
+        second_cookie.split_once('=').unwrap().1,
+    ] {
+        assert!(!exported.contains(excluded));
+    }
+    sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+        .execute(&root_pool)
+        .await
+        .unwrap();
 }

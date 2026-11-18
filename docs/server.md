@@ -45,7 +45,7 @@ The generated JSON contains the following settings:
 | `max_pending` | `32`, authentication worker capacity, allowed range 1–256 |
 | `log_level` | `"warn"`; also accepts `"error"`, `"info"`, `"debug"`, `"trace"` |
 | `web` | `null`; shared HTTP bind and compiled UI directory for `/admin/` and `/shop/` |
-| `admin` | `null`; set an [admin token](admin.md) to enable the admin API |
+| `admin` | `null`; set to `{}` to enable the [admin API](admin.md) with secure session cookies by default |
 | `store` | `null`; set a [Store origin](store.md#configuration) to enable the in-game Store |
 
 Unknown fields, invalid types and invalid limits stop startup with a diagnostic.
