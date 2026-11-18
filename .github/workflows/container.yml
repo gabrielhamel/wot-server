@@ -102,8 +102,9 @@ jobs:
             test -x ./wot-server
             test -w .
             test -s resources/manifest.json
+            test -s web/index.html
+            test -d web/assets
             test -s dashboard/index.html
-            test -d dashboard/assets
             test ! -e server.json
             libraries=$(ldd ./wot-server)
             printf "%s\n" "$libraries"

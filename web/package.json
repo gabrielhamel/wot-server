@@ -1,5 +1,5 @@
 {
-  "name": "wot-server-dashboard",
+  "name": "wot-server-web",
   "private": true,
   "type": "module",
   "scripts": {

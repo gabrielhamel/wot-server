@@ -10,14 +10,15 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| `client.address` | Caller IP without port on `admin.http.request`, `game.authenticate`, `game.command`, and `xmpp.request`. Store HTTP records only its immediate network peer. Admin HTTP uses a valid single `X-Forwarded-For` IP only from a configured trusted peer; otherwise the socket IP. Omitted only when an HTTP request has no socket metadata (for example, an in-process router call). |
+| `client.address` | Caller IP without port on `admin.http.request`, `game.authenticate`, `game.command`, and `xmpp.request`. Store API and web UI requests record their immediate network peer. Admin HTTP uses a valid single `X-Forwarded-For` IP only from a configured trusted peer; otherwise the socket IP. Omitted only when an HTTP request has no socket metadata (for example, an in-process router call). |
 | `client.port` | Caller source port, in TCP/UDP port units, on the same roots when the socket identifies the caller. Omitted for forwarded HTTP callers because the header supplies no source port. |
-| `network.peer.address` | Immediate socket peer IP without port on those roots and `store.http.request`; remains the proxy address for forwarded HTTP requests. |
-| `network.peer.port` | Immediate socket peer TCP/UDP source port on those roots and `store.http.request`. |
-| `network.transport` | `tcp` for HTTP/XMPP and `udp` for Mercury on those roots and `store.http.request` as applicable. |
+| `network.peer.address` | Immediate socket peer IP without port on those roots and `store.http.request` or `web.ui.request`; remains the proxy address for forwarded HTTP requests. |
+| `network.peer.port` | Immediate socket peer TCP/UDP source port on those roots and `store.http.request` or `web.ui.request`. |
+| `network.transport` | `tcp` for HTTP/XMPP and `udp` for Mercury on those roots and `store.http.request` or `web.ui.request` as applicable. |
 
 Supporting sources: [Admin HTTP middleware](../src/player_administration/presentation/mod.rs),
-[Store HTTP middleware](../src/player_sessions/presentation/store/mod.rs),
+[Store API middleware](../src/player_sessions/presentation/store/mod.rs),
+[Web UI middleware](../src/server/web.rs),
 [HTTP address validation](../src/player_administration/presentation/client_address.rs),
 [Mercury gateway](../src/player_sessions/infrastructure/gateway/mod.rs), and
 [XMPP listener](../src/player_sessions/infrastructure/xmpp/mod.rs).
@@ -66,12 +67,12 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`http.request.method`](../src/player_administration/presentation/mod.rs) | HTTP method on the root admin or Store request span. |
+| [`http.request.method`](../src/player_administration/presentation/mod.rs) | HTTP method on the root admin API, Store API or web UI request span. |
 | [`url.path`](../src/player_administration/presentation/mod.rs) | Admin request URI path, excluding its query string. |
 | [`http.route`](../src/player_administration/presentation/mod.rs) | Matched route template on the root HTTP span when available, with path parameters left as placeholders. |
 | [`input.query.bytes`](../src/player_administration/presentation/mod.rs) | Length in bytes of the encoded URI query, when present. Query text is excluded. |
 | [`input.content_length`](../src/player_administration/presentation/mod.rs) | Declared body length in bytes when a valid nonnegative `Content-Length` fits in a signed 64-bit integer. This is request metadata and does not count bytes read. |
-| [`http.response.status_code`](../src/player_administration/presentation/mod.rs) | HTTP response status after the admin or Store handler returns. |
+| [`http.response.status_code`](../src/player_administration/presentation/mod.rs) | HTTP response status after the admin API, Store API or web UI handler returns. |
 | [`input.method`](../src/player_administration/presentation/mod.rs) | HTTP method checked by admin authentication. |
 | [`input.id.bytes`](../src/player_administration/presentation/garage.rs) | Byte length of the admin account-ID path parameter before parsing. |
 | [`input.page`](../src/player_administration/presentation/players.rs) | Requested player-list page after query decoding. The root span records supplied values only. The list operation records default `1` when omitted. |

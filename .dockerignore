@@ -10,10 +10,10 @@
 !src/**
 !migrations/
 !migrations/**
-!dashboard/
-!dashboard/**
-dashboard/node_modules/
-dashboard/dist/
+!web/
+!web/**
+web/node_modules/
+web/dist/
 !resources/
 !resources/manifest.json
 !resources/res/

@@ -575,7 +575,7 @@ impl Gateway {
         }
         let store_settings = if let Some(store) = &self.store {
             let token = StoreToken::generate()?;
-            let url = format!("{}/store/#{}", store.origin, token.encode());
+            let url = format!("{}/shop/#{}", store.origin, token.encode());
             session.store_token = Some(token);
             Some((url, store.host.as_str()))
         } else {

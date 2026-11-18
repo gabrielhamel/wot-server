@@ -1,6 +1,6 @@
 # Testing
 
-The CI workflow runs Rust formatting, Clippy, workspace tests, the dashboard
+The CI workflow runs Rust formatting, Clippy, workspace tests, the shared web UI
 build, and E2E Tests on pushes to `main` and on pull requests. Both Rust jobs
 cache Cargo downloads and compiled dependencies between runs. CI does not need
 the research submodules or a game installation.

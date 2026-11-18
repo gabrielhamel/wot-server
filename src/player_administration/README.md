@@ -9,9 +9,9 @@ published account and catalog data and submits grants through
 
 | Layer | Responsibilities |
 | --- | --- |
-| `presentation/` | HTTP routes, operator authentication, JSON request and response models, status mapping and static dashboard routing. |
+| `presentation/` | HTTP routes, operator authentication, JSON request and response models, and status mapping. |
 | [Platform HTTP](../platform/infrastructure/http.rs) | Shared bounded HTTP/1 connection serving and shutdown. |
-| [`dashboard/`](../../dashboard/) | React Admin player list, creation form, per-player garage and currency, tank and 3D attachment and stat tracker grants, and token sign-in. |
+| [`web/src/admin.jsx`](../../web/src/admin.jsx) | React Admin player list, creation form, per-player garage and currency, tank and 3D attachment and stat tracker grants, and token sign-in. |
 
 | Term | Meaning |
 | --- | --- |

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use super::*;
 use crate::player_sessions::GrantRequestError;
 use axum::body::{Body, to_bytes};
@@ -36,7 +38,6 @@ async fn exports_admin_http_request_inputs() {
         catalog,
         grants,
         AdminToken::new("test-bearer-secret"),
-        None,
         vec!["192.0.2.10".parse().unwrap()],
     ));
 

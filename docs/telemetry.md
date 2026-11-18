@@ -23,10 +23,14 @@ Player Administration traces use the context value `player_administration`
 in place of `admin`. The `admin.*`, `game.command`, and `xmpp.request`
 operation names remain stable.
 
+The shared web listener composes the admin and Store APIs. Page shells and
+shared assets emit `web.ui.request` with their matched route and HTTP status.
+Admin and Store API requests keep their own request spans.
+
 A Store checkout joins the HTTP request to the account transaction and garage
 delivery even though they run on separate workers.
 
-    store.http.request                            [POST /store/orders, 200]
+    store.http.request                            [POST /api/shop/orders, 200]
       player_sessions.store.purchase_request
         player_sessions.store.purchase
           accounts.store.plan_purchase

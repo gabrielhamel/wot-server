@@ -19,12 +19,10 @@ use axum::{
 use sha2::{Digest, Sha256};
 use std::{
     net::{IpAddr, SocketAddr},
-    path::Path,
     sync::Arc,
 };
 use subtle::ConstantTimeEq;
 use tokio::sync::Semaphore;
-use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Clone)]
 pub(crate) struct AdminToken([u8; 32]);
@@ -57,7 +55,6 @@ pub(crate) fn router(
     catalog: Arc<GarageCatalog>,
     grants: PlayerGrants,
     token: AdminToken,
-    dashboard: Option<&Path>,
     trusted_proxies: Vec<IpAddr>,
 ) -> Router {
     let api = Router::new()
@@ -79,19 +76,12 @@ pub(crate) fn router(
             create_slots: Arc::new(Semaphore::new(2)),
         });
 
-    let mut router = Router::new().nest("/api/admin", api);
-    if let Some(dashboard) = dashboard {
-        router = router
-            .route_service("/", ServeFile::new(dashboard.join("index.html")))
-            .nest_service(
-                "/assets",
-                ServeDir::new(dashboard.join("assets")).append_index_html_on_directories(false),
-            );
-    }
-    router.layer(middleware::from_fn_with_state(
-        trusted_proxies,
-        set_browser_headers,
-    ))
+    Router::new()
+        .nest("/api/admin", api)
+        .layer(middleware::from_fn_with_state(
+            trusted_proxies,
+            set_browser_headers,
+        ))
 }
 
 async fn authenticate(State(token): State<AdminToken>, request: Request, next: Next) -> Response {
