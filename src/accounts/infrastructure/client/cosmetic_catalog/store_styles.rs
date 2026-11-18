@@ -9,8 +9,8 @@ use crate::accounts::infrastructure::client::store::{
 };
 use wot_resources::ResourceBundle;
 
-// Prices and labels for regular bond offers in PR #45. The installed client supplies
-// the style IDs, 2D/3D tags, and compatible vehicles.
+// Prices and labels follow the EU Store catalog in docs/store-eu-catalog.md.
+// The installed client supplies the style IDs, 2D/3D tags, and compatible vehicles.
 const OFFERS: &[(u16, &str, i64)] = &[
     (351, "Fox Fur (CS-52 LIS)", 350),
     (291, "Hot TOG (TOG II*)", 450),

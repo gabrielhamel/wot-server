@@ -1,4 +1,4 @@
-//! Regular EU Store vehicle offers observed or corroborated in PR #45.
+//! Regular EU Store vehicle offers from docs/store-eu-catalog.md.
 //! The definition keys resolve to descriptors in the extracted client catalog.
 
 pub(super) const GOLD: &[(&str, &str, i64)] = &[

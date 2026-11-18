@@ -169,7 +169,8 @@ pub(super) fn inventory(crew: &CrewRoster, depot: &BTreeMap<i32, u32>) -> Value 
     crate::pickle!({1: (Value::Dict(stock)), 2: (Value::Dict(outfits))})
 }
 
-// Regular EU web Store offers in PR #45 use a separate gold price from the native credit price groups.
+// The EU Store catalog in docs/store-eu-catalog.md lists a gold price for these skins.
+// The native garage uses the extracted credit price groups.
 const STORE_SKINS: &[(u16, &str)] = &[
     (2, "Pavel Rybalko"),
     (3, "Mikhail Katukov"),
