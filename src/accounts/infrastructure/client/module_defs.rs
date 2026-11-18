@@ -6,7 +6,7 @@ use super::{
 use crate::{
     accounts::{
         AmmunitionRules, InscriptionSlot, ModuleDefinition, ModuleKind, ModuleLoadout, ModuleRules,
-        ResearchStep, ShellPrice, VehicleSurface,
+        ProjectionDecalSlot, ResearchStep, ShellPrice, VehicleSurface,
     },
     platform::client_formats::pxml::Element,
 };
@@ -19,12 +19,14 @@ pub(super) struct VehicleModules {
     pub ammunition: BTreeMap<(i32, i32), AmmunitionRules>,
     exterior_slots: BTreeMap<(i32, i32), ExteriorSlots>,
     chassis_with_effect_slots: BTreeSet<i32>,
+    chassis_projection_slots: BTreeMap<i32, BTreeMap<u16, ProjectionDecalSlot>>,
 }
 
 pub(super) struct ExteriorSlots {
     pub camouflage: BTreeSet<VehicleSurface>,
     pub inscriptions: BTreeSet<InscriptionSlot>,
     effect_slot: bool,
+    projection_slots: BTreeMap<u16, ProjectionDecalSlot>,
 }
 
 impl VehicleModules {
@@ -44,6 +46,21 @@ impl VehicleModules {
             || modules
                 .get(&ModuleKind::Chassis)
                 .is_some_and(|chassis| self.chassis_with_effect_slots.contains(chassis))
+    }
+
+    pub(super) fn projection_slots(
+        &self,
+        modules: &ModuleLoadout,
+        exterior: &ExteriorSlots,
+    ) -> BTreeMap<u16, ProjectionDecalSlot> {
+        let mut slots = exterior.projection_slots.clone();
+        if let Some(chassis) = modules
+            .get(&ModuleKind::Chassis)
+            .and_then(|id| self.chassis_projection_slots.get(id))
+        {
+            slots.extend(chassis.iter().map(|(&id, slot)| (id, slot.clone())));
+        }
+        slots
     }
 
     pub fn load(
@@ -121,6 +138,9 @@ impl VehicleModules {
         let mut ammunition = BTreeMap::new();
         let mut exterior_slots = BTreeMap::new();
         let mut chassis_with_effect_slots = BTreeSet::new();
+        let mut chassis_projection_slots = BTreeMap::new();
+        let hull_projection_slots =
+            projection_decal_slots(vehicle.get_child_element("hull")).collect::<BTreeMap<_, _>>();
         let hull_effect_slot = has_effect_slot(vehicle.get_child_element("hull"));
         let hull_inscriptions = inscription_slots(vehicle.get_child_element("hull"));
         let hull_camouflage = vehicle
@@ -168,8 +188,12 @@ impl VehicleModules {
                         max_weight: if kind == 2 { number("maxLoad") } else { None },
                     },
                 );
-                if kind == 2 && has_effect_slot(Some(base)) {
-                    chassis_with_effect_slots.insert(id);
+                if kind == 2 {
+                    if has_effect_slot(Some(base)) {
+                        chassis_with_effect_slots.insert(id);
+                    }
+                    chassis_projection_slots
+                        .insert(id, projection_decal_slots(Some(base)).collect());
                 }
                 if kind == 3 {
                     let guns = local
@@ -227,6 +251,14 @@ impl VehicleModules {
                                 effect_slot: hull_effect_slot
                                     || has_effect_slot(Some(base))
                                     || has_effect_slot(Some(gun_slot_definition)),
+                                projection_slots: projection_decal_slots(Some(gun_slot_definition))
+                                    .chain(projection_decal_slots(Some(base)))
+                                    .chain(
+                                        hull_projection_slots
+                                            .iter()
+                                            .map(|(&id, slot)| (id, slot.clone())),
+                                    )
+                                    .collect(),
                                 camouflage: surfaces
                                     .into_iter()
                                     .filter_map(|(surface, supported)| supported.then_some(surface))
@@ -349,6 +381,7 @@ impl VehicleModules {
             ammunition,
             exterior_slots,
             chassis_with_effect_slots,
+            chassis_projection_slots,
         })
     }
 
@@ -378,6 +411,41 @@ fn has_effect_slot(part: Option<&Element>) -> bool {
         .into_iter()
         .flat_map(Element::iter_child_elements)
         .any(|(_, slot)| matches!(slot.get_child_string("slotType"), Some("style" | "effect")))
+}
+
+fn projection_decal_slots(
+    part: Option<&Element>,
+) -> impl Iterator<Item = (u16, ProjectionDecalSlot)> {
+    part.and_then(|part| part.get_child_element("customizationSlots"))
+        .into_iter()
+        .flat_map(Element::iter_child_elements)
+        .filter_map(|(_, slot)| {
+            if slot.get_child_string("slotType") != Some("projectionDecal")
+                || item_defs::xml_flag(slot, "hiddenForUser")
+                || slot
+                    .get_child_string("compatibleModels")
+                    .is_some_and(|models| {
+                        !models.split_whitespace().any(|model| model == "default")
+                    })
+            {
+                return None;
+            }
+            let id = u16::try_from(slot.get_child_integer("slotId")?).ok()?;
+            let forms = slot
+                .get_child_string("tags")
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter(|tag| tag.starts_with("formfactor_"))
+                .map(str::to_owned)
+                .collect();
+            Some((
+                id,
+                ProjectionDecalSlot {
+                    forms,
+                    vertical_mirror: item_defs::xml_flag(slot, "verticalMirror"),
+                },
+            ))
+        })
 }
 
 fn inscription_slots(part: Option<&Element>) -> usize {

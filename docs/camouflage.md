@@ -1,4 +1,4 @@
-# Garage camouflage, inscriptions and effects
+# Garage camouflage, decals, inscriptions and effects
 
 Exterior can buy permanent camouflage into shared stock or buy missing copies
 while applying an outfit. A placement consumes one copy per surface per season.
@@ -49,6 +49,20 @@ its price group. The installed EU catalog prices Worn paint 01 at 300 gold per
 copy. The same effect can be applied to multiple seasons using one copy per
 season. Removal frees a copy and reapplication uses stock before buying.
 
+## Decals
+
+The Decals tab uses projected decals. These have a vehicle anchor, a scale
+selection and mirroring options. The server validates the anchor against the
+installed modules and checks the decal's shape and mirroring rules. A seasonal
+outfit can hold up to three projected decals, each using one copy. Moving,
+resizing or mirroring a fitted decal reuses its copy. Removing it returns the
+copy to stock.
+
+The expanded bundle includes `projection_decals/list.xml` and the progression
+definitions. The installed EU catalog prices the Tiger decal at 160 gold.
+Progression-locked and style-only decals remain unavailable through this
+purchase flow.
+
 ## Exterior button
 
 The native hangar menu checks for at least one compatible 2D style before it
@@ -82,7 +96,8 @@ uses mask bit 2 and encodes item ID, pattern size, applied-area mask and palette
 index in that order when present. Camouflage regions use bits 4, 8 and 12.
 The native customization dialog can send an empty common outfit (season 15)
 alongside the regular seasons. Effects use the modification ID array (bit 0). Preset inscriptions use the
-decal field (bit 3) and personal numbers use bit 7.
+decal field (bit 3), projected decals use bit 5 and personal numbers use bit 7.
+Projected decal entries carry an item ID, options, slot ID and scale in that order.
 A personal number carries the item ID, length-prefixed digit string and region mask.
 The decoder also accepts the vehicle's default
 national emblem fields as ancillary data. All other outfit component edits and
@@ -127,3 +142,5 @@ rejection of a prohibited number, editing and removing without an extra charge,
 a preset inscription in the second turret slot and reconnect persistence.
 The Executor effect regression checks the 300-gold price, a rejected unavailable
 effect, preservation of inscriptions, removal, stock reuse and reconnect.
+The Tiger regression exercises the extracted price, invalid anchors and mirroring,
+stock reuse and persistence of its anchor, scale and orientation.

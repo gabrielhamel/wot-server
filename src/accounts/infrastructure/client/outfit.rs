@@ -1,5 +1,6 @@
 use crate::accounts::{
-    Camouflage, Inscription, InscriptionSlot, OutfitSeason, VehicleOutfit, VehicleSurface,
+    Camouflage, Inscription, InscriptionSlot, MAX_PROJECTION_DECALS, OutfitSeason, ProjectionDecal,
+    VehicleOutfit, VehicleSurface,
 };
 use std::collections::BTreeMap;
 
@@ -7,11 +8,13 @@ const OUTFIT: u16 = 4;
 const EFFECTS: u16 = 1;
 const CAMOUFLAGES: u16 = 1 << 2;
 const DECALS: u16 = 1 << 3;
+const PROJECTION_DECALS: u16 = 1 << 5;
+const DEFAULT_DECAL_SCALE: u16 = 3;
 const PERSONAL_NUMBERS: u16 = 1 << 7;
 const MAX_NUMBER_DIGITS: usize = 8;
 const EMPTY_ITEM: u16 = 22222;
 const ALL_SEASONS: i64 = 15;
-const MAX_OUTFIT_BYTES: usize = 160;
+const MAX_OUTFIT_BYTES: usize = 192;
 
 const SURFACES: [(u16, VehicleSurface); 3] = [
     (1 << 4, VehicleSurface::Hull),
@@ -77,7 +80,7 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
         return None;
     }
     let mask = read_varint(&mut bytes)?;
-    if mask & !(EFFECTS | CAMOUFLAGES | DECALS | PERSONAL_NUMBERS) != 0 {
+    if mask & !(EFFECTS | CAMOUFLAGES | DECALS | PROJECTION_DECALS | PERSONAL_NUMBERS) != 0 {
         return None;
     }
     if mask & EFFECTS != 0 {
@@ -153,6 +156,42 @@ fn decode(mut bytes: &[u8], default_emblem: Option<u16>) -> Option<VehicleOutfit
                 )
             {
                 return None;
+            }
+        }
+    }
+    if mask & PROJECTION_DECALS != 0 {
+        let count = usize::from(read_varint(&mut bytes)?);
+        if count > MAX_PROJECTION_DECALS {
+            return None;
+        }
+        for _ in 0..count {
+            let fields = read_varint(&mut bytes)?;
+            if fields & !0x1F != 0 || fields & 5 != 5 {
+                return None;
+            }
+            let id = read_varint(&mut bytes)?;
+            let options = u8::try_from(read_field(&mut bytes, fields, 2, 0)?).ok()?;
+            let slot_id = read_varint(&mut bytes)?;
+            let scale =
+                u8::try_from(read_field(&mut bytes, fields, 8, DEFAULT_DECAL_SCALE)?).ok()?;
+            let level = read_field(&mut bytes, fields, 16, 0)?;
+            if id == 0
+                || slot_id == 0
+                || level != 0
+                || layout
+                    .projection_decals
+                    .iter()
+                    .any(|decal| decal.slot_id == slot_id)
+            {
+                return None;
+            }
+            if id != EMPTY_ITEM {
+                layout.projection_decals.push(ProjectionDecal {
+                    id,
+                    slot_id,
+                    options,
+                    scale,
+                });
             }
         }
     }
@@ -233,6 +272,9 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
     if presets > 0 {
         fields |= DECALS;
     }
+    if !layout.projection_decals.is_empty() {
+        fields |= PROJECTION_DECALS;
+    }
     if numbers > 0 {
         fields |= PERSONAL_NUMBERS;
     }
@@ -263,6 +305,16 @@ pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
                 write_varint(&mut bytes, *id);
                 write_varint(&mut bytes, area);
             }
+        }
+    }
+    if fields & PROJECTION_DECALS != 0 {
+        write_varint(&mut bytes, layout.projection_decals.len() as u16);
+        for decal in &layout.projection_decals {
+            write_varint(&mut bytes, 0xF);
+            write_varint(&mut bytes, decal.id);
+            write_varint(&mut bytes, u16::from(decal.options));
+            write_varint(&mut bytes, decal.slot_id);
+            write_varint(&mut bytes, u16::from(decal.scale));
         }
     }
     if numbers > 0 {
@@ -335,6 +387,31 @@ mod tests {
         );
         assert_eq!(decode(&encode(&decoded), None), Some(decoded));
         assert_eq!(decode(&raw, Some(73)), None);
+    }
+
+    #[test]
+    fn projected_decals_decode_native_defaults_and_keep_slot_order() {
+        let raw = [4, 32, 2, 5, 8, 157, 117, 15, 8, 1, 152, 117, 2];
+        let outfit = decode(&raw, None).unwrap();
+        assert_eq!(
+            outfit.projection_decals,
+            vec![
+                ProjectionDecal {
+                    id: 8,
+                    slot_id: 15005,
+                    options: 0,
+                    scale: 3
+                },
+                ProjectionDecal {
+                    id: 8,
+                    slot_id: 15000,
+                    options: 1,
+                    scale: 2
+                },
+            ],
+        );
+        assert_eq!(decode(&encode(&outfit), None), Some(outfit));
+        assert!(decode(&[4, 32, 4], None).is_none());
     }
 
     #[test]

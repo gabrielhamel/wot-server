@@ -29,7 +29,7 @@ context is a possible future boundary, not an implemented one.
 | Snapshot | A coherent read of an account and its vehicle ownership. |
 | Revision | Monotonically increasing version changed with persisted preferences, research or inventory. |
 | Cosmetic ownership | Total copies of an exterior item, including applied copies. |
-| Outfit | Vehicle appearance for a season, including camouflage, inscriptions and an effect. |
+| Outfit | Vehicle appearance for a season, including camouflage, projected decals, inscriptions and an effect. |
 | Shell layout | Ordered compatible shell/count pairs loaded on one vehicle. |
 | Depot stock | Shared unmounted shells, modules, equipment, directives and consumables. Sales debit these counts and credit the account in the same revision. |
 | Equipment components | Balance used for paid demounting of level 2 and 3 Experimental equipment. The client calls it `equipCoin`. |

@@ -361,6 +361,7 @@ impl GarageCatalog {
                         &slots.camouflage,
                         &slots.inscriptions,
                         template.modules.supports_effect(&next, slots),
+                        &template.modules.projection_slots(&next, slots),
                     );
                 }
             }

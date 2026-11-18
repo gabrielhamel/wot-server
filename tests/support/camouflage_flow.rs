@@ -5,7 +5,7 @@ use super::{
     dict, telemetry_capture,
 };
 use wot_server::{
-    accounts::{Inscription, InscriptionSlot, VehicleSurface, decode_outfits},
+    accounts::{Inscription, InscriptionSlot, ProjectionDecal, VehicleSurface, decode_outfits},
     pickle,
     player_sessions::mercury::{app::dispatch::ScriptDispatch, script::StringValue},
 };
@@ -15,15 +15,27 @@ const WINTER: i32 = 15_202;
 const GERMAN: i32 = 15_116;
 const USA_STARTER: i32 = 545;
 
+pub struct CosmeticFixtures {
+    pub has_exterior_styles: bool,
+    pub has_extension_styles: bool,
+    pub has_inscriptions: bool,
+    pub has_effects: bool,
+    pub has_decals: bool,
+}
+
 pub fn exercise(
     peer: &mut Peer,
     dispatch: &ScriptDispatch,
     before: &Pickle,
-    has_exterior_styles: bool,
-    has_extension_styles: bool,
-    has_inscriptions: bool,
-    has_effects: bool,
+    fixtures: CosmeticFixtures,
 ) -> Pickle {
+    let CosmeticFixtures {
+        has_exterior_styles,
+        has_extension_styles,
+        has_inscriptions,
+        has_effects,
+        has_decals,
+    } = fixtures;
     let Pickle::I64(mut revision) = dict(before, "rev") else {
         panic!("Missing garage revision");
     };
@@ -84,6 +96,15 @@ pub fn exercise(
             panic!("Missing shop exclusions");
         };
         assert!(hidden.contains(&((3 << 8) | 0x5c).into()));
+    }
+
+    if has_decals {
+        let price_rows = dict(prices.state.as_ref().unwrap(), "_itemsPriceInfo");
+        assert_eq!(row(&price_rows, (8 << 8) | 0x7c), pickle!({"gold": 160}));
+        let Pickle::Set(hidden) = dict(&dict(&shop, "items"), "notInShopItems") else {
+            panic!("Missing shop exclusions");
+        };
+        assert!(hidden.contains(&((501 << 8) | 0x7c).into()));
     }
 
     send_array(
@@ -256,6 +277,69 @@ pub fn exercise(
             send_outfits(peer, dispatch, 806, 43, &[(1, &effect)], 0);
             revision += 1;
             assert_eq!(dict(&update(peer, revision), "stats"), dict(&worn, "stats"));
+            if has_decals {
+                // Tiger fits a square hull anchor, and this anchor only allows horizontal mirroring.
+                send_outfits(
+                    peer,
+                    dispatch,
+                    807,
+                    43,
+                    &[(1, &[4, 32, 1, 5, 8, 153, 117])],
+                    -1,
+                );
+                send_outfits(
+                    peer,
+                    dispatch,
+                    808,
+                    43,
+                    &[(1, &[4, 32, 1, 7, 8, 2, 152, 117])],
+                    -1,
+                );
+                send_outfits(
+                    peer,
+                    dispatch,
+                    809,
+                    43,
+                    &[(1, &[4, 32, 2, 5, 8, 152, 117, 5, 8, 152, 117])],
+                    -2,
+                );
+                let with_decal = |slot, scale| {
+                    let mut outfit = effect.clone();
+                    outfit[1] |= 32;
+                    // Insert the projected decal before the personal-number array.
+                    outfit.splice(11..11, [1, 15, 8, 1, slot, 117, scale]);
+                    outfit
+                };
+                let tiger = with_decal(152, 1);
+                send_outfits(peer, dispatch, 810, 43, &[(1, &tiger)], 0);
+                revision += 1;
+                let bought = update(peer, revision);
+                assert_eq!(dict(&dict(&bought, "stats"), "gold"), (gold - 910).into());
+                assert_eq!(
+                    row(&row(&dict(&bought, "inventory"), 12), 4),
+                    pickle!({7: {(replacement(8)): {26705: 1}}})
+                );
+                let moved = with_decal(157, 2);
+                send_outfits(peer, dispatch, 811, 43, &[(1, &moved)], 0);
+                revision += 1;
+                assert_eq!(
+                    dict(&update(peer, revision), "stats"),
+                    dict(&bought, "stats")
+                );
+                send_outfits(peer, dispatch, 812, 43, &[(1, &effect)], 0);
+                revision += 1;
+                let removed = update(peer, revision);
+                assert_eq!(
+                    row(&row(&dict(&removed, "inventory"), 12), 1),
+                    pickle!({7: {(replacement(8)): {0: 1}}})
+                );
+                send_outfits(peer, dispatch, 813, 43, &[(1, &moved)], 0);
+                revision += 1;
+                assert_eq!(
+                    dict(&update(peer, revision), "stats"),
+                    dict(&bought, "stats")
+                );
+            }
         }
     }
     peer.command(dispatch, "doCmdInt3", sync(791, 100));
@@ -282,6 +366,17 @@ pub fn exercise(
         let decoded = decode_outfits(&[1], [winter.as_slice()].into_iter(), None).unwrap();
         let winter_outfit = decoded.values().next().unwrap();
         assert_eq!(winter_outfit.effect, has_effects.then_some(1));
+        if has_decals {
+            assert_eq!(
+                winter_outfit.projection_decals,
+                vec![ProjectionDecal {
+                    id: 8,
+                    slot_id: 15005,
+                    options: 1,
+                    scale: 2
+                }]
+            );
+        }
         let winter = &winter_outfit.inscriptions;
         assert_eq!(
             winter[&InscriptionSlot::TurretFirst],
@@ -295,7 +390,9 @@ pub fn exercise(
             Inscription::Preset(15_001)
         );
         assert!(matches!(row(&executor, 2), Pickle::Bytes(_)));
-        let expected = if has_effects {
+        let expected = if has_decals {
+            pickle!({2: (Pickle::Dict(fitted)), 3: {15001: {26705: 1}}, 5: {1: {26705: 1}}, 7: {8: {26705: 1}}, 9: {3: {26705: 1}}})
+        } else if has_effects {
             pickle!({2: (Pickle::Dict(fitted)), 3: {15001: {26705: 1}}, 5: {1: {26705: 1}}, 9: {3: {26705: 1}}})
         } else {
             pickle!({2: (Pickle::Dict(fitted)), 3: {15001: {26705: 1}}, 9: {3: {26705: 1}}})
@@ -307,7 +404,7 @@ pub fn exercise(
     cache
 }
 
-pub fn assert_traces(account: i64, has_inscriptions: bool, has_effects: bool) {
+pub fn assert_traces(account: i64, has_inscriptions: bool, has_effects: bool, has_decals: bool) {
     let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
     let field = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
         span.attributes
@@ -324,6 +421,9 @@ pub fn assert_traces(account: i64, has_inscriptions: bool, has_effects: bool) {
     }
     if has_effects {
         requests.extend([(801, "43", "rejected"), (803, "43", "committed")]);
+    }
+    if has_decals {
+        requests.extend([(807, "43", "rejected"), (810, "43", "committed")]);
     }
     for (request, inventory_id, outcome) in requests {
         let apply = spans
@@ -361,6 +461,7 @@ pub fn assert_traces(account: i64, has_inscriptions: bool, has_effects: bool) {
             let (count, bytes, units) = match request {
                 796 => ("1", "12", "1"),
                 803 => ("1", "20", "1"),
+                810 => ("1", "27", "1"),
                 _ => ("4", "17", "3"),
             };
             assert!(field(apply, "input.outfits.count", count));

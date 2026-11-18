@@ -90,6 +90,8 @@ async fn exercise_garage(encrypted_login: bool) {
         && resources.has_file("scripts/item_defs/customization/personal_numbers/list.xml");
     let has_effects = has_inscriptions
         && resources.has_file("scripts/item_defs/customization/modifications/list.xml");
+    let has_decals = has_effects
+        && resources.has_file("scripts/item_defs/customization/projection_decals/list.xml");
     let tank_a = "usa:A01_T1_Cunningham".to_string();
     let tank_b = "germany:G12_Ltraktor".to_string();
     player_fixture::insert_player(
@@ -358,10 +360,13 @@ async fn exercise_garage(encrypted_login: bool) {
                 &mut first_peer,
                 &script,
                 &last_cache,
-                has_exterior_styles,
-                has_extension_styles,
-                has_inscriptions,
-                has_effects,
+                camouflage_flow::CosmeticFixtures {
+                    has_exterior_styles,
+                    has_extension_styles,
+                    has_inscriptions,
+                    has_effects,
+                    has_decals,
+                },
             );
         }
         first_peer.disconnect();
@@ -417,7 +422,7 @@ async fn exercise_garage(encrypted_login: bool) {
         telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
         telemetry_capture::assert_operation_traces(b.id);
         if has_camouflage {
-            camouflage_flow::assert_traces(a.id, has_inscriptions, has_effects);
+            camouflage_flow::assert_traces(a.id, has_inscriptions, has_effects, has_decals);
         }
     }
     let fresh_social = wot_server::social::Social::new(wot_server::social::PostgresSocial::new(
@@ -435,6 +440,7 @@ async fn exercise_garage(encrypted_login: bool) {
                 11 + i64::from(has_extension_styles)
                     + 5 * i64::from(has_inscriptions)
                     + 3 * i64::from(has_effects)
+                    + 4 * i64::from(has_decals)
             } else {
                 7
             }

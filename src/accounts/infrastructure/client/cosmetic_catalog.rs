@@ -8,8 +8,8 @@ use super::{
 use crate::{
     accounts::{
         AccountSnapshot, CosmeticChange, CosmeticItem, CosmeticKind, CosmeticPlacement,
-        CosmeticRule, InscriptionSlot, ProgressionError, VehicleCost, VehicleSurface,
-        change_cosmetics,
+        CosmeticRule, InscriptionSlot, ProgressionError, ProjectionDecalSlot, VehicleCost,
+        VehicleSurface, change_cosmetics,
     },
     platform::client_formats::pxml::Element,
 };
@@ -22,6 +22,9 @@ const DECALS: &str = "scripts/item_defs/customization/decals/list.xml";
 const NUMBERS: &str = "scripts/item_defs/customization/personal_numbers/list.xml";
 const PROHIBITED_NUMBERS: &str =
     "scripts/item_defs/customization/personal_numbers/prohibitedNumbers.xml";
+const PROJECTION_DECALS: &str = "scripts/item_defs/customization/projection_decals/list.xml";
+const PROJECTION_DECAL_PROGRESSION: &str =
+    "scripts/item_defs/customization/projection_decals/progression.xml";
 const EFFECTS: &str = "scripts/item_defs/customization/modifications/list.xml";
 const STYLES: &str = "scripts/item_defs/customization/styles/list.xml";
 const STYLE_TYPE: u8 = 4;
@@ -110,6 +113,7 @@ pub(super) fn index_exterior_shop(fs: &ResourceBundle, prices: &mut ItemPrices) 
             (DECALS, "decal", 3),
             (NUMBERS, "personal_number", 9),
             (EFFECTS, "modification", 5),
+            (PROJECTION_DECALS, "projection_decal", 7),
         ] {
             let path = format!("{extension}/{path}");
             if !fs.has_file(&path) {
@@ -170,11 +174,26 @@ impl CosmeticCatalog {
             .filter_map(|(_, group)| Some((group.get_child_string("name")?, group)))
             .collect();
         let mut catalog = Self::default();
+        let mut progressive_decals = BTreeSet::new();
+        if fs.has_file(PROJECTION_DECALS) {
+            let progression = item_defs::read_xml(fs, PROJECTION_DECAL_PROGRESSION)?;
+            progressive_decals.extend(
+                progression
+                    .iter_child_elements()
+                    .filter(|(name, _)| *name == "progress")
+                    .filter_map(|(_, item)| u16::try_from(item.get_child_integer("id")?).ok()),
+            );
+        }
         for (path, item_name, kind) in [
             (CAMOUFLAGES, "camouflage", CosmeticKind::Camouflage),
             (DECALS, "decal", CosmeticKind::Inscription),
             (NUMBERS, "personal_number", CosmeticKind::PersonalNumber),
             (EFFECTS, "modification", CosmeticKind::Effect),
+            (
+                PROJECTION_DECALS,
+                "projection_decal",
+                CosmeticKind::ProjectionDecal,
+            ),
         ] {
             if path != CAMOUFLAGES && !fs.has_file(path) {
                 continue;
@@ -189,6 +208,7 @@ impl CosmeticCatalog {
                     .is_some_and(|kind| kind.eq_ignore_ascii_case("inscription"));
                 if (kind == CosmeticKind::Inscription && !is_static_inscription)
                     || (kind == CosmeticKind::Camouflage && id == 1)
+                    || (kind == CosmeticKind::ProjectionDecal && progressive_decals.contains(&id))
                 {
                     prices.not_in_shop.push(descriptor);
                     continue;
@@ -224,6 +244,7 @@ impl CosmeticCatalog {
         vehicle: &VehicleOffer,
         exterior: &ExteriorSlots,
         supports_effect: bool,
+        projection_slots: &BTreeMap<u16, ProjectionDecalSlot>,
     ) -> BTreeMap<CosmeticItem, CosmeticRule> {
         if ["lockOutfit", "lockExceptProgression", "event_battles"]
             .iter()
@@ -252,6 +273,9 @@ impl CosmeticCatalog {
                         !slots.is_empty()
                     }
                     CosmeticPlacement::Effect => supports_effect,
+                    CosmeticPlacement::ProjectionDecal { form, .. } => projection_slots
+                        .values()
+                        .any(|slot| slot.supports_form(form.as_deref())),
                 };
                 can_fit.then_some((id, rule))
             })
@@ -294,12 +318,7 @@ fn read_definition(
             .with_context(|| format!("Unknown price group {group_name}"))?
     };
     let display_price = ItemPrices::definition_price(price_definition);
-    let excluded = |node: &Element| {
-        node.get_child_boolean("notInShop") == Some(true)
-            || node
-                .get_child_string("notInShop")
-                .is_some_and(|value| value.eq_ignore_ascii_case("true"))
-    };
+    let excluded = |node: &Element| item_defs::xml_flag(node, "notInShop");
     let restricted = text("requiredToken").is_some_and(|token| !token.is_empty())
         || text("tags").is_some_and(|tags| {
             tags.split_whitespace()
@@ -382,6 +401,28 @@ fn read_definition(
             )
         }
         CosmeticKind::Effect => (CosmeticPlacement::Effect, true),
+        CosmeticKind::ProjectionDecal => {
+            let tags = text("tags").unwrap_or_default();
+            let has_tag = |wanted| tags.split_whitespace().any(|tag| tag == wanted);
+            let form = tags
+                .split_whitespace()
+                .find(|tag| tag.starts_with("formfactor_"))
+                .map(str::to_owned);
+            let horizontal_mirror = if item.get_child("mirror").is_some() {
+                item_defs::xml_flag(item, "mirror")
+            } else {
+                item_defs::xml_flag(group, "mirror")
+            };
+            (
+                CosmeticPlacement::ProjectionDecal {
+                    form,
+                    horizontal_mirror,
+                    vertical_mirror: !has_tag("disableVerticalMirror"),
+                    only_vertical_mirror: has_tag("onlyVerticalMirror"),
+                },
+                true,
+            )
+        }
         CosmeticKind::Inscription | CosmeticKind::PersonalNumber => {
             use InscriptionSlot::*;
             let digits = (kind == CosmeticKind::PersonalNumber)
@@ -439,6 +480,7 @@ pub(super) fn cosmetic_subtype(kind: CosmeticKind) -> u8 {
         CosmeticKind::Inscription => 3,
         CosmeticKind::PersonalNumber => 9,
         CosmeticKind::Effect => 5,
+        CosmeticKind::ProjectionDecal => 7,
     }
 }
 
@@ -449,6 +491,7 @@ pub fn cosmetic_item(descriptor: i32) -> Option<CosmeticItem> {
         3 => CosmeticKind::Inscription,
         9 => CosmeticKind::PersonalNumber,
         5 => CosmeticKind::Effect,
+        7 => CosmeticKind::ProjectionDecal,
         _ => return None,
     };
     (cosmetic_descriptor(cosmetic_subtype(kind), decoded.id).to_int() == i64::from(descriptor))
@@ -485,6 +528,7 @@ impl GarageCatalog {
                 change,
                 &rules,
                 &self.cosmetics.prohibited_numbers,
+                &BTreeMap::new(),
             );
         }
         let owned = snapshot
@@ -504,12 +548,14 @@ impl GarageCatalog {
             .offers
             .get(&vehicle.modules.rules.vehicle)
             .ok_or(ProgressionError::VehicleNotFound)?;
+        let projection_slots = vehicle.modules.projection_slots(&modules, exterior);
         let rules = self.cosmetics.rules_for(
             &owned.catalog_key,
             &vehicle.customization_nation,
             offer,
             exterior,
             vehicle.modules.supports_effect(&modules, exterior),
+            &projection_slots,
         );
         change_cosmetics(
             snapshot,
@@ -517,6 +563,7 @@ impl GarageCatalog {
             change,
             &rules,
             &self.cosmetics.prohibited_numbers,
+            &projection_slots,
         )
     }
 }

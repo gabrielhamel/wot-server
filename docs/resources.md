@@ -35,7 +35,7 @@ server. Older manifests without the field remain supported.
 - **Player Sessions** uses Packed XML aliases, entity and component lists and definitions,
   interface definitions and extension descriptors for the protocol ABI.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
-  item definitions, camouflage definitions and price groups, style, camouflage, decal, effect and personal-number definitions from the client, plus
+  item definitions, camouflage definitions and price groups, style, camouflage, decal, projected decal, effect and personal-number definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle
   name catalogs for admin labels.
 

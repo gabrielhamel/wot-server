@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_COSMETIC_PURCHASE_LINES: usize = 12;
+pub const MAX_PROJECTION_DECALS: usize = 3;
 const MAX_UNITS_PER_PURCHASE: u32 = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -11,6 +12,7 @@ pub enum CosmeticKind {
     Inscription,
     PersonalNumber,
     Effect,
+    ProjectionDecal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -61,6 +63,26 @@ impl Inscription {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectionDecal {
+    pub id: u16,
+    pub slot_id: u16,
+    pub options: u8,
+    pub scale: u8,
+}
+
+#[derive(Clone)]
+pub struct ProjectionDecalSlot {
+    pub forms: BTreeSet<String>,
+    pub vertical_mirror: bool,
+}
+
+impl ProjectionDecalSlot {
+    pub fn supports_form(&self, form: Option<&str>) -> bool {
+        self.forms.is_empty() || form.is_some_and(|form| self.forms.contains(form))
+    }
+}
+
 pub type CamouflageLayout = BTreeMap<VehicleSurface, Camouflage>;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,11 +92,16 @@ pub struct VehicleOutfit {
     pub inscriptions: BTreeMap<InscriptionSlot, Inscription>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effect: Option<u16>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projection_decals: Vec<ProjectionDecal>,
 }
 
 impl VehicleOutfit {
     pub fn is_empty(&self) -> bool {
-        self.camouflage.is_empty() && self.inscriptions.is_empty() && self.effect.is_none()
+        self.camouflage.is_empty()
+            && self.inscriptions.is_empty()
+            && self.effect.is_none()
+            && self.projection_decals.is_empty()
     }
 
     fn items(&self) -> impl Iterator<Item = CosmeticItem> + '_ {
@@ -83,6 +110,11 @@ impl VehicleOutfit {
             .map(|item| (CosmeticKind::Camouflage, item.id))
             .chain(self.inscriptions.values().map(Inscription::item))
             .chain(self.effect.map(|id| (CosmeticKind::Effect, id)))
+            .chain(
+                self.projection_decals
+                    .iter()
+                    .map(|decal| (CosmeticKind::ProjectionDecal, decal.id)),
+            )
     }
 }
 
@@ -100,6 +132,7 @@ impl CosmeticState {
         supported: &BTreeSet<VehicleSurface>,
         inscription_slots: &BTreeSet<InscriptionSlot>,
         supports_effect: bool,
+        projection_slots: &BTreeMap<u16, ProjectionDecalSlot>,
     ) {
         if let Some(seasons) = self.outfits.get_mut(&vehicle) {
             seasons.retain(|_, outfit| {
@@ -112,6 +145,9 @@ impl CosmeticState {
                 if !supports_effect {
                     outfit.effect = None;
                 }
+                outfit
+                    .projection_decals
+                    .retain(|decal| projection_slots.contains_key(&decal.slot_id));
                 !outfit.is_empty()
             });
             if seasons.is_empty() {
@@ -149,6 +185,7 @@ impl CosmeticChange {
                     outfit.camouflage.len()
                         + outfit.inscriptions.len()
                         + usize::from(outfit.effect.is_some())
+                        + outfit.projection_decals.len()
                 })
                 .sum(),
         }
@@ -182,6 +219,12 @@ pub enum CosmeticPlacement {
         digits: Option<usize>,
     },
     Effect,
+    ProjectionDecal {
+        form: Option<String>,
+        horizontal_mirror: bool,
+        vertical_mirror: bool,
+        only_vertical_mirror: bool,
+    },
 }
 
 #[tracing::instrument(
@@ -205,8 +248,16 @@ pub fn change_cosmetics(
     change: CosmeticChange,
     rules: &BTreeMap<CosmeticItem, CosmeticRule>,
     prohibited_numbers: &BTreeSet<String>,
+    projection_slots: &BTreeMap<u16, ProjectionDecalSlot>,
 ) -> Result<bool, ProgressionError> {
-    let result = plan_cosmetics(snapshot, vehicle, change, rules, prohibited_numbers);
+    let result = plan_cosmetics(
+        snapshot,
+        vehicle,
+        change,
+        rules,
+        prohibited_numbers,
+        projection_slots,
+    );
     let span = tracing::Span::current();
     match &result {
         Ok(changed) => span.record(
@@ -228,6 +279,7 @@ fn plan_cosmetics(
     change: CosmeticChange,
     rules: &BTreeMap<CosmeticItem, CosmeticRule>,
     prohibited_numbers: &BTreeSet<String>,
+    projection_slots: &BTreeMap<u16, ProjectionDecalSlot>,
 ) -> Result<bool, ProgressionError> {
     use ProgressionError::InvalidCosmetic;
 
@@ -304,6 +356,38 @@ fn plan_cosmetics(
                         .ok_or(InvalidCosmetic)?;
                     if !matches!(rule.placement, CosmeticPlacement::Effect)
                         || !rule.seasons.contains(&season)
+                    {
+                        return Err(InvalidCosmetic);
+                    }
+                }
+                if outfit.projection_decals.len() > MAX_PROJECTION_DECALS {
+                    return Err(InvalidCosmetic);
+                }
+                let mut used_slots = BTreeSet::new();
+                for decal in &outfit.projection_decals {
+                    let rule = rules
+                        .get(&(CosmeticKind::ProjectionDecal, decal.id))
+                        .ok_or(InvalidCosmetic)?;
+                    let CosmeticPlacement::ProjectionDecal {
+                        form,
+                        horizontal_mirror,
+                        vertical_mirror,
+                        only_vertical_mirror,
+                    } = &rule.placement
+                    else {
+                        return Err(InvalidCosmetic);
+                    };
+                    let slot = projection_slots
+                        .get(&decal.slot_id)
+                        .ok_or(InvalidCosmetic)?;
+                    if !rule.seasons.contains(&season)
+                        || !slot.supports_form(form.as_deref())
+                        || !used_slots.insert(decal.slot_id)
+                        || decal.scale > 3
+                        || decal.options & !3 != 0
+                        || (decal.options & 1 != 0 && !horizontal_mirror && !only_vertical_mirror)
+                        || (decal.options & 2 != 0 && (!vertical_mirror || !slot.vertical_mirror))
+                        || (*only_vertical_mirror && !matches!(decal.options, 0 | 3))
                     {
                         return Err(InvalidCosmetic);
                     }
@@ -453,7 +537,15 @@ mod tests {
         let mount_desert = || apply(OutfitSeason::Desert, layout.clone());
 
         assert!(
-            change_cosmetics(&mut snapshot, 1, mount_summer(), &rules, &BTreeSet::new()).unwrap()
+            change_cosmetics(
+                &mut snapshot,
+                1,
+                mount_summer(),
+                &rules,
+                &BTreeSet::new(),
+                &BTreeMap::new()
+            )
+            .unwrap()
         );
         let fitted = snapshot.progression.cosmetics.clone();
         assert_eq!(snapshot.balances.gold, 2);
@@ -462,12 +554,27 @@ mod tests {
             &BTreeMap::from([(10, 1)])
         );
         assert!(
-            !change_cosmetics(&mut snapshot, 1, mount_summer(), &rules, &BTreeSet::new()).unwrap()
+            !change_cosmetics(
+                &mut snapshot,
+                1,
+                mount_summer(),
+                &rules,
+                &BTreeSet::new(),
+                &BTreeMap::new()
+            )
+            .unwrap()
         );
 
         for (vehicle, change) in [(1, mount_desert()), (2, mount_summer())] {
             assert_eq!(
-                change_cosmetics(&mut snapshot, vehicle, change, &rules, &BTreeSet::new()),
+                change_cosmetics(
+                    &mut snapshot,
+                    vehicle,
+                    change,
+                    &rules,
+                    &BTreeSet::new(),
+                    &BTreeMap::new()
+                ),
                 Err(ProgressionError::NotEnoughMoney)
             );
         }
@@ -476,7 +583,14 @@ mod tests {
             BTreeMap::from([(VehicleSurface::Gun, camo)]),
         );
         assert_eq!(
-            change_cosmetics(&mut snapshot, 2, invalid, &rules, &BTreeSet::new()),
+            change_cosmetics(
+                &mut snapshot,
+                2,
+                invalid,
+                &rules,
+                &BTreeSet::new(),
+                &BTreeMap::new()
+            ),
             Err(ProgressionError::InvalidCosmetic)
         );
         assert_eq!(snapshot.balances.gold, 2);
@@ -484,7 +598,15 @@ mod tests {
 
         snapshot.remove_sold_vehicle(1);
         assert!(
-            change_cosmetics(&mut snapshot, 2, mount_desert(), &rules, &BTreeSet::new()).unwrap()
+            change_cosmetics(
+                &mut snapshot,
+                2,
+                mount_desert(),
+                &rules,
+                &BTreeSet::new(),
+                &BTreeMap::new()
+            )
+            .unwrap()
         );
         assert_eq!(snapshot.balances.gold, 2);
         let state = snapshot.progression.cosmetics;
