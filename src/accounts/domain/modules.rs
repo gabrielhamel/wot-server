@@ -18,6 +18,8 @@ pub enum ModuleKind {
 pub struct ProgressionState {
     #[serde(default)]
     pub cosmetics: super::CosmeticState,
+    #[serde(default)]
+    pub premium_expires_at: u32,
     pub unlocks: BTreeSet<i32>,
     pub vehicle_xp: BTreeMap<i32, i64>,
     pub depot: BTreeMap<i32, u32>,

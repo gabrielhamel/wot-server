@@ -160,6 +160,9 @@ pub struct ProgressionChange {
 pub enum ProgressionCommand {
     Crew(super::domain::CrewCommand),
     BuyVehicleSlot,
+    BuyPremium {
+        days: i32,
+    },
     Cosmetics {
         inventory_id: i64,
         change: super::CosmeticChange,
@@ -213,6 +216,7 @@ impl ProgressionCommand {
     pub(crate) fn operation(&self) -> &'static str {
         match self {
             Self::Crew(_) => "crew",
+            Self::BuyPremium { .. } => "buy_premium",
             Self::BuyVehicleSlot => "buy_vehicle_slot",
             Self::Cosmetics { .. } => "cosmetics",
             Self::BuyVehicle { .. } => "buy_vehicle",

@@ -37,12 +37,15 @@ impl AccountSnapshot {
         {
             return Err(ProgressionError::VehicleAlreadyOwned);
         }
-        if self.vehicles.len() >= MAX_OWNED_VEHICLES
-            || i64::try_from(self.vehicles.len()).map_or(true, |count| count >= self.balances.slots)
-        {
+        if self.vehicle_slots_full() {
             return Err(ProgressionError::NoFreeSlot);
         }
         Ok(())
+    }
+
+    pub(crate) fn vehicle_slots_full(&self) -> bool {
+        self.vehicles.len() >= MAX_OWNED_VEHICLES
+            || i64::try_from(self.vehicles.len()).map_or(true, |count| count >= self.balances.slots)
     }
 
     pub(crate) fn add_vehicle(

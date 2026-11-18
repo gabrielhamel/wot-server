@@ -24,6 +24,8 @@ pub struct AccountData {
     pub depot_shells: crate::accounts::ShellStock,
     pub progression: crate::accounts::ProgressionState,
     pub default_unlocks: BTreeSet<i32>,
+    pub premium_expires_at: Option<u32>,
+    pub max_researched_tiers: BTreeMap<u8, i64>,
     pub elite_vehicles: BTreeSet<i32>,
     pub settings: std::collections::BTreeMap<i32, i32>,
 }
@@ -48,6 +50,7 @@ impl AccountData {
             "inventory": (self.inventory()),
             "recycleBin": (recycle_bin(&self.crew)),
             "stats": (self.stats()),
+            "premium": (premium_info(self.premium_expires_at)),
             "potapovQuests": (potapov_quests()),
             "cache": (cache()),
             "intUserSettings": (Value::Dict(self.settings.iter().map(|(&key, &value)| (Value::from(key), Value::from(value))).collect())),
@@ -248,7 +251,7 @@ impl AccountData {
             "vehTypeXP": (Value::Dict(self.progression.vehicle_xp.iter().map(|(&id,&xp)|(Value::from(id),Value::from(xp))).collect())),
             "vehTypeLocks": {},
             "globalVehicleLocks": {},
-            "maxResearchedLevelByNation": {},
+            "maxResearchedLevelByNation": (researched_tiers_value(&self.max_researched_tiers)),
             "prestigeMilestonesAchieved": {},
             "weeklyVehicleCrystals": {},
             "restrictions": {},
@@ -434,4 +437,25 @@ pub(super) fn shell_purchases_value(purchases: &[crate::accounts::ShellPurchase]
             })
             .collect(),
     )
+}
+
+pub(super) fn premium_info(expires_at: Option<u32>) -> Value {
+    // PREMIUM_TYPE.PLUS is the WoT Premium Account entitlement.
+    let active = expires_at.is_some();
+    crate::pickle!({"premMask": (if active { 2 } else { 0 }), 2: (expires_at.unwrap_or_default())})
+}
+
+pub(super) fn researched_tiers_value(tiers: &BTreeMap<u8, i64>) -> Value {
+    Value::Dict(
+        tiers
+            .iter()
+            .map(|(&nation, &tier)| (Value::from(i32::from(nation)), Value::from(tier)))
+            .collect(),
+    )
+}
+
+impl super::GarageCatalog {
+    pub(crate) fn premium_sync(revision: i64, expires_at: Option<u32>) -> Value {
+        crate::pickle!({"prevRev": revision, "rev": revision, "premium": (premium_info(expires_at))})
+    }
 }

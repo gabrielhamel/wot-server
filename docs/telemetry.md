@@ -253,7 +253,7 @@ malformed, duplicate and unsampled headers start an independent server
 trace. Baggage and tracestate are ignored. Queue, database and delivery spans
 then use the same trace ID through the existing Rust propagation.
 
-The expected sequence for a purchase is `web.store.purchase_equipment` →
+The expected sequence for a purchase is `web.store.purchase` →
 `web.http.request` → `store.http.request` → Store use case → SQL and garage
 delivery. A grant follows the equivalent path through `web.admin.grant` and
 `admin.http.request`. Expected browser cancellations, rejections and conflicts

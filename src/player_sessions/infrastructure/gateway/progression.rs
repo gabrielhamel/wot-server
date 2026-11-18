@@ -13,6 +13,7 @@ pub(super) const BUY: i16 = 302;
 pub(super) const SELL: i16 = 305;
 pub(super) const SELL_MULTIPLE: i16 = 310;
 pub(super) const BUY_VEHICLE: i16 = 301;
+pub(super) const BUY_PREMIUM: i16 = 204;
 pub(super) const BUY_VEHICLE_SLOT: i16 = 205;
 pub(super) const SELL_VEHICLE: i16 = 304;
 pub(super) const EQUIP_DEVICE: i16 = 102;

@@ -150,8 +150,12 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
 | [`input.collection`](../src/accounts/infrastructure/postgres.rs) | Collection being read: `vehicles`, `attachments` or `stat_trackers` on the admin catalog span, `account_vehicles` on account catalog-key collection (which queries `owned_vehicles`), `accounts` when checking first-admin eligibility, or `admin_sessions` when finding or closing a session. |
 | [`input.count`](../src/accounts/domain/consumables.rs) | Requested purchase quantity, equipment charge quantity, or cost multiplier, depending on the operation. |
-| [`input.item`](../src/accounts/domain/consumables.rs) | Compact item descriptor for a module, equipment, consumable, or directive involved in the operation. Store orders also record the submitted equipment descriptor. |
-| [`input.price.credits`](../src/accounts/infrastructure/client/store.rs) | Credits per item submitted with a Store order. Accounts compares it with the catalog price before charging. |
+| [`input.item`](../src/accounts/domain/consumables.rs) | Compact item descriptor for a module, equipment, consumable, or directive involved in the operation. Store orders record the submitted item descriptor or negative Premium Account package duration in days. |
+| [`input.price.currency`, `input.price.amount`](../src/accounts/infrastructure/client/store.rs) | Submitted Store quote currency (`credits`, `gold` or `bonds`) and integer amount. Accounts compares both with the offer before charging. |
+| [`input.duration.days`, `input.price.gold`](../src/accounts/domain/premium.rs) | Requested Premium Account days and the server price in gold. Only recognized durations record a gold price. |
+| [`output.premium.expires_at`](../src/accounts/domain/premium.rs) | Expiration after a successful extension, in UTC Unix seconds. |
+| [`input.premium.expires_at`](../src/player_sessions/infrastructure/gateway/premium.rs) | Expired entitlement timestamp in UTC Unix seconds when the gateway sends an inactivity update. |
+| [`input.style_id`](../src/accounts/domain/cosmetics.rs) | Client style definition ID when a Store purchase adds a style to the account. |
 | [`input.index`](../src/accounts/domain/modules.rs) | Zero-based index into a vehicle module research plan. |
 | [`input.gun`](../src/accounts/domain/modules.rs) | Gun descriptor supplied with a module equip request. |
 | [`input.buy`](../src/accounts/domain/modules.rs) | Whether module equip may buy the requested module rather than requiring depot stock. |
@@ -193,10 +197,10 @@ meanings on different operations; those differences are listed explicitly.
 | --- | --- |
 | [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Encoded outgoing XMPP stanza, compressed garage cache or Mercury resource response byte length. Excludes transport framing. |
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
-| [`output.offers.count`](../src/player_sessions/infrastructure/gateway/store.rs) | Number of equipment offers included in a Store catalog response. |
+| [`output.offers.count`](../src/player_sessions/infrastructure/gateway/store.rs) | Number of offers included in a Store catalog response. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/admission.rs) | Login admission records `admitted`, `replaced`, `superseded`, `waiting_for_write`, `refreshing_snapshot`, `expired`, `full`, `destination_unavailable`, or `reply_unavailable`. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/admission.rs) | Session replacement notice was `sent` to the old UDP peer, `unavailable` because it had no Account entity, or `failed` during enqueue or send. |
-| [`output.outcome`](../src/player_sessions/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_credits` or `failed`. |
+| [`output.outcome`](../src/player_sessions/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_funds`, `research_required` or `failed`. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/account_updates.rs) | Account update `queued` on the live garage connection or `next_sync` when recovered from persisted state on a later sync. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/commands.rs) | Mercury dispatch records `dispatched`, `wire_decode_failed`, `decode_failed`, `unknown_method`, `entity_unavailable` or `dispatch_failed` on the root. Unsupported or compatibility commands record `unimplemented`, `ignored` or `acknowledged_without_change` on the decoded command span. Garage and shop sync record `up_to_date`, `cache_hit` or `stream` as applicable. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Garage completions record `committed`, `unchanged`, `rejected`, `stale` or `error`. The Exterior decision records `changed`, `unchanged` or `rejected`. Mutation dispatch records `invalid_request`, `stale_shop`, `busy`, `queued` or `started` as applicable. |
@@ -331,8 +335,9 @@ code. On error, the exception event's `exception.type` is that failure code.
 | `output.player_count`, `output.vehicle_count`, `output.item_count` | Number of records returned by the admin list, garage or grant catalog. |
 | `output.session.status` | Admin session state returned by the status endpoint. |
 | `output.delivery` | Delivery outcome returned by the admin grant API. |
-| `input.item`, `input.revision`, `input.price.credits` | Store order item ID, revision string and offered price in credits. |
+| `input.item`, `input.revision`, `input.price.currency`, `input.price.amount` | Store order item ID, account revision string, price currency and integer amount. |
 | `output.offer_count` | Offers returned by a Store catalog load or purchase. |
+| `output.notification` | Store checkout’s browser bridge outcome after a successful order. `submitted` indicates the bridge accepted the call. `bridge_unavailable` covers ordinary browsers and `submission_failed` records a synchronous bridge error. The span omits notification text. |
 | `exception.source` | Fixed browser error category on a standalone exception span. |
 | `exception.error_class`, `exception.asset_location` | Allowlisted built-in error class and bundled asset filename with line and column, when available. |
 

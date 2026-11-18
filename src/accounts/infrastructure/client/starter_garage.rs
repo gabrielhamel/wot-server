@@ -2,31 +2,43 @@ use super::GarageCatalog;
 use crate::accounts::{AccountSnapshot, OwnedVehicle, VehicleAmmunition};
 use anyhow::{Context, Result, ensure};
 
-impl GarageCatalog {
-    pub fn tier_one_keys(&self) -> Result<Vec<String>> {
-        let mut keys = Vec::new();
-        for nation in super::item_defs::NATIONS {
-            let path = format!("gui/flash/techtree/{nation}-tree.xml");
-            let tree = super::item_defs::read_xml(&self.filesystem, &path)?;
-            let nodes = tree
-                .get_child_element("nodes")
-                .with_context(|| format!("Missing nodes in {path}"))?;
-            for (name, _) in nodes.iter_child_elements() {
-                let key = format!("{nation}:{name}");
-                if self
-                    .keys
-                    .get(&key)
-                    .and_then(|id| self.offers.get(id))
-                    .is_some_and(|offer| {
-                        offer.level == Some(1) && !offer.tags.contains("collectorVehicle")
-                    })
-                {
-                    keys.push(key);
-                }
+pub(super) fn tech_tree(
+    fs: &wot_resources::ResourceBundle,
+    ids: &std::collections::HashMap<String, i32>,
+    vehicles: &std::collections::BTreeMap<i32, super::vehicle_defs::VehicleOffer>,
+) -> Result<std::collections::BTreeSet<i32>> {
+    let mut result = std::collections::BTreeSet::new();
+    for nation in super::item_defs::NATIONS {
+        let path = format!("gui/flash/techtree/{nation}-tree.xml");
+        let tree = super::item_defs::read_xml(fs, &path)?;
+        let nodes = tree
+            .get_child_element("nodes")
+            .with_context(|| format!("Missing nodes in {path}"))?;
+        for (name, _) in nodes.iter_child_elements() {
+            if let Some(&id) = ids.get(&format!("{nation}:{name}"))
+                && vehicles.get(&id).is_some_and(|offer| {
+                    offer.requires_research
+                        && offer.grantable()
+                        && !offer.tags.contains("collectorVehicle")
+                })
+            {
+                result.insert(id);
             }
         }
+    }
+    Ok(result)
+}
+
+impl GarageCatalog {
+    pub fn tier_one_keys(&self) -> Result<Vec<String>> {
+        let mut keys: Vec<_> = self
+            .tech_tree
+            .iter()
+            .filter_map(|id| self.offers.get(id))
+            .filter(|offer| offer.level == Some(1))
+            .map(|offer| offer.key.clone())
+            .collect();
         keys.sort_unstable();
-        keys.dedup();
         ensure!(
             !keys.is_empty(),
             "Resources contain no tech tree tier I vehicles"

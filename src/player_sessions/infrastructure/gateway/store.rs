@@ -87,7 +87,7 @@ impl Gateway {
         });
     }
 
-    #[tracing::instrument(name = "player_sessions.store.purchase", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account_id, input.item = order.item, input.price.credits = order.credits))]
+    #[tracing::instrument(name = "player_sessions.store.purchase", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account_id, input.item = order.item, input.price.currency = order.price.currency(), input.price.amount = order.price.amount()))]
     fn start_store_purchase(
         &self,
         account_id: i64,
@@ -155,20 +155,17 @@ impl Gateway {
 
 #[tracing::instrument(name = "player_sessions.store.catalog", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = snapshot.id, input.revision = snapshot.revision, output.offers.count = catalog.store_offers().len()))]
 fn store_catalog(catalog: &GarageCatalog, snapshot: &AccountSnapshot) -> StoreCatalog {
+    let tiers = catalog.max_researched_tiers(snapshot);
     StoreCatalog {
         revision: snapshot.revision.to_string(),
-        credits: snapshot.balances.credits,
+        premium_expires_at: snapshot.active_premium_until(),
         offers: catalog
             .store_offers()
             .iter()
             .map(|offer| StoreListing {
                 offer: offer.clone(),
-                in_depot: snapshot
-                    .progression
-                    .depot
-                    .get(&offer.item)
-                    .copied()
-                    .unwrap_or_default(),
+                availability: catalog.store_availability(snapshot, &tiers, offer),
+                in_depot: catalog.store_depot_count(snapshot, offer),
             })
             .collect(),
     }

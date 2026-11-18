@@ -17,6 +17,7 @@ mod cosmetics;
 mod crew;
 mod expendables;
 mod grants;
+mod premium;
 mod progression;
 mod settings;
 mod social;
@@ -81,6 +82,7 @@ struct Session {
     account: PreparedAccount,
     entity: Option<EntityKey<Account>>,
     garage_synced: bool,
+    reported_premium_expiry: Option<u32>,
     store_token: Option<StoreToken>,
     saving: bool,
     crew_running: bool,
@@ -274,6 +276,7 @@ impl Gateway {
                 _ => {}
             }
             if Instant::now() >= tick {
+                self.expire_premium();
                 self.base.disconnect_idle_clients(Duration::from_secs(120));
                 for client in self.base.take_disconnected_clients() {
                     self.remove_session(client);
@@ -459,6 +462,7 @@ impl Gateway {
                     account: ticket.account,
                     entity: None,
                     garage_synced: false,
+                    reported_premium_expiry: None,
                     store_token: None,
                     saving,
                     crew_running: false,

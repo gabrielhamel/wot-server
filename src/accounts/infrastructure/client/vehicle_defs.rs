@@ -2,7 +2,9 @@ use super::{
     GarageCatalog, item_defs, item_prices::ItemPrices, items::IntCompactDescr,
     localization::localized_names,
 };
-use crate::accounts::{ProgressionError, ShellCurrency, VehicleCost, VehiclePurchaseRules};
+use crate::accounts::{
+    AccountSnapshot, ProgressionError, ShellCurrency, VehicleCost, VehiclePurchaseRules,
+};
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
 use wot_resources::ResourceBundle;
@@ -68,7 +70,12 @@ pub(super) fn offers(
     };
     let mut offers = BTreeMap::new();
     for (nation, nation_name) in item_defs::NATIONS.iter().enumerate() {
-        let path = format!("text/lc_messages/{nation_name}_vehicles.mo");
+        let locale = if *nation_name == "uk" && fs.has_file("text/lc_messages/gb_vehicles.mo") {
+            "gb"
+        } else {
+            nation_name
+        };
+        let path = format!("text/lc_messages/{locale}_vehicles.mo");
         let names = localized_names(fs, &path).unwrap_or_default();
         for dir in item_defs::vehicle_dirs(fs, nation_name) {
             let list = item_defs::read_xml(fs, &format!("{dir}/list.xml"))?;
@@ -131,6 +138,34 @@ pub(super) fn offers(
 }
 
 impl GarageCatalog {
+    pub(crate) fn max_researched_tiers(&self, account: &AccountSnapshot) -> BTreeMap<u8, i64> {
+        let mut tiers = BTreeMap::new();
+        for id in account.progression.unlocks.iter().copied().chain(
+            account
+                .vehicles
+                .iter()
+                .filter_map(|vehicle| self.keys.get(&vehicle.catalog_key).copied()),
+        ) {
+            if self.tech_tree.contains(&id)
+                && let Some(level) = self.offers.get(&id).and_then(|vehicle| vehicle.level)
+            {
+                let nation = IntCompactDescr::from_int(i64::from(id)).nation;
+                let maximum = tiers.entry(nation).or_insert(1);
+                *maximum = (*maximum).max(level);
+            }
+        }
+        tiers
+    }
+
+    pub(super) fn collector_unlocked(
+        tiers: &BTreeMap<u8, i64>,
+        item: i32,
+        tier: Option<i64>,
+    ) -> bool {
+        let nation = IntCompactDescr::from_int(i64::from(item)).nation;
+        tier.is_some_and(|tier| tiers.get(&nation).copied().unwrap_or(1) >= tier)
+    }
+
     pub(super) fn purchase_rules(&self, id: i32) -> Result<VehiclePurchaseRules> {
         let offer = self.offers.get(&id).context("Unknown vehicle offer")?;
         let template = self.vehicle(&offer.key)?;

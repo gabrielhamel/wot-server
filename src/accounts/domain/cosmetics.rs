@@ -10,6 +10,7 @@ const MAX_UNITS_PER_PURCHASE: u32 = 100;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum CosmeticKind {
     Camouflage,
+    Style,
     Inscription,
     PersonalNumber,
     Effect,
@@ -157,6 +158,8 @@ pub type CamouflageLayout = BTreeMap<VehicleSurface, Camouflage>;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VehicleOutfit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<u16>,
     pub camouflage: CamouflageLayout,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub paints: BTreeMap<PaintRegion, Paint>,
@@ -174,7 +177,8 @@ pub struct VehicleOutfit {
 
 impl VehicleOutfit {
     pub fn is_empty(&self) -> bool {
-        self.seasonal_placements() == 0
+        self.style.is_none()
+            && self.seasonal_placements() == 0
             && self.attachments.is_empty()
             && self.stat_tracker.is_none()
     }
@@ -182,7 +186,7 @@ impl VehicleOutfit {
     pub fn supports_season(&self, season: OutfitSeason) -> bool {
         match season {
             OutfitSeason::Common => self.seasonal_placements() == 0,
-            _ => self.attachments.is_empty() && self.stat_tracker.is_none(),
+            _ => self.style.is_none() && self.attachments.is_empty() && self.stat_tracker.is_none(),
         }
     }
 
@@ -200,6 +204,7 @@ impl VehicleOutfit {
             .map(|item| (CosmeticKind::Camouflage, item.id))
             .chain(self.inscriptions.values().map(Inscription::item))
             .chain(self.effect.map(|id| (CosmeticKind::Effect, id)))
+            .chain(self.style.map(|id| (CosmeticKind::Style, id)))
             .chain(
                 self.projection_decals
                     .iter()
@@ -336,6 +341,47 @@ impl CosmeticState {
         &self.stat_trackers
     }
 
+    pub(crate) fn style_owned(&self, id: u16) -> u32 {
+        self.owned
+            .get(&CosmeticKind::Style)
+            .and_then(|styles| styles.get(&id))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn style_in_depot(&self, id: u16) -> u32 {
+        let mounted = self
+            .outfits
+            .values()
+            .filter(|outfits| {
+                outfits
+                    .get(&OutfitSeason::Common)
+                    .is_some_and(|outfit| outfit.style == Some(id))
+            })
+            .count();
+        self.style_owned(id)
+            .saturating_sub(u32::try_from(mounted).unwrap_or(u32::MAX))
+    }
+
+    #[tracing::instrument(name = "accounts.cosmetics.add_style", skip_all, fields(ddd.bounded_context.name = "accounts", input.style_id = id, output.owned.count = tracing::field::Empty), err)]
+    pub(crate) fn add_style(
+        &mut self,
+        id: u16,
+        limit: Option<u32>,
+    ) -> Result<(), ProgressionError> {
+        let total = self
+            .style_owned(id)
+            .checked_add(1)
+            .filter(|&total| limit.is_none_or(|limit| total <= limit))
+            .ok_or(ProgressionError::InvalidCosmetic)?;
+        self.owned
+            .entry(CosmeticKind::Style)
+            .or_default()
+            .insert(id, total);
+        tracing::Span::current().record("output.owned.count", total);
+        Ok(())
+    }
+
     pub fn owned(&self) -> &BTreeMap<CosmeticKind, BTreeMap<u16, u32>> {
         &self.owned
     }
@@ -390,6 +436,7 @@ pub struct CosmeticRule {
 
 #[derive(Clone)]
 pub enum CosmeticPlacement {
+    Style,
     Paint {
         units_by_region: BTreeMap<PaintRegion, u32>,
     },
@@ -503,6 +550,16 @@ fn plan_cosmetics(
             let mut outfits = current.cloned().unwrap_or_default();
             for (season, mut outfit) in seasons {
                 if !outfit.supports_season(season) || outfit.attachments.len() > MAX_ATTACHMENTS {
+                    return Err(InvalidCosmetic);
+                }
+                if let Some(style) = outfit.style
+                    && !rules
+                        .get(&(CosmeticKind::Style, style))
+                        .is_some_and(|rule| {
+                            matches!(rule.placement, CosmeticPlacement::Style)
+                                && rule.seasons.contains(&season)
+                        })
+                {
                     return Err(InvalidCosmetic);
                 }
                 if let Some(tracker) = outfit.stat_tracker {

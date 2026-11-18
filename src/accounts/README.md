@@ -32,7 +32,7 @@ context is a possible future boundary, not an implemented one.
 | Snapshot | A coherent read of an account and its vehicle ownership. |
 | Revision | Monotonically increasing version changed with persisted preferences, research or inventory. |
 | Cosmetic ownership | Total copies of an exterior item, including applied copies. Stat trackers are bound to a vehicle type. |
-| Outfit | Vehicle appearance for a season, including camouflage, projected decals, inscriptions and an effect. |
+| Outfit | Vehicle appearance for a season, including styles, camouflage, projected decals, inscriptions and effects. |
 | Shell layout | Ordered compatible shell/count pairs loaded on one vehicle. |
 | Depot stock | Shared unmounted shells, modules, equipment, directives and consumables. Sales debit these counts and credit the account in the same revision. |
 | Equipment components | Balance used for paid demounting of level 2 and 3 Experimental equipment. The client calls it `equipCoin`. |
@@ -44,7 +44,8 @@ context is a possible future boundary, not an implemented one.
 | Garage slot | One unit of total vehicle capacity. A slot purchase adds one unit and charges the shop price in the same revision. |
 | Vehicle sale | An atomic ownership removal that settles the vehicle and fitting value, returns retained fittings to the Depot, and transfers or dismisses its crew. |
 | Module loadout | The six module descriptors installed on an owned tank. |
-| Store offer | A selected equipment catalog item with its server-owned credit price. |
+| Store offer | A selected item, vehicle or Premium Account package with its server-owned price in credits, gold or bonds. |
+| Premium Account | WoT entitlement active until an account’s persisted UTC expiration. A purchase extends any remaining time. |
 | Equipment layout | The ordered optional devices mounted on an owned tank. |
 | Consumable layout | Ordered regular consumables mounted on a vehicle, with an independent auto-resupply preference. |
 | Directive slot | A mounted crew or equipment directive and its vehicle-specific auto-resupply preference. |

@@ -3,15 +3,12 @@ import { errorMessage } from "../../../../platform/infrastructure/web/http";
 import type { StoreCatalog, StoreOffer } from "../../../application/store-contracts";
 import { loadCatalog, placeOrder } from "../../../infrastructure/store-api";
 
-export function useEquipmentCatalog(token?: string) {
+export function useStoreCatalog(token?: string) {
   const inFlight = useRef(false);
   const [catalog, setCatalog] = useState<StoreCatalog | null>(null);
   const [loading, setLoading] = useState(Boolean(token));
   const [buyingItem, setBuyingItem] = useState<number | null>(null);
-  const [feedback, setFeedback] = useState<{
-    severity: "success" | "error";
-    message: string;
-  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
     (signal?: AbortSignal) => {
@@ -22,7 +19,7 @@ export function useEquipmentCatalog(token?: string) {
             if (!signal?.aborted) setCatalog(catalog);
           },
           (error) => {
-            if (!signal?.aborted) setFeedback({ severity: "error", message: errorMessage(error) });
+            if (!signal?.aborted) setError(errorMessage(error));
           },
         )
         .finally(() => {
@@ -41,7 +38,7 @@ export function useEquipmentCatalog(token?: string) {
 
   function reload() {
     setLoading(true);
-    setFeedback(null);
+    setError(null);
     load();
   }
 
@@ -49,22 +46,16 @@ export function useEquipmentCatalog(token?: string) {
     if (!catalog || !token || inFlight.current) return;
     inFlight.current = true;
     setBuyingItem(offer.item);
-    setFeedback(null);
+    setError(null);
     try {
-      const result = await placeOrder(token, {
-        item: offer.item,
-        revision: catalog.revision,
-        credits: offer.credits,
-      });
-      setCatalog(result);
-      setFeedback({ severity: "success", message: `${offer.name} added to your Depot.` });
+      setCatalog(await placeOrder(token, offer, catalog.revision));
     } catch (error) {
-      setFeedback({ severity: "error", message: errorMessage(error) });
+      setError(errorMessage(error));
     } finally {
       inFlight.current = false;
       setBuyingItem(null);
     }
   }
 
-  return { catalog, loading, buyingItem, feedback, reload, buy };
+  return { catalog, loading, buyingItem, error, reload, buy };
 }

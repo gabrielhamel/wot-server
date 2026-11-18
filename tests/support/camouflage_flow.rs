@@ -92,7 +92,7 @@ pub fn exercise(
             };
             assert!(hidden.contains(&LAST_STAND_STYLE.into()));
             assert!(!price_rows.contains_key(&LAST_STAND_STYLE.into()));
-            send_outfits(peer, dispatch, 793, 43, &[(15, &[4, 16, 240, 46])], -2);
+            send_outfits(peer, dispatch, 793, 43, &[(15, &[4, 16, 240, 46])], -1);
         }
         send_array(peer, dispatch, 792, 118, &[1, 42, GENERAL_2D_STYLE, 1], -2);
     }
@@ -923,7 +923,7 @@ fn assert_cosmetic_grant_trace(
     }));
 }
 
-fn send_outfits(
+pub(super) fn send_outfits(
     peer: &mut Peer,
     dispatch: &ScriptDispatch,
     request: i16,

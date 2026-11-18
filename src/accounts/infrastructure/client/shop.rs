@@ -80,6 +80,13 @@ fn shop(prices: &ItemPrices) -> Value {
             .collect(),
     );
 
+    let premium_prices = Value::Dict(
+        crate::accounts::PREMIUM_PACKAGES
+            .into_iter()
+            .map(|(days, gold)| (Value::from(days), Value::from(gold)))
+            .collect(),
+    );
+
     crate::pickle!({
         "rev": SHOP_REVISION,
         "battlePassLevelCost": {"gold": 250},
@@ -93,7 +100,7 @@ fn shop(prices: &ItemPrices) -> Value {
             9: {"credits": 100000}, 10: {"credits": 150000}, 11: {"credits": 200000},
         },
         "dailyXPFactor": 2,
-        "defaults": {"exchangeRate": GOLD_EXCHANGE_RATE, "goodies": {"prices": {}}, "items": {}},
+        "defaults": {"exchangeRate": GOLD_EXCHANGE_RATE, "goodies": {"prices": {}}, "items": {}, "premiumCost": (premium_prices.clone())},
         "dropSkillsCost": {
             0: {"credits": 0, "gold": 0, "recertificationForm": 0, "xpReuseFraction": 0.8},
             1: {"credits": 20000, "gold": 0, "recertificationForm": 0, "xpReuseFraction": 0.9},
@@ -135,7 +142,7 @@ fn shop(prices: &ItemPrices) -> Value {
         "paidTrophyUpgradedRemovalCost": {"gold": EQUIPMENT_DEMOUNT_GOLD},
         "playerEmblemCost": {0: (15, 1), 7: (1500, 0), 30: (6000, 0)},
         "playerInscriptionCost": {"nations": {}, 0: (15, 1), 7: (1500, 0), 30: (6000, 0)},
-        "premiumCost": {1: 250, 3: 650, 7: 1250, 14: 1800, 30: 2500, 90: 7500, 180: 13500, 360: 24000},
+        "premiumCost": (premium_prices),
         "restore_config": {
             "tankmen": {
                 "creditsCost": (CREW_RESTORE_CREDITS),

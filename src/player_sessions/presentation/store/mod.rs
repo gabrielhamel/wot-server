@@ -1,5 +1,5 @@
 use crate::{
-    accounts::{ProgressionError, StoreOrder, StoreOrderError},
+    accounts::{ProgressionError, StoreOrder, StoreOrderError, StorePrice},
     player_sessions::application::store::{StoreError, StoreRequests, StoreToken},
 };
 use axum::{
@@ -73,7 +73,7 @@ async fn catalog(State(store): State<StoreRequests>, headers: HeaderMap) -> Resp
 struct OrderPayload {
     item: i32,
     revision: String,
-    credits: i64,
+    price: StorePrice,
 }
 
 impl OrderPayload {
@@ -81,7 +81,7 @@ impl OrderPayload {
         Some(StoreOrder {
             item: self.item,
             revision: self.revision.parse().ok()?,
-            credits: self.credits,
+            price: self.price,
         })
     }
 }
@@ -152,8 +152,13 @@ async fn respond(
                     ProgressionError::NotEnoughMoney,
                 )) => (
                     StatusCode::UNPROCESSABLE_ENTITY,
-                    "insufficient_credits",
-                    "You need more credits for this offer.",
+                    "insufficient_funds",
+                    "You need more funds for this offer.",
+                ),
+                StoreError::Rejected(StoreOrderError::ResearchRequired) => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "research_required",
+                    "Research a Tech Tree vehicle of this tier or higher in the same nation.",
                 ),
                 StoreError::Rejected(StoreOrderError::Purchase(
                     ProgressionError::CatalogUnavailable,

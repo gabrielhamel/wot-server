@@ -191,7 +191,7 @@ pub(super) fn receipt(peer: &Peer, request_id: i64) -> Pickle {
     pickle_value(&args[3])
 }
 
-fn pickle_value(value: &Value) -> Pickle {
+pub(super) fn pickle_value(value: &Value) -> Pickle {
     match value {
         Value::Python(PythonValue::Decoded(value)) | Value::String(StringValue::Python(value)) => {
             value.clone()

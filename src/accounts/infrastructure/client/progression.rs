@@ -210,6 +210,9 @@ impl GarageCatalog {
                 if !can_buy || !(1..=100).contains(&count) || cd.to_int() != i64::from(item) {
                     return Err(ProgressionError::InvalidRequest);
                 }
+                if cd.item_type == items::item_type::CREW_SKIN {
+                    self.check_crew_skin_limit(&snapshot, item, count)?;
+                }
                 let cost = self
                     .prices
                     .prices
@@ -248,6 +251,9 @@ impl GarageCatalog {
                     .rules
                     .research(&mut snapshot, index, &defaults)?;
             }
+            ProgressionCommand::BuyPremium { days } => {
+                snapshot.extend_premium(days, crate::accounts::unix_now())?;
+            }
             ProgressionCommand::BuyVehicleSlot => {
                 let credits = if snapshot.balances.slots < shop::FREE_VEHICLE_SLOTS {
                     0
@@ -265,8 +271,15 @@ impl GarageCatalog {
                     .offers
                     .get(&vehicle)
                     .ok_or(ProgressionError::VehicleNotFound)?;
-                let researched =
-                    defaults.contains(&vehicle) || snapshot.progression.unlocks.contains(&vehicle);
+                let researched = if offer.tags.contains("collectorVehicle") {
+                    Self::collector_unlocked(
+                        &self.max_researched_tiers(&snapshot),
+                        vehicle,
+                        offer.level,
+                    )
+                } else {
+                    defaults.contains(&vehicle) || snapshot.progression.unlocks.contains(&vehicle)
+                };
                 if offer.requires_research && !researched {
                     return Err(ProgressionError::InvalidRequest);
                 }
@@ -609,17 +622,25 @@ impl GarageCatalog {
             (Value::from("eliteVehicles"), BTreeSet::new())
         };
         unlocks.extend(&next.progression.unlocks);
-        Ok(
-            crate::pickle!({"prevRev":(change.previous_revision),"rev":(next.revision),"inventory":(Value::Dict(inventory)),"recycleBin":(recycle_bin),"stats":{
-                "berths":(next.balances.berths),"slots":(next.balances.slots),
-                "freeTMenLeft":(remaining_crew_capacity),
-                "gold":(next.balances.gold),"crystal":(next.balances.bonds),"credits":(next.balances.credits),"freeXP":(next.balances.free_xp),
-                "equipCoin":(next.balances.equipment_components),
-                "unlocks":(Value::Set(unlocks.into_iter().map(Value::from).collect())),
-                (elite_key):(Value::Set(elite)),
-                "vehTypeXP":(Value::Dict(next.progression.vehicle_xp.iter().map(|(&id,&xp)|(Value::from(id),Value::from(xp))).collect())),
-            }}),
-        )
+        let mut diff = crate::pickle!({"prevRev":(change.previous_revision),"rev":(next.revision),"inventory":(Value::Dict(inventory)),"recycleBin":(recycle_bin),"stats":{
+            "berths":(next.balances.berths),"slots":(next.balances.slots),
+            "freeTMenLeft":(remaining_crew_capacity),
+            "gold":(next.balances.gold),"crystal":(next.balances.bonds),"credits":(next.balances.credits),"freeXP":(next.balances.free_xp),
+            "equipCoin":(next.balances.equipment_components),
+            "unlocks":(Value::Set(unlocks.into_iter().map(Value::from).collect())),
+            "maxResearchedLevelByNation":(super::account::researched_tiers_value(&self.max_researched_tiers(next))),
+            (elite_key):(Value::Set(elite)),
+            "vehTypeXP":(Value::Dict(next.progression.vehicle_xp.iter().map(|(&id,&xp)|(Value::from(id),Value::from(xp))).collect())),
+        }});
+        if previous.progression.premium_expires_at != next.progression.premium_expires_at
+            && let Value::Dict(diff) = &mut diff
+        {
+            diff.insert(
+                Value::from("premium"),
+                super::account::premium_info(next.active_premium_until()),
+            );
+        }
+        Ok(diff)
     }
     fn crew_inventory_diff(
         &self,
