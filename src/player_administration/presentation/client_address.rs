@@ -1,42 +1,12 @@
-use axum::http::HeaderMap;
-use std::net::{IpAddr, SocketAddr};
-
-fn forwarded_client(
-    peer: IpAddr,
-    headers: &HeaderMap,
-    trusted_proxies: &[IpAddr],
-) -> Option<IpAddr> {
-    if !trusted_proxies.contains(&peer) {
-        return None;
-    }
-    let mut values = headers.get_all("x-forwarded-for").iter();
-    let value = values.next()?.to_str().ok()?;
-    if values.next().is_some() || value.len() > 45 {
-        return None;
-    }
-    value.trim().parse().ok()
-}
-
-pub(super) fn record(peer: SocketAddr, headers: &HeaderMap, trusted_proxies: &[IpAddr]) {
-    let forwarded = forwarded_client(peer.ip(), headers, trusted_proxies);
-    let span = tracing::Span::current();
-    span.record("network.peer.address", peer.ip().to_string());
-    span.record("network.peer.port", peer.port());
-    span.record("client.address", forwarded.unwrap_or(peer.ip()).to_string());
-    if forwarded.is_none() {
-        span.record("client.port", peer.port());
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::player_administration::presentation::set_browser_headers;
     use axum::{Router, body::Body, http::Request, middleware, routing::get};
     use hyper::service::Service;
     use hyper_util::service::TowerToHyperService;
     use opentelemetry::trace::{SpanId, TracerProvider};
     use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+    use std::net::{IpAddr, SocketAddr};
     use tracing_subscriber::prelude::*;
 
     #[tokio::test]

@@ -240,7 +240,7 @@ including relevant errors and rejections. See the
 
 ## Request source IP
 
-Request roots (`admin.http.request`, `game.authenticate`, `game.command`, and
+Request roots (`admin.http.request`, `web.ui.request`, `game.authenticate`, `game.command`, and
 `xmpp.request`) expose `client.address` for searching by caller IP and
 `network.peer.address` for the immediate socket peer. Source ports are separate
 attributes; a forwarded HTTP caller has no `client.port` because the proxy

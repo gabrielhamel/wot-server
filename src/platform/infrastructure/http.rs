@@ -1,10 +1,13 @@
-use axum::Router;
+use axum::{Router, http::HeaderMap};
 use hyper::server::conn::http1;
 use hyper_util::{
     rt::{TokioIo, TokioTimer},
     service::TowerToHyperService,
 };
-use std::time::Duration;
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet};
 
 const MAX_CONNECTIONS: usize = 64;
@@ -55,4 +58,35 @@ pub(crate) async fn serve(
     }
     drop(listener);
     connections.shutdown().await;
+}
+
+fn forwarded_client(
+    peer: IpAddr,
+    headers: &HeaderMap,
+    trusted_proxies: &[IpAddr],
+) -> Option<IpAddr> {
+    if !trusted_proxies.contains(&peer) {
+        return None;
+    }
+    let mut values = headers.get_all("x-forwarded-for").iter();
+    let value = values.next()?.to_str().ok()?;
+    if values.next().is_some() || value.len() > 45 {
+        return None;
+    }
+    value.trim().parse().ok()
+}
+
+pub(crate) fn record_client_address(
+    peer: SocketAddr,
+    headers: &HeaderMap,
+    trusted_proxies: &[IpAddr],
+) {
+    let forwarded = forwarded_client(peer.ip(), headers, trusted_proxies);
+    let span = tracing::Span::current();
+    span.record("network.peer.address", peer.ip().to_string());
+    span.record("network.peer.port", peer.port());
+    span.record("client.address", forwarded.unwrap_or(peer.ip()).to_string());
+    if forwarded.is_none() {
+        span.record("client.port", peer.port());
+    }
 }

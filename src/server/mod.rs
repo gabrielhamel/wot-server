@@ -102,9 +102,19 @@ async fn serve(config: Configuration) -> Result<()> {
     )?;
     let (web_stop, web_shutdown) = tokio::sync::oneshot::channel();
     let web_worker = if let Some(settings) = config.web {
+        let trusted_proxies = if config.admin.is_some() {
+            configuration::admin_trusted_proxy_ips()?
+        } else {
+            Vec::new()
+        };
         let mut router = axum::Router::new();
         if let Some(directory) = &settings.ui_dir {
-            router = web::pages(directory, config.admin.is_some(), config.store.is_some())?;
+            router = web::pages(
+                directory,
+                config.admin.is_some(),
+                config.store.is_some(),
+                trusted_proxies.clone(),
+            )?;
         }
         if let Some(store) = config.store {
             router = router.merge(gateway.enable_store(store.origin)?);
@@ -123,7 +133,7 @@ async fn serve(config: Configuration) -> Result<()> {
                 catalog,
                 gateway.player_grants(),
                 player_administration::AdminToken::new(&admin.token),
-                configuration::admin_trusted_proxy_ips()?,
+                trusted_proxies,
             ));
         }
         let listener = tokio::net::TcpListener::bind(settings.bind)

@@ -1,3 +1,4 @@
+#[cfg(test)]
 mod client_address;
 mod garage;
 mod players;
@@ -162,7 +163,7 @@ async fn set_browser_headers(
     next: Next,
 ) -> Response {
     if let Some(peer) = request.extensions().get::<SocketAddr>().copied() {
-        client_address::record(peer, request.headers(), &trusted_proxies);
+        crate::platform::http::record_client_address(peer, request.headers(), &trusted_proxies);
     }
     request
         .extensions_mut()
