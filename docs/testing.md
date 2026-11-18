@@ -36,6 +36,27 @@ Graphviz on PATH. The renderer validates CML, checks the pinned Context Mapper
 archive's SHA-256, normalizes randomized graph attributes and publishes SVGs
 only after all models render. The workflow regenerates them on `main`.
 
+## Browser pages
+
+From the repository root, use Node 22.22.2 or a newer supported LTS and run:
+
+```sh
+npm ci
+npm run check --workspace tools/web
+npm run test --workspace tools/web
+npm run build --workspace tools/web
+```
+
+Vite+ runs formatting and lint checks and executes the Testing Library suites.
+TypeScript runs in strict mode. Update formatting with
+`npm run format --workspace tools/web`. The tests render the real administration
+and Store pages, use the accessible controls, and intercept HTTP at the
+network boundary with MSW. They cover admin sign-in, player creation, garage
+grants, Store catalog and checkout, stale offer recovery and browser exception
+privacy. Trace assertions match the propagated `traceparent` to the exported
+client span and its operation parent. The Rust HTTP tests check that the
+exported server span continues that remote parent into downstream work.
+
 ## E2E Tests
 
 The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL 18 service

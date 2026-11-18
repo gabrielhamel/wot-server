@@ -238,6 +238,49 @@ record the request-to-response trace shape and verification results,
 including relevant errors and rejections. See the
 [testing guide](testing.md) for the opt-in PostgreSQL setup.
 
+## Browser traces
+
+The admin dashboard and Store export service `wot-server-web`. Each tracked
+workflow starts an operation span and passes its context explicitly to the
+HTTP client span across asynchronous calls. The client sends W3C
+`traceparent` on same-origin API requests. Admin and Store HTTP middleware
+extracts a valid, sampled parent before entering the request span. Missing,
+malformed, duplicate and unsampled headers start an independent server
+trace. Baggage and tracestate are ignored. Queue, database and delivery spans
+then use the same trace ID through the existing Rust propagation.
+
+The expected sequence for a purchase is `web.store.purchase_equipment` →
+`web.http.request` → `store.http.request` → Store use case → SQL and garage
+delivery. A grant follows the equivalent path through `web.admin.grant` and
+`admin.http.request`. Expected browser cancellations, rejections and conflicts
+record an outcome. Unexpected HTTP, network and decoding failures record
+error status and a diagnostic event. Window errors, failed resources,
+unhandled rejections and React error callbacks record `web.exception`
+spans. The browser omits exception messages, raw stacks, credentials,
+headers and free-form response text.
+
+When serving the browser assets, opt in with both environment variables:
+
+| Variable | Value |
+| --- | --- |
+| `WG_WEB_TELEMETRY_ORIGIN` | Exact browser origin, such as `https://wot.example.com`. |
+| `WG_WEB_TELEMETRY_ENDPOINT` | Complete, fixed OTLP/HTTP protobuf trace endpoint inside the deployment, such as `http://alloy.telemetry.svc.cluster.local:4318/v1/traces`. |
+
+The browser discovers the same-origin `/api/web/telemetry` endpoint before
+enabling tracing. The relay accepts origin-matched protobuf POSTs, applies
+a 32 KiB request limit, 24 spans per batch, four concurrent forwards and
+30 batches per ten-second window per server replica. Collector calls have a
+two-second deadline. The relay assigns browser service identity and forwards
+to the same trace pipeline as the server. Keep collector ingress private and
+preserve `traceparent` when proxying the admin and Store APIs. Browser spans
+are untrusted client reports, and the browser attempts a best-effort flush on
+page exit.
+
+In Tempo, search for `{ resource.service.name = "wot-server-web" }` and open
+a grant or purchase trace. Check that the browser HTTP span is the direct
+parent of the Rust HTTP span, and that the trace contains the relevant SQL
+and delivery spans. See the [browser attribute inventory](telemetry-attributes.md#browser-spans).
+
 ## Request source IP
 
 Request roots (`admin.http.request`, `web.ui.request`, `game.authenticate`, `game.command`, and

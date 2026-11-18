@@ -15,10 +15,10 @@ ContextMap Server {
     implementationTechnology = "Common client-format codecs and PostgreSQL span adapter"
   }
   Platform [U] -> [D] PlayerSessions {
-    implementationTechnology = "Common client-format codecs, bounded HTTP connection serving and blocking-work span propagation"
+    implementationTechnology = "Common client-format codecs, bounded HTTP serving, blocking-work span propagation, and browser HTTP tracing and theme"
   }
   Platform [U] -> [D] PlayerAdministration {
-    implementationTechnology = "Bounded HTTP serving for the admin API and shared web UI"
+    implementationTechnology = "Bounded HTTP serving for the admin API, with shared TypeScript HTTP tracing and theme for the dashboard"
   }
   Platform [U] -> [D] Social {
     implementationTechnology = "Common PostgreSQL span adapter"
@@ -36,7 +36,7 @@ ContextMap Server {
     implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
   }
   GameClient [U] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Mercury UDP login, handoff, session replacement notices and garage RPCs; session-authorized Store API on the shared listener with the configured host in the browser allowlist"
+    implementationTechnology = "Mercury UDP login, handoff, session replacement notices and garage RPCs; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccounts API for identity listing and provisioning, plus account snapshots and the vehicle catalog for the operator garage"
@@ -75,7 +75,7 @@ BoundedContext Social {
 }
 
 BoundedContext PlayerAdministration {
-  domainVisionStatement = "Authorize operators to find and provision player accounts, inspect garages and grant currency, vehicles or cosmetics."
+  domainVisionStatement = "Authorize operators to find and provision player accounts, inspect garages and grant currency, vehicles or cosmetics through the admin API and browser dashboard."
 }
 
 BoundedContext SharedKernel {

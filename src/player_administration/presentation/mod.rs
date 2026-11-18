@@ -24,6 +24,7 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 use tokio::sync::Semaphore;
+use tracing::Instrument;
 
 #[derive(Clone)]
 pub(crate) struct AdminToken([u8; 32]);
@@ -123,11 +124,16 @@ async fn prevent_caching(request: Request, next: Next) -> Response {
     response
 }
 
-#[tracing::instrument(
-    name = "admin.http.request",
-    parent = None,
-    skip_all,
-    fields(
+async fn set_browser_headers(
+    State(trusted_proxies): State<Vec<IpAddr>>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let span = tracing::info_span!(
+        parent: None,
+        "admin.http.request",
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
         ddd.bounded_context.name = "player_administration",
         network.transport = "tcp",
         client.address = tracing::field::Empty,
@@ -155,34 +161,34 @@ async fn prevent_caching(request: Request, next: Next) -> Response {
         input.stat_tracker_id = tracing::field::Empty,
         input.inventory_id = tracing::field::Empty,
         http.response.status_code = tracing::field::Empty,
-    )
-)]
-async fn set_browser_headers(
-    State(trusted_proxies): State<Vec<IpAddr>>,
-    mut request: Request,
-    next: Next,
-) -> Response {
-    if let Some(peer) = request.extensions().get::<SocketAddr>().copied() {
-        crate::platform::http::record_client_address(peer, request.headers(), &trusted_proxies);
+    );
+    crate::platform::http::set_remote_trace_parent(&span, request.headers());
+    async move {
+        if let Some(peer) = request.extensions().get::<SocketAddr>().copied() {
+            crate::platform::http::record_client_address(peer, request.headers(), &trusted_proxies);
+        }
+        request
+            .extensions_mut()
+            .insert(RequestSpan(tracing::Span::current()));
+        let mut response = next.run(request).await;
+        tracing::Span::current().record(
+            "http.response.status_code",
+            i64::from(response.status().as_u16()),
+        );
+        if response.status().is_server_error() {
+            tracing::Span::current().record("otel.status_code", "ERROR");
+            tracing::error!(status = response.status().as_u16(), "Admin request failed");
+        }
+        response.headers_mut().insert(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        );
+        response.headers_mut().insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),
+        );
+        response
     }
-    request
-        .extensions_mut()
-        .insert(RequestSpan(tracing::Span::current()));
-    let mut response = next.run(request).await;
-    tracing::Span::current().record(
-        "http.response.status_code",
-        i64::from(response.status().as_u16()),
-    );
-    if response.status().is_server_error() {
-        tracing::error!(status = response.status().as_u16(), "Admin request failed");
-    }
-    response.headers_mut().insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        HeaderValue::from_static("nosniff"),
-    );
-    response.headers_mut().insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),
-    );
-    response
+    .instrument(span)
+    .await
 }

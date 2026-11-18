@@ -8,15 +8,15 @@ components share a theme with the admin dashboard.
 
 ## Configuration
 
-Build the shared React project with `npm --prefix web ci` and
-`npm --prefix web run build`. Configure the same HTTP listener used by the
+Build the shared React project with `npm ci` and
+`npm run build --workspace tools/web`. Configure the same HTTP listener used by the
 [admin dashboard](admin.md). The Store can be enabled on its own.
 
 ```json
 {
   "web": {
     "bind": "127.0.0.1:8080",
-    "ui_dir": "../../web/dist"
+    "ui_dir": "../../tools/web/dist"
   },
   "store": {
     "origin": "http://127.0.0.1:8080"

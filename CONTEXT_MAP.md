@@ -11,7 +11,7 @@ a review of the names used in this map.
 Player Administration, Player Sessions, and Social.
 [Platform](src/platform/README.md) supplies shared codecs to Accounts and
 Player Sessions, bounded HTTP serving to the shared web listener, and
-tracing adapters to runtime infrastructure and server composition. Both support boundaries are independent of their consumers.
+tracing adapters to runtime infrastructure and server composition. The admin and Store browser views use Platform's TypeScript HTTP transport, telemetry and theme. Both support boundaries are independent of their consumers.
 
 [Accounts](src/accounts/README.md) publishes its application API and immutable
 snapshots upstream of [Player Sessions](src/player_sessions/README.md), which adapts them into login

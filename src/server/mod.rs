@@ -13,6 +13,7 @@ use std::sync::{
 use tracing::Instrument;
 use wot_resources::ResourceBundle;
 
+mod browser_telemetry;
 mod configuration;
 mod logging;
 mod login_key;
@@ -115,6 +116,11 @@ async fn serve(config: Configuration) -> Result<()> {
                 config.store.is_some(),
                 trusted_proxies.clone(),
             )?;
+            match browser_telemetry::from_environment() {
+                Ok(Some(ingress)) => router = router.merge(ingress),
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "Browser telemetry disabled"),
+            }
         }
         if let Some(store) = config.store {
             router = router.merge(gateway.enable_store(store.origin)?);

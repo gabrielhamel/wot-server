@@ -11,6 +11,7 @@ use axum::{
     routing::{get, post},
 };
 use std::net::SocketAddr;
+use tracing::Instrument;
 
 pub(crate) fn router(requests: StoreRequests) -> Router {
     Router::new()
@@ -21,10 +22,12 @@ pub(crate) fn router(requests: StoreRequests) -> Router {
         .with_state(requests)
 }
 
-#[tracing::instrument(
-    name = "store.http.request",
-    skip_all,
-    fields(
+async fn serve_request(request: Request, next: Next) -> Response {
+    let span = tracing::info_span!(
+        parent: None,
+        "store.http.request",
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
         ddd.bounded_context.name = "player_sessions",
         network.transport = "tcp",
         network.peer.address = tracing::field::Empty,
@@ -32,25 +35,32 @@ pub(crate) fn router(requests: StoreRequests) -> Router {
         http.request.method = request.method().as_str(),
         http.route = request.extensions().get::<MatchedPath>().map(MatchedPath::as_str),
         http.response.status_code = tracing::field::Empty,
-    )
-)]
-async fn serve_request(request: Request, next: Next) -> Response {
-    let span = tracing::Span::current();
-    if let Some(peer) = request.extensions().get::<SocketAddr>() {
-        span.record("network.peer.address", tracing::field::display(peer.ip()));
-        span.record("network.peer.port", peer.port());
+    );
+    crate::platform::http::set_remote_trace_parent(&span, request.headers());
+    async move {
+        let span = tracing::Span::current();
+        if let Some(peer) = request.extensions().get::<SocketAddr>() {
+            span.record("network.peer.address", tracing::field::display(peer.ip()));
+            span.record("network.peer.port", peer.port());
+        }
+        let mut response = next.run(request).await;
+        span.record("http.response.status_code", response.status().as_u16());
+        if response.status().is_server_error() {
+            span.record("otel.status_code", "ERROR");
+            tracing::error!(status = response.status().as_u16(), "Store request failed");
+        }
+        response.headers_mut().extend([
+            (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+            (header::REFERRER_POLICY, HeaderValue::from_static("no-referrer")),
+            (header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
+            (header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(
+                "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+            )),
+        ]);
+        response
     }
-    let mut response = next.run(request).await;
-    span.record("http.response.status_code", response.status().as_u16());
-    response.headers_mut().extend([
-        (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
-        (header::REFERRER_POLICY, HeaderValue::from_static("no-referrer")),
-        (header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
-        (header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(
-            "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
-        )),
-    ]);
-    response
+    .instrument(span)
+    .await
 }
 
 #[tracing::instrument(name = "player_sessions.store.catalog_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = "/api/shop/catalog", user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
