@@ -185,6 +185,24 @@ key, copy its public key into each client that uses the server. BaseApp traffic 
 username/password login for an existing account; official Wargaming launcher/SSO
 tokens are not local database credentials.
 
+### Reconnecting and replacing a session
+
+Sign in again after a client crash or to move the same account to another
+machine. After successful authentication, the server retires the old garage
+session or unused handoff ticket. Outstanding account writes finish before the
+replacement reads its garage state. The server continues to retire clients
+that stop sending traffic after two minutes, even if they never sign in again.
+
+If the old client has an Account entity, the server attempts to send the
+account replacement notice before removing its UDP peer. This uses
+`Account.onKickedFromServer(STRING, UINT8, UINT32)` from the versioned
+`scripts/entity_defs/Account.def` in the resource bundle. In the pinned
+decompiled client, `Account.py` forwards the notice to
+`connection_mgr.py`, which disconnects the client and reports the reason.
+`constants.ACCOUNT_KICK_REASONS.LOGIN_TO_OTHER_GAME` is 1. The tested
+resource ABI is EU 2.4.1.5514, and the installed game reported
+`v.2.4.1.1 #993` with executable identities in the [Store guide](store.md).
+
 ## Runtime contract
 
 1. Login extracts `login` from the client's JSON username envelope when

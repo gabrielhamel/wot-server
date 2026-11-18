@@ -6,8 +6,6 @@ use crate::{
         application::grants::{GrantRequest, GrantResult},
     },
 };
-use blowfish::Blowfish;
-use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::oneshot;
 
 pub(super) struct Completion {
@@ -117,45 +115,5 @@ impl Gateway {
             (snapshot, delivery)
         });
         let _ = reply.send(result);
-    }
-
-    pub(super) fn refresh_admission(
-        &mut self,
-        addr: SocketAddr,
-        generation: u64,
-        blowfish: Arc<Blowfish>,
-        account_id: i64,
-    ) {
-        let Ok(permit) = self.workers.clone().try_acquire_owned() else {
-            self.admissions
-                .complete(addr, generation, std::time::Instant::now());
-            self.login
-                .answer_login_error(addr, super::LoginError::RateLimited, String::new());
-            return;
-        };
-        let account_change_epoch = self.account_change_epoch;
-        let accounts = self.accounts.clone();
-        let catalog = self.catalog.clone();
-        let sender = self.sender.clone();
-        self.runtime
-            .spawn(tracing::Instrument::in_current_span(async move {
-                let _permit = permit;
-                let result = async {
-                    let snapshot = accounts.snapshot(account_id).await?;
-                    tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
-                        move || catalog.prepare(snapshot),
-                    ))
-                    .await?
-                    .map(Some)
-                }
-                .await;
-                let _ = sender.try_send(super::TracedCompletion::new(GatewayCompletion::Login {
-                    addr,
-                    generation,
-                    account_change_epoch,
-                    blowfish,
-                    result,
-                }));
-            }));
     }
 }

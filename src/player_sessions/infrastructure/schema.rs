@@ -7,6 +7,7 @@ entity_schema! {
             fn onChatAction(data: ChatActionData);
             fn messenger_onActionByServer_chat2(action: i16, request: u16, args: MessengerArgs);
             fn showGUI(ctx: Pickle);
+            fn onKickedFromServer(reason: String, kind: u8, expires_at: u32);
             fn onArenaCreated();
             fn onCmdResponse(request_id: i16, result_id: i16, error: String);
             fn onCmdResponseExt(request_id: i16, result_id: i16, error: String, ext: Pickle);

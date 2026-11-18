@@ -176,7 +176,7 @@ impl Gateway {
             span.record("otel.status_code", "ERROR");
             tracing::error!(%error, account_id, "Save garage progression failed");
         }
-        self.pending_writes.remove(&account_id);
+        self.finish_account_write(account_id);
         let Some(session) = self.sessions.get_mut(&client) else {
             span.record("output.delivery", "unavailable");
             return;

@@ -607,6 +607,12 @@ impl App {
         Ok(())
     }
 
+    pub(crate) fn flush_client(&mut self, key: ClientKey) -> io::Result<()> {
+        self.client(key)?;
+        self.outbox
+            .flush(key.addr, &mut self.protocol, &self.socket)
+    }
+
     pub fn disconnect_client(&mut self, key: ClientKey) {
         if self.client_keys.get(&key.addr) != Some(&key) {
             return;

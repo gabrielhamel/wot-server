@@ -210,7 +210,7 @@ impl Gateway {
         if let Err(error) = &result {
             tracing::error!(%error, account_id, "Apply ammunition layout failed");
         }
-        self.pending_writes.remove(&account_id);
+        self.finish_account_write(account_id);
         let Some(session) = self.sessions.get_mut(&client) else {
             span.record("output.delivery", "unavailable");
             return;

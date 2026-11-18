@@ -25,6 +25,8 @@ mod vehicles_flow;
 use garage_peer::Peer;
 #[path = "support/player_fixture.rs"]
 mod player_fixture;
+#[path = "support/session_flow.rs"]
+mod session_flow;
 #[path = "support/social_flow.rs"]
 mod social_flow;
 #[path = "support/store_flow.rs"]
@@ -287,9 +289,33 @@ async fn exercise_garage(encrypted_login: bool) {
             b.id,
         );
         assert!(matches!(
-            Peer::login(login, &first_peer_name, "password-a", public_key.clone()),
-            LoginResponse::Unknown(69)
+            Peer::login(login, &first_peer_name, "wrong", public_key.clone()),
+            LoginResponse::Error(LoginError::InvalidPassword, _)
         ));
+        first_peer.command(
+            &script,
+            "doCmdInt3",
+            vec![
+                Value::Int16(220),
+                Value::Int16(100),
+                Value::Int64(0),
+                Value::Int64(0),
+                Value::Int64(0),
+            ],
+        );
+        first_peer.until(&script, |p| p.has_resource(220));
+        let mut pending_peer = Peer::new(public_key.clone());
+        let LoginResponse::Success(superseded) =
+            pending_peer.authenticate(login, &first_peer_name, "password-a")
+        else {
+            panic!("The second login must succeed at capacity");
+        };
+        session_flow::assert_kicked(&mut first_peer, &script);
+        let mut replacement = Peer::new(public_key.clone());
+        replacement.connect(login, &first_peer_name, "password-a");
+        replacement.until(&script, |p| p.created && p.shown);
+        pending_peer.assert_handoff_rejected(&superseded);
+        let mut first_peer = replacement;
         let sync = |id, cmd| {
             vec![
                 Value::Int16(id),

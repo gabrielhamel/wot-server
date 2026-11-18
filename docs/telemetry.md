@@ -23,6 +23,18 @@ Player Administration traces use the context value `player_administration`
 in place of `admin`. The `admin.*`, `game.command`, and `xmpp.request`
 operation names remain stable.
 
+A successful login that replaces an active session keeps the old client's kick
+notice and the replacement client's login reply under the same authentication
+trace. A login that waits for a pending account write records
+`waiting_for_write` on its initial admission span and resumes within the
+same authentication trace.
+
+    game.authenticate
+      player_sessions.admit                     [replaced]
+        player_sessions.replace_session
+          mercury.response                      [onKickedFromServer, sent]
+        mercury.login.response                  [success, sent]
+
 A Store checkout joins the HTTP request to the account transaction and garage
 delivery even though they run on separate workers.
 
