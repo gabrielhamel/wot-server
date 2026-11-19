@@ -198,18 +198,30 @@ pub fn assert_equipment_traces(account: i64) {
         (
             "888",
             "accounts.equipment.upgrade_depot",
-            Some(("29689", "29945")),
+            Some(("29689", "29945", "input.price.credits", "3000000")),
         ),
         ("889", "accounts.equipment.upgrade_depot", None),
         (
             "891",
             "accounts.equipment.upgrade_mounted",
-            Some(("13049", "13305")),
+            Some(("13049", "13305", "input.price.credits", "3000000")),
         ),
         ("892", "accounts.equipment.upgrade_mounted", None),
+        (
+            "894",
+            "accounts.equipment.upgrade_depot",
+            Some(("40953", "41209", "input.price.components", "400")),
+        ),
+        ("895", "accounts.equipment.upgrade_depot", None),
+        (
+            "897",
+            "accounts.equipment.upgrade_mounted",
+            Some(("41209", "41465", "input.price.components", "2000")),
+        ),
+        ("898", "accounts.equipment.upgrade_mounted", None),
     ];
-    let upgrade_cases = upgrades
-        .map(|(request, span, _)| (request, "10050", "upgrade_bounty_equipment", span, None));
+    let upgrade_cases =
+        upgrades.map(|(request, span, _)| (request, "10050", "upgrade_equipment", span, None));
     for (request, command, operation, use_case, payout) in cases.into_iter().chain(upgrade_cases) {
         let root = spans
             .iter()
@@ -241,9 +253,9 @@ pub fn assert_equipment_traces(account: i64) {
             .iter()
             .find(|(id, _, _)| *id == request)
             .and_then(|(_, _, result)| *result);
-        if let Some((item, target)) = upgrade_result {
+        if let Some((item, target, price_attribute, amount)) = upgrade_result {
             assert!(has(use_case, "input.item", item));
-            assert!(has(use_case, "input.price.credits", "3000000"));
+            assert!(has(use_case, price_attribute, amount));
             assert!(has(use_case, "output.item", target));
             if request == "891" {
                 assert!(has(use_case, "input.inventory_id", "3"));

@@ -36,18 +36,19 @@ and 1,600 per tier 3 item. Disassembly works for Depot stock and for a single
 mounted item. The mounted path clears the vehicle slot without paying a
 demount fee or adding the item to the Depot.
 
-## Bounty upgrades
+## Equipment upgrades
 
-The native **Upgrade** action consumes one Basic Bounty device and replaces it
-with its catalog-defined Upgraded variant. The verified catalog charges
-3,000,000 credits per device, including the Bounty Turbocharger. A Depot
-upgrade changes the two stock counts. A mounted upgrade replaces the item in
-the same slot. Both use the same price and require sufficient credits.
-Failed upgrades leave the equipment, balances and revision intact.
+The native **Upgrade** action replaces one device with its catalog-defined
+next level. The verified EU catalog charges 3,000,000 credits to upgrade Basic
+Bounty Equipment, 400 Components for Experimental tier 1 → 2, and 2,000
+Components for Experimental tier 2 → 3. A Depot upgrade changes the two stock
+counts. A mounted upgrade replaces the item in the same slot. Both use the
+same catalog price. Failed upgrades leave the equipment, balances and revision
+intact.
 
 The Account bootstrap sets `isTrophyDevicesEnabled` when the catalog contains
-Bounty upgrade rules. The shop advertises each Basic-to-Upgraded descriptor
-pair and credit price under `items.operationPrices.upgrade` and
+equipment upgrade rules. The shop advertises each source and target descriptor
+pair and its credit or `equipCoin` price under `items.operationPrices.upgrade` and
 `defaults.items.operationPrices.upgrade`. Existing clients refresh the shop
 when its compressed cache checksum changes. The client checks the feature
 flag and the item's upgrade eligibility when showing the action, then reads
@@ -66,7 +67,7 @@ identical layout request does not debit the account or advance the revision.
 | `doCmdInt4` | `CMD_BUY_ITEM` (302) | Shop revision, equipment descriptor, quantity, gold-for-credits flag (0 for supported equipment). |
 | `doCmdIntArr` | `CMD_EQUIP_OPT_DEVS_SEQUENCE` (10060) | Shop revision, vehicle inventory ID, item count, ordered descriptors. Zero marks an empty slot. |
 | `doCmdIntArr` | `CMD_EQUIP_OPTDEV` (102) | Shop revision, vehicle inventory ID, descriptor or zero for removal, slot index, all-setups flag, paid-removal flag, demount-kit flag (0). The Experimental Equipment slot action uses zero for both the descriptor and paid-removal flag. |
-| `doCmdIntArr` | `CMD_UPGRADE_OPTDEV` (10050) | Shop revision, item descriptor, vehicle inventory ID, setup index, and slot index. A Depot upgrade supplies the Basic descriptor and zeros for the rest. A mounted upgrade supplies a zero descriptor, an owned vehicle inventory ID, setup 0 and the zero-based slot. |
+| `doCmdIntArr` | `CMD_UPGRADE_OPTDEV` (10050) | Shop revision, item descriptor, vehicle inventory ID, setup index, and slot index. A Depot upgrade supplies the source descriptor and zeros for the rest. A mounted upgrade supplies a zero descriptor, an owned vehicle inventory ID, setup 0 and the zero-based slot. |
 | `doCmdIntArr` | `CMD_DSTR_MODERNIZED_OPTDEV` (10115) | Shop revision, vehicle inventory ID, mounted Experimental Equipment descriptor. The bulk dialog calls this once per selected vehicle item. |
 | `doCmdInt4` / `doCmdIntArr` | `CMD_SELL_ITEM` (305) / `CMD_SELL_MULTIPLE_ITEMS` (310) | Normal [Depot sale arguments](depot.md#client-contract). Experimental Equipment lines credit Components. |
 
@@ -100,7 +101,7 @@ decompilation under `docs/references/wot-src/sources/res/scripts/` give these en
 | `client/gui/impl/lobby/tank_setup/array_providers/opt_device.py` | The Bounty and Experimental tabs show owned items. |
 | `client/gui/shared/gui_items/artefacts.py` | Reads the active and default upgrade prices, selects the shop demount price, and reads the disassembly value from the unmodified item price. |
 | `client/gui/Scaleform/daapi/view/lobby/tank_setup/context_menu/base_equipment.py` | The Upgrade menu action checks `isTrophyDevicesEnabled` and the item's upgrade eligibility. |
-| `common/items/artefacts.py` and `scripts/item_defs/vehicles/common/optional_devices.xml` | Bounty upgrade targets and costs come from each Basic device's `script/upgradeInfo`. |
+| `common/items/artefacts.py` and `scripts/item_defs/vehicles/common/optional_devices.xml` | Bounty and Experimental upgrade targets and costs come from each upgradable device's `script/upgradeInfo`. |
 | `client/gui/shared/gui_items/items_actions/actions.py` and `processors/module.py` | The disassembly dialog sends Depot items via the sale processors and mounted items via the slot or descriptor-based removal processors. |
 | `client/account_helpers/Shop.py:getSellPrice` | An `equipCoin` price bypasses the ordinary sale factor. |
 | `client/gui/shared/gui_items/vehicle_equipment.py` | Equipment layout cache and setup format. |
@@ -114,13 +115,14 @@ Experimental equipment, and demounting for gold, bonds and components. It checks
 that failed purchases and demounts leave the balances and inventory intact.
 It covers Depot and mounted disassembly, including nine tier 3 items yielding
 14,400 Components, stock and descriptor validation, and rejection without
-partial changes. Bounty coverage checks the bootstrap flag, live and default
-shop prices, the Depot conversion, in-place upgrade, and invalid requests.
+partial changes. Upgrade coverage checks the bootstrap flag, live and default
+shop prices, Depot conversion, in-place upgrades, and invalid requests for
+both Bounty and Experimental Equipment.
 Reconnection verifies the persisted balance and loadout.
 The test uses resources from the installed EU `v.2.4.1.1 #993` executable
 with SHA-256 `fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
 
 Garage support covers one setup. The admin Components grant adds the
-`equipCoin` balance used by Experimental Equipment demounting. Reward
-distribution, Experimental Equipment upgrades, demount kits, alternate setups,
-and server-side battle effects still need implementation.
+`equipCoin` balance used by Experimental Equipment upgrades and demounting.
+Reward distribution, demount kits, alternate setups, and server-side battle
+effects still need implementation.

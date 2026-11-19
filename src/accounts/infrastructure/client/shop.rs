@@ -10,7 +10,7 @@ use std::io;
 use crate::{
     accounts::{
         BERTH_PACK_GOLD, BERTH_PACK_SIZE, CREW_FREE_RESTORE_DURATION, CREW_RESTORE_CREDITS,
-        CREW_RESTORE_DURATION, CREW_RESTORE_LIMIT, EquipmentRules, FREE_XP_RATE,
+        CREW_RESTORE_DURATION, CREW_RESTORE_LIMIT, EquipmentPrice, EquipmentRules, FREE_XP_RATE,
     },
     platform::client_formats::pickle::{Global, Value},
 };
@@ -87,20 +87,29 @@ fn shop(prices: &ItemPrices, equipment: &EquipmentRules) -> Value {
             .collect(),
     );
 
-    let bounty_prices = Value::Dict(
+    let upgrade_prices = Value::Dict(
         equipment
             .items
             .iter()
             .filter_map(|(&item, device)| {
-                let upgrade = device.bounty_upgrade?;
+                let upgrade = device.upgrade?;
+                let price = match upgrade.price {
+                    EquipmentPrice::Credits(amount) => {
+                        Value::dict([("credits", Value::from(amount))])
+                    }
+                    EquipmentPrice::Components(amount) => {
+                        Value::dict([("equipCoin", Value::from(amount))])
+                    }
+                    _ => return None,
+                };
                 Some((
                     Value::Tuple(vec![Value::from(item), Value::from(upgrade.target)]),
-                    crate::pickle!({"credits": (upgrade.credits)}),
+                    price,
                 ))
             })
             .collect(),
     );
-    let operation_prices = crate::pickle!({"upgrade": (bounty_prices)});
+    let operation_prices = crate::pickle!({"upgrade": (upgrade_prices)});
 
     crate::pickle!({
         "rev": SHOP_REVISION,

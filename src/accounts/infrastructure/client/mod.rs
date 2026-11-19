@@ -331,11 +331,11 @@ impl GarageCatalog {
         Ok(cache.entry(key.to_owned()).or_insert(vehicle).clone())
     }
 
-    pub fn bounty_upgrades_enabled(&self) -> bool {
+    pub fn equipment_upgrades_enabled(&self) -> bool {
         self.equipment
             .items
             .values()
-            .any(|device| device.bounty_upgrade.is_some())
+            .any(|device| device.upgrade.is_some())
     }
 
     pub fn shop_revision(&self) -> i32 {

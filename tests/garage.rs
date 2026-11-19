@@ -494,8 +494,10 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             equipment_flow::exercise_special_equipment(&mut equipment_peer, &script, &sold_cache);
         let disassembled =
             equipment_flow::exercise_disassembly(&mut equipment_peer, &script, &special_cache);
-        let final_cache =
+        let bounty =
             equipment_flow::exercise_bounty_upgrade(&mut equipment_peer, &script, &disassembled);
+        let final_cache =
+            equipment_flow::exercise_experimental_upgrade(&mut equipment_peer, &script, &bounty);
         equipment_peer.disconnect();
         std::thread::sleep(std::time::Duration::from_millis(250));
         let mut equipment_reconnect = Peer::new(public_key);

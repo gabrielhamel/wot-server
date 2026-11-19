@@ -57,7 +57,7 @@ pub struct Peer {
     pub created: bool,
     pub shown: bool,
     pub training_room_visible: Option<bool>,
-    pub bounty_upgrades_enabled: bool,
+    pub equipment_upgrades_enabled: bool,
     pub shop_url: Option<String>,
     resources: BTreeMap<u16, BTreeMap<u8, Vec<u8>>>,
     completed: BTreeMap<u16, Vec<u8>>,
@@ -87,7 +87,7 @@ impl Peer {
             created: false,
             shown: false,
             training_room_visible: None,
-            bounty_upgrades_enabled: false,
+            equipment_upgrades_enabled: false,
             shop_url: None,
             resources: BTreeMap::new(),
             completed: BTreeMap::new(),
@@ -307,7 +307,7 @@ impl Peer {
                                 Some(pickle::Value::Bool(visible)) => Some(*visible),
                                 _ => None,
                             };
-                            self.bounty_upgrades_enabled = matches!(
+                            self.equipment_upgrades_enabled = matches!(
                                 settings.get(&pickle::Value::from("isTrophyDevicesEnabled")),
                                 Some(pickle::Value::Bool(true))
                             );

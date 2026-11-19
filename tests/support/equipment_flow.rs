@@ -14,6 +14,8 @@ const BOUNTY_TURBO_UPGRADED: i32 = (116 << 8) | 0xf9;
 const EXPERIMENTAL_MOBILITY_1: i32 = (153 << 8) | 0xf9;
 const EXPERIMENTAL_MOBILITY_2: i32 = (154 << 8) | 0xf9;
 const EXPERIMENTAL_MOBILITY_3: i32 = (155 << 8) | 0xf9;
+const EXPERIMENTAL_ACCURACY_1: i32 = (159 << 8) | 0xf9;
+const EXPERIMENTAL_ACCURACY_2: i32 = (160 << 8) | 0xf9;
 const EXPERIMENTAL_ACCURACY_3: i32 = (161 << 8) | 0xf9;
 const ISU_130: i32 = 3;
 
@@ -114,6 +116,7 @@ pub fn reward_stock() -> std::collections::BTreeMap<i32, u32> {
         (EXPERIMENTAL_MOBILITY_2, 1),
         (EXPERIMENTAL_MOBILITY_3, 1),
         (EXPERIMENTAL_ACCURACY_3, 9),
+        (EXPERIMENTAL_ACCURACY_1, 1),
     ]
     .into_iter()
     .collect()
@@ -396,7 +399,7 @@ pub fn exercise_bounty_upgrade(
 ) -> Pickle {
     use super::ammunition_flow::update;
 
-    assert!(peer.bounty_upgrades_enabled);
+    assert!(peer.equipment_upgrades_enabled);
     peer.command(
         dispatch,
         "doCmdInt3",
@@ -424,10 +427,16 @@ pub fn exercise_bounty_upgrade(
             let key = Pickle::Tuple(vec![basic.into(), upgraded.into()]);
             assert_eq!(upgrades.get(&key), Some(&pickle!({"credits": 3_000_000})));
         }
-        assert!(!upgrades.contains_key(&Pickle::Tuple(vec![
-            EXPERIMENTAL_MOBILITY_1.into(),
-            EXPERIMENTAL_MOBILITY_2.into()
-        ])));
+        for (source, target, cost) in [
+            (EXPERIMENTAL_ACCURACY_1, EXPERIMENTAL_ACCURACY_2, 400),
+            (EXPERIMENTAL_ACCURACY_2, EXPERIMENTAL_ACCURACY_3, 2_000),
+        ] {
+            let key = Pickle::Tuple(vec![source.into(), target.into()]);
+            assert_eq!(upgrades.get(&key), Some(&pickle!({"equipCoin": (cost)})));
+        }
+        assert!(!upgrades.keys().any(|key| {
+            matches!(key, Pickle::Tuple(pair) if pair.first() == Some(&Pickle::from(EXPERIMENTAL_ACCURACY_3)))
+        }));
     }
 
     for (request, args, result) in [
@@ -436,7 +445,7 @@ pub fn exercise_bounty_upgrade(
         (883, [1, 0, ISU_130, 1, 1], -2),
         (884, [1, 0, 999, 0, 1], -1),
         (885, [1, 0, ISU_130, 0, 2], -1),
-        (886, [1, EXPERIMENTAL_MOBILITY_1, 0, 0, 0], -1),
+        (886, [1, AIMING, 0, 0, 0], -1),
     ] {
         send_layout(peer, dispatch, request, 10050, &args, result);
     }
@@ -504,21 +513,104 @@ pub fn exercise_bounty_upgrade(
     cache
 }
 
+pub fn exercise_experimental_upgrade(
+    peer: &mut Peer,
+    dispatch: &ScriptDispatch,
+    before: &Pickle,
+) -> Pickle {
+    use super::ammunition_flow::update;
+
+    let Pickle::I64(revision) = dict(before, "rev") else {
+        panic!("missing revision");
+    };
+    let original_stats = dict(before, "stats");
+    let Pickle::I64(components) = dict(&original_stats, "equipCoin") else {
+        panic!("missing Components");
+    };
+
+    send_layout(
+        peer,
+        dispatch,
+        894,
+        10050,
+        &[1, EXPERIMENTAL_ACCURACY_1, 0, 0, 0],
+        0,
+    );
+    let depot = update(peer, revision + 1);
+    assert_eq!(
+        dict(&depot, "inventory"),
+        pickle!({9: {(EXPERIMENTAL_ACCURACY_1): None, (EXPERIMENTAL_ACCURACY_2): 1}})
+    );
+    assert_eq!(
+        dict(&dict(&depot, "stats"), "equipCoin"),
+        (components - 400).into()
+    );
+    send_layout(
+        peer,
+        dispatch,
+        895,
+        10050,
+        &[1, EXPERIMENTAL_ACCURACY_1, 0, 0, 0],
+        -1,
+    );
+
+    send_layout(
+        peer,
+        dispatch,
+        896,
+        102,
+        &[1, ISU_130, EXPERIMENTAL_ACCURACY_2, 2, 1, 0, 0],
+        0,
+    );
+    send_layout(peer, dispatch, 897, 10050, &[1, 0, ISU_130, 0, 2], 0);
+    let mounted = update(peer, revision + 3);
+    let inventory = dict(&mounted, "inventory");
+    let vehicle = row(&inventory, 1);
+    let key = Pickle::Tuple(vec![ISU_130.into(), "_r".into()]);
+    assert_eq!(
+        dict(&vehicle, "devicesLayout"),
+        pickle!({(key): [[(IMPROVED_CONFIGURATION), (BOUNTY_AIM_DRIVES_UPGRADED), (EXPERIMENTAL_ACCURACY_3)]]})
+    );
+    let Pickle::Dict(rows) = inventory else {
+        panic!("missing inventory");
+    };
+    assert!(!rows.contains_key(&Pickle::from(9)));
+    assert_eq!(
+        dict(&dict(&mounted, "stats"), "equipCoin"),
+        (components - 2_400).into()
+    );
+    send_layout(peer, dispatch, 898, 10050, &[1, 0, ISU_130, 0, 2], -1);
+
+    let cache = sync(peer, dispatch, 899);
+    assert_eq!(dict(&cache, "rev"), (revision + 3).into());
+    let stats = dict(&cache, "stats");
+    assert_eq!(dict(&stats, "equipCoin"), (components - 2_400).into());
+    for key in ["credits", "gold", "crystal"] {
+        assert_eq!(dict(&stats, key), dict(&original_stats, key));
+    }
+    cache
+}
+
 pub fn verify_unaffordable_upgrade(
     catalog: &wot_server::accounts::GarageCatalog,
     mut snapshot: wot_server::accounts::AccountSnapshot,
 ) {
-    use wot_server::accounts::{BountyUpgradeSource, ProgressionCommand, ProgressionError};
+    use wot_server::accounts::{EquipmentUpgradeSource, ProgressionCommand, ProgressionError};
 
     snapshot.balances.credits = 2_999_999;
-    snapshot.progression.depot.insert(BOUNTY_TURBO, 1);
-    let command = ProgressionCommand::UpgradeBountyEquipment(BountyUpgradeSource::Depot {
-        item: BOUNTY_TURBO,
-    });
-    assert!(matches!(
-        catalog.plan_progression(snapshot, command),
-        Err(ProgressionError::NotEnoughMoney)
-    ));
+    snapshot.balances.equipment_components = 399;
+    for item in [
+        BOUNTY_TURBO,
+        EXPERIMENTAL_ACCURACY_1,
+        EXPERIMENTAL_ACCURACY_2,
+    ] {
+        snapshot.progression.depot.insert(item, 1);
+        let command = ProgressionCommand::UpgradeEquipment(EquipmentUpgradeSource::Depot { item });
+        assert!(matches!(
+            catalog.plan_progression(snapshot.clone(), command),
+            Err(ProgressionError::NotEnoughMoney)
+        ));
+    }
 }
 
 fn sync(peer: &mut Peer, dispatch: &ScriptDispatch, id: u16) -> Pickle {

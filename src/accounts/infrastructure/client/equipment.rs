@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     accounts::{
-        BountyUpgrade, EquipmentDefinition, EquipmentPrice, EquipmentRules, EquipmentVehicle,
+        EquipmentDefinition, EquipmentPrice, EquipmentRules, EquipmentUpgrade, EquipmentVehicle,
         EquipmentVehicleFilter, MAX_EQUIPMENT_SLOTS,
     },
     platform::client_formats::pxml::Element,
@@ -20,6 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use wot_resources::ResourceBundle;
 
 const VEHICLE_COMMON: &str = "scripts/item_defs/vehicles/common";
+const EXPERIMENTAL_TAGS: [&str; 3] = ["modernized_1", "modernized_2", "modernized_3"];
 
 #[derive(Default)]
 pub(super) struct EquipmentGrantCatalog {
@@ -87,10 +88,7 @@ pub(super) fn load(
             });
             grants.bounty.insert(item, format!("{label} · {level}"));
         }
-        let experimental_tier = ["modernized_1", "modernized_2", "modernized_3"]
-            .iter()
-            .position(|&tag| tags.contains(tag))
-            .map(|index| index + 1);
+        let experimental_tier = experimental_tier(&tags);
         if let Some(tier) = experimental_tier {
             let label = localized_name().unwrap_or_else(|| {
                 let family = match device.get_child_string("archetype").map(str::trim) {
@@ -116,9 +114,9 @@ pub(super) fn load(
                 let price = ItemPrices::definition_price(device);
                 (price.currency == "equipCoin" && price.amount > 0).then_some(price.amount)
             });
-        let bounty_upgrade = if tags.contains("trophyBasic") {
-            bounty_upgrade(&definitions, device)
-                .with_context(|| format!("Load Bounty upgrade for {name}"))?
+        let upgrade = if upgrade_target_tag(&tags).is_some() {
+            read_upgrade(&definitions, device, tags.contains("trophyBasic"))
+                .with_context(|| format!("Load equipment upgrade for {name}"))?
         } else {
             None
         };
@@ -129,7 +127,7 @@ pub(super) fn load(
                 removable: device.get_child_boolean("removable").unwrap_or(false),
                 demount_cost,
                 disassembly_value,
-                bounty_upgrade,
+                upgrade,
                 tags,
                 incompatible,
                 include,
@@ -138,14 +136,16 @@ pub(super) fn load(
         );
     }
     for (&item, definition) in &rules.items {
-        if let Some(upgrade) = definition.bounty_upgrade {
+        if let Some(upgrade) = definition.upgrade {
             anyhow::ensure!(
                 upgrade.target != item
-                    && rules
-                        .items
-                        .get(&upgrade.target)
-                        .is_some_and(|target| target.tags.contains("trophyUpgraded")),
-                "Invalid Bounty upgrade target {} for item {item}",
+                    && upgrade_target_tag(&definition.tags).is_some_and(|tag| {
+                        rules
+                            .items
+                            .get(&upgrade.target)
+                            .is_some_and(|target| target.tags.contains(tag))
+                    }),
+                "Invalid equipment upgrade target {} for item {item}",
                 upgrade.target,
             );
         }
@@ -153,7 +153,26 @@ pub(super) fn load(
     Ok((rules, grants))
 }
 
-fn bounty_upgrade(definitions: &Element, device: &Element) -> Result<Option<BountyUpgrade>> {
+fn experimental_tier(tags: &BTreeSet<String>) -> Option<usize> {
+    EXPERIMENTAL_TAGS
+        .iter()
+        .position(|&tag| tags.contains(tag))
+        .map(|index| index + 1)
+}
+
+fn upgrade_target_tag(tags: &BTreeSet<String>) -> Option<&'static str> {
+    if tags.contains("trophyBasic") {
+        Some("trophyUpgraded")
+    } else {
+        EXPERIMENTAL_TAGS.get(experimental_tier(tags)?).copied()
+    }
+}
+
+fn read_upgrade(
+    definitions: &Element,
+    device: &Element,
+    bounty: bool,
+) -> Result<Option<EquipmentUpgrade>> {
     let Some(upgrade) = device
         .get_child_element("script")
         .and_then(|script| script.get_child_element("upgradeInfo"))
@@ -164,7 +183,7 @@ fn bounty_upgrade(definitions: &Element, device: &Element) -> Result<Option<Boun
         let target_id = definitions
             .get_child_element(name.trim())
             .and_then(|target| target.get_child_integer("id"))
-            .context("Unknown Bounty upgrade target")?;
+            .context("Unknown equipment upgrade target")?;
         IntCompactDescr {
             item_type: item_type::OPTIONAL_DEVICE,
             nation: NO_NATION,
@@ -174,16 +193,17 @@ fn bounty_upgrade(definitions: &Element, device: &Element) -> Result<Option<Boun
     } else {
         upgrade
             .get_child_integer("upgradedCompDescr")
-            .context("Missing Bounty upgrade target descriptor")?
+            .context("Missing equipment upgrade target descriptor")?
     };
     let price = ItemPrices::definition_price(upgrade);
-    anyhow::ensure!(
-        price.currency == "credits" && price.amount > 0,
-        "Invalid Bounty upgrade price"
-    );
-    Ok(Some(BountyUpgrade {
+    let price = match (bounty, price.currency, price.amount) {
+        (true, "credits", amount) if amount > 0 => EquipmentPrice::Credits(amount),
+        (false, "equipCoin", amount) if amount > 0 => EquipmentPrice::Components(amount),
+        _ => anyhow::bail!("Invalid equipment upgrade price"),
+    };
+    Ok(Some(EquipmentUpgrade {
         target: i32::try_from(target)?,
-        credits: price.amount,
+        price,
     }))
 }
 

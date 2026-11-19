@@ -1,7 +1,7 @@
 use super::{GarageCatalog, items, shop};
 use crate::{
     accounts::{
-        AccountSnapshot, BountyUpgradeSource, ModuleKind, ProgressionChange, ProgressionCommand,
+        AccountSnapshot, EquipmentUpgradeSource, ModuleKind, ProgressionChange, ProgressionCommand,
         ProgressionError, VehicleAmmunition, VehicleCost,
     },
     platform::client_formats::pickle::Value,
@@ -110,11 +110,11 @@ impl GarageCatalog {
                     change,
                 )?;
             }
-            ProgressionCommand::UpgradeBountyEquipment(source) => match source {
-                BountyUpgradeSource::Depot { item } => {
+            ProgressionCommand::UpgradeEquipment(source) => match source {
+                EquipmentUpgradeSource::Depot { item } => {
                     self.equipment.upgrade_depot(&mut snapshot, item)?
                 }
-                BountyUpgradeSource::Mounted { inventory_id, slot } => {
+                EquipmentUpgradeSource::Mounted { inventory_id, slot } => {
                     let template = self.owned_vehicle_template(&snapshot, inventory_id)?;
                     self.equipment.upgrade_mounted(
                         &mut snapshot,

@@ -1,7 +1,7 @@
 use super::{Account, ClientKey, EntityKey, FAILURE, Gateway, Pickle, PreparedAccount, SUCCESS};
 use crate::{
     accounts::{
-        BountyUpgradeSource, DepotSaleRequest, EquipmentChange, MAX_DEPOT_SALE_LINES,
+        DepotSaleRequest, EquipmentChange, EquipmentUpgradeSource, MAX_DEPOT_SALE_LINES,
         MAX_EQUIPMENT_SLOTS, ProgressionCommand, ProgressionError, VehicleSaleRequest,
     },
     platform::client_formats::pickle::Value,
@@ -317,8 +317,8 @@ pub(super) fn equip(args: &[i32]) -> Option<ProgressionCommand> {
 
 pub(super) fn upgrade_device(args: &[i32]) -> Option<ProgressionCommand> {
     let source = match *args {
-        [_, item, 0, 0, 0] if item > 0 => BountyUpgradeSource::Depot { item },
-        [_, 0, inventory_id, 0, slot] if inventory_id > 0 => BountyUpgradeSource::Mounted {
+        [_, item, 0, 0, 0] if item > 0 => EquipmentUpgradeSource::Depot { item },
+        [_, 0, inventory_id, 0, slot] if inventory_id > 0 => EquipmentUpgradeSource::Mounted {
             inventory_id: i64::from(inventory_id),
             slot: usize::try_from(slot)
                 .ok()
@@ -326,7 +326,7 @@ pub(super) fn upgrade_device(args: &[i32]) -> Option<ProgressionCommand> {
         },
         _ => return None,
     };
-    Some(ProgressionCommand::UpgradeBountyEquipment(source))
+    Some(ProgressionCommand::UpgradeEquipment(source))
 }
 
 pub(super) fn equip_devices(command: i16, args: &[i32]) -> Option<ProgressionCommand> {
