@@ -138,7 +138,7 @@ mod tests {
                 .unwrap();
         assert!(legacy_objects_absent);
         let histories: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM accounts._sqlx_migrations), (SELECT count(*) FROM social._sqlx_migrations)").fetch_one(&restarted).await.unwrap();
-        assert_eq!(histories, (1, 2));
+        assert_eq!(histories, (1, 1));
         restarted.close().await;
         sqlx::query(&format!("DROP DATABASE {name}"))
             .execute(&pool)

@@ -50,9 +50,10 @@ the same boundaries inside one binary that they would cross after extraction.
 ## PostgreSQL ownership and migrations
 
 The server shares one PostgreSQL database and connection pool. Each persistent
-context owns one schema and its own SQLx migration history. Put new migrations
-under the owning context's `infrastructure/migrations/` and keep runtime
-queries schema-qualified. Contexts that hold state in memory need no schema.
+context owns one schema and its own SQLx migration history. Define the context's
+starting schema in one initial migration under its `infrastructure/migrations/`
+directory. Add subsequent schema changes as new migrations. Keep runtime queries
+schema-qualified. Contexts that hold state in memory need no schema.
 
 Keep foreign keys, joins, views, and triggers within one context. Persist a
 reference to another context as a scalar ID. Resolve or validate it through

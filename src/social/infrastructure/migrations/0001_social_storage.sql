@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS social_contacts (
-    owner_id BIGINT NOT NULL,
-    peer_id BIGINT NOT NULL,
+    owner_id BIGINT NOT NULL CHECK (owner_id > 0),
+    peer_id BIGINT NOT NULL CHECK (peer_id > 0),
     ignored BOOLEAN NOT NULL DEFAULT FALSE,
     friendship SMALLINT NOT NULL DEFAULT 2,
     PRIMARY KEY (owner_id, peer_id),
@@ -13,8 +13,8 @@ CREATE INDEX IF NOT EXISTS social_contacts_inbound_requests ON social_contacts (
 
 CREATE TABLE IF NOT EXISTS private_conversations (
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY CHECK (id > 0),
-    first_id BIGINT NOT NULL,
-    second_id BIGINT NOT NULL,
+    first_id BIGINT NOT NULL CHECK (first_id > 0),
+    second_id BIGINT NOT NULL CHECK (second_id > 0),
     first_open BOOLEAN NOT NULL DEFAULT FALSE,
     second_open BOOLEAN NOT NULL DEFAULT FALSE,
     last_used DOUBLE PRECISION NOT NULL DEFAULT extract(epoch FROM clock_timestamp()),
@@ -26,7 +26,7 @@ CREATE INDEX IF NOT EXISTS private_conversations_second_player ON private_conver
 CREATE TABLE IF NOT EXISTS private_messages (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     conversation_id INTEGER NOT NULL REFERENCES private_conversations(id) ON DELETE CASCADE,
-    sender_id BIGINT NOT NULL,
+    sender_id BIGINT NOT NULL CHECK (sender_id > 0),
     sent_at DOUBLE PRECISION NOT NULL DEFAULT extract(epoch FROM clock_timestamp()),
     body TEXT NOT NULL CHECK(octet_length(body) BETWEEN 1 AND 2048)
 );
