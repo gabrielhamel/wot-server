@@ -300,6 +300,8 @@ delivery. A grant follows the equivalent path through `web.admin.grant` and
 `admin.http.request`. Registration follows `web.panel.register` →
 `web.http.request` → `admin.http.request` → `web_panel.registration.create` →
 Accounts validation and provisioning spans, including the SQL transaction.
+Registration validation failures record the rejected field as a bounded
+outcome on the handler span and return HTTP 422.
 Expected browser cancellations, rejections and conflicts
 record an outcome. Unexpected HTTP, network and decoding failures record
 error status and a diagnostic event. Window errors, failed resources,

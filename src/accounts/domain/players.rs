@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use unicode_properties::{GeneralCategory, GeneralCategoryGroup, UnicodeGeneralCategory};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -119,7 +120,9 @@ pub enum RegistrationError {
     Email,
     #[error("Use 3 to 24 letters, numbers or underscores for your username.")]
     Username,
-    #[error("Use 12 to 128 characters and avoid control characters.")]
+    #[error(
+        "Use 8 to 128 characters, including at least one digit, one uppercase letter, one lowercase letter, and one symbol. Control characters are not allowed."
+    )]
     Password,
     #[error("The passwords do not match.")]
     PasswordConfirmation,
@@ -139,8 +142,7 @@ impl NewPlayer {
         if !is_registration_username(&display_name) {
             return Err(RegistrationError::Username);
         }
-        if !(12..=128).contains(&password.chars().count()) || password.chars().any(char::is_control)
-        {
+        if !is_registration_password(&password) {
             return Err(RegistrationError::Password);
         }
         if password != confirm_password {
@@ -152,6 +154,28 @@ impl NewPlayer {
             password,
         })
     }
+}
+
+fn is_registration_password(password: &str) -> bool {
+    let characters = password.chars();
+    let categories = characters.clone().map(char::general_category);
+    (8..=128).contains(&characters.count())
+        && !password.chars().any(char::is_control)
+        && categories
+            .clone()
+            .any(|category| category == GeneralCategory::DecimalNumber)
+        && categories
+            .clone()
+            .any(|category| category == GeneralCategory::UppercaseLetter)
+        && categories
+            .clone()
+            .any(|category| category == GeneralCategory::LowercaseLetter)
+        && password.chars().any(|character| {
+            matches!(
+                character.general_category_group(),
+                GeneralCategoryGroup::Punctuation | GeneralCategoryGroup::Symbol
+            )
+        })
 }
 
 pub fn is_registration_username(username: &str) -> bool {

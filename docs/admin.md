@@ -53,14 +53,15 @@ Once the first administrator exists, choose **Create a player account** on the
 sign-in page. The email address is the sign-in name for the game and the panel.
 The username is the name other players see in the game. Choose 3–24 ASCII
 letters, digits or underscores. The form checks availability while you type.
-The API checks email syntax and checks both email and username for
-case-insensitive duplicates when saving the account. Sign in with the email as
-entered during registration.
+The email field shows a message for an invalid address or an address already
+in use. The API checks both email and username for case-insensitive duplicates
+when saving the account. Sign in with the email as entered during registration.
 
-Use a password of 12–128 characters and enter it twice. The confirmation page
-shows how to sign in to the game immediately. The panel sends no verification
-email. Returning players can sign in to see their own credits, gold, bonds,
-free XP and tanks in **My garage**.
+Use a password of 8–128 characters with at least one digit, one uppercase
+letter, one lowercase letter and one symbol or punctuation mark. Enter it
+twice. The confirmation page shows how to sign in to the game immediately.
+The panel sends no verification email. Returning players can sign in to see
+their own credits, gold, bonds, free XP and tanks in **My garage**.
 
 The panel keeps a session for 60 days from sign-in, across browser and server
 restarts. Choose **Sign out** to revoke that browser session. Changing an

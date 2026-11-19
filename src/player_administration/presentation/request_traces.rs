@@ -618,7 +618,7 @@ async fn exports_admin_http_access_lifecycle() {
         send("GET", "/me/garage", "", "").await.unwrap().status(),
         401
     );
-    const REGISTRATION: &str = r#"{"email":"signup@example.test","username":"NewCadet","password":"signup-test-passphrase","confirm_password":"signup-test-passphrase"}"#;
+    const REGISTRATION: &str = r#"{"email":"signup@example.test","username":"NewCadet","password":"Tank123!","confirm_password":"Tank123!"}"#;
     assert_eq!(
         send("POST", "/registration", "", REGISTRATION)
             .await
@@ -706,14 +706,15 @@ async fn exports_admin_http_access_lifecycle() {
         ),
         (REGISTRATION.replace("NewCadet", "New Cadet"), "username"),
         (
-            REGISTRATION.replace("signup-test-passphrase", "short"),
-            "password",
-        ),
-        (
-            REGISTRATION.replacen("signup-test-passphrase", "different passphrase", 1),
+            REGISTRATION.replacen("Tank123!", "Different123!", 1),
             "confirm_password",
         ),
-    ] {
+    ]
+    .into_iter()
+    .chain(
+        ["Tank1!", "TankTest!", "tank123!", "TANK123!", "Tank1234"]
+            .map(|password| (REGISTRATION.replace("Tank123!", password), "password")),
+    ) {
         let response = send("POST", "/registration", "", &body).await.unwrap();
         assert_eq!(response.status(), 422);
         assert!(json(response).await["errors"][field].is_string());
@@ -766,8 +767,7 @@ async fn exports_admin_http_access_lifecycle() {
         false
     );
     let player_login =
-        serde_json::json!({"email": claimed_email, "password": "signup-test-passphrase"})
-            .to_string();
+        serde_json::json!({"email": claimed_email, "password": "Tank123!"}).to_string();
     let player_cookie = session_cookie(send("POST", "/session", "", &player_login).await.unwrap());
     assert_eq!(
         json(send("GET", "/session", &player_cookie, "").await.unwrap()).await["player"],
@@ -779,7 +779,7 @@ async fn exports_admin_http_access_lifecycle() {
     assert_eq!(own_garage["free_xp"], "0");
     assert!(!own_garage["vehicles"].as_array().unwrap().is_empty());
     let game_account = Accounts::new(repository.clone())
-        .authenticate(claimed_email, "signup-test-passphrase".into())
+        .authenticate(claimed_email, "Tank123!".into())
         .await
         .unwrap()
         .unwrap();
@@ -1015,6 +1015,18 @@ async fn exports_admin_http_access_lifecycle() {
             "409",
         ),
         (
+            "web_panel.registration.create",
+            "output.outcome",
+            "invalid_email",
+            "422",
+        ),
+        (
+            "web_panel.registration.create",
+            "output.outcome",
+            "invalid_password",
+            "422",
+        ),
+        (
             "web_panel.registration.check_username",
             "output.username.available",
             "false",
@@ -1075,7 +1087,9 @@ async fn exports_admin_http_access_lifecycle() {
         "wrong-password",
         "signup@example.test",
         "rival@example.test",
-        "signup-test-passphrase",
+        "Tank123!",
+        "TankTest!",
+        "Different123!",
         "NewCadet",
         "newcadet",
         player_cookie.split_once('=').unwrap().1,

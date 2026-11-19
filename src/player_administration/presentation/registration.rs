@@ -135,11 +135,12 @@ pub(super) async fn register(
 }
 
 fn registration_error(error: RegistrationError) -> ApiError {
-    let field = match error {
-        RegistrationError::Email => "email",
-        RegistrationError::Username => "username",
-        RegistrationError::Password => "password",
-        RegistrationError::PasswordConfirmation => "confirm_password",
+    let (field, outcome) = match error {
+        RegistrationError::Email => ("email", "invalid_email"),
+        RegistrationError::Username => ("username", "invalid_username"),
+        RegistrationError::Password => ("password", "invalid_password"),
+        RegistrationError::PasswordConfirmation => ("confirm_password", "password_mismatch"),
     };
+    tracing::Span::current().record("output.outcome", outcome);
     ApiError::field(StatusCode::UNPROCESSABLE_ENTITY, field, &error.to_string())
 }
