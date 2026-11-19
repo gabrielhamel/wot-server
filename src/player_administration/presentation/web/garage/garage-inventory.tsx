@@ -27,7 +27,11 @@ export function GarageBalances({ garage }: { garage: PlayerGarage }) {
           component="dl"
           sx={{
             display: "grid",
-            gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(4, 1fr)" },
+            gridTemplateColumns: {
+              xs: "repeat(2, 1fr)",
+              sm: "repeat(3, 1fr)",
+              md: "repeat(5, 1fr)",
+            },
             gap: 2,
             m: 0,
           }}

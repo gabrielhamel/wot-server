@@ -23,6 +23,12 @@ pub(super) struct CosmeticGrantRecord {
 }
 
 #[derive(Serialize)]
+pub(super) struct DepotGrantRecord {
+    id: i32,
+    name: String,
+}
+
+#[derive(Serialize)]
 pub(super) struct VehicleRecord {
     id: i32,
     key: String,
@@ -57,6 +63,7 @@ struct GarageSummary {
     gold: String,
     bonds: String,
     free_xp: String,
+    equipment_components: String,
     slots: i64,
 }
 
@@ -68,6 +75,7 @@ impl From<&AccountSnapshot> for GarageSummary {
             gold: snapshot.balances.gold.to_string(),
             bonds: snapshot.balances.bonds.to_string(),
             free_xp: snapshot.balances.free_xp.to_string(),
+            equipment_components: snapshot.balances.equipment_components.to_string(),
             slots: snapshot.balances.slots,
         }
     }
@@ -79,6 +87,7 @@ pub(super) struct Garage {
     summary: GarageSummary,
     vehicles: Vec<GarageVehicle>,
     attachments: BTreeMap<u16, u32>,
+    depot: BTreeMap<i32, u32>,
 }
 
 impl Garage {
@@ -127,6 +136,12 @@ impl Garage {
         Self {
             summary: GarageSummary::from(&snapshot),
             vehicles,
+            depot: catalog
+                .grantable_crew_books()
+                .chain(catalog.grantable_bounty_equipment())
+                .chain(catalog.grantable_experimental_equipment())
+                .filter_map(|(id, _)| Some((id, *snapshot.progression.depot.get(&id)?)))
+                .collect(),
             attachments: snapshot
                 .progression
                 .cosmetics
@@ -143,6 +158,9 @@ impl Garage {
 pub(super) enum GrantBody {
     Currency { currency: Currency, amount: i64 },
     Vehicle { vehicle: i32 },
+    CrewBook { id: i32, count: u32 },
+    BountyEquipment { id: i32, count: u32 },
+    ExperimentalEquipment { id: i32, count: u32 },
     Attachment { id: u16, count: u32 },
     StatTracker { vehicle: i64, id: u16, count: u32 },
 }
@@ -154,6 +172,7 @@ pub(super) enum Currency {
     Gold,
     Bonds,
     FreeXp,
+    EquipmentComponents,
 }
 
 #[derive(Serialize)]
@@ -271,6 +290,53 @@ pub(super) async fn stat_tracker_catalog(
     cosmetic_grant_catalog(state.catalog.grantable_stat_trackers())
 }
 
+#[tracing::instrument(
+    name = "admin.garage.catalog",
+    skip_all,
+    fields(ddd.bounded_context.name = "player_administration", input.collection = "crew_books", output.items.count = tracing::field::Empty)
+)]
+pub(super) async fn crew_book_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<DepotGrantRecord>> {
+    depot_grant_catalog(state.catalog.grantable_crew_books())
+}
+
+#[tracing::instrument(
+    name = "admin.garage.catalog",
+    skip_all,
+    fields(ddd.bounded_context.name = "player_administration", input.collection = "experimental_equipment", output.items.count = tracing::field::Empty)
+)]
+pub(super) async fn experimental_equipment_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<DepotGrantRecord>> {
+    depot_grant_catalog(state.catalog.grantable_experimental_equipment())
+}
+
+#[tracing::instrument(
+    name = "admin.garage.catalog",
+    skip_all,
+    fields(ddd.bounded_context.name = "player_administration", input.collection = "bounty_equipment", output.items.count = tracing::field::Empty)
+)]
+pub(super) async fn bounty_equipment_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<DepotGrantRecord>> {
+    depot_grant_catalog(state.catalog.grantable_bounty_equipment())
+}
+
+fn depot_grant_catalog<'a>(
+    entries: impl Iterator<Item = (i32, &'a str)>,
+) -> Json<Vec<DepotGrantRecord>> {
+    let mut items: Vec<_> = entries
+        .map(|(id, name)| DepotGrantRecord {
+            id,
+            name: name.to_owned(),
+        })
+        .collect();
+    items.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    tracing::Span::current().record("output.items.count", items.len());
+    Json(items)
+}
+
 fn cosmetic_grant_catalog<'a>(
     entries: impl Iterator<Item = CosmeticGrantEntry<'a>>,
 ) -> Json<Vec<CosmeticGrantRecord>> {
@@ -286,7 +352,7 @@ fn cosmetic_grant_catalog<'a>(
     Json(items)
 }
 
-#[tracing::instrument(name = "admin.garage.grant", skip_all, fields(ddd.bounded_context.name = "player_administration", input.id.bytes = id.len(), input.grant = tracing::field::Empty), err)]
+#[tracing::instrument(name = "admin.garage.grant", skip_all, fields(ddd.bounded_context.name = "player_administration", input.id.bytes = id.len(), input.grant = tracing::field::Empty, output.delivery = tracing::field::Empty, output.revision = tracing::field::Empty), err)]
 pub(super) async fn grant(
     State(state): State<AdminState>,
     Extension(RequestSpan(request_span)): Extension<RequestSpan>,
@@ -301,7 +367,7 @@ pub(super) async fn grant(
             match error.status() {
                 StatusCode::PAYLOAD_TOO_LARGE => "The grant request exceeds 8 KiB.",
                 StatusCode::UNSUPPORTED_MEDIA_TYPE => "Send the grant request as application/json.",
-                _ => "Send a valid currency, vehicle or cosmetic grant.",
+                _ => "Send a valid grant request.",
             },
         )
     })?;
@@ -312,11 +378,32 @@ pub(super) async fn grant(
                 Currency::Gold => (GrantCurrency::Gold, "gold"),
                 Currency::Bonds => (GrantCurrency::Bonds, "bonds"),
                 Currency::FreeXp => (GrantCurrency::FreeXp, "free_xp"),
+                Currency::EquipmentComponents => {
+                    (GrantCurrency::EquipmentComponents, "equipment_components")
+                }
             };
             request_span.record("input.grant.kind", "currency");
             request_span.record("input.grant.currency", name);
             request_span.record("input.amount", amount);
             PlayerGrant::Currency { currency, amount }
+        }
+        GrantBody::CrewBook { id, count } => {
+            request_span.record("input.grant.kind", "crew_book");
+            request_span.record("input.item", id);
+            request_span.record("input.count", count);
+            PlayerGrant::CrewBook { id, count }
+        }
+        GrantBody::BountyEquipment { id, count } => {
+            request_span.record("input.grant.kind", "bounty_equipment");
+            request_span.record("input.item", id);
+            request_span.record("input.count", count);
+            PlayerGrant::BountyEquipment { id, count }
+        }
+        GrantBody::ExperimentalEquipment { id, count } => {
+            request_span.record("input.grant.kind", "experimental_equipment");
+            request_span.record("input.item", id);
+            request_span.record("input.count", count);
+            PlayerGrant::ExperimentalEquipment { id, count }
         }
         GrantBody::Attachment { id, count } => {
             request_span.record("input.grant.kind", "attachment");
@@ -339,12 +426,16 @@ pub(super) async fn grant(
     };
     tracing::Span::current().record("input.grant", tracing::field::debug(grant));
     let (snapshot, delivery) = state.grants.grant(id, grant).await.map_err(grant_error)?;
+    let delivery = match delivery {
+        GrantDelivery::QueuedForGarage => "queued_for_garage",
+        GrantDelivery::OnNextSync => "on_next_sync",
+    };
+    let span = tracing::Span::current();
+    span.record("output.delivery", delivery);
+    span.record("output.revision", snapshot.revision);
     Ok(Json(GrantResponse {
         garage: Garage::from_snapshot(snapshot, &state.catalog),
-        delivery: match delivery {
-            GrantDelivery::QueuedForGarage => "queued_for_garage",
-            GrantDelivery::OnNextSync => "on_next_sync",
-        },
+        delivery,
     }))
 }
 

@@ -38,7 +38,8 @@ member without a seat occupies one barracks berth. An empty seat is represented 
   unlocks, including stock unlocks. Vehicles that earn Elite status through a
   vehicle skill tree remain outside this rule until that progression exists.
   The toggle preserves any Combat XP already saved on the vehicle.
-- Buy and sell crew books through the shop and depot. Applying a crew-wide book
+- Buy and sell crew books through the shop and depot. An administrator can
+  [grant any catalog crew book](admin.md#grants). Applying a crew-wide book
   requires a full, trained crew and the book's nation where specified. Personal
   books target an individual. XP and prices are read from installed resources.
 - Change an ordinary recruit's name and portrait using the nation's available

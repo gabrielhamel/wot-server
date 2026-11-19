@@ -8,8 +8,10 @@ example, can mount Class 2 Improved Aiming and Class 2 Gun Rammer.
 
 The shop sells eligible Improved equipment for bonds. The installed catalog
 marks Bounty and Experimental equipment as out of shop, so those items mount
-from depot stock. The garage's Bounty and Experimental tabs show items already
-in the depot or mounted on the vehicle.
+from depot stock. An administrator can add Basic or Upgraded Bounty Equipment,
+Experimental Equipment at any tier, or Components from [Resources & Garage](admin.md#grants). The garage's
+Bounty and Experimental tabs show items already in the depot or mounted on
+the vehicle.
 
 Accounts validates vehicle ownership, slot capacity, descriptor identity, vehicle
 tier and tags, and conflicts between devices. Applying a layout retains devices
@@ -83,6 +85,8 @@ Experimental equipment, and demounting for gold, bonds and components. It checks
 that failed purchases and demounts leave the balances and inventory intact, and
 verifies the account deltas and full cache after reconnecting to PostgreSQL.
 
-Garage support covers one setup. Reward distribution, equipment upgrades,
+Garage support covers one setup. The admin Components grant adds the
+`equipCoin` balance used by Experimental Equipment demounting. Reward
+distribution, in-game equipment upgrades,
 Experimental deconstruction, demount kits, alternate setups, and server-side
 battle effects still need implementation.

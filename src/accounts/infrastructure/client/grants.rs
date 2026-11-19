@@ -43,6 +43,26 @@ impl GarageCatalog {
         })
     }
 
+    pub fn grantable_crew_books(&self) -> impl Iterator<Item = (i32, &str)> {
+        self.crew_books
+            .iter()
+            .map(|(&id, book)| (id, book.name.as_str()))
+    }
+
+    pub fn grantable_bounty_equipment(&self) -> impl Iterator<Item = (i32, &str)> {
+        self.equipment_grants
+            .bounty
+            .iter()
+            .map(|(&id, name)| (id, name.as_str()))
+    }
+
+    pub fn grantable_experimental_equipment(&self) -> impl Iterator<Item = (i32, &str)> {
+        self.equipment_grants
+            .experimental
+            .iter()
+            .map(|(&id, name)| (id, name.as_str()))
+    }
+
     pub fn grantable_attachments(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
         self.cosmetic_grant_entries(CosmeticKind::Attachment)
     }
@@ -75,7 +95,7 @@ impl GarageCatalog {
         Some((vehicle_type, rules.into_keys().map(|(_, id)| id).collect()))
     }
 
-    #[tracing::instrument(name = "accounts.grants.plan_grant", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision), err)]
+    #[tracing::instrument(name = "accounts.grants.plan_grant", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, input.grant = ?grant, output.revision = tracing::field::Empty), err)]
     pub fn plan_grant(
         &self,
         mut snapshot: AccountSnapshot,
@@ -85,6 +105,27 @@ impl GarageCatalog {
         let acquired_vehicle = match grant {
             PlayerGrant::Currency { currency, amount } => {
                 currency.grant(&mut snapshot.balances, amount)?;
+                None
+            }
+            PlayerGrant::CrewBook { id, count } => {
+                if !self.crew_books.contains_key(&id) {
+                    return Err(GrantError::UnknownCrewBook);
+                }
+                snapshot.progression.grant_depot_stock(id, count)?;
+                None
+            }
+            PlayerGrant::BountyEquipment { id, count } => {
+                if !self.equipment_grants.bounty.contains_key(&id) {
+                    return Err(GrantError::UnknownBountyEquipment);
+                }
+                snapshot.progression.grant_depot_stock(id, count)?;
+                None
+            }
+            PlayerGrant::ExperimentalEquipment { id, count } => {
+                if !self.equipment_grants.experimental.contains_key(&id) {
+                    return Err(GrantError::UnknownExperimentalEquipment);
+                }
+                snapshot.progression.grant_depot_stock(id, count)?;
                 None
             }
             PlayerGrant::Attachment { id, count } => {
@@ -139,6 +180,7 @@ impl GarageCatalog {
         snapshot.revision = previous_revision
             .checked_add(1)
             .ok_or(ProgressionError::InvalidRequest)?;
+        tracing::Span::current().record("output.revision", snapshot.revision);
         Ok(ProgressionChange {
             acquired_vehicle,
             sold_vehicle: None,
@@ -164,6 +206,7 @@ impl GarageCatalog {
                     GrantCurrency::Gold => "gold",
                     GrantCurrency::Bonds => "crystal",
                     GrantCurrency::FreeXp => "freeXP",
+                    GrantCurrency::EquipmentComponents => "equipCoin",
                 };
                 Ok(crate::pickle!({
                     "prevRev": (change.previous_revision),
@@ -172,6 +215,9 @@ impl GarageCatalog {
                 }))
             }
             PlayerGrant::Vehicle { .. }
+            | PlayerGrant::CrewBook { .. }
+            | PlayerGrant::BountyEquipment { .. }
+            | PlayerGrant::ExperimentalEquipment { .. }
             | PlayerGrant::Attachment { .. }
             | PlayerGrant::StatTracker { .. } => self.progression_diff(previous, change),
         }

@@ -34,8 +34,10 @@ const garage: Garage = {
   gold: "0",
   bonds: "5",
   free_xp: "0",
+  equipment_components: "40",
   slots: 3,
   attachments: { 12: 1 },
+  depot: { 286: 2 },
   vehicles: [
     {
       key: "usa:A01_T1_Cunningham",
@@ -659,6 +661,9 @@ describe("Server Administration", () => {
           { id: 13, name: "Tool box", max_owned: 3 },
         ]),
       ),
+      http.get(`${origin}/crew-books`, () => HttpResponse.json([])),
+      http.get(`${origin}/experimental-equipment`, () => HttpResponse.json([])),
+      http.get(`${origin}/bounty-equipment`, () => HttpResponse.json([])),
       http.get(`${origin}/stat-trackers`, () =>
         HttpResponse.json([
           { id: 37, name: "Victories", max_owned: 1 },
@@ -744,6 +749,157 @@ describe("Server Administration", () => {
         "input.grant.kind": "stat_tracker",
         "output.delivery": "queued_for_garage",
       });
+    } finally {
+      await telemetry.stop();
+    }
+  });
+
+  it("grants Components, crew books, and equipment from the player garage", async () => {
+    const telemetry = captureTraces();
+    let snapshot = structuredClone(garage);
+    const grants: Array<{ body: Grant; trace: string | null }> = [];
+    const book = { id: 286, name: "Training Booklet (U.S.S.R.)" };
+    const equipment = { id: 39161, name: "Fire-Control System T3" };
+    const basic = { id: 13049, name: "Bounty Gun Laying Drive · Basic" };
+    const upgraded = { id: 13305, name: "Bounty Gun Laying Drive · Upgraded" };
+    httpServer.use(
+      players(),
+      http.get(`${origin}/players/123/garage`, () => HttpResponse.json(snapshot)),
+      http.get(`${origin}/vehicles`, () => HttpResponse.json([])),
+      http.get(`${origin}/attachments`, () => HttpResponse.json([])),
+      http.get(`${origin}/stat-trackers`, () => HttpResponse.json([])),
+      http.get(`${origin}/crew-books`, () => HttpResponse.json([book])),
+      http.get(`${origin}/experimental-equipment`, () => HttpResponse.json([equipment])),
+      http.get(`${origin}/bounty-equipment`, () => HttpResponse.json([basic, upgraded])),
+      http.post(`${origin}/players/123/grants`, async ({ request }) => {
+        const body = (await request.json()) as Grant;
+        grants.push({ body, trace: request.headers.get("traceparent") });
+        if (grants.length === 1) {
+          return HttpResponse.json(
+            { message: "The grant would exceed the supported balance limit." },
+            { status: 422 },
+          );
+        }
+        if (body.kind === "currency") snapshot = { ...snapshot, equipment_components: "165" };
+        if (
+          body.kind === "crew_book" ||
+          body.kind === "experimental_equipment" ||
+          body.kind === "bounty_equipment"
+        ) {
+          snapshot = {
+            ...snapshot,
+            depot: { ...snapshot.depot, [body.id]: (snapshot.depot[body.id] ?? 0) + body.count },
+          };
+        }
+        return HttpResponse.json({ garage: snapshot, delivery: "queued_for_garage" });
+      }),
+    );
+
+    try {
+      const { user } = openAdmin(true);
+      await user.click(await screen.findByRole("tab", { name: "Admin" }));
+      await user.click(await screen.findByText(player.display_name));
+      const components = await screen.findByText("Experimental Equipment components", {
+        selector: "dt",
+      });
+      expect(components.nextElementSibling).toHaveTextContent("40");
+      expect(
+        screen.queryByRole("heading", { name: "Grant Experimental Equipment Components" }),
+      ).not.toBeInTheDocument();
+      await user.click(screen.getByRole("combobox", { name: "Resource" }));
+      await user.click(
+        await screen.findByRole("option", { name: "Experimental Equipment components" }),
+      );
+      const amount = screen.getByRole("textbox", { name: "Amount to add" });
+      await user.type(amount, "2147483647");
+      await user.click(screen.getByRole("button", { name: "Grant resource" }));
+      expect(
+        await screen.findByText("The grant would exceed the supported balance limit."),
+      ).toBeVisible();
+      await user.clear(amount);
+      await user.type(amount, "125");
+      await user.click(screen.getByRole("button", { name: "Grant resource" }));
+      expect(await screen.findByText("165", { selector: "dd" })).toBe(
+        components.nextElementSibling,
+      );
+
+      for (const { picker, button, name, initial, count } of [
+        { picker: "Crew book", button: "Grant crew book", name: book.name, initial: 2, count: 3 },
+        {
+          picker: "Experimental Equipment",
+          button: "Grant equipment",
+          name: equipment.name,
+          initial: 0,
+          count: 2,
+        },
+      ]) {
+        const select = screen.getByRole("combobox", { name: picker });
+        await user.type(select, name.slice(0, 8));
+        await user.click(
+          await screen.findByRole("option", { name: (label) => label.startsWith(name) }),
+        );
+        expect(select).toHaveValue(name);
+        const copies = screen.getByRole("textbox", {
+          name: "Copies to add",
+          description: new RegExp(`^${initial} in depot`),
+        });
+        await user.clear(copies);
+        await user.type(copies, "101");
+        const submit = screen.getByRole("button", { name: button });
+        expect(submit).toBeDisabled();
+        await user.clear(copies);
+        await user.type(copies, String(count));
+        await user.click(submit);
+        expect(
+          await screen.findByText(`${initial + count} in depot · Up to 100 per grant`),
+        ).toBeVisible();
+      }
+
+      const bounty = within(screen.getByRole("form", { name: "Grant Bounty Equipment" }));
+      const bountyPicker = bounty.getByRole("combobox", { name: "Bounty Equipment" });
+      await user.click(bountyPicker);
+      expect(await screen.findByRole("option", { name: /Drive · Basic/ })).toBeVisible();
+      await user.click(screen.getByRole("option", { name: /Drive · Upgraded/ }));
+      expect(bountyPicker).toHaveValue(upgraded.name);
+      await user.click(bounty.getByRole("button", { name: "Grant Bounty Equipment" }));
+      expect(await bounty.findByText("1 in depot · Up to 100 per grant")).toBeVisible();
+
+      expect(grants.map(({ body }) => body)).toEqual([
+        { kind: "currency", currency: "equipment_components", amount: 2147483647 },
+        { kind: "currency", currency: "equipment_components", amount: 125 },
+        { kind: "crew_book", id: book.id, count: 3 },
+        { kind: "experimental_equipment", id: equipment.id, count: 2 },
+        { kind: "bounty_equipment", id: upgraded.id, count: 1 },
+      ]);
+      for (const [grant, status, expected] of [
+        [
+          grants[0],
+          422,
+          { "input.grant.currency": "equipment_components", "input.amount": 2147483647 },
+        ],
+        [
+          grants[1],
+          200,
+          {
+            "input.grant.currency": "equipment_components",
+            "output.delivery": "queued_for_garage",
+          },
+        ],
+        [grants[2], 200, { "input.item": book.id, "input.count": 3 }],
+        [grants[3], 200, { "input.item": equipment.id, "input.count": 2 }],
+        [grants[4], 200, { "input.item": upgraded.id, "input.count": 1 }],
+      ] as const) {
+        const trace = telemetry.expectRequest(
+          grant.trace,
+          "web.admin.grant",
+          "/api/admin/players/{id}/grants",
+          status,
+        );
+        expect(trace.parent?.attributes).toMatchObject({
+          "input.grant.kind": grant.body.kind,
+          ...expected,
+        });
+      }
     } finally {
       await telemetry.stop();
     }

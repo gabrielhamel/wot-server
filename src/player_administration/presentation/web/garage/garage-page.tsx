@@ -6,6 +6,7 @@ import type { Garage, Grant } from "../../../application/admin-contracts";
 import type { AdminDataProvider } from "../../../infrastructure/admin-api";
 import { errorMessage } from "../../../../platform/infrastructure/web/http";
 import { CosmeticGrant } from "./cosmetic-grant";
+import { DepotGrant } from "./depot-grant";
 import { CurrencyGrant } from "./currency-grant";
 import { TankGrant } from "./tank-grant";
 import { GarageBalances, OwnedTanks } from "./garage-inventory";
@@ -89,6 +90,27 @@ function GaragePage({ id }: { id: Identifier }) {
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 2 }}>
             <CurrencyGrant busy={busy} onGrant={submit} />
             <TankGrant busy={busy} garage={garage} onGrant={submit} />
+            <DepotGrant
+              api={api}
+              busy={busy}
+              kind="experimental_equipment"
+              depot={garage.depot}
+              onGrant={submit}
+            />
+            <DepotGrant
+              api={api}
+              busy={busy}
+              kind="bounty_equipment"
+              depot={garage.depot}
+              onGrant={submit}
+            />
+            <DepotGrant
+              api={api}
+              busy={busy}
+              kind="crew_book"
+              depot={garage.depot}
+              onGrant={submit}
+            />
             <CosmeticGrant
               api={api}
               busy={busy}

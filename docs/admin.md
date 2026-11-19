@@ -91,16 +91,22 @@ or demote them to **Player**. Promotion requires an email address as the player'
 Administrators can change other players' roles only, so at least one
 administrator always retains access. The list displays player names and logins,
 newest first. Select a player to open **Resources & Garage**. The page displays
-credits, gold, bonds, free XP and owned tanks. Use **Grant resource** to add a
-positive whole amount, or search for a tank by name and use **Grant
-tank**. Tank grants include stock modules, standard ammunition and basic crew.
+credits, gold, bonds, free XP, Experimental Equipment components and owned
+tanks. Choose a resource, including **Experimental Equipment components**,
+from the **Resource** dropdown, enter a positive whole amount, and select
+**Grant resource**. To add a tank, search by name and
+select **Grant tank**. Tank grants include stock modules, standard ammunition
+and basic crew.
 The player is charged nothing and needs a free garage slot. The picker lists
 tanks eligible for Random Battles and identifies already-owned tanks. Use
 **Grant a 3D attachment** to search by name, see how many copies
 the player owns, and add copies to the depot. Ownership includes fitted copies.
 The picker includes reward attachments such as Zongzi Jubilee. Use **Grant a
 stat tracker** to select a compatible owned tank and add a vehicle-bound copy
-to its depot stock.
+to its depot stock. Use **Grant crew books** for national, universal and
+personal crew books, **Grant Bounty Equipment** for Basic and Upgraded
+pieces, and **Grant Experimental Equipment** for tiers 1–3. These pickers
+show the player's unmounted depot stock.
 
 For remote administration, serve the dashboard through an HTTPS reverse
 proxy and use `"admin": {}` in `server.json`. Route `/dashboard/`,
@@ -161,8 +167,9 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | `GET /api/admin/players?page=1&per_page=25` | `200 OK` with `{ "data": [player records], "total": 2 }`. Pages start at 1. Page size is 1–100. Defaults are page 1 and 25 records. |
 | `POST /api/admin/players` | `201 Created` with the new player record. The new account has the `player` role. |
 | `POST /api/admin/players/{id}/role` | Accepts `{ "role": "admin" }` or `{ "role": "player" }` and returns `204 No Content`. Self-role changes return `403 Forbidden`. |
-| `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks and an `attachments` map from item ID to total owned copies. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
+| `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks, an `attachments` map from item ID to total owned copies, and a `depot` map from grantable crew book, Bounty Equipment and Experimental Equipment IDs to depot counts. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |
+| `GET /api/admin/crew-books`, `GET /api/admin/bounty-equipment`, `GET /api/admin/experimental-equipment` | `200 OK` with grantable depot items containing `id` and `name`. |
 | `GET /api/admin/attachments` | `200 OK` with grantable 3D attachments containing `id`, `name`, and `max_owned` (null if the catalog sets no limit). |
 | `GET /api/admin/stat-trackers` | `200 OK` with grantable trackers containing `id`, `name`, and `max_owned`. |
 | `POST /api/admin/players/{id}/grants` | `200 OK` with `garage` and `delivery` after commit. |
@@ -202,7 +209,7 @@ before retrying.
 Send one of these JSON bodies to the grants endpoint.
 
 ```json
-{ "kind": "currency", "currency": "bonds", "amount": 500 }
+{ "kind": "currency", "currency": "equipment_components", "amount": 500 }
 ```
 
 ```json
@@ -226,8 +233,39 @@ A stat tracker grant uses the owned tank's inventory ID to validate its current
 anchor and eligibility. The copies belong to that vehicle type, including
 after removal.
 
-Currency identifiers are `credits`, `gold`, `bonds`, and `free_xp`.
-The resulting balance must fit the server's grant ceiling of 2,147,483,647.
+Currency identifiers are `credits`, `gold`, `bonds`, `free_xp`, and
+`equipment_components`. Components use the same account balance as
+Experimental Equipment transactions in the game. Both garage APIs return
+balances as decimal strings. The resulting balance must fit the grant ceiling
+of 2,147,483,647.
+
+```json
+{ "kind": "crew_book", "id": 286, "count": 3 }
+```
+
+```json
+{ "kind": "experimental_equipment", "id": 39161, "count": 1 }
+```
+
+```json
+{ "kind": "bounty_equipment", "id": 13305, "count": 1 }
+```
+
+Depot grants add 1–100 copies at a time. Use the compact descriptor returned
+by the appropriate catalog endpoint. The crew book catalog comes from
+`scripts/item_defs/crewBooks/crewBooks.xml`. Experimental Equipment is
+identified by `modernized_1`, `modernized_2`, or `modernized_3`. Bounty
+Equipment is identified by `trophyBasic` or `trophyUpgraded`. Both use
+`scripts/item_defs/vehicles/common/optional_devices.xml`. The Bounty picker
+appends the level since both versions can share a name. Catalog names use
+the bundle's localized strings when available. The catalog and garage sync
+were verified with resources extracted from EU `v.2.4.1.1 #993`
+(`WorldOfTanks.exe` SHA-256 `fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`).
+Grants add stock for the existing training and mounting flows. Equipment
+purchase and mounting rules
+still apply. The resulting depot stock per item must fit a signed 32-bit
+integer.
+
 Use a vehicle ID from `GET /api/admin/vehicles`. Both the picker and the grant
 endpoint restrict grants to tier I–XI Random Battles vehicles. The filter uses
 the installed catalog's tags and its `forbidden_vehicles_to_battle_config.xml`.
@@ -240,15 +278,18 @@ the ISU-130. Names come from the installed localization files when present.
 The granted tank and its stock modules become available in account progression.
 
 An unknown player returns `404`. An invalid amount, unknown or unsupported tank,
-unknown attachment, or ownership or balance over the ceiling returns `422`. A duplicate tank, full garage or
-account write already in progress returns `409`. Refresh the player's garage if
+unknown catalog item, or stock, ownership or balance over the limit returns
+`422`. A duplicate tank, full garage or account write already in progress
+returns `409`. Refresh the player's garage if
 a submission loses its HTTP response before deciding whether to submit again.
 
 After a revision-checked commit, the game gateway refreshes its account snapshot
 and queues a reliable Mercury `Account.update` for the synced garage session
 (`queued_for_garage`). The balance diff carries the new absolute value in
-`stats.credits`, `stats.gold`, `stats.crystal` or `stats.freeXP`. Tank grants
-use the same inventory tables as garage purchases. Attachment grants use the
+`stats.credits`, `stats.gold`, `stats.crystal`, `stats.freeXP`, or
+`stats.equipCoin`. Crew book grants update the crew book (14) table. Bounty
+and Experimental Equipment grants update optional device inventory (9). Tank grants use
+the same inventory tables as garage purchases. Attachment grants use the
 customization depot table. `on_next_sync` means the
 committed snapshot will be available at the next sync, including for an offline
 player or one still connecting.

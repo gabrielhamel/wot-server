@@ -116,6 +116,8 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
                 "text/lc_messages/vehicle_customization.mo"
                     | "text/lc_messages/artefacts.mo"
                     | "text/lc_messages/crew_skins.mo"
+                    | "text/lc_messages/crew_books.mo"
+                    | "text/lc_messages/nations.mo"
                     | "text/lc_messages/gb_vehicles.mo"
             )
             || NATIONS.iter().any(|nation| {

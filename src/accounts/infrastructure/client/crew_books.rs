@@ -3,6 +3,7 @@ use super::{
     item_defs::{NATIONS, read_xml},
     item_prices::ItemPrices,
     items::{IntCompactDescr, item_type},
+    localization::localized_names,
 };
 use crate::accounts::{AccountSnapshot, CrewRoster, ProgressionError};
 use anyhow::{Context, Result};
@@ -10,6 +11,7 @@ use std::collections::BTreeMap;
 use wot_resources::ResourceBundle;
 
 pub(super) struct CrewBook {
+    pub(super) name: String,
     xp: u32,
     nation: Option<u8>,
     personal: bool,
@@ -35,6 +37,8 @@ pub(super) fn load(
         .iter_child_elements()
         .filter_map(|(_, group)| Some((group.get_child_string("name")?.trim(), group)))
         .collect();
+    let names = localized_names(fs, "text/lc_messages/crew_books.mo").unwrap_or_default();
+    let nations = localized_names(fs, "text/lc_messages/nations.mo").unwrap_or_default();
     let mut result = BTreeMap::new();
     for (_, book) in books.iter_child_elements() {
         let cd = IntCompactDescr {
@@ -73,9 +77,48 @@ pub(super) fn load(
                     .context("Unknown crew book nation")
             })
             .transpose()?;
+        let name = book
+            .get_child_string("name")
+            .and_then(|name| name.trim().strip_prefix("#crew_books:"))
+            .and_then(|key| names.get(key))
+            .cloned()
+            .unwrap_or_else(|| match kind {
+                "brochure" => "Training Booklet".to_owned(),
+                "guide" => "Training Guide".to_owned(),
+                "crewBook" => "Training Manual".to_owned(),
+                "personalBook" => "Personal Training Manual".to_owned(),
+                "universalBook" => "Universal Manual".to_owned(),
+                "universalGuide" => "Universal Guide".to_owned(),
+                "universalBrochure" => "Universal Booklet".to_owned(),
+                _ => format!("Crew book · {xp} XP"),
+            });
+        let name = if let Some(key) = nation.and_then(|id| NATIONS.get(usize::from(id))) {
+            let nation = nations.get(*key).map(String::as_str).unwrap_or(match *key {
+                "ussr" => "U.S.S.R.",
+                "usa" => "U.S.A.",
+                "uk" => "U.K.",
+                "czech" => "Czechoslovakia",
+                "germany" => "Germany",
+                "china" => "China",
+                "france" => "France",
+                "japan" => "Japan",
+                "sweden" => "Sweden",
+                "poland" => "Poland",
+                "italy" => "Italy",
+                _ => "Unknown nation",
+            });
+            if name.contains("%(nation)s") {
+                name.replace("%(nation)s", nation)
+            } else {
+                format!("{name} ({nation})")
+            }
+        } else {
+            name
+        };
         result.insert(
             cd.to_int() as i32,
             CrewBook {
+                name: name.replace('\u{a0}', " "),
                 xp,
                 nation,
                 personal: kind == "personalBook",

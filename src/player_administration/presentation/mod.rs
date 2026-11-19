@@ -68,6 +68,12 @@ pub(crate) fn router(
         .route("/players/{id}/garage", get(garage::show))
         .route("/players/{id}/grants", post(garage::grant))
         .route("/vehicles", get(garage::catalog))
+        .route("/crew-books", get(garage::crew_book_catalog))
+        .route(
+            "/experimental-equipment",
+            get(garage::experimental_equipment_catalog),
+        )
+        .route("/bounty-equipment", get(garage::bounty_equipment_catalog))
         .route("/attachments", get(garage::attachment_catalog))
         .route("/stat-trackers", get(garage::stat_tracker_catalog))
         .route_layer(middleware::from_fn_with_state(
@@ -143,6 +149,8 @@ async fn set_browser_headers(
         input.grant.kind = tracing::field::Empty,
         input.grant.currency = tracing::field::Empty,
         input.amount = tracing::field::Empty,
+        input.item = tracing::field::Empty,
+        input.count = tracing::field::Empty,
         input.vehicle_type = tracing::field::Empty,
         input.attachment_id = tracing::field::Empty,
         input.stat_tracker_id = tracing::field::Empty,

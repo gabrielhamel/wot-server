@@ -7,6 +7,8 @@ import type {
   AdminSession,
   CatalogVehicle,
   Cosmetic,
+  DepotItem,
+  DepotGrantKind,
   Garage,
   Grant,
   GrantResult,
@@ -155,6 +157,10 @@ function grantInputs(grant: Grant): Attributes {
       return { "input.grant.currency": grant.currency, "input.amount": grant.amount };
     case "vehicle":
       return { "input.vehicle_type": grant.vehicle };
+    case "crew_book":
+    case "experimental_equipment":
+    case "bounty_equipment":
+      return { "input.item": grant.id, "input.count": grant.count };
     case "attachment":
       return { "input.attachment_id": grant.id, "input.count": grant.count };
     case "stat_tracker":
@@ -170,6 +176,12 @@ function inputAccountId(id: Identifier) {
   const accountId = String(id);
   return /^[1-9]\d{0,18}$/.test(accountId) ? accountId : undefined;
 }
+
+const depotCatalogs = {
+  crew_book: "crew-books",
+  experimental_equipment: "experimental-equipment",
+  bounty_equipment: "bounty-equipment",
+} as const satisfies Record<DepotGrantKind, string>;
 
 const garageApi = {
   getGarage(id: Identifier, signal?: AbortSignal) {
@@ -189,6 +201,9 @@ const garageApi = {
   },
   getVehicleCatalog(signal?: AbortSignal) {
     return loadCatalog<CatalogVehicle>("vehicles", signal);
+  },
+  getDepotCatalog(kind: DepotGrantKind, signal?: AbortSignal) {
+    return loadCatalog<DepotItem>(depotCatalogs[kind], signal);
   },
   getAttachmentCatalog(signal?: AbortSignal) {
     return loadCatalog<Cosmetic>("attachments", signal);
@@ -218,7 +233,7 @@ const garageApi = {
 };
 
 function loadCatalog<T>(
-  catalog: "vehicles" | "attachments" | "stat-trackers",
+  catalog: "vehicles" | "attachments" | "stat-trackers" | (typeof depotCatalogs)[DepotGrantKind],
   signal?: AbortSignal,
 ) {
   return webOperation(
