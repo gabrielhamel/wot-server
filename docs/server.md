@@ -74,14 +74,10 @@ deletes it. Ctrl-C gracefully stops the gateway.
 
 The server uses one PostgreSQL database and one connection pool. Accounts and
 Social run their own embedded SQLx migrations and track them in
-`accounts._sqlx_migrations` and `social._sqlx_migrations`. A new installation
-runs those migrations directly. An existing installation with legacy SQLx
-history first runs the upgrade in [legacy migrations](../migrations/), which
-moves tables and their sequences into their owning schemas and removes the
-cross-context view and foreign keys. Run the upgrade with a role that owns
-the existing tables and can create schemas in the database. Stop the previous
-server binary before upgrading an existing database because it uses the old
-table locations.
+`accounts._sqlx_migrations` and `social._sqlx_migrations`. This version requires
+an empty database when replacing a server that used the old shared tables.
+Provision a fresh database or reset the old one before starting this version.
+The database role must be able to create schemas during the first startup.
 
 The schema and migration owners are [Accounts](../src/accounts/README.md) and
 [Social](../src/social/README.md). Player Administration and Player Sessions

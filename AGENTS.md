@@ -119,9 +119,8 @@ contracts with the context that owns them.
   joins, views, triggers, and direct SQL reads or writes are prohibited. Store
   scalar IDs for references to other contexts and use a published contract to
   resolve or validate them.
-- Keep migrations scoped to their owning schema. Put a one-time upgrade of
-  legacy shared storage in server composition and preserve the checksums of
-  previously applied migrations.
+- Keep migrations scoped to their owning schema and preserve the checksums
+  of previously applied context migrations.
 
 ### Directory organization
 

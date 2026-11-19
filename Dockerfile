@@ -4,7 +4,6 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY tools/ tools/
 COPY src/ src/
-COPY migrations/ migrations/
 
 # A reused source layer can have older timestamps than the shared Cargo cache.
 FROM rust-source AS extractor-build

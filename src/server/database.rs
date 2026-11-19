@@ -8,8 +8,6 @@ use std::time::Duration;
 
 use crate::{accounts, platform::observability::database, social};
 
-static LEGACY: Migrator = sqlx::migrate!("./migrations");
-
 #[tracing::instrument(name = "server.connect_database", skip_all, fields(ddd.bounded_context.name = "server", input.pool.max_connections = connections), err)]
 pub async fn connect_database(url: &str, connections: u32) -> Result<PgPool> {
     let pool = PgPoolOptions::new()
@@ -28,21 +26,8 @@ async fn migrate(pool: &PgPool) -> Result<()> {
     // A failed or cancelled migration may leave session settings or a SQLx lock.
     conn.close_on_drop();
     // SQLx's PostgreSQL lock is reentrant on this connection. Hold it across
-    // the legacy check and both schema initializations.
+    // both schema initializations.
     conn.lock().await?;
-    let statement = "SELECT CASE WHEN current_schema() IS NULL OR current_schema() IN ('accounts', 'social') THEN false ELSE to_regclass(format('%I._sqlx_migrations', current_schema())) IS NOT NULL END";
-    let has_legacy_history: bool = database(
-        "server",
-        statement,
-        sqlx::query_scalar(statement).fetch_one(&mut *conn),
-    )
-    .await?;
-    if has_legacy_history {
-        LEGACY
-            .run_direct(&mut *conn)
-            .await
-            .context("Upgrade legacy storage")?;
-    }
     for statement in [
         "CREATE SCHEMA IF NOT EXISTS accounts",
         "CREATE SCHEMA IF NOT EXISTS social",
@@ -85,15 +70,14 @@ mod tests {
     use super::*;
     use crate::social::contract::ContactChange;
     use sqlx::{ConnectOptions, postgres::PgConnectOptions};
-    use std::borrow::Cow;
 
     #[tokio::test]
     #[ignore = "Requires WG_TEST_DATABASE_URL with permission to create a test database"]
-    async fn upgrades_legacy_context_storage() {
+    async fn initializes_context_storage() {
         let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
         let pool = PgPool::connect(&url).await.unwrap();
         let name = format!(
-            "context_upgrade_{}",
+            "context_storage_{}",
             std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()
         );
         sqlx::query(&format!("CREATE DATABASE {name}"))
@@ -102,66 +86,39 @@ mod tests {
             .unwrap();
         let options = url.parse::<PgConnectOptions>().unwrap().database(&name);
         let database_url = options.to_url_lossy().to_string();
-        let legacy = PgPoolOptions::new()
-            .max_connections(1)
-            .connect_with(options)
-            .await
-            .unwrap();
-        Migrator {
-            migrations: Cow::Owned(
-                LEGACY
-                    .iter()
-                    .filter(|item| item.version <= 3)
-                    .cloned()
-                    .collect(),
-            ),
-            ..Migrator::DEFAULT
-        }
-        .run(&legacy)
-        .await
-        .unwrap();
-
-        let ids: Vec<i64> = sqlx::query_scalar("INSERT INTO accounts(username, display_name, password_hash) VALUES ('alice', 'Alice', 'fixture'), ('bob', 'Bob', 'fixture') RETURNING id")
-            .fetch_all(&legacy).await.unwrap();
+        let initialized = connect_database(&database_url, 1).await.unwrap();
+        let ids: Vec<i64> = sqlx::query_scalar("INSERT INTO accounts.accounts(username, display_name, password_hash) VALUES ('alice', 'Alice', 'fixture'), ('bob', 'Bob', 'fixture') RETURNING id")
+            .fetch_all(&initialized).await.unwrap();
         let [alice, bob] = ids.as_slice() else {
             panic!("Expected two accounts")
         };
-        sqlx::query("INSERT INTO social_contacts(owner_id, peer_id) VALUES ($1, $2)")
-            .bind(alice)
-            .bind(bob)
-            .execute(&legacy)
+        let social = social::postgres::service(
+            initialized.clone(),
+            accounts::postgres::directory(initialized.clone()),
+        );
+        social
+            .change(*alice, *bob, ContactChange::Friend)
             .await
             .unwrap();
-        let conversation: i32 = sqlx::query_scalar("INSERT INTO private_conversations(first_id, second_id, first_open, second_open) VALUES ($1, $2, true, true) RETURNING id")
-            .bind(alice).bind(bob).fetch_one(&legacy).await.unwrap();
-        let message: i64 = sqlx::query_scalar("INSERT INTO private_messages(conversation_id, sender_id, body) VALUES ($1, $2, 'Saved before upgrade') RETURNING id")
-            .bind(conversation).bind(alice).fetch_one(&legacy).await.unwrap();
-        legacy.close().await;
-
-        connect_database(&database_url, 1)
+        let room = social.open(*alice, *bob).await.unwrap();
+        let sent = social
+            .send(*alice, room.id, "Saved before restart")
             .await
-            .unwrap()
-            .close()
-            .await;
-        let upgraded = connect_database(&database_url, 1).await.unwrap();
+            .unwrap();
+        let message = sent.history.last().unwrap().id;
+        initialized.close().await;
+
+        let restarted = connect_database(&database_url, 1).await.unwrap();
         let social = social::postgres::service(
-            upgraded.clone(),
-            accounts::postgres::directory(upgraded.clone()),
+            restarted.clone(),
+            accounts::postgres::directory(restarted.clone()),
         );
         let roster = social.roster(*alice).await.unwrap();
         assert_eq!(roster[0].player.name, "Bob");
         let rooms = social.restore(*bob).await.unwrap();
+        assert_eq!(rooms[0].id, room.id);
         assert_eq!(rooms[0].history[0].id, message);
-        assert_eq!(rooms[0].history[0].text, "Saved before upgrade");
-        let sent = social
-            .send(
-                *bob,
-                conversation.try_into().unwrap(),
-                "Saved after upgrade",
-            )
-            .await
-            .unwrap();
-        assert!(sent.history.last().unwrap().id > message);
+        assert_eq!(rooms[0].history[0].text, "Saved before restart");
         assert!(
             social
                 .change(*alice, i64::MAX, ContactChange::Friend)
@@ -172,17 +129,17 @@ mod tests {
 
         let cross_context_keys: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM pg_constraint c JOIN pg_class src ON src.oid=c.conrelid JOIN pg_class dst ON dst.oid=c.confrelid WHERE c.contype='f' AND src.relnamespace IN ('accounts'::regnamespace, 'social'::regnamespace) AND src.relnamespace<>dst.relnamespace",
-        ).fetch_one(&upgraded).await.unwrap();
+        ).fetch_one(&restarted).await.unwrap();
         assert_eq!(cross_context_keys, 0);
-        let directory_removed: bool =
-            sqlx::query_scalar("SELECT to_regclass('public.account_directory') IS NULL")
-                .fetch_one(&upgraded)
+        let legacy_objects_absent: bool =
+            sqlx::query_scalar("SELECT to_regclass('public._sqlx_migrations') IS NULL AND to_regclass('public.account_directory') IS NULL")
+                .fetch_one(&restarted)
                 .await
                 .unwrap();
-        assert!(directory_removed);
-        let histories: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM accounts._sqlx_migrations), (SELECT count(*) FROM social._sqlx_migrations)").fetch_one(&upgraded).await.unwrap();
+        assert!(legacy_objects_absent);
+        let histories: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM accounts._sqlx_migrations), (SELECT count(*) FROM social._sqlx_migrations)").fetch_one(&restarted).await.unwrap();
         assert_eq!(histories, (1, 2));
-        upgraded.close().await;
+        restarted.close().await;
         sqlx::query(&format!("DROP DATABASE {name}"))
             .execute(&pool)
             .await

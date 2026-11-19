@@ -1,6 +1,5 @@
 fn main() {
     for path in [
-        "migrations",
         "src/accounts/infrastructure/migrations",
         "src/social/infrastructure/migrations",
     ] {

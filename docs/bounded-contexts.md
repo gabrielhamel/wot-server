@@ -60,10 +60,9 @@ the owner's published contract, and account for missing identities in the
 consuming context. Calls that need another context's database access run
 outside the caller's database transaction so both can use a single connection.
 
-Accounts and Social track migrations in their own schemas. The root
-[`migrations/`](../migrations/) contains the historical shared migrations and
-the upgrade that moves existing data. Applied migrations retain their
-checksums. See the [server guide](server.md#running) for the upgrade procedure.
+Accounts and Social track migrations in their own schemas. Applied context
+migrations retain their checksums. See the [server guide](server.md#running)
+for database setup.
 
 ## Review of the current names
 
