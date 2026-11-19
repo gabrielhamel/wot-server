@@ -72,4 +72,4 @@ export type Registration = {
 export type AdminSession =
   | { status: "setup_required" }
   | { status: "signed_out"; registration_open: boolean }
-  | { status: "authenticated"; player: PlayerRecord };
+  | { status: "authenticated"; player: PlayerRecord; store_enabled: boolean };

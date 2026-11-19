@@ -52,7 +52,7 @@ meanings on different operations; those differences are listed explicitly.
 | Attribute | Meaning and emission |
 | --- | --- |
 | [`ddd.bounded_context.name`](../src/player_sessions/application/grants.rs) | Custom DDD attribute naming the owning context: `player_sessions`, `accounts`, `social`, `player_administration`, or `server`. |
-| [`user.id`](../src/player_sessions/application/mod.rs) | Local account ID when known: authenticated login, session, account operation, authenticated XMPP handler, or Store request authorized by a live session. It identifies the affected account, not necessarily an admin caller. Login records it only after authentication succeeds. |
+| [`user.id`](../src/player_sessions/application/mod.rs) | Local account ID when known: authenticated login, session, account operation, authenticated XMPP handler, or Store request authorized by a live garage or dashboard session. It identifies the affected account, not necessarily an admin caller. Login records it only after authentication succeeds. |
 | [`user.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | Nonempty player display name from the account snapshot already returned by successful game authentication. Never copied from the login email; omitted if unavailable. No extra database query. |
 | [`user.email`](../src/player_sessions/infrastructure/gateway/mod.rs) | Email-shaped login supplied by the current game authentication payload, recorded after authentication succeeds. Requires nonempty local part, a dot in the domain, and no whitespace; this is a shape check, not proof of ownership. Omitted for non-email logins and requests without an email payload. |
 | [`network.protocol.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | `mercury` for game authentication/commands, `xmpp` for incoming XMPP requests. |
@@ -70,10 +70,11 @@ meanings on different operations; those differences are listed explicitly.
 | --- | --- |
 | [`http.request.method`](../src/player_administration/presentation/mod.rs) | HTTP method on the root admin API, Store API or web UI request span. |
 | [`url.path`](../src/player_administration/presentation/mod.rs) | Admin request URI path, excluding its query string. |
-| [`http.route`](../src/player_administration/presentation/mod.rs) | Matched route template on the root HTTP span when available, with path parameters left as placeholders. |
+| [`http.route`](../src/player_administration/presentation/mod.rs) | Matched route template on the root HTTP span when available, with path parameters left as placeholders. Store request handlers also record the matched route. |
 | [`input.query.bytes`](../src/player_administration/presentation/mod.rs) | Length in bytes of the encoded URI query, when present. Query text is excluded. |
 | [`input.content_length`](../src/player_administration/presentation/mod.rs) | Declared body length in bytes when a valid nonnegative `Content-Length` fits in a signed 64-bit integer. This is request metadata and does not count bytes read. |
 | [`http.response.status_code`](../src/player_administration/presentation/mod.rs) | HTTP response status after the admin API, Store API or web UI handler returns. |
+| [`input.channel`](../src/player_sessions/presentation/store/mod.rs) | Store request credential channel, `garage` or `dashboard`, on the catalog and purchase handler spans. |
 | [`input.session.present`](../src/player_administration/presentation/access.rs) | Whether a well-formed session cookie was supplied on an admin session check or sign-out. |
 | [`input.session.lifetime_seconds`](../src/accounts/infrastructure/player_access.rs) | Configured admin session lifetime in seconds when a session is opened. |
 | [`input.role`](../src/player_administration/presentation/access.rs) | Requested account role (`player` or `admin`) on a role change. Bootstrap records `admin`. |
@@ -150,7 +151,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. |
 | [`input.algorithm`](../src/accounts/application/players.rs) | Password algorithm on `accounts.players.hash_password` and `accounts.verify_password`, currently `argon2id`. Password and hash are omitted. |
 | [`input.previous_revision`](../src/player_sessions/application/mod.rs) | Expected persisted revision for a Store quote, an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
-| [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input snapshot used for catalog preparation or mutation planning. On garage sync, the revision requested by the client. |
+| [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input snapshot used for catalog preparation or mutation planning. On the Store purchase span, the submitted quote revision. On garage sync, the revision requested by the client. |
 | [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case or completion, after deduplication by key. |
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
 | [`input.inventory_id`](../src/accounts/application/mod.rs) | Vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables, outfit changes, a bound stat tracker grant or Training Room readiness. Training Room readiness uses `-5000` for the observer. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
@@ -218,7 +219,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/admission.rs) | Login admission records `admitted`, `replaced`, `superseded`, `waiting_for_write`, `refreshing_snapshot`, `expired`, `full`, `destination_unavailable`, or `reply_unavailable`. |
 | [`output.outcome`](../src/accounts/infrastructure/players.rs) | Account provisioning records `created` after commit or `conflict` after rolling back an existing username or a first-admin setup that is closed. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/admission.rs) | Session replacement notice was `sent` to the old UDP peer, `unavailable` because it had no Account entity, or `failed` during enqueue or send. |
-| [`output.outcome`](../src/player_sessions/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_funds`, `research_required` or `failed`. |
+| [`output.outcome`](../src/player_sessions/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_funds`, `research_required` or `failed`. The [dashboard catalog load](../src/player_sessions/infrastructure/gateway/store.rs) records `success`, `busy` or `failed`. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/account_updates.rs) | Account update `queued` on the live garage connection or `next_sync` when recovered from persisted state on a later sync. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/commands.rs) | Mercury dispatch records `dispatched`, `wire_decode_failed`, `decode_failed`, `unknown_method`, `entity_unavailable` or `dispatch_failed` on the root. Unsupported or compatibility commands record `unimplemented`, `ignored` or `acknowledged_without_change` on the decoded command span. Garage and shop sync record `up_to_date`, `cache_hit` or `stream` as applicable. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/commands.rs) | Training Room listing records `empty` after sending a zero-room list or `invalid_request` for malformed or unsupported queries. |
@@ -345,7 +346,7 @@ code. On error, the exception event's `exception.type` is that failure code.
 | `http.request.method`, `http.route` | Method and fixed route template on the browser HTTP client span. |
 | `http.response.status_code` | HTTP status once a response arrives. |
 | `http.request.body.size` | Serialized request payload size in UTF-8 bytes, on requests with bodies. |
-| `input.page.route` | Fixed page route on browser entry-module load. |
+| `input.page.route` | Fixed page route on browser entry-module load, `/dashboard` or `/shop`. |
 | `input.page`, `input.per_page` | Requested admin list page and maximum rows per page. |
 | `input.account_id` | Account identifier for an admin garage load, grant or role change. |
 | `input.role` | Destination role on first-admin setup or a role change. |
@@ -359,7 +360,7 @@ code. On error, the exception event's `exception.type` is that failure code.
 | `output.delivery` | Delivery outcome returned by the admin grant API. |
 | `input.item`, `input.revision`, `input.price.currency`, `input.price.amount` | Store order item ID, account revision string, price currency and integer amount. |
 | `output.offer_count` | Offers returned by a Store catalog load or purchase. |
-| `output.notification` | Store checkout’s browser bridge outcome after a successful order. `submitted` indicates the bridge accepted the call. `bridge_unavailable` covers ordinary browsers and `submission_failed` records a synchronous bridge error. The span omits notification text. |
+| `output.notification` | In-game Store checkout’s browser bridge outcome after a successful order. `submitted` indicates the bridge accepted the call. `bridge_unavailable` covers ordinary browsers and `submission_failed` records a synchronous bridge error. The span omits notification text. |
 | `exception.source` | Fixed browser error category on a standalone exception span. |
 | `exception.error_class`, `exception.asset_location` | Allowlisted built-in error class and bundled asset filename with line and column, when available. |
 

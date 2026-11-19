@@ -1,11 +1,16 @@
-# In-game Store
+# Store
 
-The garage’s Store tab opens the embedded page. The Store combines client prices with selected offers from the
+The Store is available from the in-game garage and the player web dashboard.
+It combines client prices with selected offers from the
 [EU Store catalog](store-eu-catalog.md).
-The garage HUD displays the account balances. The Store displays each offer’s
-price, stock, and purchase eligibility.
+The game HUD and the dashboard’s **My garage** tab display account balances.
+The Store displays each offer’s price, stock, and purchase eligibility.
 
-| Tab | Offers |
+Both Store views use horizontal tabs to group offers. The embedded game page
+shows the catalog and checkout, and its controls stay on the shop page. On the
+web, the Store sits inside the dashboard’s **Store** tab.
+
+| Group | Offers |
 | --- | --- |
 | WoT Premium Account | 1, 3, 7, 14, 30, 90, 180 and 360 days for gold |
 | Vehicles | Regular gold vehicles and Collectors’ vehicles |
@@ -64,11 +69,26 @@ This covers the garage entitlement lifecycle. Battle rewards, additional
 XP, premium missions and the credit reserve depend on battle settlement
 and remain unimplemented.
 
+## Player dashboard
+
+Sign in with your player account at `/dashboard/` and select **Store**. You can
+shop while the game is closed. Select **My garage** to see current balances
+and owned tanks. If your game garage is connected, the gateway publishes the
+purchase to it. Otherwise, the next garage sync reads the committed purchase.
+
+The dashboard tab is available when both `admin` and `store` are configured.
+It uses the dashboard session cookie to authorize
+`GET /api/admin/me/shop/catalog` and `POST /api/admin/me/shop/orders` for the
+signed-in account. Orders require the `X-Wot-Admin: 1` write header and use
+the same quote, revision, eligibility and checkout rules as the in-game Store.
+
 ## Local preview
 
 For frontend development, run `npm run dev` from the repository root and
 open `/shop/` on the URL Vite prints. The [mock API](admin.md#frontend-development)
 supplies a demo session and supports purchases against an in-memory balance.
+For the dashboard Store, open `/dashboard/`, sign out of the demo administrator,
+and sign in as `commander@example.test` with `demo-player`.
 
 ## Configuration
 
@@ -131,7 +151,10 @@ in an ordinary HTTP client.
 The authenticated garage receives a random token as a URL fragment for the
 Store page. URL fragments stay in the client. The page sends the token in the
 `Authorization` header for same-origin requests. Gateway lookups require a
-synchronized live garage session. The token expires with that session.
+synchronized live garage session. The token has no separate time limit. It
+stays valid for the life of that session, including between Store visits.
+Disconnecting or replacing the game session invalidates it. The web dashboard
+uses its own 60-day session cookie.
 Redact authorization headers when logging proxy traffic. The game may log
 its Store URL locally, including the fragment. Disconnect before sharing game
 logs to invalidate the token.
@@ -172,8 +195,10 @@ authorization, stale and concurrent orders, insufficient funds, the
 Collectors’ tier gate, credit and bond purchases, style compatibility,
 Premium Account activation, extension and live expiry, native purchase,
 reconnect persistence, and exported W3C parent and SQL/garage delivery
-ancestry. The browser suite
-exercises the page with MSW.
+ancestry. The `exports_admin_http_access_lifecycle` test checks a dashboard
+purchase while the game is disconnected, session and write-header enforcement,
+account isolation, replay rejection, persisted balances and trace ancestry.
+The browser suite exercises both Store entry points with MSW.
 
 For real-client verification, open the Store from the garage, buy a Depot
 item and confirm the stock and HUD balance. Buy Premium Account time and

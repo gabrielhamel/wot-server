@@ -123,8 +123,12 @@ async fn serve(config: Configuration) -> Result<()> {
                 Err(error) => tracing::warn!(%error, "Browser telemetry disabled"),
             }
         }
-        if let Some(store) = config.store {
-            router = router.merge(gateway.enable_store(store.origin)?);
+        let store = config
+            .store
+            .map(|store| gateway.configure_store(store.origin))
+            .transpose()?;
+        if let Some(store) = &store {
+            router = router.merge(crate::player_sessions::store_router(store.clone()));
         }
         if let Some(admin) = config.admin {
             let (players, catalog) = tokio::task::spawn_blocking(
@@ -139,6 +143,7 @@ async fn serve(config: Configuration) -> Result<()> {
                 accounts,
                 catalog,
                 gateway.player_grants(),
+                store,
                 admin.secure_cookies,
                 trusted_proxies,
             ));

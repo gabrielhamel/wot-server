@@ -296,7 +296,10 @@ then use the same trace ID through the existing Rust propagation.
 
 The expected sequence for a purchase is `web.store.purchase` →
 `web.http.request` → `store.http.request` → Store use case → SQL and garage
-delivery. A grant follows the equivalent path through `web.admin.grant` and
+delivery. Dashboard checkout follows the same sequence through
+`admin.http.request`, with session lookup before the Store request. Dashboard
+catalog reads continue through `player_sessions.store.load_catalog` to the
+Accounts snapshot and catalog projection. A grant follows the equivalent path through `web.admin.grant` and
 `admin.http.request`. Registration follows `web.panel.register` →
 `web.http.request` → `admin.http.request` → `web_panel.registration.create` →
 Accounts validation and provisioning spans, including the SQL transaction.

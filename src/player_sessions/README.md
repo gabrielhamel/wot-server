@@ -21,11 +21,11 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
 | `infrastructure/gateway/progression.rs` | Equipment, directive, module, tank and depot request validation, bounded progression jobs and committed cache delivery. |
 | `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes. |
-| `application/store.rs` | Store session tokens and the bounded request channel between HTTP and the gateway. |
+| `application/store.rs` | Store customer identity, garage session tokens and the bounded request channel between HTTP and the gateway. |
 | `infrastructure/gateway/premium.rs` | Notify the live garage when an account’s Premium time expires. |
-| `infrastructure/gateway/store.rs` | Look up live Store sessions and coordinate catalog reads and account writes. |
+| `infrastructure/gateway/store.rs` | Look up live Store sessions, read persisted dashboard catalogs and coordinate account writes. |
 | `infrastructure/gateway/account_updates.rs` | Update handoff and session snapshots and deliver committed cache diffs for external account writes. |
-| `presentation/store/` | In-game Store HTTP catalog and checkout endpoints. |
+| `presentation/store/` | In-game and dashboard Store HTTP catalog and checkout endpoints. |
 | `presentation/store/web/` | Store categories, vehicle filters and checkout state. |
 | `application/store-contracts.ts` and `infrastructure/store-api.ts` | Typed catalog and order contracts and the HTTP adapter that traces browser purchases. |
 | `infrastructure/gateway/cosmetics.rs` | Decode native cosmetic stock purchases and binary seasonal and common outfits for the shared progression transaction. |
@@ -75,6 +75,7 @@ The Admin grant queue is bounded. A grant reserves the account's write slot unti
 its commit and session update complete. The gateway updates outstanding handoff
 tickets and refreshes any login lookup that could have read a pre-grant snapshot.
 
-The [in-game Store](../../docs/store.md) authenticates browser requests against
-the garage session and uses the same write slot and cache publication as other
+The [Store](../../docs/store.md) accepts in-game requests with a live garage
+token and dashboard requests for the account authenticated by Player
+Administration. Both use the same write slot and cache publication as other
 external account changes.

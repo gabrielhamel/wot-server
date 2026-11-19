@@ -2,7 +2,8 @@ use super::{Gateway, TracedCompletion, account_updates::CommittedAccountChange};
 use crate::{
     accounts::{AccountSnapshot, GarageCatalog, StoreOrder, StoreOrderError},
     player_sessions::application::store::{
-        StoreCatalog, StoreError, StoreListing, StoreReply, StoreRequest, StoreRequests,
+        StoreCatalog, StoreCustomer, StoreError, StoreListing, StoreReply, StoreRequest,
+        StoreRequests,
     },
 };
 use tokio::sync::mpsc;
@@ -22,6 +23,11 @@ pub(super) struct Completion {
 
 impl Gateway {
     pub fn enable_store(&mut self, origin: String) -> anyhow::Result<axum::Router> {
+        self.configure_store(origin)
+            .map(crate::player_sessions::presentation::store::router)
+    }
+
+    pub(crate) fn configure_store(&mut self, origin: String) -> anyhow::Result<StoreRequests> {
         let uri: axum::http::Uri = origin.parse()?;
         let host = uri
             .host()
@@ -41,13 +47,13 @@ impl Gateway {
             host: host.to_ascii_lowercase(),
             requests,
         });
-        Ok(crate::player_sessions::presentation::store::router(handle))
+        Ok(handle)
     }
 
     pub(super) fn handle_store(&mut self, request: StoreRequest) {
         let StoreRequest {
             parent,
-            token,
+            customer,
             order,
             reply,
         } = request;
@@ -55,21 +61,31 @@ impl Gateway {
             if reply.is_closed() {
                 return;
             }
-            let Some(session) = self.sessions.values_mut().find(|session| {
-                session.garage_synced
-                    && session
-                        .store_token
-                        .as_ref()
-                        .is_some_and(|value| value.matches(&token))
-            }) else {
-                let _ = reply.send(Err(StoreError::Unauthorized));
-                return;
+            let account_id = match customer {
+                StoreCustomer::Dashboard(account_id) => account_id,
+                StoreCustomer::Garage(token) => {
+                    let Some(session) = self.sessions.values().find(|session| {
+                        session.garage_synced
+                            && session
+                                .store_token
+                                .as_ref()
+                                .is_some_and(|value| value.matches(&token))
+                    }) else {
+                        let _ = reply.send(Err(StoreError::Unauthorized));
+                        return;
+                    };
+                    let snapshot = &session.account.snapshot;
+                    if order.is_none() {
+                        tracing::Span::current().record("user.id", snapshot.id);
+                        let _ = reply.send(Ok(store_catalog(&self.catalog, snapshot)));
+                        return;
+                    }
+                    snapshot.id
+                }
             };
-            let snapshot = &session.account.snapshot;
-            let account_id = snapshot.id;
             tracing::Span::current().record("user.id", account_id);
             let Some(order) = order else {
-                let _ = reply.send(Ok(store_catalog(&self.catalog, snapshot)));
+                self.load_dashboard_catalog(account_id, reply);
                 return;
             };
 
@@ -82,12 +98,53 @@ impl Gateway {
                 return;
             };
             self.pending_writes.insert(account_id);
-            session.saving = true;
+            if let Some(session) = self
+                .sessions
+                .values_mut()
+                .find(|session| session.account.snapshot.id == account_id)
+            {
+                session.saving = true;
+            }
             self.start_store_purchase(account_id, order, reply, permit);
         });
     }
 
-    #[tracing::instrument(name = "player_sessions.store.purchase", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account_id, input.item = order.item, input.price.currency = order.price.currency(), input.price.amount = order.price.amount()))]
+    #[tracing::instrument(name = "player_sessions.store.load_catalog", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account_id, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
+    fn load_dashboard_catalog(&self, account_id: i64, reply: StoreReply) {
+        let Ok(permit) = self.workers.clone().try_acquire_owned() else {
+            tracing::Span::current().record("output.outcome", "busy");
+            let _ = reply.send(Err(StoreError::Busy));
+            return;
+        };
+        let accounts = self.accounts.clone();
+        let catalog = self.catalog.clone();
+        self.runtime.spawn(
+            async move {
+                let _permit = permit;
+                let result = async {
+                    let snapshot = accounts.snapshot(account_id).await?;
+                    tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
+                        move || store_catalog(&catalog, &snapshot),
+                    ))
+                    .await
+                    .map_err(anyhow::Error::from)
+                }
+                .await;
+                let span = tracing::Span::current();
+                if result.is_err() {
+                    span.record("otel.status_code", "ERROR");
+                    span.record("output.outcome", "failed");
+                    tracing::error!("Could not load the dashboard Store catalog");
+                } else {
+                    span.record("output.outcome", "success");
+                }
+                let _ = reply.send(result.map_err(StoreError::from));
+            }
+            .in_current_span(),
+        );
+    }
+
+    #[tracing::instrument(name = "player_sessions.store.purchase", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account_id, input.item = order.item, input.revision = order.revision, input.price.currency = order.price.currency(), input.price.amount = order.price.amount()))]
     fn start_store_purchase(
         &self,
         account_id: i64,

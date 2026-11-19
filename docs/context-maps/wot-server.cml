@@ -42,7 +42,7 @@ ContextMap Server {
     implementationTechnology = "PlayerAccounts API for identity listing, registration, provisioning, roles and web sessions, plus snapshots and the vehicle catalog for player and operator garage views"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "Bounded PlayerGrants application API coordinates currency, vehicle and cosmetic grants with garage writes and publishes committed updates to game sessions"
+    implementationTechnology = "Bounded PlayerGrants and StoreRequests APIs coordinate grants and purchases for authenticated dashboard accounts with garage writes and publish committed updates to game sessions"
   }
   Accounts [U,OHS,PL] -> [D,ACL] Social {
     implementationTechnology = "Read-only account_directory SQL identity projection and account-ID foreign keys; shared SQLx pool"
@@ -75,7 +75,7 @@ BoundedContext Social {
 }
 
 BoundedContext PlayerAdministration {
-  domainVisionStatement = "Serve player registration, web sign-in and a read-only personal garage, and authorize administrators to provision players, manage roles, inspect garages and grant currency, vehicles or cosmetics."
+  domainVisionStatement = "Serve player registration, web sign-in, a personal garage view and dashboard Store access, and authorize administrators to provision players, manage roles, inspect garages and grant currency, vehicles or cosmetics."
 }
 
 BoundedContext SharedKernel {

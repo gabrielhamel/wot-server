@@ -90,7 +90,7 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    for route in ["/admin", "/admin/", "/shop", "/shop/"] {
+    for route in ["/dashboard", "/dashboard/", "/shop", "/shop/"] {
         let page = get(address, route, None);
         assert!(page.starts_with("HTTP/1.1 200"), "{route}: {page}");
         assert!(page.contains("Shared UI entry"));
@@ -100,11 +100,20 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
     assert!(shop.contains("script-src 'self';"));
     assert!(shop.contains("style-src 'self' 'unsafe-inline'; font-src 'self';"));
     assert!(!shop.contains("script-src 'self' 'unsafe-inline'"));
+    assert!(shop.contains("form-action 'none'"));
+    for route in ["/dashboard", "/dashboard/"] {
+        let dashboard = get(address, route, None);
+        assert!(dashboard.contains("form-action 'self'"));
+    }
+    for route in ["/admin", "/admin/"] {
+        assert!(get(address, route, None).starts_with("HTTP/1.1 404"));
+    }
     let root = get(address, "/", None);
-    assert!(root.starts_with("HTTP/1.1 307") && root.contains("location: /admin/"));
+    assert!(root.starts_with("HTTP/1.1 307") && root.contains("location: /dashboard/"));
     assert!(get(address, "/assets/test.js", None).starts_with("HTTP/1.1 200"));
     assert!(get(address, "/api/admin/session", None).starts_with("HTTP/1.1 200"));
     assert!(get(address, "/api/admin/players", None).starts_with("HTTP/1.1 401"));
+    assert!(get(address, "/api/admin/me/shop/catalog", None).starts_with("HTTP/1.1 401"));
     assert!(get(address, "/api/shop/catalog", Some(admin_cookie)).starts_with("HTTP/1.1 401"));
     assert!(get(address, "/api/shop/missing", None).starts_with("HTTP/1.1 404"));
 }

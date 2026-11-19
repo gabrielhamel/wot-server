@@ -13,6 +13,10 @@ const theme = {
   components: { ...defaultDarkTheme.components, ...serverTheme.components },
 };
 
+function DashboardRoute() {
+  return null;
+}
+
 export default function AdminApp() {
   return (
     <Admin
@@ -21,6 +25,7 @@ export default function AdminApp() {
       authProvider={authProvider}
       loginPage={AdminLogin}
       layout={ServerLayout}
+      dashboard={DashboardRoute}
       theme={theme}
       darkTheme={null}
       requireAuth

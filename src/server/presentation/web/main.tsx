@@ -5,7 +5,7 @@ import { recordBrowserError, webOperation } from "../../../platform/infrastructu
 declare const __WEB_MOCK_API__: boolean;
 
 const pages = {
-  "/admin": {
+  "/dashboard": {
     owner: "player_administration",
     title: "World of Tanks Server",
     load: () => import("../../../player_administration/presentation/web/admin-page"),
@@ -22,12 +22,12 @@ const fallback = <p role="alert">Could not load the page. Reload to try again.</
 async function start() {
   const route = window.location.pathname.replace(/\/$/, "");
   if (route === "") {
-    window.location.replace("/admin/" + window.location.hash);
+    window.location.replace("/dashboard/" + window.location.search + window.location.hash);
     return;
   }
   const container = document.getElementById("root");
   if (!container) return;
-  const page = route === "/admin" || route === "/shop" ? pages[route] : undefined;
+  const page = route === "/dashboard" || route === "/shop" ? pages[route] : undefined;
   if (!page) {
     createRoot(container).render(<p>Page unavailable.</p>);
     return;

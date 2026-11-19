@@ -246,9 +246,14 @@ describe("Garage Store", () => {
       ),
     );
     const { user } = openShop(token);
+    expect(screen.getByRole("tablist", { name: "Store sections" })).toBeVisible();
+    expect(screen.queryByRole("tablist", { name: "Player dashboard" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Vehicles" }));
     expect(await screen.findByRole("heading", { name: "Panther/M10" })).toBeVisible();
     await user.click(screen.getByRole("tab", { name: "Collectors’ vehicles" }));
+    expect(window.location.pathname).toBe("/shop/");
+    expect(window.location.hash).toBe(`#${token}`);
     await user.click(screen.getByRole("combobox", { name: "Nation" }));
     await user.click(screen.getByRole("option", { name: "Germany" }));
     expect(screen.queryByRole("heading", { name: "KV-85" })).toBeNull();

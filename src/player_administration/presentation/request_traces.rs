@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    path::Path,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use super::*;
 use crate::player_sessions::GrantRequestError;
@@ -54,6 +57,7 @@ async fn exports_admin_http_request_inputs() {
         accounts.clone(),
         catalog,
         grants,
+        None,
         true,
         vec!["192.0.2.10".parse().unwrap()],
     ));
@@ -549,7 +553,7 @@ async fn exports_admin_http_access_lifecycle() {
     let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
     let directory = std::env::var_os("WG_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&directory)).unwrap();
-    let catalog = Arc::new(GarageCatalog::load(resources, &[]).unwrap());
+    let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[]).unwrap());
     let root_pool = sqlx::PgPool::connect(&url).await.unwrap();
     let schema = format!(
         "admin_access_{}",
@@ -562,6 +566,25 @@ async fn exports_admin_http_access_lifecycle() {
     let separator = if url.contains('?') { '&' } else { '?' };
     let scoped_url = format!("{url}{separator}options[search_path]={schema}");
     let repository = PostgresAccounts::connect(&scoped_url, 4).await.unwrap();
+    let mut gateway = crate::player_sessions::Gateway::bind(
+        crate::player_sessions::GatewayConfig {
+            training_room_visible: false,
+            login_bind: "127.0.0.1:0".parse().unwrap(),
+            base_bind: "127.0.0.1:0".parse().unwrap(),
+            advertised_base: None,
+            private_key: None,
+            max_clients: 2,
+            max_pending: 4,
+        },
+        &resources,
+        catalog.clone(),
+        Accounts::new(repository.clone()),
+        tokio::runtime::Handle::current(),
+    )
+    .unwrap();
+    let store = gateway
+        .configure_store("http://127.0.0.1:8081".to_owned())
+        .unwrap();
     let build_router = |repository: &PostgresAccounts| {
         let (grants, _) = PlayerGrants::channel();
         TowerToHyperService::new(router(
@@ -569,6 +592,7 @@ async fn exports_admin_http_access_lifecycle() {
             Accounts::new(repository.clone()),
             catalog.clone(),
             grants,
+            Some(store.clone()),
             true,
             vec![],
         ))
@@ -580,7 +604,19 @@ async fn exports_admin_http_access_lifecycle() {
         .build();
     let subscriber = tracing_subscriber::registry()
         .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("admin-access-test")));
-    let _subscriber = tracing::subscriber::set_default(subscriber);
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+
+    struct StopGateway(Arc<AtomicBool>);
+
+    impl Drop for StopGateway {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
+
+    let stop = StopGateway(Arc::new(AtomicBool::new(false)));
+    let worker_stop = stop.0.clone();
+    let worker = tokio::task::spawn_blocking(move || gateway.run(worker_stop));
     let request = |method, path: &str, cookie: &str, body: &str| {
         Request::builder()
             .method(method)
@@ -600,7 +636,7 @@ async fn exports_admin_http_access_lifecycle() {
     };
     let json = |response: Response| async {
         serde_json::from_slice::<serde_json::Value>(
-            &to_bytes(response.into_body(), 8192).await.unwrap(),
+            &to_bytes(response.into_body(), 1024 * 1024).await.unwrap(),
         )
         .unwrap()
     };
@@ -778,6 +814,51 @@ async fn exports_admin_http_access_lifecycle() {
     assert_eq!(own_garage["bonds"], "0");
     assert_eq!(own_garage["free_xp"], "0");
     assert!(!own_garage["vehicles"].as_array().unwrap().is_empty());
+    let player_id: i64 = registered["id"].as_str().unwrap().parse().unwrap();
+    assert_eq!(own_garage["gold"], "500");
+    const CATALOG: &str = "/me/shop/catalog";
+    const ORDERS: &str = "/me/shop/orders";
+    assert_eq!(send("GET", CATALOG, "", "").await.unwrap().status(), 401);
+    assert_eq!(send("POST", ORDERS, "", "{}").await.unwrap().status(), 401);
+    let session = json(send("GET", "/session", &player_cookie, "").await.unwrap()).await;
+    assert_eq!(session["store_enabled"], true);
+    let listing = send("GET", CATALOG, &player_cookie, "").await.unwrap();
+    assert_eq!(listing.status(), 200);
+    assert_eq!(listing.headers()[header::CACHE_CONTROL], "no-store");
+    let listing = json(listing).await;
+    assert!(listing["premium_expires_at"].is_null());
+    let mut payload = serde_json::json!({
+        "item": -1,
+        "revision": listing["revision"],
+        "price": {"currency": "gold", "amount": 250}
+    });
+    let order = payload.to_string();
+    let mut unprotected = request("POST", ORDERS, &player_cookie, &order);
+    unprotected.headers_mut().remove("x-wot-admin");
+    assert_eq!(service.call(unprotected).await.unwrap().status(), 403);
+    payload["account_id"] = owner["id"].clone();
+    assert_eq!(
+        send("POST", ORDERS, &player_cookie, &payload.to_string())
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+    let purchased = send("POST", ORDERS, &player_cookie, &order).await.unwrap();
+    assert_eq!(purchased.status(), 200);
+    let purchased = json(purchased).await;
+    assert!(purchased["premium_expires_at"].is_u64());
+    assert_ne!(purchased["revision"], listing["revision"]);
+    assert_eq!(
+        send("POST", ORDERS, &player_cookie, &order)
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    let updated_garage = json(send("GET", "/me/garage", &player_cookie, "").await.unwrap()).await;
+    assert_eq!(updated_garage["gold"], "250");
+
     let game_account = Accounts::new(repository.clone())
         .authenticate(claimed_email, "Tank123!".into())
         .await
@@ -940,6 +1021,10 @@ async fn exports_admin_http_access_lifecycle() {
             .status(),
         401
     );
+    assert_eq!(
+        json(send("GET", "/session", active_cookie, "").await.unwrap()).await["status"],
+        "signed_out"
+    );
     let expired_cookie = session_cookie(send("POST", "/session", "", first_login).await.unwrap());
     sqlx::query("UPDATE web_sessions SET expires_at = now() - interval '1 second'")
         .execute(&repository.connection_pool())
@@ -947,6 +1032,14 @@ async fn exports_admin_http_access_lifecycle() {
         .unwrap();
     assert_eq!(
         send("GET", "/players", &expired_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+
+    assert_eq!(
+        send("GET", CATALOG, &expired_cookie, "")
             .await
             .unwrap()
             .status(),
@@ -980,7 +1073,82 @@ async fn exports_admin_http_access_lifecycle() {
         409
     );
 
+    drop(stop);
+    worker.await.unwrap().unwrap();
     let spans = exporter.get_finished_spans().unwrap();
+    let child = |parent: &SpanData, name| {
+        spans
+            .iter()
+            .find(|span| span.parent_span_id == parent.span_context.span_id() && span.name == name)
+            .unwrap_or_else(|| panic!("Missing {name} under {}", parent.name))
+    };
+    for (handler, outcome, status) in [
+        ("player_sessions.store.catalog_request", "success", "200"),
+        ("player_sessions.store.purchase_request", "success", "200"),
+        ("player_sessions.store.purchase_request", "stale", "409"),
+    ] {
+        let operation = spans
+            .iter()
+            .find(|span| {
+                span.name == handler
+                    && attribute(span, "input.channel").as_deref() == Some("dashboard")
+                    && attribute(span, "output.outcome").as_deref() == Some(outcome)
+            })
+            .unwrap();
+        assert_eq!(attribute(operation, "user.id"), Some(player_id.to_string()));
+        let root = spans
+            .iter()
+            .find(|span| span.span_context.span_id() == operation.parent_span_id)
+            .unwrap();
+        assert_eq!(root.name, "admin.http.request");
+        assert_eq!(
+            root.parent_span_id,
+            SpanId::from_hex("1234567890abcdef").unwrap()
+        );
+        assert_eq!(
+            root.span_context.trace_id(),
+            operation.span_context.trace_id()
+        );
+        assert_eq!(
+            attribute(root, "http.response.status_code").as_deref(),
+            Some(status)
+        );
+        let auth = child(root, "admin.authenticate");
+        assert_eq!(
+            attribute(auth, "output.outcome").as_deref(),
+            Some("authorized")
+        );
+        if handler.ends_with("catalog_request") {
+            let load = child(operation, "player_sessions.store.load_catalog");
+            let snapshot = child(child(load, "player_sessions.snapshot"), "accounts.snapshot");
+            let repository = child(snapshot, "accounts.postgres.snapshot");
+            let read = child(repository, "accounts.postgres.read_snapshot");
+            assert!(attribute(child(read, "postgresql.query"), "db.query.text").is_some());
+        } else {
+            let purchase = child(operation, "player_sessions.store.purchase");
+            child(purchase, "accounts.store.plan_purchase");
+            let completion = child(purchase, "player_sessions.store.complete_purchase");
+            if outcome == "success" {
+                let commit = child(purchase, "player_sessions.commit_progression");
+                let save = child(
+                    child(commit, "accounts.save_progression"),
+                    "accounts.postgres.save_progression",
+                );
+                assert!(attribute(child(save, "postgresql.query"), "db.query.text").is_some());
+                let published = child(completion, "player_sessions.publish_account_change");
+                assert_eq!(
+                    attribute(published, "output.delivery").as_deref(),
+                    Some("next_sync")
+                );
+            } else {
+                assert_eq!(
+                    attribute(completion, "output.success").as_deref(),
+                    Some("false")
+                );
+            }
+        }
+    }
+
     for (name, key, outcome, status) in [
         ("admin.sign_in", "output.outcome", "authorized", "204"),
         ("admin.sign_in", "output.outcome", "rejected", "401"),
