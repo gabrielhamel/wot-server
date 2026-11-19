@@ -12,7 +12,8 @@ import {
 } from "@mui/material";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { serverTheme } from "../../../../platform/presentation/web/theme";
-import type { StoreAccess, StoreCategory } from "../../../application/store-contracts";
+import type { StoreCategory, StoreTransport } from "../../../application/store-contracts";
+import { garageStoreTransport } from "../../../infrastructure/store-api";
 import { OfferCard } from "./offer-card";
 import { useStoreCatalog } from "./use-store-catalog";
 import { VehicleFilters } from "./vehicle-filters";
@@ -90,20 +91,24 @@ function PremiumStatus({ expiresAt }: { expiresAt: number | null }) {
 }
 
 function Store({
-  access,
+  transport,
+  embedded = false,
+  notifyNativeClient = false,
   onUnauthorized,
   onPurchased,
 }: {
-  access: StoreAccess;
+  transport: StoreTransport;
+  embedded?: boolean;
+  notifyNativeClient?: boolean;
   onUnauthorized?: () => void;
   onPurchased?: () => void;
 }) {
   const { catalog, loading, buyingOffer, purchasedOffer, error, reload, buy } = useStoreCatalog(
-    access,
+    transport,
+    notifyNativeClient,
     onUnauthorized,
     onPurchased,
   );
-  const dashboard = access.kind === "dashboard";
   const [section, setSection] = useState(sections[0]);
   const [category, setCategory] = useState(sections[0].categories[0]);
   const [nation, setNation] = useState("all");
@@ -129,10 +134,10 @@ function Store({
 
   return (
     <Container
-      component={dashboard ? "section" : "main"}
+      component={embedded ? "section" : "main"}
       maxWidth="lg"
-      disableGutters={dashboard}
-      sx={dashboard ? undefined : { py: { xs: 2.5, md: 4 } }}
+      disableGutters={embedded}
+      sx={embedded ? undefined : { py: { xs: 2.5, md: 4 } }}
     >
       <Tabs
         value={section.title}
@@ -158,7 +163,7 @@ function Store({
           />
         ))}
       </Tabs>
-      {dashboard && purchasedOffer && (
+      {embedded && purchasedOffer && (
         <Alert role="status" severity="success" sx={{ mb: 2.5 }}>
           Purchased {purchasedOffer.name}.
         </Alert>
@@ -219,7 +224,7 @@ function Store({
             <Box component="section" aria-labelledby="store-category-title">
               <Typography
                 id="store-category-title"
-                component={dashboard ? "h2" : "h1"}
+                component={embedded ? "h2" : "h1"}
                 variant="h5"
                 sx={{ mb: 1.5 }}
               >
@@ -260,28 +265,33 @@ function Store({
   );
 }
 
-const dashboardAccess: StoreAccess = { kind: "dashboard" };
-
-export function DashboardStore({
+export function EmbeddedStore({
+  transport,
   onUnauthorized,
   onPurchased,
 }: {
+  transport: StoreTransport;
   onUnauthorized: () => void;
   onPurchased: () => void;
 }) {
   return (
-    <Store access={dashboardAccess} onUnauthorized={onUnauthorized} onPurchased={onPurchased} />
+    <Store
+      transport={transport}
+      embedded
+      onUnauthorized={onUnauthorized}
+      onPurchased={onPurchased}
+    />
   );
 }
 
 export default function Shop() {
   const token = /^#([A-Za-z0-9_-]{43})(?=$|[/?&])/.exec(window.location.hash)?.[1];
-  const access = useMemo(() => (token ? { kind: "garage" as const, token } : null), [token]);
+  const transport = useMemo(() => (token ? garageStoreTransport(token) : null), [token]);
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      {access ? (
-        <Store access={access} />
+      {transport ? (
+        <Store transport={transport} notifyNativeClient />
       ) : (
         <Container component="main" maxWidth="lg" sx={{ py: { xs: 2.5, md: 4 } }}>
           <Alert severity="info">Open the Store from a connected garage.</Alert>

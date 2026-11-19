@@ -55,19 +55,19 @@ impl Gateway {
         self.admit(attempt, account, Span::current());
     }
 
-    #[tracing::instrument(name = "player_sessions.admit", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account.snapshot.id, input.revision = account.snapshot.revision, output.outcome = Empty, otel.status_code = Empty))]
+    #[tracing::instrument(name = "player_sessions.admit", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account.snapshot.id(), input.revision = account.snapshot.revision(), output.outcome = Empty, otel.status_code = Empty))]
     fn admit(&mut self, attempt: LoginAttempt, account: PreparedAccount, parent: Span) {
-        let account_id = account.snapshot.id;
+        let account_id = account.snapshot.id();
         let span = Span::current();
         let previous = self
             .sessions
             .iter()
-            .find(|(_, session)| session.account.snapshot.id == account_id)
+            .find(|(_, session)| session.account.snapshot.id() == account_id)
             .map(|(&client, session)| (client, session.generation));
         let ticket = self
             .tickets
             .iter()
-            .find(|(_, ticket)| ticket.account.snapshot.id == account_id)
+            .find(|(_, ticket)| ticket.account.snapshot.id() == account_id)
             .map(|(&key, ticket)| (key, ticket.generation));
         if previous.is_some_and(|(_, generation)| generation > attempt.generation)
             || ticket.is_some_and(|(_, generation)| generation > attempt.generation)
@@ -263,7 +263,7 @@ impl Gateway {
 
     pub(super) fn remove_session(&mut self, client: ClientKey) {
         if let Some(session) = self.sessions.get(&client) {
-            self.xmpp.revoke(session.account.snapshot.id);
+            self.xmpp.revoke(session.account.snapshot.id());
             self.social_disconnect(client);
             self.sessions.remove(&client);
         }

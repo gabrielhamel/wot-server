@@ -1,15 +1,13 @@
-use super::{Account, ClientKey, EntityKey, GarageCatalog, Gateway, Pickle};
+use super::{Account, ClientKey, EntityKey, GarageQueries, Gateway, Pickle};
 
 impl Gateway {
     pub(super) fn expire_premium(&mut self) {
-        let now = crate::accounts::unix_now();
         for (client, session) in &mut self.sessions {
             let snapshot = &session.account.snapshot;
-            let expiry = snapshot.progression.premium_expires_at;
-            if expiry == 0
-                || u64::from(expiry) > now
-                || session.reported_premium_expiry == Some(expiry)
-            {
+            let Some(expiry) = snapshot.expired_premium_at() else {
+                continue;
+            };
+            if session.reported_premium_expiry == Some(expiry) {
                 continue;
             }
             if let Some(entity) = session.entity.filter(|_| session.garage_synced) {
@@ -18,8 +16,8 @@ impl Gateway {
                     &mut self.base,
                     *client,
                     entity,
-                    snapshot.id,
-                    snapshot.revision,
+                    snapshot.id(),
+                    snapshot.revision(),
                     expiry,
                 );
             }
@@ -37,7 +35,7 @@ impl Gateway {
     ) {
         let span = tracing::Span::current();
         match base.entity(entity).and_then(|mut account| {
-            account.update(Pickle(GarageCatalog::premium_sync(revision, None)))
+            account.update(Pickle(GarageQueries::premium_sync(revision, None)))
         }) {
             Ok(()) => {
                 span.record("output.delivery", "queued");

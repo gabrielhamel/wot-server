@@ -255,7 +255,7 @@ impl EquipmentRules {
     }
 
     #[tracing::instrument(name = "accounts.equipment.upgrade_depot", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.item = item, input.price.credits = tracing::field::Empty, input.price.components = tracing::field::Empty, output.item = tracing::field::Empty), err)]
-    pub(crate) fn upgrade_depot(
+    pub(in crate::accounts) fn upgrade_depot(
         &self,
         snapshot: &mut AccountSnapshot,
         item: i32,
@@ -284,7 +284,7 @@ impl EquipmentRules {
     }
 
     #[tracing::instrument(name = "accounts.equipment.upgrade_mounted", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id, input.slot = slot, input.item = tracing::field::Empty, input.price.credits = tracing::field::Empty, input.price.components = tracing::field::Empty, output.item = tracing::field::Empty), err)]
-    pub(crate) fn upgrade_mounted(
+    pub(in crate::accounts) fn upgrade_mounted(
         &self,
         snapshot: &mut AccountSnapshot,
         inventory_id: i64,
@@ -352,7 +352,7 @@ impl EquipmentRules {
         Ok(())
     }
 
-    pub(crate) fn disassembly_value(&self, item: i32) -> Option<i64> {
+    pub(in crate::accounts) fn disassembly_value(&self, item: i32) -> Option<i64> {
         self.items.get(&item)?.disassembly_value
     }
 

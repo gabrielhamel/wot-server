@@ -1,5 +1,5 @@
 use super::ammunition::decode_shells;
-use crate::accounts::{ConsumableSelection, MAX_CONSUMABLE_SLOTS, ProgressionCommand};
+use crate::accounts::contract::{ConsumableSelection, MAX_CONSUMABLE_SLOTS, ProgressionCommand};
 
 pub(super) const VEHICLE_SETTINGS: i16 = 107;
 pub(super) const AUTO_CONSUMABLES: i64 = 8;

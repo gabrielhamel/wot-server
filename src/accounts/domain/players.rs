@@ -109,7 +109,7 @@ impl NewPlayer {
         })
     }
 
-    pub(crate) fn into_parts(self) -> (String, String, String) {
+    pub(in crate::accounts) fn into_parts(self) -> (String, String, String) {
         (self.username, self.display_name, self.password)
     }
 }
@@ -251,11 +251,11 @@ impl PlayerPagination {
         })
     }
 
-    pub(crate) fn offset(&self) -> i64 {
+    pub(in crate::accounts) fn offset(&self) -> i64 {
         self.offset
     }
 
-    pub(crate) fn limit(&self) -> i64 {
+    pub(in crate::accounts) fn limit(&self) -> i64 {
         self.limit
     }
 }

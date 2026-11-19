@@ -3,9 +3,9 @@ use super::{
     players::{ApiError, PlayerRecord},
 };
 use crate::{
-    accounts::{PlayerAccount, PlayerRole, RoleChange},
+    accounts::contract::{PlayerAccount, PlayerRole, RoleChange},
     player_administration::application::{self, SESSION_SECONDS, SessionSecret},
-    player_sessions::DashboardStorePlayer,
+    player_sessions::contract::DashboardStorePlayer,
     shared_kernel::AccountId,
 };
 use axum::{

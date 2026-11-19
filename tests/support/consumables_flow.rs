@@ -4,7 +4,7 @@ use super::{
     depot_flow::{row, send_array, send_four},
     dict,
 };
-use wot_server::{pickle, player_sessions::mercury::app::dispatch::ScriptDispatch};
+use wot_server::{pickle, player_sessions::test_support::mercury::app::dispatch::ScriptDispatch};
 
 const REPAIR_KIT: i32 = (4 << 8) | 0xfb;
 const LARGE_REPAIR_KIT: i32 = (5 << 8) | 0xfb;

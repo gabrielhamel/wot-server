@@ -1,3 +1,5 @@
+import type { Context } from "@opentelemetry/api";
+
 export type StoreCategory =
   | "premium_account"
   | "premium_vehicles"
@@ -46,4 +48,7 @@ export interface StoreOrder {
   price: StorePrice;
 }
 
-export type StoreAccess = { kind: "garage"; token: string } | { kind: "dashboard" };
+export interface StoreTransport {
+  loadCatalog(parent: Context, signal?: AbortSignal): Promise<StoreCatalog>;
+  submitOrder(parent: Context, order: StoreOrder): Promise<StoreCatalog>;
+}

@@ -130,10 +130,10 @@ impl HostedRoom {
         &self,
         base: &mut base::App,
         entity: EntityKey<Account>,
-        snapshot: &crate::accounts::AccountSnapshot,
+        snapshot: &crate::accounts::contract::AccountView,
     ) -> Result<()> {
-        let name = snapshot.display_name.as_str();
-        let account_id = snapshot.id;
+        let name = snapshot.display_name();
+        let account_id = snapshot.id();
         let settings = &self.settings;
         let default_roster = RosterSlot::UnassignedFromTeamOne as i32;
         let mut account = base.entity(entity)?;
@@ -160,12 +160,12 @@ impl HostedRoom {
     fn roster_snapshot(
         &self,
         entity: EntityKey<Account>,
-        snapshot: &crate::accounts::AccountSnapshot,
+        snapshot: &crate::accounts::contract::AccountView,
         slot: RosterSlot,
     ) -> Pickle {
         let player_entity = entity.id().0;
-        let name = snapshot.display_name.as_str();
-        let account_id = snapshot.id;
+        let name = snapshot.display_name();
+        let account_id = snapshot.id();
         let roster = slot as i32;
         let (state, vehicle) = ready_state(self.ready_vehicle.as_deref());
         Pickle(crate::pickle!([(

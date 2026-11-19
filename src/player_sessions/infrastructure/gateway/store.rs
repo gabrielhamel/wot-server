@@ -1,9 +1,9 @@
-use super::{Gateway, TracedCompletion, account_updates::CommittedAccountChange};
+use super::{Gateway, TracedCompletion};
+use crate::accounts::contract::CommittedGarageChange;
 use crate::{
-    accounts::{AccountSnapshot, GarageCatalog, StoreOrder, StoreOrderError},
+    accounts::contract::{StoreOrder, StoreOrderError},
     player_sessions::application::store::{
-        StoreCatalog, StoreCustomer, StoreError, StoreListing, StoreReply, StoreRequest,
-        StoreRequests,
+        StoreCustomer, StoreError, StoreReply, StoreRequest, StoreRequests,
     },
 };
 use tokio::sync::mpsc;
@@ -18,10 +18,11 @@ pub(super) struct StoreAccess {
 pub(super) struct Completion {
     account_id: i64,
     reply: StoreReply,
-    result: Result<CommittedAccountChange, StoreError>,
+    result: Result<CommittedGarageChange, StoreError>,
 }
 
 impl Gateway {
+    #[cfg(feature = "integration-test-support")]
     pub fn enable_store(&mut self, origin: String) -> anyhow::Result<axum::Router> {
         self.configure_store(origin)
             .map(crate::player_sessions::presentation::store::router)
@@ -76,11 +77,11 @@ impl Gateway {
                     };
                     let snapshot = &session.account.snapshot;
                     if order.is_none() {
-                        tracing::Span::current().record("user.id", snapshot.id);
-                        let _ = reply.send(Ok(store_catalog(&self.catalog, snapshot)));
+                        tracing::Span::current().record("user.id", snapshot.id());
+                        let _ = reply.send(Ok(self.catalog.store_catalog(snapshot)));
                         return;
                     }
-                    snapshot.id
+                    snapshot.id()
                 }
             };
             tracing::Span::current().record("user.id", account_id);
@@ -101,7 +102,7 @@ impl Gateway {
             if let Some(session) = self
                 .sessions
                 .values_mut()
-                .find(|session| session.account.snapshot.id == account_id)
+                .find(|session| session.account.snapshot.id() == account_id)
             {
                 session.saving = true;
             }
@@ -124,7 +125,7 @@ impl Gateway {
                 let result = async {
                     let snapshot = accounts.snapshot(account_id).await?;
                     tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
-                        move || store_catalog(&catalog, &snapshot),
+                        move || catalog.store_catalog(&snapshot),
                     ))
                     .await
                     .map_err(anyhow::Error::from)
@@ -152,31 +153,15 @@ impl Gateway {
         reply: StoreReply,
         permit: tokio::sync::OwnedSemaphorePermit,
     ) {
-        let accounts = self.accounts.clone();
-        let catalog = self.catalog.clone();
+        let garage = self.garage.clone();
         let sender = self.sender.clone();
         self.runtime.spawn(
             async move {
                 let result = async {
-                    let previous = accounts.snapshot(account_id).await?;
-                    let (change, prepared, diff) = tokio::task::spawn_blocking(
-                        crate::platform::observability::in_current_span(move || {
-                            let change = catalog.plan_store_purchase(previous.clone(), order)?;
-                            let diff = catalog.progression_diff(&previous, &change)?;
-                            let prepared = catalog.prepare(change.snapshot.clone())?;
-                            Ok::<_, StoreError>((change, prepared, diff))
-                        }),
-                    )
-                    .await
-                    .map_err(anyhow::Error::from)??;
-                    if !accounts.commit_progression(&change).await? {
-                        return Err(StoreOrderError::Stale.into());
-                    }
-                    Ok(CommittedAccountChange {
-                        previous_revision: change.previous_revision,
-                        prepared,
-                        diff,
-                    })
+                    garage
+                        .purchase_offer(account_id, order)
+                        .await??
+                        .ok_or_else(|| StoreOrderError::Stale.into())
                 }
                 .await;
                 tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
@@ -202,28 +187,10 @@ impl Gateway {
     pub(super) fn complete_store(&mut self, completion: Completion) {
         self.release_account_write(completion.account_id);
         let result = completion.result.map(|change| {
-            let catalog = store_catalog(&self.catalog, &change.prepared.snapshot);
+            let catalog = self.catalog.store_catalog(&change.prepared.snapshot);
             self.publish_account_change(change);
             catalog
         });
         let _ = completion.reply.send(result);
-    }
-}
-
-#[tracing::instrument(name = "player_sessions.store.catalog", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = snapshot.id, input.revision = snapshot.revision, output.offers.count = catalog.store_offers().len()))]
-fn store_catalog(catalog: &GarageCatalog, snapshot: &AccountSnapshot) -> StoreCatalog {
-    let tiers = catalog.max_researched_tiers(snapshot);
-    StoreCatalog {
-        revision: snapshot.revision.to_string(),
-        premium_expires_at: snapshot.active_premium_until(),
-        offers: catalog
-            .store_offers()
-            .iter()
-            .map(|offer| StoreListing {
-                offer: offer.clone(),
-                availability: catalog.store_availability(snapshot, &tiers, offer),
-                in_depot: catalog.store_depot_count(snapshot, offer),
-            })
-            .collect(),
     }
 }

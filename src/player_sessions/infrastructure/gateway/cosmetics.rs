@@ -1,9 +1,6 @@
 use super::{Account, ClientKey, EntityKey, Gateway};
 use crate::{
-    accounts::{
-        CosmeticChange, MAX_COSMETIC_PURCHASE_LINES, ProgressionCommand, cosmetic_item,
-        decode_outfits,
-    },
+    accounts::contract::{ProgressionCommand, cosmetic_purchase},
     player_sessions::mercury::app::entity::Bytes,
 };
 
@@ -67,15 +64,14 @@ impl Gateway {
                 return None;
             };
             let snapshot = &self.sessions.get(&client)?.account.snapshot;
-            let default_emblem = self.catalog.default_vehicle_emblem(snapshot, inventory_id);
-            let layouts = decode_outfits(
-                seasons,
-                strings.iter().map(|s| s.0.as_slice()),
-                default_emblem,
-            )?;
             Some(ProgressionCommand::Cosmetics {
                 inventory_id,
-                change: CosmeticChange::Apply(layouts),
+                change: self.catalog.outfit_change(
+                    snapshot,
+                    inventory_id,
+                    seasons,
+                    strings.iter().map(|s| s.0.as_slice()),
+                )?,
             })
         })();
         self.change_progression(client, entity, request_id, command, ints.first().copied())
@@ -87,15 +83,11 @@ fn parse_purchase(args: &[i32]) -> Option<ProgressionCommand> {
         return None;
     };
     let (lines, remainder) = args.as_chunks::<2>();
-    if !remainder.is_empty() || !(1..=MAX_COSMETIC_PURCHASE_LINES).contains(&lines.len()) {
+    if !remainder.is_empty() {
         return None;
     }
-    let items = lines
-        .iter()
-        .map(|&[item, count]| Some((cosmetic_item(item)?, u32::try_from(count).ok()?)))
-        .collect::<Option<Vec<_>>>()?;
     Some(ProgressionCommand::Cosmetics {
         inventory_id: i64::from(inventory_id),
-        change: CosmeticChange::Buy(items),
+        change: cosmetic_purchase(lines)?,
     })
 }

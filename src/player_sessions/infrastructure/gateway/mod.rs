@@ -3,7 +3,7 @@ use super::{
     schema::{Account, AccountBase, AccountData, ServerStats},
 };
 use crate::{
-    accounts::{Accounts, GarageCatalog, PostgresAccounts, PreparedAccount},
+    accounts::contract::{GameAccounts, GarageCommands, GarageQueries, PreparedAccount},
     player_sessions::domain::Admissions,
 };
 use anyhow::{Context, Result};
@@ -25,7 +25,7 @@ mod sockets;
 mod store;
 mod training;
 use crate::player_sessions::application::store::StoreToken;
-use crate::social::{Contact, Conversations, Player, PostgresSocial, Social};
+use crate::social::contract::{Contact, Conversations, Player, SocialService};
 use admission::{DeferredLogin, LoginAttempt};
 
 use crate::platform::client_formats::pickle::{self, Value};
@@ -63,6 +63,12 @@ const SET_ACTIVE_VEHICLE_SEASON: i16 = 121;
 const RESET_SESSION_STATS: i16 = 10035;
 const REQUEST_NO_RESPONSE: i16 = 202;
 
+pub struct GatewayAccounts {
+    pub accounts: GameAccounts,
+    pub catalog: GarageQueries,
+    pub garage: GarageCommands,
+}
+
 pub struct GatewayConfig {
     pub login_bind: SocketAddrV4,
     pub base_bind: SocketAddrV4,
@@ -93,7 +99,7 @@ struct Session {
     crew_queue: VecDeque<crew::QueuedCrewCommand>,
     social_pending: bool,
     social_ready: bool,
-    social_budget: crate::social::RequestBudget,
+    social_budget: crate::social::contract::RequestBudget,
     contacts: Vec<Contact>,
     social_next: Instant,
     message_next: Instant,
@@ -139,13 +145,14 @@ enum Completion {
 
 pub struct Gateway {
     xmpp: super::xmpp::XmppServer,
-    social: Social<PostgresSocial>,
+    social: SocialService,
     conversations: Conversations,
     login: login::App,
     base: base::App,
     config: GatewayConfig,
-    catalog: Arc<GarageCatalog>,
-    accounts: crate::player_sessions::application::ClientAccounts<PostgresAccounts>,
+    catalog: GarageQueries,
+    accounts: crate::player_sessions::application::ClientAccounts,
+    garage: GarageCommands,
     admissions: Admissions,
     deferred_logins: HashMap<SocketAddr, DeferredLogin>,
     tickets: HashMap<u32, Ticket>,
@@ -165,10 +172,15 @@ pub struct Gateway {
 
 impl Gateway {
     pub fn bind(
+        _composition: &crate::server::Composition,
         config: GatewayConfig,
         resources: &ResourceBundle,
-        catalog: Arc<GarageCatalog>,
-        accounts: Accounts<PostgresAccounts>,
+        GatewayAccounts {
+            accounts,
+            catalog,
+            garage,
+        }: GatewayAccounts,
+        social: SocialService,
         runtime: Handle,
     ) -> Result<Self> {
         anyhow::ensure!(
@@ -203,7 +215,6 @@ impl Gateway {
         let workers = Arc::new(Semaphore::new(config.max_pending));
         let (grant_handle, grants) = crate::player_sessions::PlayerGrants::channel();
         let admissions = Admissions::new(config.max_pending);
-        let social = Social::new(PostgresSocial::new(accounts.repository().connection_pool()));
         let xmpp = super::xmpp::XmppServer::from_listener(
             xmpp_listener,
             social.clone(),
@@ -218,6 +229,7 @@ impl Gateway {
             login,
             base,
             config,
+            garage,
             catalog,
             accounts: crate::player_sessions::application::ClientAccounts::new(accounts),
             admissions,
@@ -382,9 +394,9 @@ impl Gateway {
                         return Ok(None);
                     };
                     let span = tracing::Span::current();
-                    span.record("user.id", snapshot.id.to_string());
-                    if !snapshot.display_name.is_empty() {
-                        span.record("user.name", snapshot.display_name.as_str());
+                    span.record("user.id", snapshot.id().to_string());
+                    if !snapshot.display_name().is_empty() {
+                        span.record("user.name", snapshot.display_name());
                     }
                     if let Some((local, domain)) = username.split_once('@')
                         && !local.is_empty()
@@ -469,7 +481,7 @@ impl Gateway {
             return;
         };
         if let Some(client) = self.base.answer_login_success(event.addr, ticket.blowfish) {
-            let saving = self.pending_writes.contains(&ticket.account.snapshot.id);
+            let saving = self.pending_writes.contains(&ticket.account.snapshot.id());
             self.sessions.insert(
                 client,
                 Session {
@@ -516,9 +528,9 @@ impl Gateway {
         let entity = self.base.create_base_player::<Account>(
             client,
             AccountData {
-                name: snapshot.display_name.clone(),
+                name: snapshot.display_name().to_owned(),
                 incarnationID: 1000,
-                requiredVersion_2410: self.catalog.required_version.clone(),
+                requiredVersion_2410: self.catalog.required_version().to_owned(),
                 initialServerSettings: bootstrap::server_settings_with_chat(
                     super::endpoint::advertised_base(
                         self.config.advertised_base,
@@ -544,9 +556,9 @@ impl Gateway {
         session.entity = Some(entity);
         self.base
             .entity(entity)?
-            .showGUI(bootstrap::show_gui_ctx(snapshot.id))?;
-        let account_id = snapshot.id;
-        info!(account_id = snapshot.id, vehicles = snapshot.vehicles.len(), %client, "Garage account created");
+            .showGUI(bootstrap::show_gui_ctx(snapshot.id()))?;
+        let account_id = snapshot.id();
+        info!(account_id = snapshot.id(), vehicles = snapshot.vehicle_count(), %client, "Garage account created");
         self.notify_presence(account_id, true);
         Ok(())
     }

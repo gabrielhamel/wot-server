@@ -2,10 +2,10 @@ import type { Context } from "@opentelemetry/api";
 import { request } from "../../platform/infrastructure/web/http";
 import { webOperation } from "../../platform/infrastructure/web/telemetry";
 import type {
-  StoreAccess,
   StoreCatalog,
   StoreOffer,
   StoreOrder,
+  StoreTransport,
 } from "../application/store-contracts";
 
 import { notifyStorePurchase } from "./store-notifications";
@@ -13,37 +13,47 @@ import { notifyStorePurchase } from "./store-notifications";
 const minimumPurchaseMs = 350;
 const owner = "player_sessions";
 
-function storeRequest(
-  parent: Context,
-  access: StoreAccess,
-  endpoint: "catalog" | "orders",
-  body?: StoreOrder,
-  signal?: AbortSignal,
-) {
-  const path = `${access.kind === "dashboard" ? "/api/admin/me/shop" : "/api/shop"}/${endpoint}`;
-  return request<StoreCatalog>({
-    owner,
-    parent,
-    route: path,
-    path,
-    method: body ? "POST" : "GET",
-    token: access.kind === "garage" ? access.token : undefined,
-    headers: access.kind === "dashboard" && body ? { "X-Wot-Admin": "1" } : undefined,
-    body,
-    signal,
-    errorFormat: "text",
-  });
+export function garageStoreTransport(token: string): StoreTransport {
+  function storeRequest(
+    parent: Context,
+    endpoint: "catalog" | "orders",
+    body?: StoreOrder,
+    signal?: AbortSignal,
+  ) {
+    const path = `/api/shop/${endpoint}`;
+    return request<StoreCatalog>({
+      owner,
+      parent,
+      route: path,
+      path,
+      method: body ? "POST" : "GET",
+      token,
+      body,
+      signal,
+      errorFormat: "text",
+    });
+  }
+
+  return {
+    loadCatalog: (parent, signal) => storeRequest(parent, "catalog", undefined, signal),
+    submitOrder: (parent, order) => storeRequest(parent, "orders", order),
+  };
 }
 
-export function loadCatalog(access: StoreAccess, signal?: AbortSignal) {
+export function loadCatalog(transport: StoreTransport, signal?: AbortSignal) {
   return webOperation(owner, "web.store.load_catalog", {}, async (parent, span) => {
-    const catalog = await storeRequest(parent, access, "catalog", undefined, signal);
+    const catalog = await transport.loadCatalog(parent, signal);
     span.setAttribute("output.offer_count", catalog.offers.length);
     return catalog;
   });
 }
 
-export function placeOrder(access: StoreAccess, offer: StoreOffer, revision: string) {
+export function placeOrder(
+  transport: StoreTransport,
+  offer: StoreOffer,
+  revision: string,
+  notifyNativeClient: boolean,
+) {
   const order: StoreOrder = { item: offer.item, price: offer.price, revision };
   return webOperation(
     owner,
@@ -56,9 +66,9 @@ export function placeOrder(access: StoreAccess, offer: StoreOffer, revision: str
     },
     async (parent, span) => {
       const minimum = new Promise<void>((resolve) => window.setTimeout(resolve, minimumPurchaseMs));
-      const catalog = await storeRequest(parent, access, "orders", order).finally(() => minimum);
+      const catalog = await transport.submitOrder(parent, order).finally(() => minimum);
       span.setAttribute("output.offer_count", catalog.offers.length);
-      if (access.kind === "dashboard") return catalog;
+      if (!notifyNativeClient) return catalog;
       try {
         span.setAttribute("output.notification", notifyStorePurchase(offer));
       } catch {

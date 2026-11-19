@@ -1,5 +1,5 @@
+use super::super::domain::{Friendship, FriendshipAction, Player};
 use super::PostgresSocial;
-use crate::social::{Friendship, FriendshipAction, Player};
 use sqlx::{Postgres, Transaction};
 
 type Tx<'a> = Transaction<'a, Postgres>;
@@ -7,7 +7,8 @@ type Tx<'a> = Transaction<'a, Postgres>;
 #[tracing::instrument(name = "social.friendships.save", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner, input.peer = peer), err)]
 async fn save(tx: &mut Tx<'_>, owner: i64, peer: i64, state: Friendship) -> anyhow::Result<bool> {
     let count: i64 = {
-        let statement = "SELECT count(*) FROM social_contacts WHERE owner_id=$1 AND peer_id<>$2";
+        let statement =
+            "SELECT count(*) FROM social.social_contacts WHERE owner_id=$1 AND peer_id<>$2";
         crate::platform::observability::database(
             "social",
             statement,
@@ -19,15 +20,20 @@ async fn save(tx: &mut Tx<'_>, owner: i64, peer: i64, state: Friendship) -> anyh
         .await
     }?;
     anyhow::ensure!(count < 300, "Contact limit reached");
+    let stored_state: i16 = match state {
+        Friendship::Saved => 0,
+        Friendship::Pending => 1,
+        Friendship::Accepted => 2,
+    };
     let result = {
-        let statement = "INSERT INTO social_contacts(owner_id,peer_id,friendship) VALUES($1,$2,$3) ON CONFLICT(owner_id,peer_id) DO UPDATE SET friendship=EXCLUDED.friendship WHERE NOT social_contacts.ignored AND social_contacts.friendship < EXCLUDED.friendship";
+        let statement = "INSERT INTO social.social_contacts(owner_id,peer_id,friendship) VALUES($1,$2,$3) ON CONFLICT(owner_id,peer_id) DO UPDATE SET friendship=EXCLUDED.friendship WHERE NOT social_contacts.ignored AND social_contacts.friendship < EXCLUDED.friendship";
         crate::platform::observability::database(
             "social",
             statement,
             sqlx::query(statement)
                 .bind(owner)
                 .bind(peer)
-                .bind(state as i16)
+                .bind(stored_state)
                 .execute(&mut **tx),
         )
         .await
@@ -44,6 +50,9 @@ impl PostgresSocial {
         action: FriendshipAction,
     ) -> anyhow::Result<bool> {
         use FriendshipAction::*;
+        if matches!(action, Save | Request | Accept) {
+            self.require_players(owner, peer).await?;
+        }
         let mut tx =
             crate::platform::observability::database("social", "BEGIN", self.pool.begin()).await?;
         for id in [owner.min(peer), owner.max(peer)] {
@@ -58,7 +67,7 @@ impl PostgresSocial {
             }?;
         }
         let blocked: bool = {
-            let statement = "SELECT EXISTS(SELECT 1 FROM social_contacts WHERE ignored AND ((owner_id=$1 AND peer_id=$2) OR (owner_id=$2 AND peer_id=$1)))";
+            let statement = "SELECT EXISTS(SELECT 1 FROM social.social_contacts WHERE ignored AND ((owner_id=$1 AND peer_id=$2) OR (owner_id=$2 AND peer_id=$1)))";
             crate::platform::observability::database(
                 "social",
                 statement,
@@ -77,7 +86,7 @@ impl PostgresSocial {
             Save => save(&mut tx, owner, peer, Friendship::Saved).await?,
             Request => {
                 let count: i64 = {
-                    let statement = "SELECT count(*) FROM social_contacts WHERE peer_id=$1 AND owner_id<>$2 AND friendship=1 AND NOT ignored";
+                    let statement = "SELECT count(*) FROM social.social_contacts WHERE peer_id=$1 AND owner_id<>$2 AND friendship=1 AND NOT ignored";
                     crate::platform::observability::database(
                         "social",
                         statement,
@@ -93,7 +102,7 @@ impl PostgresSocial {
             }
             Accept => {
                 let incoming: bool = {
-                    let statement = "SELECT EXISTS(SELECT 1 FROM social_contacts WHERE owner_id=$1 AND peer_id=$2 AND friendship=1 AND NOT ignored)";
+                    let statement = "SELECT EXISTS(SELECT 1 FROM social.social_contacts WHERE owner_id=$1 AND peer_id=$2 AND friendship=1 AND NOT ignored)";
                     crate::platform::observability::database(
                         "social",
                         statement,
@@ -116,7 +125,7 @@ impl PostgresSocial {
                 } else {
                     (owner, peer)
                 };
-                let statement = "UPDATE social_contacts SET friendship=0 WHERE owner_id=$1 AND peer_id=$2 AND friendship=1 AND NOT ignored";
+                let statement = "UPDATE social.social_contacts SET friendship=0 WHERE owner_id=$1 AND peer_id=$2 AND friendship=1 AND NOT ignored";
                 let result = crate::platform::observability::database(
                     "social",
                     statement,
@@ -129,8 +138,7 @@ impl PostgresSocial {
                 result.rows_affected() != 0
             }
             Remove => {
-                let statement =
-                    "DELETE FROM social_contacts WHERE owner_id=$1 AND peer_id=$2 AND NOT ignored";
+                let statement = "DELETE FROM social.social_contacts WHERE owner_id=$1 AND peer_id=$2 AND NOT ignored";
                 let result = crate::platform::observability::database(
                     "social",
                     statement,
@@ -142,7 +150,7 @@ impl PostgresSocial {
                 .await?;
                 let removed = result.rows_affected() != 0;
                 {
-                    let statement = "UPDATE social_contacts SET friendship=0 WHERE owner_id=$1 AND peer_id=$2 AND NOT ignored";
+                    let statement = "UPDATE social.social_contacts SET friendship=0 WHERE owner_id=$1 AND peer_id=$2 AND NOT ignored";
                     crate::platform::observability::database(
                         "social",
                         statement,
@@ -162,18 +170,26 @@ impl PostgresSocial {
 
     #[tracing::instrument(name = "social.friendships.pending_inbound", skip_all, fields(ddd.bounded_context.name = "social", input.owner = owner), err)]
     pub(super) async fn pending_inbound(&self, owner: i64) -> anyhow::Result<Vec<Player>> {
-        let rows: Vec<(i64, String)> = {
-            let statement = "SELECT a.id, a.display_name FROM social_contacts c JOIN account_directory a ON a.id=c.owner_id WHERE c.peer_id=$1 AND c.friendship=1 AND NOT c.ignored AND NOT EXISTS (SELECT 1 FROM social_contacts b WHERE b.owner_id=$1 AND b.peer_id=c.owner_id AND b.ignored) ORDER BY a.id LIMIT 100";
+        let ids: Vec<i64> = {
+            let statement = "SELECT c.owner_id FROM social.social_contacts c WHERE c.peer_id=$1 AND c.friendship=1 AND NOT c.ignored AND NOT EXISTS (SELECT 1 FROM social.social_contacts b WHERE b.owner_id=$1 AND b.peer_id=c.owner_id AND b.ignored) ORDER BY c.owner_id LIMIT 100";
             crate::platform::observability::database(
                 "social",
                 statement,
-                sqlx::query_as(statement).bind(owner).fetch_all(&self.pool),
+                sqlx::query_scalar(statement)
+                    .bind(owner)
+                    .fetch_all(&self.pool),
             )
             .await
         }?;
-        Ok(rows
+        let mut names = self.player_names(&ids).await?;
+        Ok(ids
             .into_iter()
-            .map(|(id, name)| Player { id, name })
+            .filter_map(|id| {
+                Some(Player {
+                    id,
+                    name: names.remove(&id)?,
+                })
+            })
             .collect())
     }
 }

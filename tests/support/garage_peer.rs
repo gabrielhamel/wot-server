@@ -7,19 +7,19 @@ use std::{
     time::{Duration, Instant},
 };
 use wot_server::platform::client_formats::pickle;
-use wot_server::player_sessions::mercury::app::{
+use wot_server::player_sessions::test_support::mercury::app::{
     base::element as base,
     client::element as client,
     dispatch::{MethodCall, MethodDef, ScriptDispatch},
     login::element::{LoginRequest, LoginResponse},
 };
-use wot_server::player_sessions::mercury::net::{
+use wot_server::player_sessions::test_support::mercury::net::{
     bundle::{Bundle, NextElementReader},
     element::{Element, ElementLength},
     proto::Protocol,
     socket::PacketSocket,
 };
-use wot_server::player_sessions::mercury::script::Value;
+use wot_server::player_sessions::test_support::mercury::script::Value;
 
 struct Method<'a> {
     methods: &'a [MethodDef],
@@ -153,7 +153,7 @@ impl Peer {
 
     pub fn handoff(
         &mut self,
-        success: wot_server::player_sessions::mercury::app::login::element::LoginSuccess,
+        success: wot_server::player_sessions::test_support::mercury::app::login::element::LoginSuccess,
     ) {
         self.request_handoff(&success);
         let (packet, addr) = self.socket.recv().unwrap();
@@ -178,7 +178,7 @@ impl Peer {
 
     pub fn assert_handoff_rejected(
         &mut self,
-        ticket: &wot_server::player_sessions::mercury::app::login::element::LoginSuccess,
+        ticket: &wot_server::player_sessions::test_support::mercury::app::login::element::LoginSuccess,
     ) {
         self.request_handoff(ticket);
         self.socket
@@ -196,7 +196,7 @@ impl Peer {
 
     fn request_handoff(
         &mut self,
-        success: &wot_server::player_sessions::mercury::app::login::element::LoginSuccess,
+        success: &wot_server::player_sessions::test_support::mercury::app::login::element::LoginSuccess,
     ) {
         self.base = success.addr.addr.into();
         let mut bundle = Bundle::new();
@@ -294,7 +294,7 @@ impl Peer {
                                 panic!("Account creation properties")
                             };
                             let Value::Python(
-                                wot_server::player_sessions::mercury::script::PythonValue::Decoded(
+                                wot_server::player_sessions::test_support::mercury::script::PythonValue::Decoded(
                                     pickle::Value::Dict(settings),
                                 ),
                             ) = &properties["initialServerSettings"]

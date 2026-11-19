@@ -2,7 +2,7 @@ use super::{
     Peer, Pickle, ScriptDispatch, Value, ammunition_flow::pickle_value, dict, telemetry_capture,
 };
 use opentelemetry_sdk::trace::SpanData;
-use wot_server::player_sessions::mercury::script::StringValue;
+use wot_server::player_sessions::test_support::mercury::script::StringValue;
 
 pub fn exercise(
     peer: &mut Peer,

@@ -17,11 +17,11 @@ use std::{
 };
 use tower::ServiceExt;
 use wot_server::{
-    accounts::{Accounts, GarageCatalog, PostgresAccounts},
+    accounts::test_support::{Accounts, GarageCatalog, PostgresAccounts},
     platform::client_formats::pickle::Value as Pickle,
     player_sessions::{
         Gateway, GatewayConfig,
-        mercury::{
+        test_support::mercury::{
             app::{dispatch::ScriptDispatch, login::element::LoginResponse},
             script::Value as WireValue,
         },
@@ -35,7 +35,11 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     let database_url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
     let resource_dir = std::env::var("WG_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&resource_dir)).unwrap();
-    let repository = PostgresAccounts::connect(&database_url, 4).await.unwrap();
+    let repository = PostgresAccounts::new(
+        wot_server::server::test_support::connect_database(&database_url, 4)
+            .await
+            .unwrap(),
+    );
     let accounts = Accounts::new(repository.clone());
     let expiry_test_db = repository.connection_pool();
     let username = format!(
@@ -69,16 +73,19 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .unwrap();
     let item = i64::from(equipment.item);
     let credits = equipment.price.amount();
-    sqlx::query("UPDATE accounts SET credits = $2, gold = 12200, bonds = 6450 WHERE id = $1")
-        .bind(account_id)
-        .bind(credits)
-        .execute(&repository.connection_pool())
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE accounts.accounts SET credits = $2, gold = 12200, bonds = 6450 WHERE id = $1",
+    )
+    .bind(account_id)
+    .bind(credits)
+    .execute(&repository.connection_pool())
+    .await
+    .unwrap();
     let dispatch = ScriptDispatch::new(
-        wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
+        wot_server::player_sessions::test_support::mercury::script::load(&resources).unwrap(),
     );
     let mut gateway = Gateway::bind(
+        &wot_server::server::test_support::composition(),
         GatewayConfig {
             training_room_visible: true,
             login_bind: "127.0.0.1:0".parse().unwrap(),
@@ -89,8 +96,12 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             max_pending: 4,
         },
         &resources,
-        catalog,
-        accounts.clone(),
+        player_fixture::gateway_accounts(&repository, &catalog),
+        wot_server::social::postgres::service(
+            &wot_server::server::test_support::composition(),
+            repository.connection_pool(),
+            wot_server::accounts::test_support::directory(repository.connection_pool()),
+        ),
         tokio::runtime::Handle::current(),
     )
     .unwrap();
@@ -383,7 +394,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
 
         let near_expiry = i64::try_from(std::time::UNIX_EPOCH.elapsed().unwrap().as_secs()).unwrap() + 5;
         runtime.block_on(
-            sqlx::query("UPDATE accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = 1250 WHERE id = $1")
+            sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = 1250 WHERE id = $1")
                 .bind(account_id)
                 .bind(near_expiry)
                 .execute(&expiry_test_db)
@@ -436,7 +447,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     .await;
     stop.store(true, Ordering::Relaxed);
     worker.await.unwrap().unwrap();
-    sqlx::query("DELETE FROM accounts WHERE id = $1")
+    sqlx::query("DELETE FROM accounts.accounts WHERE id = $1")
         .bind(account_id)
         .execute(&repository.connection_pool())
         .await
@@ -581,7 +592,7 @@ fn assert_style_traces(account: i64, first_request: i16, style: i64) {
             }));
             assert!(has(decision, "output.purchases.count", "0"));
         } else {
-            assert!(in_trace("postgresql.query").is_none());
+            assert!(in_trace("accounts.postgres.save_progression").is_none());
         }
         if outcome == "rejected" {
             assert_eq!(decision.status, opentelemetry::trace::Status::error(""));
@@ -726,7 +737,7 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
                 .any(|attr| attr.key.as_str() == "output.premium.expires_at")
         );
     }
-    let commit = child(purchase, "player_sessions.commit_progression");
+    let commit = child(purchase, "accounts.garage.commit_progression");
     let save = child(
         child(commit, "accounts.save_progression"),
         "accounts.postgres.save_progression",
@@ -754,6 +765,6 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
     assert!(!decision.events.is_empty());
     assert!(spans.iter().all(
         |span| span.parent_span_id != rejected.span_context.span_id()
-            || span.name != "player_sessions.commit_progression"
+            || span.name != "accounts.garage.commit_progression"
     ));
 }

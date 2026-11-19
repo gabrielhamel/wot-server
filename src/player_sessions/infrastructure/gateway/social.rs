@@ -1,7 +1,7 @@
 use super::*;
 use crate::player_sessions::infrastructure::schema::{ChatActionData, MessengerArgs};
 use crate::player_sessions::mercury::app::entity::{Bytes, EntityId};
-use crate::social::{ContactChange, Conversation};
+use crate::social::contract::{ContactChange, Conversation};
 
 mod command {
     pub const ADD_FRIEND: u8 = 3;
@@ -84,13 +84,13 @@ impl Gateway {
 
     fn online_player(&self, id: i64) -> Option<(EntityKey<Account>, Player)> {
         self.sessions.values().find_map(|s| {
-            (s.account.snapshot.id == id).then_some(s).and_then(|s| {
+            (s.account.snapshot.id() == id).then_some(s).and_then(|s| {
                 s.entity.map(|entity| {
                     (
                         entity,
                         Player {
                             id,
-                            name: s.account.snapshot.display_name.clone(),
+                            name: s.account.snapshot.display_name().to_owned(),
                         },
                     )
                 })
@@ -101,7 +101,7 @@ impl Gateway {
     fn ignores(&self, owner: i64, peer: i64) -> bool {
         self.sessions
             .values()
-            .find(|s| s.account.snapshot.id == owner)
+            .find(|s| s.account.snapshot.id() == owner)
             .is_none_or(|s| {
                 !s.social_ready
                     || s.social_pending
@@ -179,7 +179,7 @@ impl Gateway {
                 let Some(session) = self.sessions.get(&client) else {
                     return Ok(());
                 };
-                let owner = session.account.snapshot.id;
+                let owner = session.account.snapshot.id();
                 if str_arg.len() > 2048 || str_arg2.len() > 128 {
                     return self.social_error(
                         entity,
@@ -348,12 +348,12 @@ impl Gateway {
         tracing::Span::current().record("output.outcome", "started");
         session.social_pending = true;
         session.social_next = Instant::now() + Duration::from_millis(100);
-        let owner = session.account.snapshot.id;
+        let owner = session.account.snapshot.id();
         let online_ids: Vec<_> = self
             .sessions
             .values()
             .filter(|s| s.entity.is_some())
-            .map(|s| s.account.snapshot.id)
+            .map(|s| s.account.snapshot.id())
             .collect();
         let social = self.social.clone();
         let sender = self.sender.clone();
@@ -573,7 +573,7 @@ impl Gateway {
 
     pub(super) fn social_disconnect(&mut self, client: ClientKey) {
         if let Some(session) = self.sessions.get(&client) {
-            let id = session.account.snapshot.id;
+            let id = session.account.snapshot.id();
             self.notify_presence(id, false);
             for room in self.conversations.disconnect(id) {
                 self.destroy_room(&room);

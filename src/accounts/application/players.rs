@@ -2,54 +2,41 @@ use super::verify_password;
 use crate::accounts::{
     NewPlayer, PlayerAccount, PlayerPage, PlayerPagination, PlayerRole, RoleChange,
 };
-use std::future::Future;
+use std::sync::Arc;
 use thiserror::Error;
 
-pub trait PlayerRepository: Clone + Send + Sync + 'static {
-    fn list(
-        &self,
-        pagination: PlayerPagination,
-    ) -> impl Future<Output = anyhow::Result<PlayerPage>> + Send;
-    fn provision(
+#[async_trait::async_trait]
+pub trait PlayerRepository: Send + Sync + 'static {
+    async fn list(&self, pagination: PlayerPagination) -> anyhow::Result<PlayerPage>;
+    async fn provision(
         &self,
         username: String,
         display_name: String,
         password_hash: String,
         mode: PlayerProvision,
-    ) -> impl Future<Output = Result<PlayerAccount, CreatePlayerError>> + Send;
-    fn registration_enabled(&self) -> impl Future<Output = anyhow::Result<bool>> + Send;
-    fn registration_name_available(
-        &self,
-        username: &str,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
+    ) -> Result<PlayerAccount, CreatePlayerError>;
+    async fn registration_enabled(&self) -> anyhow::Result<bool>;
+    async fn registration_name_available(&self, username: &str) -> anyhow::Result<bool>;
 }
 
+#[async_trait::async_trait]
 pub trait PlayerAccessRepository: PlayerRepository {
-    fn setup_available(&self) -> impl Future<Output = anyhow::Result<bool>> + Send;
-    fn web_credentials(
-        &self,
-        email: &str,
-    ) -> impl Future<Output = anyhow::Result<Option<(i64, String)>>> + Send;
-    fn open_web_session(
+    async fn setup_available(&self) -> anyhow::Result<bool>;
+    async fn web_credentials(&self, email: &str) -> anyhow::Result<Option<(i64, String)>>;
+    async fn open_web_session(
         &self,
         account_id: i64,
         digest: &[u8; 32],
         lifetime_seconds: i64,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
-    fn find_web_session(
-        &self,
-        digest: &[u8; 32],
-    ) -> impl Future<Output = anyhow::Result<Option<PlayerAccount>>> + Send;
-    fn close_web_session(
-        &self,
-        digest: &[u8; 32],
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
-    fn change_role(
+    ) -> anyhow::Result<bool>;
+    async fn find_web_session(&self, digest: &[u8; 32]) -> anyhow::Result<Option<PlayerAccount>>;
+    async fn close_web_session(&self, digest: &[u8; 32]) -> anyhow::Result<()>;
+    async fn change_role(
         &self,
         actor_id: i64,
         target_id: i64,
         role: PlayerRole,
-    ) -> impl Future<Output = anyhow::Result<RoleChange>> + Send;
+    ) -> anyhow::Result<RoleChange>;
 }
 
 #[derive(Debug, Error)]
@@ -67,7 +54,7 @@ pub enum CreatePlayerError {
 }
 
 impl CreatePlayerError {
-    pub(crate) fn outcome(&self) -> &'static str {
+    pub fn outcome(&self) -> &'static str {
         match self {
             Self::Duplicate => "duplicate_login",
             Self::DuplicateDisplayName => "duplicate_username",
@@ -95,13 +82,15 @@ impl PlayerProvision {
 }
 
 #[derive(Clone)]
-pub struct PlayerAccounts<R> {
-    repository: R,
+pub struct PlayerAccess {
+    repository: Arc<dyn PlayerAccessRepository>,
 }
 
-impl<R: PlayerRepository> PlayerAccounts<R> {
-    pub fn new(repository: R) -> Self {
-        Self { repository }
+impl PlayerAccess {
+    pub(in crate::accounts) fn new(repository: impl PlayerAccessRepository) -> Self {
+        Self {
+            repository: Arc::new(repository),
+        }
     }
 
     #[tracing::instrument(name = "accounts.players.list", skip_all, fields(ddd.bounded_context.name = "accounts", input.offset = pagination.offset(), input.limit = pagination.limit()), err)]
@@ -148,9 +137,6 @@ impl<R: PlayerRepository> PlayerAccounts<R> {
             .provision(username, display_name, hash, mode)
             .await
     }
-}
-
-impl<R: PlayerAccessRepository> PlayerAccounts<R> {
     pub async fn setup_available(&self) -> anyhow::Result<bool> {
         self.repository.setup_available().await
     }

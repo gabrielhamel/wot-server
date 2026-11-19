@@ -190,7 +190,7 @@ successful TCP connection alone does not establish that Contacts initialized.
 pairs and message history. Its PostgreSQL adapter serializes both participants in
 ID order, checks ignores in both directions within the write transaction, enforces
 saved-pair and retention limits, and commits before reporting success. Account
-names come from Accounts' published `account_directory` view. Supplied `from`
+names come from Accounts' published `PlayerDirectory` API. Supplied `from`
 attributes are never trusted as message authors.
 
 [Player Sessions](../src/player_sessions/README.md) owns XMPP framing, token admission, roster and WG

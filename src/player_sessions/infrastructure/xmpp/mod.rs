@@ -1,6 +1,6 @@
 mod framing;
 mod protocol;
-use crate::social::{ChatMessage, Friendship, PostgresSocial, Social};
+use crate::social::contract::{ChatMessage, Friendship, SocialService};
 use anyhow::{Context, Result};
 use framing::{Frame, Framing};
 use protocol::Connection;
@@ -42,7 +42,7 @@ struct Online {
     game_host: Option<String>,
 }
 struct Shared {
-    social: Social<PostgresSocial>,
+    social: SocialService,
     tokens: Mutex<HashMap<i64, Token>>,
     online: tokio::sync::Mutex<HashMap<i64, Online>>,
 }
@@ -54,7 +54,7 @@ pub struct XmppServer {
 impl XmppServer {
     pub fn from_listener(
         socket: std::net::TcpListener,
-        social: Social<PostgresSocial>,
+        social: SocialService,
         capacity: usize,
         runtime: &tokio::runtime::Handle,
     ) -> Result<Self> {
@@ -179,7 +179,11 @@ impl Shared {
         }
     }
 
-    async fn contact_presence(&self, recipient: i64, player: &crate::social::Player) -> String {
+    async fn contact_presence(
+        &self,
+        recipient: i64,
+        player: &crate::social::contract::Player,
+    ) -> String {
         let online = self.online.lock().await;
         let source = online.get(&player.id);
         let available = source.is_some_and(|source| source.present);

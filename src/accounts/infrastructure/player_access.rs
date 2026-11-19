@@ -8,7 +8,7 @@ use sqlx::{Postgres, Transaction};
 
 pub(super) async fn lock_accounts(tx: &mut Transaction<'_, Postgres>) -> Result<()> {
     // Serialize emptiness and role checks with account inserts, updates, and deletes.
-    let statement = "LOCK TABLE accounts IN SHARE ROW EXCLUSIVE MODE";
+    let statement = "LOCK TABLE accounts.accounts IN SHARE ROW EXCLUSIVE MODE";
     database(
         "accounts",
         statement,
@@ -18,10 +18,11 @@ pub(super) async fn lock_accounts(tx: &mut Transaction<'_, Postgres>) -> Result<
     Ok(())
 }
 
+#[async_trait::async_trait]
 impl PlayerAccessRepository for PostgresPlayers {
     #[tracing::instrument(name = "accounts.players.setup_status", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "accounts"), err)]
     async fn setup_available(&self) -> Result<bool> {
-        let statement = "SELECT NOT EXISTS (SELECT 1 FROM accounts)";
+        let statement = "SELECT NOT EXISTS (SELECT 1 FROM accounts.accounts)";
         Ok(database(
             "accounts",
             statement,
@@ -32,7 +33,7 @@ impl PlayerAccessRepository for PostgresPlayers {
 
     #[tracing::instrument(name = "accounts.web.credentials", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = email.len()), err)]
     async fn web_credentials(&self, email: &str) -> Result<Option<(i64, String)>> {
-        let statement = "SELECT id, password_hash FROM accounts WHERE username = $1";
+        let statement = "SELECT id, password_hash FROM accounts.accounts WHERE username = $1";
         Ok(database(
             "accounts",
             statement,
@@ -50,16 +51,17 @@ impl PlayerAccessRepository for PostgresPlayers {
         digest: &[u8; 32],
         lifetime_seconds: i64,
     ) -> Result<bool> {
-        let statement = "DELETE FROM web_sessions WHERE expires_at <= now()";
+        let statement = "DELETE FROM accounts.web_sessions WHERE expires_at <= now()";
         database(
             "accounts",
             statement,
             sqlx::query(statement).execute(&self.pool),
         )
         .await?;
-        let statement = "INSERT INTO web_sessions(secret_hash, account_id, expires_at, role)
+        let statement =
+            "INSERT INTO accounts.web_sessions(secret_hash, account_id, expires_at, role)
                          SELECT $1, id, now() + make_interval(secs => $3), role
-                         FROM accounts WHERE id = $2 FOR SHARE";
+                         FROM accounts.accounts WHERE id = $2 FOR SHARE";
         let result = database(
             "accounts",
             statement,
@@ -76,7 +78,7 @@ impl PlayerAccessRepository for PostgresPlayers {
     #[tracing::instrument(name = "accounts.web.find_session", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "web_sessions", output.outcome = tracing::field::Empty), err)]
     async fn find_web_session(&self, digest: &[u8; 32]) -> Result<Option<PlayerAccount>> {
         let statement = "SELECT a.id, a.username, a.display_name, a.role = 'admin'
-                         FROM web_sessions s JOIN accounts a ON a.id = s.account_id
+                         FROM accounts.web_sessions s JOIN accounts.accounts a ON a.id = s.account_id
                          WHERE s.secret_hash = $1 AND s.expires_at > now() AND s.role = a.role";
         let result: Option<(i64, String, String, bool)> = database(
             "accounts",
@@ -110,7 +112,7 @@ impl PlayerAccessRepository for PostgresPlayers {
 
     #[tracing::instrument(name = "accounts.web.close_session", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "web_sessions", output.session_count = tracing::field::Empty), err)]
     async fn close_web_session(&self, digest: &[u8; 32]) -> Result<()> {
-        let statement = "DELETE FROM web_sessions WHERE secret_hash = $1";
+        let statement = "DELETE FROM accounts.web_sessions WHERE secret_hash = $1";
         let result = database(
             "accounts",
             statement,
@@ -156,7 +158,8 @@ async fn change_role_in_transaction(
     )
     .await?;
     lock_accounts(tx).await?;
-    let statement = "SELECT EXISTS (SELECT 1 FROM accounts WHERE id = $1 AND role = 'admin')";
+    let statement =
+        "SELECT EXISTS (SELECT 1 FROM accounts.accounts WHERE id = $1 AND role = 'admin')";
     let actor_is_admin: bool = database(
         "accounts",
         statement,
@@ -171,7 +174,7 @@ async fn change_role_in_transaction(
     if actor_id == target_id {
         return Ok(RoleChange::OwnRole);
     }
-    let statement = "SELECT username, role FROM accounts WHERE id = $1";
+    let statement = "SELECT username, role FROM accounts.accounts WHERE id = $1";
     let target: Option<(String, String)> = database(
         "accounts",
         statement,
@@ -189,8 +192,8 @@ async fn change_role_in_transaction(
     if role == PlayerRole::Admin && !is_admin_email(&email) {
         return Ok(RoleChange::EmailRequired);
     }
-    let statement = "UPDATE accounts SET role = $2 WHERE id = $1
-                     AND ($2 = 'admin' OR EXISTS (SELECT 1 FROM accounts WHERE id <> $1 AND role = 'admin'))";
+    let statement = "UPDATE accounts.accounts SET role = $2 WHERE id = $1
+                     AND ($2 = 'admin' OR EXISTS (SELECT 1 FROM accounts.accounts WHERE id <> $1 AND role = 'admin'))";
     let result = database(
         "accounts",
         statement,
@@ -203,7 +206,7 @@ async fn change_role_in_transaction(
     if result.rows_affected() == 0 {
         return Ok(RoleChange::LastAdmin);
     }
-    let statement = "DELETE FROM web_sessions WHERE account_id = $1";
+    let statement = "DELETE FROM accounts.web_sessions WHERE account_id = $1";
     database(
         "accounts",
         statement,

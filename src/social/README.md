@@ -8,19 +8,24 @@ users, own socket connections, alter account identities, or implement battles.
 | --- | --- |
 | `domain/` | Player/contact concepts, typed changes, durable private-conversation/message models, legacy room subscriptions and request budgets. |
 | `application/` | Validated search, contact, private-open/send/restore operations through `SocialRepository`. |
-| `infrastructure/mod.rs` | PostgreSQL directory, contacts and presence-observer queries. |
+| `infrastructure/mod.rs` | Accounts directory adapter, PostgreSQL contacts and presence-observer queries. |
 | `infrastructure/conversations.rs` | Durable pairs, atomic message writes, recent restoration and bounded history. |
 
-Accounts publishes `account_directory(id, display_name)` as a read-only SQL view;
-Social uses it for canonical names, with foreign keys to Accounts IDs. Both share
-the published SQLx pool. Native friendship changes lock both participants in account order. Pending requests
-are persisted and replayed when their recipient connects; a recipient can accept
-or decline them. Legacy contact changes lock the owner, and private writes
-lock both participants in ID order, making ignore checks and writes coherent.
-Embedded migrations run before either context serves traffic.
+Social owns the `social` PostgreSQL schema and its
+[embedded migrations](infrastructure/migrations/). It resolves player names
+and checks participants through Accounts' published `PlayerDirectory` before
+writes. Reads load Social records and resolve names with bounded batches. The
+directory calls run outside Social transactions, which permits a shared pool
+with a single connection. Social stores numeric account IDs and retains its own
+conversation-to-message foreign key. A missing identity is omitted from roster
+and history responses. Native friendship changes lock both participants in ID
+order. Legacy contact changes lock the owner, and private writes lock both
+participants in ID order, keeping ignore checks and writes coherent.
 
-Player Sessions consumes the public Social API and models. Its native XMPP adapter owns
-XML/JID translation and presence/socket delivery. Its BW compatibility adapter
+Player Sessions consumes the [published Social contract](contract.rs), which
+exposes Social operations without the repository or PostgreSQL adapter. Server
+composition constructs the service and supplies its player directory. The native
+XMPP adapter owns XML/JID translation and presence/socket delivery. Its BW adapter
 still uses the separate in-memory `Conversations` model; that legacy lifecycle
 is not the durable native conversation contract.
 

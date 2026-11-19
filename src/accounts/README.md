@@ -1,25 +1,31 @@
 # Accounts
 
 Accounts owns durable player identity, password hashes, player roles, dashboard sessions, balances, vehicle ownership,
-integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, cosmetic ownership and outfits, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes immutable snapshots to
-Player Sessions. It does not own transport sessions, entities, battles or matchmaking.
+integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, cosmetic ownership and outfits, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes account views and garage projections to Player Sessions.
 
 | Layer | Responsibilities |
 | --- | --- |
 | `domain/` | Account snapshots, balances, owned vehicles and ammunition, progression, equipment, consumables, directives, depot sales, crew rosters, training and vehicle purchase rules; registration validation. Contains no SQL or protocol types. |
 | `application/` | Repository ports, credential verification, paginated player listing, managed provisioning and self-service registration, snapshot queries, preferences and ammunition/progression proposals/commit use cases. |
-| `infrastructure/postgres.rs` | SQLx pool, embedded migrations, coherent snapshot reads, atomic preference updates and revision-checked inventory transactions. |
+| `infrastructure/postgres.rs` | PostgreSQL adapter, coherent snapshot reads, atomic preference updates and revision-checked inventory transactions. |
+| `infrastructure/directory.rs` | PostgreSQL adapter for the published player directory. |
 | `infrastructure/players.rs` | PostgreSQL player directory pages and atomic creation with initial balances and starter garage provisioning. |
 | `infrastructure/player_access.rs` | Role-aware account and session access, serialized role changes and session revocation. |
 | `infrastructure/client/` | Anti-corruption layer adapting the versioned [resource bundle](../../docs/resources.md), garage catalog and account/shop cache formats. These wire models are not account domain models. |
 
-Player Sessions consumes `Accounts<R>`, `AccountSnapshot`, and the `GarageCatalog` encoder
-through this context's entry point (`mod.rs`). Catalog loading and garage cache
-encoding remain infrastructure of Accounts for this milestone and use the shared
-[client formats](../platform/infrastructure/client_formats/README.md) codecs. The
-catalog adapter discovers tier I tech tree vehicles and prepares starter
-loadouts for [player creation](../../docs/admin.md). A separate Catalog
-context is a possible future boundary, not an implemented one.
+Runtime consumers import the context's [published contract](contract.rs).
+Game authentication returns an opaque `AccountView` with identity and revision
+accessors. `GarageQueries` publishes session projections, Store offers and
+dashboard inspections. `GarageCommands` validates garage changes against the
+current revision and commits them. Player Sessions delivers the committed
+projection and receipt. Server composition creates these services through
+the [PostgreSQL entry point](postgres.rs).
+
+Accounts owns the `accounts` PostgreSQL schema and its
+[embedded migrations](infrastructure/migrations/). It owns identity and Garage
+in this deployment and keeps initial garage provisioning atomic with account
+creation. Catalog adapters translate the resource bundle and versioned client
+formats.
 
 | Term | Meaning |
 | --- | --- |
@@ -73,18 +79,17 @@ records sale pricing, stock validation and cache updates. User balances and
 ownership come from PostgreSQL; the compatibility adapter supplies empty/default
 values for unsupported account features. See [server behavior](../../docs/server.md).
 
-Accounts publishes `account_directory(id, display_name)` as a read-only SQL
-identity projection for Social, and exposes the shared SQLx pool for composition.
-Social owns its contact table; foreign keys use Accounts IDs. Credentials, balances,
-inventory and revisions are not part of this directory contract.
+The published `PlayerDirectory` resolves numeric account IDs and display names
+for Social. Server composition shares one PostgreSQL pool. Each repository uses
+its own schema and Social holds account IDs as scalar values.
 
-[Player Administration](../player_administration/README.md) consumes `PlayerAccounts<R>` through the public
+[Player Administration](../player_administration/README.md) consumes `PlayerAccess` through the public
 context entry point. It receives account IDs, logins, display names and roles. Account
 creation hashes the password with Argon2id and commits the identity and starter
 garage in one PostgreSQL transaction. Bootstrap authorizes first-admin creation
 only in an empty database. The role transaction rechecks the actor, prevents
 self-role changes, and revokes sessions on demotion.
-Player Administration also reads snapshots and vehicle catalog entries. Player Sessions uses the same
+Player Administration reads garage projections and grant catalogs. Player Sessions uses the same
 revision-checked progression transaction for player grants, garage purchases and
 [Store checkout](../../docs/store.md).
 

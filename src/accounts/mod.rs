@@ -1,18 +1,24 @@
 mod application;
 mod domain;
 mod infrastructure;
-pub use application::{
+use application::{
     AccountNotFound, AccountRepository, Accounts, AmmunitionChange, DepotSaleRequest,
     MAX_DEPOT_SALE_LINES, ProgressionChange, ProgressionCommand, VehicleSaleRequest,
 };
-pub use application::{
-    CreatePlayerError, PlayerAccessRepository, PlayerAccounts, PlayerProvision, PlayerRepository,
+use application::{CreatePlayerError, PlayerAccessRepository, PlayerProvision, PlayerRepository};
+use contract::PreparedAccount;
+use domain::*;
+use infrastructure::client::{
+    CosmeticGrantEntry, GarageCatalog, StoreCatalog, StoreOrder, StoreOrderError,
+    VehicleCatalogEntry,
 };
-pub use domain::*;
-pub use infrastructure::client::{
-    CosmeticGrantEntry, GarageCatalog, PreparedAccount, StoreAvailability, StoreCategory,
-    StoreOffer, StoreOrder, StoreOrderError, StorePrice, VehicleCatalogEntry, cosmetic_item,
-    decode_outfits,
-};
-pub use infrastructure::players::PostgresPlayers;
-pub use infrastructure::postgres::PostgresAccounts;
+use infrastructure::postgres::PostgresAccounts;
+
+use application::inspection::{GarageInspection, PlayerGarage};
+
+pub mod contract;
+pub mod postgres;
+
+#[cfg(any(test, feature = "integration-test-support"))]
+#[doc(hidden)]
+pub mod test_support;

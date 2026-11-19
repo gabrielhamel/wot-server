@@ -8,8 +8,6 @@
 !tools/**
 !src/
 !src/**
-!migrations/
-!migrations/**
 !package.json
 !package-lock.json
 tools/web/node_modules/

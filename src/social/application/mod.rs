@@ -1,65 +1,42 @@
 use super::domain::{Contact, ContactChange, FriendshipAction, Player, PrivateConversation};
-use std::future::Future;
+use std::sync::Arc;
 
-pub trait SocialRepository: Clone + Send + Sync + 'static {
-    fn search(
-        &self,
-        prefix: &str,
-        online_ids: Option<&[i64]>,
-    ) -> impl Future<Output = anyhow::Result<Vec<Player>>> + Send;
-    fn roster(&self, owner: i64) -> impl Future<Output = anyhow::Result<Vec<Contact>>> + Send;
-    fn change(
-        &self,
-        owner: i64,
-        peer: i64,
-        change: ContactChange,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
-    fn friendship(
+#[async_trait::async_trait]
+pub(super) trait SocialRepository: Send + Sync + 'static {
+    async fn search(&self, prefix: &str, online_ids: Option<&[i64]>)
+    -> anyhow::Result<Vec<Player>>;
+    async fn roster(&self, owner: i64) -> anyhow::Result<Vec<Contact>>;
+    async fn change(&self, owner: i64, peer: i64, change: ContactChange) -> anyhow::Result<()>;
+    async fn friendship(
         &self,
         owner: i64,
         peer: i64,
         action: FriendshipAction,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
-    fn inbound_requests(
-        &self,
-        owner: i64,
-    ) -> impl Future<Output = anyhow::Result<Vec<Player>>> + Send;
-    fn observers(
-        &self,
-        player: i64,
-        online: &[i64],
-    ) -> impl Future<Output = anyhow::Result<Vec<i64>>> + Send;
-    fn player(&self, id: i64) -> impl Future<Output = anyhow::Result<Option<Player>>> + Send;
-    fn open(
-        &self,
-        owner: i64,
-        peer: i64,
-    ) -> impl Future<Output = anyhow::Result<PrivateConversation>> + Send;
-    fn send(
+    ) -> anyhow::Result<bool>;
+    async fn inbound_requests(&self, owner: i64) -> anyhow::Result<Vec<Player>>;
+    async fn observers(&self, player: i64, online: &[i64]) -> anyhow::Result<Vec<i64>>;
+    async fn player(&self, id: i64) -> anyhow::Result<Option<Player>>;
+    async fn open(&self, owner: i64, peer: i64) -> anyhow::Result<PrivateConversation>;
+    async fn send(
         &self,
         owner: i64,
         conversation: u32,
         text: &str,
-    ) -> impl Future<Output = anyhow::Result<PrivateConversation>> + Send;
-    fn close(
-        &self,
-        owner: i64,
-        conversation: u32,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
-    fn restore(
-        &self,
-        owner: i64,
-    ) -> impl Future<Output = anyhow::Result<Vec<PrivateConversation>>> + Send;
+    ) -> anyhow::Result<PrivateConversation>;
+    async fn close(&self, owner: i64, conversation: u32) -> anyhow::Result<()>;
+    async fn restore(&self, owner: i64) -> anyhow::Result<Vec<PrivateConversation>>;
 }
 
 #[derive(Clone)]
-pub struct Social<R> {
-    repository: R,
+pub struct SocialService {
+    repository: Arc<dyn SocialRepository>,
 }
 
-impl<R: SocialRepository> Social<R> {
-    pub fn new(repository: R) -> Self {
-        Self { repository }
+impl SocialService {
+    pub(super) fn new(repository: impl SocialRepository) -> Self {
+        Self {
+            repository: Arc::new(repository),
+        }
     }
 
     #[tracing::instrument(name = "social.search", skip_all, fields(ddd.bounded_context.name = "social", output.count = tracing::field::Empty, input.prefix.bytes = prefix.len()), err)]

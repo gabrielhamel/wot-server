@@ -1,4 +1,4 @@
-use crate::accounts::{AccountSnapshot, GrantError, PlayerGrant};
+use crate::accounts::contract::{AccountView, GrantError, PlayerGrant};
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,7 +21,7 @@ pub enum GrantRequestError {
     Internal(#[from] anyhow::Error),
 }
 
-pub(crate) type GrantResult = Result<(AccountSnapshot, GrantDelivery), GrantRequestError>;
+pub(crate) type GrantResult = Result<(AccountView, GrantDelivery), GrantRequestError>;
 
 pub(crate) struct GrantRequest {
     pub parent: tracing::Span,
@@ -36,7 +36,7 @@ pub struct PlayerGrants {
 }
 
 impl PlayerGrants {
-    pub(crate) fn channel() -> (Self, mpsc::Receiver<GrantRequest>) {
+    pub(in crate::player_sessions) fn channel() -> (Self, mpsc::Receiver<GrantRequest>) {
         let (sender, receiver) = mpsc::channel(16);
         (Self { sender }, receiver)
     }

@@ -1,7 +1,7 @@
 mod bootstrap;
 mod gateway;
 mod schema;
-pub use gateway::{Gateway, GatewayConfig};
+pub use gateway::{Gateway, GatewayAccounts, GatewayConfig};
 mod credentials;
 mod endpoint;
 

@@ -9,7 +9,7 @@ impl Gateway {
         let span = event.span;
         let session = self.sessions.get(&event.client);
         if let Some(session) = session {
-            span.record("user.id", session.account.snapshot.id.to_string());
+            span.record("user.id", session.account.snapshot.id().to_string());
         }
         let owns_entity = session
             .and_then(|session| session.entity)
@@ -135,8 +135,8 @@ impl Gateway {
             }
             _ => {}
         }
-        let current_revision = session.account.snapshot.revision;
-        let account_id = session.account.snapshot.id;
+        let current_revision = session.account.snapshot.revision();
+        let account_id = session.account.snapshot.id();
         let cache = session.account.cache.clone();
         if self.crew_command(client, entity, &request)? {
             return Ok(());
@@ -304,7 +304,7 @@ impl Gateway {
                 let command = i32::try_from(days)
                     .ok()
                     .filter(|_| arena_id == 0)
-                    .map(|days| crate::accounts::ProgressionCommand::BuyPremium { days });
+                    .map(|days| crate::accounts::contract::ProgressionCommand::BuyPremium { days });
                 self.change_progression(client, entity, request_id, command, Some(shop_revision))?;
             }
             AccountBase::DoCmdInt3 {
@@ -315,7 +315,7 @@ impl Gateway {
                 arg2,
             } => {
                 let command = (arg1 == 0 && arg2 == 0)
-                    .then_some(crate::accounts::ProgressionCommand::BuyVehicleSlot);
+                    .then_some(crate::accounts::contract::ProgressionCommand::BuyVehicleSlot);
                 self.change_progression(client, entity, request_id, command, Some(shop_revision))?;
             }
             AccountBase::DoCmdInt3 {
@@ -327,7 +327,7 @@ impl Gateway {
             } => {
                 let command = (arg2 == 0)
                     .then(|| {
-                        Some(crate::accounts::ProgressionCommand::Research {
+                        Some(crate::accounts::contract::ProgressionCommand::Research {
                             vehicle: i32::try_from(arg0).ok()?,
                             index: usize::try_from(arg1).ok()?,
                         })
@@ -344,7 +344,7 @@ impl Gateway {
             } => {
                 let command = (arg0 > 0 && arg1 > 0 && arg2 >= 0)
                     .then(|| {
-                        Some(crate::accounts::ProgressionCommand::Equip {
+                        Some(crate::accounts::contract::ProgressionCommand::Equip {
                             inventory_id: arg0,
                             item: i32::try_from(arg1).ok()?,
                             gun: i32::try_from(arg2).ok()?,
@@ -364,7 +364,7 @@ impl Gateway {
             } => {
                 let command = (arg3 == 0)
                     .then(|| {
-                        Some(crate::accounts::ProgressionCommand::Buy {
+                        Some(crate::accounts::contract::ProgressionCommand::Buy {
                             item: i32::try_from(arg1).ok()?,
                             count: u32::try_from(arg2).ok()?,
                         })
@@ -394,7 +394,7 @@ impl Gateway {
                 arg3,
             } => {
                 let command = progression::sale_line(arg1, arg2, arg3)
-                    .map(|line| crate::accounts::ProgressionCommand::Sell(vec![line]));
+                    .map(|line| crate::accounts::contract::ProgressionCommand::Sell(vec![line]));
                 self.change_progression(client, entity, request_id, command, Some(arg0))?;
             }
             AccountBase::DoCmdIntArr {
@@ -579,7 +579,7 @@ impl Gateway {
         len: i64,
         crc: i64,
     ) -> Result<()> {
-        let data = self.catalog.shop.clone();
+        let data = self.catalog.shop_data();
         let cache_hit = len == data.len() as i64 && crc == i64::from(crc32fast::hash(&data) as i32);
         tracing::Span::current().record(
             "output.outcome",

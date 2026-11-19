@@ -15,7 +15,7 @@ mod grants;
 pub use grants::*;
 mod modules;
 mod premium;
-pub(crate) use premium::{PREMIUM_PACKAGES, unix_now};
+pub(in crate::accounts) use premium::{PREMIUM_PACKAGES, unix_now};
 mod players;
 pub use players::*;
 mod vehicles;

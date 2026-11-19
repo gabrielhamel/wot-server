@@ -6,7 +6,7 @@ import { httpServer } from "../../../../tools/web/test/setup";
 import { adminHandlers } from "../../../../tools/web/mocks/admin";
 import { captureTraces } from "../../../../tools/web/test/traces";
 import type { AdminSession, Garage, Grant, PlayerRecord } from "../../application/admin-contracts";
-import type { StoreOffer } from "../../../player_sessions/application/store-contracts";
+import type { StoreOffer } from "../../../player_sessions/web";
 import Admin from "./admin-page";
 
 const origin = "http://localhost:8080/api/admin";
@@ -147,19 +147,23 @@ describe("Server Administration", () => {
       expect(order).toEqual({ item: offer.item, revision: "9", price: offer.price });
       await user.click(screen.getByRole("tab", { name: "My garage" }));
       expect(await screen.findByText("250")).toBeVisible();
-      telemetry.expectRequest(
+      const { http: httpCatalog, parent: catalogOperation } = telemetry.expectRequest(
         catalogTrace,
         "web.store.load_catalog",
         "/api/admin/me/shop/catalog",
         200,
       );
-      const { parent } = telemetry.expectRequest(
+      const { http: httpOrder, parent } = telemetry.expectRequest(
         orderTrace,
         "web.store.purchase",
         "/api/admin/me/shop/orders",
         200,
       );
+      expect(httpCatalog?.attributes["ddd.bounded_context.name"]).toBe("player_administration");
+      expect(httpOrder?.attributes["ddd.bounded_context.name"]).toBe("player_administration");
+      expect(catalogOperation?.attributes["ddd.bounded_context.name"]).toBe("player_sessions");
       expect(parent?.attributes).toMatchObject({
+        "ddd.bounded_context.name": "player_sessions",
         "input.item": -1,
         "input.revision": "9",
         "input.price.currency": "gold",
@@ -195,6 +199,8 @@ describe("Server Administration", () => {
         401,
       );
       expect(denied.http?.attributes["output.outcome"]).toBe("rejected");
+      expect(denied.http?.attributes["ddd.bounded_context.name"]).toBe("player_administration");
+      expect(denied.parent?.attributes["ddd.bounded_context.name"]).toBe("player_sessions");
     } finally {
       await telemetry.stop();
     }

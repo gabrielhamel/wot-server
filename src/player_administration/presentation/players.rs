@@ -1,5 +1,5 @@
 use super::{AdminState, RequestSpan, registration::registration_error};
-use crate::accounts::{
+use crate::accounts::contract::{
     CreatePlayerError, NewPlayer, NewPlayerError, PlayerAccount, PlayerPagination, PlayerRole,
     is_admin_email,
 };

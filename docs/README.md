@@ -45,7 +45,7 @@ establish compatibility with the current client.
 | Installed game configuration and live garage validation | [Client validation](client-validation.md) |
 | Offline executable mapping and current findings | [Binary mapping](binary-mapping.md) |
 | Implemented context relationships | [Context map](../CONTEXT_MAP.md) |
-| Choosing context names from domain responsibilities and vocabulary | [Naming bounded contexts](bounded-contexts.md) |
+| Context responsibilities, published contracts and storage ownership | [Bounded contexts](bounded-contexts.md) |
 | Mapper verification and external-client checks | [Testing](testing.md) |
 | Packages, dependencies and responsibility ownership | [Workspace map](wg-toolkit/workspace.md) |
 | Networking, script ABI, entities and replication | [Protocol model](wg-toolkit/protocol.md) |

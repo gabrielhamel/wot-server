@@ -1,6 +1,7 @@
-use super::{Completion as GatewayCompletion, Gateway, account_updates::CommittedAccountChange};
+use super::{Completion as GatewayCompletion, Gateway};
+use crate::accounts::contract::CommittedGarageChange;
 use crate::{
-    accounts::AccountNotFound,
+    accounts::contract::AccountNotFound,
     player_sessions::{
         GrantRequestError,
         application::grants::{GrantRequest, GrantResult},
@@ -11,7 +12,7 @@ use tokio::sync::oneshot;
 pub(super) struct Completion {
     account_id: i64,
     reply: oneshot::Sender<GrantResult>,
-    result: Result<CommittedAccountChange, GrantRequestError>,
+    result: Result<CommittedGarageChange, GrantRequestError>,
 }
 
 impl Gateway {
@@ -42,41 +43,23 @@ impl Gateway {
         if let Some(session) = self
             .sessions
             .values_mut()
-            .find(|s| s.account.snapshot.id == account_id)
+            .find(|s| s.account.snapshot.id() == account_id)
         {
             session.saving = true;
         }
-        let accounts = self.accounts.clone();
-        let catalog = self.catalog.clone();
+        let garage = self.garage.clone();
         let sender = self.sender.clone();
         self.runtime
             .spawn(tracing::Instrument::in_current_span(async move {
                 let result = async {
-                    let previous = accounts.snapshot(account_id).await.map_err(|error| {
+                    let result = garage.grant(account_id, grant).await.map_err(|error| {
                         if error.is::<AccountNotFound>() {
                             GrantRequestError::NotFound
                         } else {
                             error.into()
                         }
                     })?;
-                    let (change, prepared, diff) = tokio::task::spawn_blocking(
-                        crate::platform::observability::in_current_span(move || {
-                            let change = catalog.plan_grant(previous.clone(), grant)?;
-                            let diff = catalog.grant_diff(&previous, &change, grant)?;
-                            let prepared = catalog.prepare(change.snapshot.clone())?;
-                            Ok::<_, GrantRequestError>((change, prepared, diff))
-                        }),
-                    )
-                    .await
-                    .map_err(anyhow::Error::from)??;
-                    if !accounts.commit_progression(&change).await? {
-                        return Err(GrantRequestError::Busy);
-                    }
-                    Ok(CommittedAccountChange {
-                        previous_revision: change.previous_revision,
-                        prepared,
-                        diff,
-                    })
+                    result?.ok_or(GrantRequestError::Busy)
                 }
                 .await;
                 tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
@@ -109,7 +92,7 @@ impl Gateway {
             let delivery = self.publish_account_change(committed);
             tracing::info!(
                 account_id,
-                revision = snapshot.revision,
+                revision = snapshot.revision(),
                 ?delivery,
                 "Committed admin grant"
             );

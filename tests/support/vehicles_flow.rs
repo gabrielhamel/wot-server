@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, Value, dict};
-use wot_server::player_sessions::mercury::app::dispatch::ScriptDispatch;
+use wot_server::player_sessions::test_support::mercury::app::dispatch::ScriptDispatch;
 
 pub const M14_41: i32 = 673;
 pub const SMALL_REPAIR_KIT: i32 = (4 << 8) | 0xfb;

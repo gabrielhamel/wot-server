@@ -123,7 +123,7 @@ address and whose password you know. Confirm that the statement updated one
 row before signing in.
 
 ```sql
-UPDATE accounts SET role = 'admin' WHERE username = 'operator@example.com';
+UPDATE accounts.accounts SET role = 'admin' WHERE username = 'operator@example.com';
 ```
 
 ### Frontend development

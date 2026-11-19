@@ -13,14 +13,14 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | --- | --- |
 | `domain/` | Bounded admission generations, expiry and stale completion rejection. |
 | `domain/training.rs` | Training Room duration and comment limits. |
-| `application/` | Credential input policy, preferences, and ammunition/progression commit use cases, using Accounts' published application API. |
+| `application/` | Credential input policy, preferences, and garage command translation and dispatch to Accounts' published application contract. |
 | `infrastructure/mercury/` | Mercury UDP framing, reliability, RSA and Blowfish, LoginApp/BaseApp wire sessions, and Account RPC binding from the [resource bundle](../../docs/resources.md). |
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
 | `infrastructure/gateway/training.rs` | Validate bundled map IDs and deliver the host-only room settings, roster, readiness and leave events. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
 | `infrastructure/gateway/progression.rs` | Equipment, directive, module, tank and depot request validation, bounded progression jobs and committed cache delivery. |
-| `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes. |
+| `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes using the Accounts command contract. |
 | `application/store.rs` | Store customer identity, garage session tokens and the bounded request channel between HTTP and the gateway. |
 | `infrastructure/gateway/premium.rs` | Notify the live garage when an account’s Premium time expires. |
 | `infrastructure/gateway/store.rs` | Look up live Store sessions, read persisted dashboard catalogs and coordinate account writes. |
@@ -79,3 +79,10 @@ The [Store](../../docs/store.md) accepts in-game requests with a live garage
 token and dashboard requests for the account authenticated by Player
 Administration. Both use the same write slot and cache publication as other
 external account changes.
+
+Player Administration uses the [published grants and Store contract](mod.rs)
+and the [Store browser entry point](web.ts). The embedded Store receives a
+transport from the dashboard and uses it for catalog reads and orders. The
+server injects Accounts and Social contracts into the gateway. The catalog,
+account view, and committed changes expose the projections needed for client
+delivery. Session state is held in memory.

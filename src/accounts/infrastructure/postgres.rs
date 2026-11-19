@@ -3,8 +3,8 @@ use crate::accounts::{
     OwnedVehicle, ProgressionChange, ProgressionState, ShellStock, VehicleAmmunition,
 };
 use anyhow::{Context, Result};
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
-use std::{collections::BTreeMap, time::Duration};
+use sqlx::{PgPool, Row};
+use std::collections::BTreeMap;
 
 #[derive(Clone)]
 pub struct PostgresAccounts {
@@ -16,25 +16,15 @@ impl PostgresAccounts {
         self.pool.clone()
     }
 
-    #[tracing::instrument(name = "accounts.postgres.connect", skip_all, fields(ddd.bounded_context.name = "accounts", input.connections = connections), err)]
-    pub async fn connect(url: &str, connections: u32) -> Result<Self> {
-        let pool = PgPoolOptions::new()
-            .max_connections(connections)
-            .acquire_timeout(Duration::from_secs(5))
-            .connect(url)
-            .await
-            .context("Connect to PostgreSQL")?;
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .context("Migrate account database")?;
-        Ok(Self { pool })
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
     #[tracing::instrument(name = "accounts.postgres.catalog_keys", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "account_vehicles"), err)]
     pub async fn catalog_keys(&self) -> Result<Vec<String>> {
         Ok({
-            let statement = "SELECT DISTINCT catalog_key FROM owned_vehicles ORDER BY catalog_key";
+            let statement =
+                "SELECT DISTINCT catalog_key FROM accounts.owned_vehicles ORDER BY catalog_key";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -45,11 +35,12 @@ impl PostgresAccounts {
     }
 }
 
+#[async_trait::async_trait]
 impl AccountRepository for PostgresAccounts {
     #[tracing::instrument(name = "accounts.postgres.credentials", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = username.len()), err)]
     async fn credentials(&self, username: &str) -> Result<Option<(i64, String)>> {
         Ok({
-            let statement = "SELECT id,password_hash FROM accounts WHERE username=$1";
+            let statement = "SELECT id,password_hash FROM accounts.accounts WHERE username=$1";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -87,7 +78,7 @@ impl AccountRepository for PostgresAccounts {
             crate::platform::observability::database("accounts", "BEGIN", self.pool.begin())
                 .await?;
         let updated = {
-            let statement = "UPDATE accounts SET credits=$3, free_xp=$4, progression=$5, depot_shells=$6, revision=$7, gold=$8, berths=$9, crew_roster=$10, bonds=$11, slots=$12, equipment_components=$13 WHERE id=$1 AND revision=$2";
+            let statement = "UPDATE accounts.accounts SET credits=$3, free_xp=$4, progression=$5, depot_shells=$6, revision=$7, gold=$8, berths=$9, crew_roster=$10, bonds=$11, slots=$12, equipment_components=$13 WHERE id=$1 AND revision=$2";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -115,7 +106,7 @@ impl AccountRepository for PostgresAccounts {
         if let Some(inventory_id) = change.sold_vehicle {
             let deleted = {
                 let statement =
-                    "DELETE FROM owned_vehicles WHERE account_id=$1 AND inventory_id=$2";
+                    "DELETE FROM accounts.owned_vehicles WHERE account_id=$1 AND inventory_id=$2";
                 crate::platform::observability::database(
                     "accounts",
                     statement,
@@ -134,7 +125,7 @@ impl AccountRepository for PostgresAccounts {
         for vehicle in &snapshot.vehicles {
             if change.acquired_vehicle == Some(vehicle.inventory_id) {
                 {
-                    let statement = "INSERT INTO owned_vehicles(account_id,inventory_id,catalog_key,ammunition,has_crew) VALUES($1,$2,$3,$4,$5)";
+                    let statement = "INSERT INTO accounts.owned_vehicles(account_id,inventory_id,catalog_key,ammunition,has_crew) VALUES($1,$2,$3,$4,$5)";
                     crate::platform::observability::database(
                         "accounts",
                         statement,
@@ -151,7 +142,7 @@ impl AccountRepository for PostgresAccounts {
                 continue;
             }
             let updated = {
-                let statement = "UPDATE owned_vehicles SET ammunition=$3 WHERE account_id=$1 AND inventory_id=$2";
+                let statement = "UPDATE accounts.owned_vehicles SET ammunition=$3 WHERE account_id=$1 AND inventory_id=$2";
                 crate::platform::observability::database(
                     "accounts",
                     statement,
@@ -182,7 +173,7 @@ impl AccountRepository for PostgresAccounts {
             crate::platform::observability::database("accounts", "BEGIN", self.pool.begin())
                 .await?;
         let updated = {
-            let statement = "UPDATE accounts SET credits=$3, gold=$4, depot_shells=$5, revision=$6 WHERE id=$1 AND revision=$2";
+            let statement = "UPDATE accounts.accounts SET credits=$3, gold=$4, depot_shells=$5, revision=$6 WHERE id=$1 AND revision=$2";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -202,8 +193,7 @@ impl AccountRepository for PostgresAccounts {
         }
 
         let vehicle = {
-            let statement =
-                "UPDATE owned_vehicles SET ammunition=$3 WHERE account_id=$1 AND inventory_id=$2";
+            let statement = "UPDATE accounts.owned_vehicles SET ammunition=$3 WHERE account_id=$1 AND inventory_id=$2";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -226,7 +216,7 @@ impl AccountRepository for PostgresAccounts {
     #[tracing::instrument(name = "accounts.postgres.save_settings", skip_all, fields(ddd.bounded_context.name = "accounts", input.id = id, input.settings.count = settings.len()), err)]
     async fn save_settings(&self, id: i64, settings: BTreeMap<i32, i32>) -> Result<i64> {
         Ok({
-            let statement = "UPDATE accounts SET settings=settings || $2::jsonb, revision=revision+1 WHERE id=$1 RETURNING revision";
+            let statement = "UPDATE accounts.accounts SET settings=settings || $2::jsonb, revision=revision+1 WHERE id=$1 RETURNING revision";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -245,7 +235,7 @@ pub(super) async fn read_snapshot(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     id: i64,
 ) -> Result<AccountSnapshot> {
-    let statement = "SELECT display_name, revision, credits, gold, bonds, free_xp, slots, berths, settings, depot_shells, progression, crew_roster, equipment_components FROM accounts WHERE id=$1";
+    let statement = "SELECT display_name, revision, credits, gold, bonds, free_xp, slots, berths, settings, depot_shells, progression, crew_roster, equipment_components FROM accounts.accounts WHERE id=$1";
     let row = crate::platform::observability::database(
         "accounts",
         statement,
@@ -254,7 +244,7 @@ pub(super) async fn read_snapshot(
     .await?
     .ok_or(AccountNotFound(id))?;
     let vehicles = {
-        let statement = "SELECT inventory_id,catalog_key,ammunition,has_crew FROM owned_vehicles WHERE account_id=$1 ORDER BY inventory_id";
+        let statement = "SELECT inventory_id,catalog_key,ammunition,has_crew FROM accounts.owned_vehicles WHERE account_id=$1 ORDER BY inventory_id";
         crate::platform::observability::database(
             "accounts",
             statement,

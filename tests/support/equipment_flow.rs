@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, Value, dict};
-use wot_server::{pickle, player_sessions::mercury::app::dispatch::ScriptDispatch};
+use wot_server::{pickle, player_sessions::test_support::mercury::app::dispatch::ScriptDispatch};
 
 const AIMING: i32 = (101 << 8) | 0xf9;
 const RAMMER: i32 = (81 << 8) | 0xf9;
@@ -592,10 +592,12 @@ pub fn exercise_experimental_upgrade(
 }
 
 pub fn verify_unaffordable_upgrade(
-    catalog: &wot_server::accounts::GarageCatalog,
-    mut snapshot: wot_server::accounts::AccountSnapshot,
+    catalog: &wot_server::accounts::test_support::GarageCatalog,
+    mut snapshot: wot_server::accounts::test_support::AccountSnapshot,
 ) {
-    use wot_server::accounts::{EquipmentUpgradeSource, ProgressionCommand, ProgressionError};
+    use wot_server::accounts::test_support::{
+        EquipmentUpgradeSource, ProgressionCommand, ProgressionError,
+    };
 
     snapshot.balances.credits = 2_999_999;
     snapshot.balances.equipment_components = 399;

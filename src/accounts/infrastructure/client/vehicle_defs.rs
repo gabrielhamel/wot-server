@@ -144,7 +144,10 @@ pub(super) fn offers(
 }
 
 impl GarageCatalog {
-    pub(crate) fn max_researched_tiers(&self, account: &AccountSnapshot) -> BTreeMap<u8, i64> {
+    pub(in crate::accounts) fn max_researched_tiers(
+        &self,
+        account: &AccountSnapshot,
+    ) -> BTreeMap<u8, i64> {
         let mut tiers = BTreeMap::new();
         for id in account.progression.unlocks.iter().copied().chain(
             account
@@ -201,7 +204,6 @@ impl GarageCatalog {
                 .ok()
             });
         Ok(VehiclePurchaseRules {
-            vehicle: id,
             catalog_key: offer.key.clone(),
             price: offer.price,
             requires_research: offer.requires_research,

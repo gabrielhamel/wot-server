@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, responseStatus } from "../../../../platform/infrastructure/web/http";
-import type { StoreAccess, StoreCatalog, StoreOffer } from "../../../application/store-contracts";
+import type {
+  StoreCatalog,
+  StoreOffer,
+  StoreTransport,
+} from "../../../application/store-contracts";
 import { loadCatalog, placeOrder } from "../../../infrastructure/store-api";
 
 export function useStoreCatalog(
-  access: StoreAccess,
+  transport: StoreTransport,
+  notifyNativeClient: boolean,
   onUnauthorized?: () => void,
   onPurchased?: () => void,
 ) {
@@ -19,7 +24,7 @@ export function useStoreCatalog(
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
-    void loadCatalog(access, signal)
+    void loadCatalog(transport, signal)
       .then(
         (catalog) => {
           if (!signal.aborted) setCatalog(catalog);
@@ -34,7 +39,7 @@ export function useStoreCatalog(
         if (!signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [access, attempt, onUnauthorized]);
+  }, [transport, attempt, onUnauthorized]);
 
   function reload() {
     setLoading(true);
@@ -49,7 +54,7 @@ export function useStoreCatalog(
     setPurchasedOffer(null);
     setError(null);
     try {
-      setCatalog(await placeOrder(access, offer, catalog.revision));
+      setCatalog(await placeOrder(transport, offer, catalog.revision, notifyNativeClient));
       setPurchasedOffer(offer);
       onPurchased?.();
     } catch (error) {

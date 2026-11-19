@@ -72,7 +72,7 @@ pub enum GrantError {
 }
 
 impl GrantCurrency {
-    pub fn balance(self, balances: &Balances) -> i64 {
+    pub(in crate::accounts) fn balance(self, balances: &Balances) -> i64 {
         match self {
             Self::Credits => balances.credits,
             Self::Gold => balances.gold,
@@ -83,7 +83,11 @@ impl GrantCurrency {
     }
 
     #[tracing::instrument(name = "accounts.grants.grant", skip_all, fields(ddd.bounded_context.name = "accounts", input.currency = ?self, input.amount = amount, output.balance = tracing::field::Empty), err)]
-    pub(crate) fn grant(self, balances: &mut Balances, amount: i64) -> Result<(), GrantError> {
+    pub(in crate::accounts) fn grant(
+        self,
+        balances: &mut Balances,
+        amount: i64,
+    ) -> Result<(), GrantError> {
         if amount <= 0 {
             return Err(GrantError::InvalidAmount);
         }
@@ -106,7 +110,11 @@ impl GrantCurrency {
 
 impl ProgressionState {
     #[tracing::instrument(name = "accounts.grants.grant_depot_stock", skip_all, fields(ddd.bounded_context.name = "accounts", input.item = item, input.count = count, output.owned.count = tracing::field::Empty), err)]
-    pub(crate) fn grant_depot_stock(&mut self, item: i32, count: u32) -> Result<(), GrantError> {
+    pub(in crate::accounts) fn grant_depot_stock(
+        &mut self,
+        item: i32,
+        count: u32,
+    ) -> Result<(), GrantError> {
         if !(1..=100).contains(&count) {
             return Err(GrantError::InvalidDepotCount);
         }

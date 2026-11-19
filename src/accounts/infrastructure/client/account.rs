@@ -456,7 +456,7 @@ pub(super) fn researched_tiers_value(tiers: &BTreeMap<u8, i64>) -> Value {
 }
 
 impl super::GarageCatalog {
-    pub(crate) fn garage_sync(&self, revision: i64, expires_at: Option<u32>) -> Value {
+    pub(in crate::accounts) fn garage_sync(&self, revision: i64, expires_at: Option<u32>) -> Value {
         crate::pickle!({
             "prevRev": revision, "rev": revision,
             "premium": (premium_info(expires_at)),
@@ -464,7 +464,7 @@ impl super::GarageCatalog {
         })
     }
 
-    pub(crate) fn premium_sync(revision: i64, expires_at: Option<u32>) -> Value {
+    pub(in crate::accounts) fn premium_sync(revision: i64, expires_at: Option<u32>) -> Value {
         crate::pickle!({"prevRev": revision, "rev": revision, "premium": (premium_info(expires_at))})
     }
 }

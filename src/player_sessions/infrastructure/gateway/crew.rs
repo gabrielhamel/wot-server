@@ -1,5 +1,5 @@
 use super::*;
-use crate::accounts::{
+use crate::accounts::contract::{
     CrewCommand, CrewRecruitment, MAX_MAJOR_PERKS, PassportChoice, ProgressionCommand,
 };
 

@@ -96,14 +96,33 @@ infrastructure concerns. Keep dependencies directed toward the domain and make
 boundaries between contexts explicit.
 
 Name bounded contexts after the responsibilities and vocabulary of the domain.
-Use technical names for adapters and implementation details. See
-[naming bounded contexts](docs/bounded-contexts.md) for examples and guidance
-on supporting tools.
+Use technical names for adapters and implementation details. See the
+[bounded context guide](docs/bounded-contexts.md) for naming, contracts, and
+storage ownership.
 
 Put shared domain concepts with the same meaning and invariants in
 `src/shared_kernel/`. Put reusable infrastructure independent of the domain in
 `src/platform/`. Keep context-specific policies and published integration
 contracts with the context that owns them.
+
+### Cross-context contracts and persistence
+
+- Put each cross-context contract at the owning context's entry point. Limit
+  consumers to the published commands, queries, and result types. Cross-context
+  access to internal modules, helpers, repositories, database handles, and
+  transaction steps is prohibited. Wire services and adapters in `src/server/`.
+- Give every persistent context its own PostgreSQL schema, embedded migration
+  directory, and SQLx migration history. Use schema-qualified SQL against
+  objects owned by the context. Runtime contexts share the server's database
+  and connection pool.
+- Keep SQL relationships within the owning schema. Cross-context foreign keys,
+  joins, views, triggers, and direct SQL reads or writes are prohibited. Store
+  scalar IDs for references to other contexts and use a published contract to
+  resolve or validate them.
+- Keep migrations scoped to their owning schema and preserve the checksums
+  of previously applied context migrations.
+
+### Directory organization
 
 At the root of each bounded context's directory, maintain a `README.md` that:
 

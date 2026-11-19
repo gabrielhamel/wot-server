@@ -1,7 +1,6 @@
 use super::{AccountSnapshot, CrewRecruitment, ProgressionError, VehicleCost};
 use serde::{Deserialize, Serialize};
 use std::{
-    cmp::Reverse,
     collections::{BTreeMap, BTreeSet},
     sync::LazyLock,
 };
@@ -339,7 +338,7 @@ impl CrewRoster {
 }
 
 impl CrewRecruitment {
-    pub fn cost(self) -> VehicleCost {
+    pub(in crate::accounts) fn cost(self) -> VehicleCost {
         match self {
             Self::Free => VehicleCost::default(),
             Self::Credits => VehicleCost {
@@ -353,7 +352,7 @@ impl CrewRecruitment {
         }
     }
 
-    pub fn retraining_efficiency(self) -> u32 {
+    pub(in crate::accounts) fn retraining_efficiency(self) -> u32 {
         match self {
             Self::Free => 30_000,
             Self::Credits => 60_000,
@@ -364,8 +363,9 @@ impl CrewRecruitment {
 
 impl AccountSnapshot {
     /// Applies an award using the crew in seat order and the training flag captured for the battle.
+    #[cfg(test)]
     #[tracing::instrument(name = "accounts.crew.award_battle_experience", skip_all, fields(ddd.bounded_context.name = "accounts", input.vehicle_type = vehicle_type, input.accelerated_training = accelerated_training, input.combat_xp = combat_xp, input.crew_xp = crew_xp), err)]
-    pub fn award_battle_experience(
+    fn award_battle_experience(
         &mut self,
         vehicle_type: i32,
         battle_crew: &[Option<i64>],
@@ -388,7 +388,7 @@ impl AccountSnapshot {
                 .filter_map(|id| {
                     let training = &roster.members.get(&id)?.training;
                     (training.xp_capacity() > 0).then_some((
-                        Reverse(MAX_EFFICIENCY_XP.saturating_sub(training.efficiency_xp)),
+                        std::cmp::Reverse(MAX_EFFICIENCY_XP.saturating_sub(training.efficiency_xp)),
                         training.skill_xp(),
                         id,
                     ))

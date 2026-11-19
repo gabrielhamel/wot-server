@@ -30,7 +30,7 @@ impl Gateway {
         tracing::Span::current().record("output.outcome", "queued");
         session.saving = true;
         let changes: BTreeMap<_, _> = pairs.iter().map(|&[key, value]| (key, value)).collect();
-        let id = session.account.snapshot.id;
+        let id = session.account.snapshot.id();
         self.pending_writes.insert(id);
         let accounts = self.accounts.clone();
         let sender = self.sender.clone();
@@ -92,8 +92,8 @@ impl Gateway {
         };
         let response = match result {
             Ok(prepared) => {
-                let revision = prepared.snapshot.revision;
-                let previous = session.account.snapshot.revision;
+                let revision = prepared.snapshot.revision();
+                let previous = session.account.snapshot.revision();
                 session.account = prepared;
                 let diff = crate::pickle!({"prevRev": previous, "rev": revision, "intUserSettings": (Value::Dict(changes.into_iter().map(|(k,v)| (Value::from(k),Value::from(v))).collect()))});
                 self.base.entity(entity).and_then(|mut account| {

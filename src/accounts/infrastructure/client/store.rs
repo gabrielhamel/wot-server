@@ -144,7 +144,11 @@ impl GarageCatalog {
         crate::pickle!({"unlocks": (Value::Set(unlocks))})
     }
 
-    pub(crate) fn store_depot_count(&self, account: &AccountSnapshot, offer: &StoreOffer) -> u32 {
+    pub(in crate::accounts) fn store_depot_count(
+        &self,
+        account: &AccountSnapshot,
+        offer: &StoreOffer,
+    ) -> u32 {
         if offer.category.is_style() {
             account
                 .progression
@@ -310,5 +314,40 @@ impl GarageCatalog {
             snapshot: account,
             previous_revision,
         })
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct StoreCatalog {
+    pub revision: String,
+    pub premium_expires_at: Option<u32>,
+    pub offers: Vec<StoreListing>,
+}
+
+#[derive(serde::Serialize)]
+pub struct StoreListing {
+    #[serde(flatten)]
+    pub offer: StoreOffer,
+    pub in_depot: u32,
+    pub availability: StoreAvailability,
+}
+
+impl GarageCatalog {
+    #[tracing::instrument(name = "accounts.store.catalog", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, output.offers.count = self.store_offers().len()))]
+    pub fn store_catalog(&self, snapshot: &AccountSnapshot) -> StoreCatalog {
+        let tiers = self.max_researched_tiers(snapshot);
+        StoreCatalog {
+            revision: snapshot.revision.to_string(),
+            premium_expires_at: snapshot.active_premium_until(),
+            offers: self
+                .store_offers()
+                .iter()
+                .map(|offer| StoreListing {
+                    offer: offer.clone(),
+                    availability: self.store_availability(snapshot, &tiers, offer),
+                    in_depot: self.store_depot_count(snapshot, offer),
+                })
+                .collect(),
+        }
     }
 }
