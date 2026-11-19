@@ -8,6 +8,8 @@
 !tools/**
 !src/
 !src/**
+!tests/
+!tests/*.rs
 !package.json
 !package-lock.json
 tools/web/node_modules/
