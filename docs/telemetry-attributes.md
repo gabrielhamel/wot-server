@@ -99,6 +99,9 @@ meanings on different operations; those differences are listed explicitly.
 | Attribute | Meaning and emission |
 | --- | --- |
 | [`input.client.address`](../src/player_sessions/infrastructure/gateway/mod.rs) | Client socket address (IP and port) for connection, gateway enable, or social dispatch/work/completion operations. |
+| [`input.port`](../src/player_sessions/infrastructure/gateway/sockets.rs) | Configured BaseApp and native XMPP port number. Zero requests automatic assignment. |
+| [`output.port`](../src/player_sessions/infrastructure/gateway/sockets.rs) | Shared port number once both BaseApp UDP and native XMPP TCP sockets are bound. |
+| [`output.bind_retries.count`](../src/player_sessions/infrastructure/gateway/sockets.rs) | Number of automatic port selections retried because the TCP port was in use. |
 | [`input.request_id`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Decoded Mercury command or legacy chat request correlation ID; also recorded by operation, resource, LoginApp reply and garage completion spans. Mercury client method spans record it for `onCmdResponse`, `onCmdResponseExt` and `onTokenReceived`. Omitted when the operation has no decoded correlation ID. |
 | [`input.command_id`](../src/player_sessions/infrastructure/gateway/commands.rs) | Decoded account command number on `game.command` and `player_sessions.commands.command`. |
 | [`input.method_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Numeric exposed Mercury method ID after wire decoding. |
@@ -143,7 +146,7 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`input.email.bytes`](../src/player_administration/presentation/registration.rs) | UTF-8 byte length of the submitted registration email on the HTTP request, handler and Accounts registration validation. |
+| [`input.email.bytes`](../src/player_administration/presentation/registration.rs) | UTF-8 byte length of the submitted registration email on the HTTP request, handler and Accounts registration validation. Managed player creation records the email in the request's `username` field. The browser and shared registration validator record the byte length only. |
 | [`output.registration_open`](../src/accounts/infrastructure/players.rs) | Boolean indicating whether an administrator exists. Emitted on the Accounts registration status span and signed-out session status. |
 | [`output.username.available`](../src/player_administration/presentation/registration.rs) | Boolean availability of the submitted in-game username after a case-insensitive check. |
 | [`output.vehicle_count`](../src/player_administration/presentation/garage.rs) | Number of owned tanks returned by the personal garage handler. |
@@ -156,7 +159,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
 | [`input.inventory_id`](../src/accounts/application/mod.rs) | Vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables, outfit changes, a bound stat tracker grant or Training Room readiness. Training Room readiness uses `-5000` for the observer. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
 | [`input.operation`](../src/accounts/domain/cosmetics.rs) | Exterior action on the ownership decision span, `buy` or `apply`. On progression planning, a server-defined operation label such as `research`, `buy_vehicle` or `crew`. Admin access uses `status` for session checks and `post` for the required write header check. |
-| [`input.items.count`](../src/accounts/domain/cosmetics.rs) | Number of purchase lines or requested placements across the supplied seasons. Each painted region counts as one placement. |
+| [`input.items.count`](../src/accounts/domain/cosmetics.rs) | Number of purchase lines or requested placements across the supplied seasons. Each painted region counts as one placement. A style counts once in the common outfit. |
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
 | [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor for a bound stat tracker grant or vehicle-specific outfit change, and on the root HTTP span for a decoded vehicle grant. |
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
@@ -167,7 +170,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.duration.days`, `input.price.gold`](../src/accounts/domain/premium.rs) | Requested Premium Account days and the server price in gold. Only recognized durations record a gold price. |
 | [`output.premium.expires_at`](../src/accounts/domain/premium.rs) | Expiration after a successful extension, in UTC Unix seconds. |
 | [`input.premium.expires_at`](../src/player_sessions/infrastructure/gateway/premium.rs) | Expired entitlement timestamp in UTC Unix seconds when the gateway sends an inactivity update. |
-| [`input.style_id`](../src/accounts/domain/cosmetics.rs) | Client style definition ID when a Store purchase adds a style to the account. |
+| [`input.style_id`](../src/accounts/domain/cosmetics.rs) | Client style definition ID when a Store purchase adds a style to the account or an outfit change requests a style in the common outfit. Omitted for outfit changes without a style ID. |
 | [`input.index`](../src/accounts/domain/modules.rs) | Zero-based index into a vehicle module research plan. |
 | [`input.gun`](../src/accounts/domain/modules.rs) | Gun descriptor supplied with a module equip request. |
 | [`input.buy`](../src/accounts/domain/modules.rs) | Whether module equip may buy the requested module rather than requiring depot stock. |
@@ -214,7 +217,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.roster.previous_slot`](../src/player_sessions/infrastructure/gateway/training.rs) | Host's previous roster slot on a valid roster assignment or team swap. |
 | [`output.roster.slot`](../src/player_sessions/infrastructure/gateway/training.rs) | Host's resulting roster slot on a valid team swap. |
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
-| [`output.unlocked_vehicle_count`](../src/accounts/infrastructure/client/store.rs) | Number of purchasable gold vehicle descriptors projected in the Tech Tree economics unlock set during garage sync. |
+| [`output.unlocked_vehicle_count`](../src/accounts/infrastructure/client/store.rs) | Number of gold vehicle descriptors purchasable through the native shop and projected in the Tech Tree economics unlock set during garage sync. |
 | [`output.offers.count`](../src/player_sessions/infrastructure/gateway/store.rs) | Number of offers included in a Store catalog response. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/admission.rs) | Login admission records `admitted`, `replaced`, `superseded`, `waiting_for_write`, `refreshing_snapshot`, `expired`, `full`, `destination_unavailable`, or `reply_unavailable`. |
 | [`output.outcome`](../src/accounts/infrastructure/players.rs) | Account provisioning records `created` after commit or `conflict` after rolling back an existing username or a first-admin setup that is closed. |
@@ -353,7 +356,7 @@ code. On error, the exception event's `exception.type` is that failure code.
 | `input.catalog` | Catalog selected by the admin grant form. |
 | `input.grant.kind`, `input.grant.currency`, `input.amount` | Grant type and, for a resource grant, currency and amount in units. |
 | `input.vehicle_type`, `input.attachment_id`, `input.stat_tracker_id`, `input.inventory_id`, `input.count` | Applicable grant item IDs and cosmetic quantity in copies. |
-| `input.email.bytes`, `input.username.bytes` | UTF-8 byte lengths of the submitted registration email and in-game username. Username availability sends the username length only. |
+| `input.email.bytes`, `input.username.bytes` | UTF-8 byte lengths of the email and in-game username for self-service registration and managed player creation. Username availability records the username length only. |
 | `output.username.available` | Boolean availability returned by the username check. |
 | `output.player_count`, `output.vehicle_count`, `output.item_count` | Number of records returned by the player list, admin or personal garage, or grant catalog. |
 | `output.session.status` | Admin session state returned by the status endpoint. |

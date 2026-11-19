@@ -118,10 +118,14 @@ as unavailable for purchase through `notInShopItems`. The Store sells
 a selected catalog of permanent styles for bonds.
 
 The outfit serializer carries the style ID in field 4 of
-`CustomizationOutfit`. Store styles use the common season (15).
-The server requires a compatible vehicle and an owned copy. Style
-fitting consumes available stock until the style is removed. The client
-loads the style’s appearance from its installed definitions.
+`CustomizationOutfit`. When applying a 2D or 3D style, the client repeats its
+ID in the winter, summer, desert and common (15) outfit entries. The server
+checks the seasonal IDs against the common ID, then saves one shared style
+and the separate seasonal overrides. A seasonal entry containing only the
+style ID clears that season's previous overrides. Common-only requests also
+work. Fitting requires a compatible vehicle and an owned copy. It uses one
+copy until removal returns it to the depot. The client loads the style's
+appearance from its installed definitions.
 
 The carousel enumerates client definitions directly, including extensions.
 Unpriced items can appear selectable at zero gold when their IDs are missing
@@ -177,6 +181,7 @@ Protocol and filter behavior were traced in the pinned `wot-src` revision
 - `client/gui/impl/lobby/hangar/presenters/vehicle_menu_entries/customization_entry_sub_presenter.py` and `client/gui/shared/utils/requesters/vehicle_items_getter.py` for the Exterior button’s compatible-style check and price-table membership.
 - `client/account_helpers/Shop.py` for commands 118 and 119 and their argument order.
 - `client/gui/Scaleform/daapi/view/lobby/customization/context/custom_mode.py` for seasonal outfit replacements and the common outfit entry.
+- `client/gui/Scaleform/daapi/view/lobby/customization/shared.py` (`getStyledModeRequestData`) and `client_common/vehicle_outfit/outfit.py` (`adjust` and `pack`) for the style ID repeated in the four outfit entries.
 - `common/serializable_types/customizations/customization_outfit.py`,
   `camouflage.py`, `paint.py` and `attachment.py` and `stat_tracker.py` in the same directory and
   `common/serialization/component_bin_serializer.py` for descriptor types, masks and field defaults.
@@ -214,3 +219,7 @@ outfit traces.
 The stat tracker regression uses the Executor's hull anchor 18003 in the same
 EU build. It checks vehicle-bound stock and fitted counts, incompatible anchors,
 retry, removal, reconnect and the grant and outfit traces.
+The [Store regression](../tests/support/store_flow.rs) buys and fits Hot TOG
+and Montu using the four-entry style request. It checks ownership and vehicle
+eligibility, fitted counts, retries, removal, persistence after reconnect and
+the application trace through the delivered command response.

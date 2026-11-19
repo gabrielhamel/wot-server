@@ -35,6 +35,11 @@ same authentication trace.
           mercury.response                      [onKickedFromServer, sent]
         mercury.login.response                  [success, sent]
 
+At startup, `player_sessions.bind_base_sockets` records the requested BaseApp
+port, the port bound for both BaseApp UDP and native XMPP TCP and the number
+of automatic port retries after TCP collisions. A fixed port collision fails
+startup.
+
 When the client enables entities, `player_sessions.enable` records the
 Training Room visibility sent in the queued Account creation. Its
 `mercury.response` child records delivery of `showGUI`.
@@ -42,6 +47,12 @@ Training Room visibility sent in the queued Account creation. Its
 The shared web listener composes the admin and Store APIs. Page shells and
 shared assets emit `web.ui.request` with their matched route and HTTP status.
 Admin and Store API requests keep their own request spans.
+
+Managed player creation traces the input lengths and validation outcome
+through `admin.players.create` and `accounts.registration.validate`. An accepted
+request continues through account provisioning and its SQL transaction.
+The browser sends the generated password to the creation API and the server
+stores its hash. Neither the password nor the hash is a trace attribute.
 
 A Store checkout joins the HTTP request to the account transaction and garage
 delivery even though they run on separate workers.

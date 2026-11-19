@@ -305,7 +305,7 @@ describe("Server Administration", () => {
     const passphrase = "Tank123!";
     const takenEmail = "taken@example.test";
     const emailConflict = "That email is already in use.";
-    const registered = { ...player, display_name: "NewCommander" };
+    const registered = { ...player, display_name: "New_Commander9" };
     httpServer.use(
       http.get(`${origin}/session`, () => HttpResponse.json(session)),
       http.post(`${origin}/registration/username`, async ({ request }) => {
@@ -352,6 +352,23 @@ describe("Server Administration", () => {
       const { user } = openAdmin();
       await user.click(await screen.findByRole("button", { name: "Create a player account" }));
       const username = screen.getByRole("textbox", { name: "Username" });
+      for (const invalidName of ["New Cadet", "New-Cadet", "Éclair"]) {
+        await user.type(username, invalidName);
+        expect(username).toBeInvalid();
+        expect(username).toHaveAccessibleDescription(
+          "Use only English letters (A–Z), digits, and underscores.",
+        );
+        await user.clear(username);
+      }
+      await user.type(username, "ab");
+      await user.tab();
+      expect(username).toHaveAccessibleDescription("Use 3 to 24 characters.");
+      await user.clear(username);
+      await user.paste("a".repeat(25));
+      expect(username).toHaveValue("a".repeat(25));
+      expect(username).toBeInvalid();
+      expect(username).toHaveAccessibleDescription("Use 3 to 24 characters.");
+      await user.clear(username);
       await user.type(username, "TakenName");
       expect(await screen.findByText("That username is already taken.")).toBeVisible();
       expect(screen.getByRole("button", { name: "Create account" })).toBeDisabled();
@@ -513,25 +530,37 @@ describe("Server Administration", () => {
     }
   });
 
-  it("creates a player through the form without exporting login or password fields", async () => {
+  it("creates a player with registration rules and a generated password", async () => {
     const telemetry = captureTraces();
     const records = [player];
-    const newPlayer = {
-      username: "recruit@example.test",
-      display_name: "Recruit",
-      password: "secret-new-account",
-    };
-    let sent: unknown;
-    let traceHeader: string | null = null;
+    const email = "recruit@example.test";
+    const username = "Recruit_7";
+    const duplicateEmail = "taken@example.test";
+    const conflict = "That login is already in use.";
+    const requests: Array<{
+      body: { username: string; display_name: string; password: string };
+      trace: string | null;
+    }> = [];
     httpServer.use(
       players(records),
+      http.post(`${origin}/registration/username`, async ({ request }) => {
+        const body = (await request.json()) as { username: string };
+        return HttpResponse.json({ available: body.username !== "TakenName" });
+      }),
       http.post(`${origin}/players`, async ({ request }) => {
-        sent = await request.json();
-        traceHeader = request.headers.get("traceparent");
+        const body = (await request.json()) as (typeof requests)[number]["body"];
+        expect(request.headers.get("x-wot-admin")).toBe("1");
+        requests.push({ body, trace: request.headers.get("traceparent") });
+        if (body.username === duplicateEmail) {
+          return HttpResponse.json(
+            { message: conflict, errors: { username: conflict } },
+            { status: 409 },
+          );
+        }
         const record = {
           id: "124",
-          display_name: newPlayer.display_name,
-          username: newPlayer.username,
+          display_name: username,
+          username: email,
           role: "player" as const,
         };
         records.push(record);
@@ -542,21 +571,72 @@ describe("Server Administration", () => {
       const { user } = openAdmin(true);
       await user.click(await screen.findByRole("tab", { name: "Admin" }));
       await user.click(await screen.findByRole("link", { name: "Create" }));
-      await user.type(await screen.findByRole("textbox", { name: /login/i }), newPlayer.username);
-      await user.type(
-        screen.getByRole("textbox", { name: /display name/i }),
-        newPlayer.display_name,
+      const emailInput = await screen.findByRole("textbox", { name: "Email" });
+      const usernameInput = screen.getByRole("textbox", { name: "Username" });
+      const submit = screen.getByRole("button", { name: "Create player" });
+      expect(screen.queryByLabelText(/password/i, { selector: "input" })).not.toBeInTheDocument();
+
+      await user.type(emailInput, "recruit@example");
+      await user.type(usernameInput, "TakenName");
+      expect(await screen.findByText("That username is already taken.")).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "Generate password" }));
+      expect(submit).toBeDisabled();
+      await user.clear(usernameInput);
+      await user.type(usernameInput, "no spaces");
+      expect(usernameInput).toBeInvalid();
+      expect(usernameInput).toHaveAccessibleDescription(
+        "Use only English letters (A–Z), digits, and underscores.",
       );
-      await user.type(
-        screen.getByLabelText(/password/i, { selector: "input" }),
-        newPlayer.password,
-      );
-      await user.click(screen.getByRole("button", { name: "Create player" }));
-      expect(await screen.findByText(newPlayer.display_name)).toBeVisible();
-      expect(sent).toEqual(newPlayer);
-      telemetry.expectRequest(traceHeader, "web.admin.create_player", "/api/admin/players", 201);
-      expect(telemetry.serializedSpanData()).not.toContain(newPlayer.password);
-      expect(telemetry.serializedSpanData()).not.toContain(newPlayer.username);
+      await user.clear(usernameInput);
+      await user.type(usernameInput, username);
+      expect(await screen.findByText("Username available.")).toBeVisible();
+      await user.click(submit);
+      expect(emailInput).toBeInvalid();
+      expect(requests).toHaveLength(0);
+
+      await user.clear(emailInput);
+      await user.type(emailInput, duplicateEmail);
+      await user.click(submit);
+      expect(await screen.findByText(conflict)).toBeVisible();
+      expect(emailInput).toHaveAccessibleDescription(conflict);
+
+      await user.clear(emailInput);
+      await user.type(emailInput, email);
+      await user.click(screen.getByRole("button", { name: "Regenerate password" }));
+      await user.click(submit);
+      expect(await screen.findByText("Player account created.")).toBeVisible();
+      const [rejected, created] = requests;
+      expect(requests).toHaveLength(2);
+      const password = created.body.password;
+      expect(created.body).toEqual({ username: email, display_name: username, password });
+      expect(password).toHaveLength(24);
+      for (const requirement of [/[A-Z]/, /[a-z]/, /[0-9]/, /[!@]/])
+        expect(password).toMatch(requirement);
+      expect(password).not.toBe(rejected.body.password);
+      expect(screen.getByRole("group", { name: "Generated password" })).toHaveTextContent(password);
+      await user.click(screen.getByRole("button", { name: "Copy password" }));
+      expect(await screen.findByText("Password copied.")).toBeVisible();
+      expect(await navigator.clipboard.readText()).toBe(password);
+      await user.click(screen.getByRole("button", { name: "Done" }));
+      expect(await screen.findByText(username)).toBeVisible();
+      for (const [submission, status] of [
+        [rejected, 409],
+        [created, 201],
+      ] as const) {
+        const request = telemetry.expectRequest(
+          submission.trace,
+          "web.admin.create_player",
+          "/api/admin/players",
+          status,
+        );
+        expect(request.parent?.attributes["input.email.bytes"]).toBe(
+          submission.body.username.length,
+        );
+        expect(request.parent?.attributes["input.username.bytes"]).toBe(username.length);
+      }
+      for (const secret of [email, duplicateEmail, password, rejected.body.password]) {
+        expect(telemetry.serializedSpanData()).not.toContain(secret);
+      }
     } finally {
       await telemetry.stop();
     }

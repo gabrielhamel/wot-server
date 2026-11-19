@@ -55,8 +55,11 @@ access to the listener until setup is complete.
 
 Once the first administrator exists, choose **Create a player account** on the
 sign-in page. The email address is the sign-in name for the game and the panel.
-The username is the name other players see in the game. Choose 3–24 ASCII
-letters, digits or underscores. The form checks availability while you type.
+The username is the name other players see in the game. Use 3–24 characters
+from A–Z, a–z, 0–9 and underscores. This follows the character set published
+by [Wargaming registration](https://wargaming.net/registration/en/?change_realm=1&login_form=enabled).
+Both forms show a field error for an invalid username and check availability
+as soon as the name has a valid format.
 The email field shows a message for an invalid address or an address already
 in use. The API checks both email and username for case-insensitive duplicates
 when saving the account. Sign in with the email as entered during registration.
@@ -77,9 +80,14 @@ with its current permissions.
 Administrators sign in with their game credentials and open **Admin** to see
 **Player accounts**.
 
-In **Player accounts**, use **Create** to add a player. Use the role action in
-another player's row to promote them to **Administrator** or demote them to
-**Player**. Promotion requires an email address as the player's game login.
+In **Player accounts**, choose **Create** and enter the player's email and
+in-game username. The form uses the same validation and username availability
+check as registration. Choose **Generate password**, then **Create player**.
+Copy the generated password from the confirmation screen before choosing
+**Done** so you can give the player their sign-in credentials.
+
+Use the role action in another player's row to promote them to **Administrator**
+or demote them to **Player**. Promotion requires an email address as the player's game login.
 Administrators can change other players' roles only, so at least one
 administrator always retains access. The list displays player names and logins,
 newest first. Select a player to open **Resources & Garage**. The page displays
@@ -159,21 +167,26 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | `GET /api/admin/stat-trackers` | `200 OK` with grantable trackers containing `id`, `name`, and `max_owned`. |
 | `POST /api/admin/players/{id}/grants` | `200 OK` with `garage` and `delivery` after commit. |
 
-Administrator setup and managed player creation accept the following JSON fields. New display names must be unique regardless of case.
+Administrator setup and managed player creation accept the following JSON fields.
 
 ```json
 {
   "username": "newplayer@example.com",
   "display_name": "NewPlayer",
-  "password": "a-player-password"
+  "password": "Example2!Password"
 }
 ```
 
-Login matching is case-sensitive. Logins are 1–128 bytes and contain no
-whitespace or control characters. A leading `{` is reserved for the game
-protocol's login envelope. Display names are 1–128 characters with no control
-characters or surrounding whitespace. Passwords are 1–1024 bytes and contain
-no control characters. The API stores salted Argon2id hashes in PostgreSQL.
+For managed players, `username` is the sign-in email and `display_name` is
+the in-game username. The API uses the registration rules for email, username
+and password, including case-insensitive duplicate checks for both names.
+The admin browser generates a 24-character password. The confirmation
+screen displays it until you leave. Login matching is case-sensitive.
+
+First-administrator setup accepts an email of at most 128 bytes, a display
+name of 1–128 characters and a password of 1–1024 bytes. These fields reject
+control characters. The email also rejects whitespace and a leading `{`, and
+the display name rejects surrounding whitespace. The API stores salted Argon2id hashes.
 
 Player records contain `id` (a decimal string), `username`, `display_name`
 and `role` (either `player` or `admin`).

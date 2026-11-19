@@ -150,8 +150,13 @@ fn vehicle_listings(
                 tier: vehicle.level,
                 ..listing(item, name.to_owned(), category, price)
             };
-            let priced = match vehicle.price {
-                Some(VehicleCost { credits, gold: 0 })
+            let priced = match (vehicle.store_gold_price, vehicle.price) {
+                (Some(gold), _) => Some(listing(
+                    Category::PremiumVehicles,
+                    &vehicle.name,
+                    StorePrice::Gold(gold),
+                )),
+                (None, Some(VehicleCost { credits, gold: 0 }))
                     if vehicle.tags.contains("collectorVehicle") =>
                 {
                     Some(listing(
@@ -160,11 +165,6 @@ fn vehicle_listings(
                         StorePrice::Credits(credits),
                     ))
                 }
-                Some(VehicleCost { credits: 0, gold }) if gold > 0 => Some(listing(
-                    Category::PremiumVehicles,
-                    &vehicle.name,
-                    StorePrice::Gold(gold),
-                )),
                 _ => None,
             };
             let bond = bonds

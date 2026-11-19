@@ -21,6 +21,7 @@ mod premium;
 mod progression;
 mod settings;
 mod social;
+mod sockets;
 mod store;
 mod training;
 use crate::player_sessions::application::store::StoreToken;
@@ -187,8 +188,8 @@ impl Gateway {
         }
         let script =
             script::load(resources).context("Load client script ABI from resource bundle")?;
-        let mut base =
-            base::App::new(config.base_bind.into(), script).context("Bind BaseApp UDP socket")?;
+        let (base_socket, xmpp_listener) = sockets::bind_base(config.base_bind.into())?;
+        let mut base = base::App::from_socket(base_socket, script);
         base.register::<Account>()
             .context("Bind garage Account schema")?;
         let training_arenas =
@@ -203,8 +204,8 @@ impl Gateway {
         let (grant_handle, grants) = crate::player_sessions::PlayerGrants::channel();
         let admissions = Admissions::new(config.max_pending);
         let social = Social::new(PostgresSocial::new(accounts.repository().connection_pool()));
-        let xmpp = super::xmpp::XmppServer::bind(
-            base.addr()?,
+        let xmpp = super::xmpp::XmppServer::from_listener(
+            xmpp_listener,
             social.clone(),
             config.max_clients,
             &runtime,

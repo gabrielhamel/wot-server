@@ -74,10 +74,14 @@ pub struct App {
 
 impl App {
     pub fn new(addr: SocketAddr, script: Script) -> io::Result<Self> {
-        Ok(Self {
+        Ok(Self::from_socket(PacketSocket::bind(addr)?, script))
+    }
+
+    pub(crate) fn from_socket(socket: PacketSocket, script: Script) -> Self {
+        Self {
             dispatch: ScriptDispatch::new(script),
             entity_schemas: Registry::default(),
-            socket: PacketSocket::bind(addr)?,
+            socket,
             protocol: Protocol::new(),
             events: VecDeque::new(),
             outbox: Outbox::default(),
@@ -89,7 +93,7 @@ impl App {
             entities: Slots::default(),
             entity_keys: HashMap::new(),
             entities_next_id: Wrapping(OsRng.next_u32()),
-        })
+        }
     }
 
     /// The dispatch tables of the script model this app was created with.

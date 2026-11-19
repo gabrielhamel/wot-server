@@ -72,7 +72,22 @@ pub fn decode_outfits<'a>(
             15 => OutfitSeason::Common,
             _ => return None,
         };
-        if !layout.supports_season(season) || layouts.insert(season, layout).is_some() {
+        if layouts.insert(season, layout).is_some() {
+            return None;
+        }
+    }
+    let common_style = layouts
+        .get(&OutfitSeason::Common)
+        .and_then(|outfit| outfit.style);
+    for (&season, layout) in &mut layouts {
+        // Styled mode repeats the common style on each seasonal override.
+        if season != OutfitSeason::Common
+            && let Some(style) = layout.style.take()
+            && Some(style) != common_style
+        {
+            return None;
+        }
+        if !layout.supports_season(season) {
             return None;
         }
     }
@@ -565,6 +580,29 @@ mod tests {
         assert_eq!(outfit.style, Some(291));
         assert_eq!(encode(outfit), raw);
         assert!(decode_outfits(&[2], [raw.as_slice()].into_iter(), None).is_none());
+    }
+
+    #[test]
+    fn decodes_style_markers_as_seasonal_replacements() {
+        let common = [4, 16, 0xa3, 2];
+        let different_style = [4, 16, 0xa4, 2];
+        let summer_with_effect = [4, 17, 1, 3, 0xa3, 2];
+        let seasons = [2, 15, 4, 1];
+        let layouts = decode_outfits(
+            &seasons,
+            [summer_with_effect.as_slice(), &common, &common, &common].into_iter(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(layouts.len(), 4);
+        assert_eq!(layouts[&OutfitSeason::Common].style, Some(291));
+        assert_eq!(layouts[&OutfitSeason::Summer].style, None);
+        assert_eq!(layouts[&OutfitSeason::Summer].effect, Some(3));
+        assert!(layouts[&OutfitSeason::Winter].is_empty());
+        assert!(layouts[&OutfitSeason::Desert].is_empty());
+
+        let mismatched = [different_style.as_slice(), &common];
+        assert!(decode_outfits(&[1, 15], mismatched.into_iter(), None).is_none());
     }
 
     #[test]

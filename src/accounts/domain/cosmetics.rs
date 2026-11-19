@@ -413,6 +413,7 @@ impl CosmeticChange {
                     outfit.seasonal_placements()
                         + outfit.attachments.len()
                         + usize::from(outfit.stat_tracker.is_some())
+                        + usize::from(outfit.style.is_some())
                 })
                 .sum(),
         }
@@ -471,6 +472,7 @@ pub enum CosmeticPlacement {
         input.revision = snapshot.revision,
         input.operation = change.operation(),
         input.items.count = change.line_count(),
+        input.style_id = tracing::field::Empty,
         output.purchases.count = tracing::field::Empty,
         output.outcome = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
@@ -546,6 +548,12 @@ fn plan_cosmetics(
             }
         }
         CosmeticChange::Apply(seasons) => {
+            if let Some(style) = seasons
+                .get(&OutfitSeason::Common)
+                .and_then(|outfit| outfit.style)
+            {
+                tracing::Span::current().record("input.style_id", style);
+            }
             let current = state.outfits.get(&vehicle);
             let mut outfits = current.cloned().unwrap_or_default();
             for (season, mut outfit) in seasons {

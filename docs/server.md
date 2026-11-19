@@ -37,7 +37,7 @@ The generated JSON contains the following settings:
 | `resource_dir` | `resources`; directory containing the generated bundle manifest and `res/` |
 | `database_url` | `postgresql://wot_server:local-development@127.0.0.1:54329/wot_server` |
 | `login_bind` | `0.0.0.0:20016` UDP |
-| `base_bind` | `0.0.0.0:20017` UDP for BaseApp and TCP for native XMPP |
+| `base_bind` | `0.0.0.0:20017` UDP for BaseApp and TCP for native XMPP. Port zero selects a port available on both transports. |
 | `advertised_base` | `null`: automatically choose the route to each client; set e.g. `"192.168.1.10:20017"` for an explicit non-local handoff destination |
 | `private_key` | `login.pem`; its public key is exported as `login.pubkey` |
 | `db_connections` | `16`, allowed range 1–256 |

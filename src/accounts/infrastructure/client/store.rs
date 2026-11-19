@@ -133,10 +133,12 @@ impl GarageCatalog {
     pub(super) fn tech_tree_economics(&self) -> crate::platform::client_formats::pickle::Value {
         use crate::platform::client_formats::pickle::Value;
         let unlocks: std::collections::BTreeSet<_> = self
-            .store_offers
+            .offers
             .iter()
-            .filter(|offer| offer.category == StoreCategory::PremiumVehicles)
-            .map(|offer| Value::from(offer.item))
+            .filter(|(_, vehicle)| {
+                vehicle.grantable() && vehicle.price.is_some_and(|price| price.gold > 0)
+            })
+            .map(|(&item, _)| Value::from(item))
             .collect();
         tracing::Span::current().record("output.unlocked_vehicle_count", unlocks.len());
         crate::pickle!({"unlocks": (Value::Set(unlocks))})

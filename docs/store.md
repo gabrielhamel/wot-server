@@ -31,9 +31,10 @@ Tech Tree tier in each nation gates that nation’s Collectors’ offers. The
 server projects the same maximum into the native garage cache. Buying or
 receiving a premium, reward or Collectors’ vehicle does not advance that maximum.
 
-The Premium vehicles tab uses positive gold prices from the client’s vehicle
-definitions. It excludes vehicles flagged `notInShop` and vehicles ineligible
-for the garage. Bond vehicle offers come from the live mapping and resolve
+The Premium vehicles tab lists every garage-eligible vehicle with a positive
+gold price in the client’s definitions, including the BZ-176 for 8,800 gold in
+the EU 2.4.1.1 bundle. The `notInShop` flag still governs native shop purchases.
+Bond vehicle offers come from the live mapping and resolve
 to client definitions by catalog key. A vehicle may have a gold offer and a
 bond offer. Checkout identifies the offer by item and currency, and buying
 either offer updates both cards to show that the vehicle is in the garage.

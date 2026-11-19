@@ -85,8 +85,8 @@ async fn exports_admin_http_request_inputs() {
         service.call(request)
     };
     let session_cookie = cookie.as_str();
-    const PLAYER: &str = r#"{"username":"private-login@example.test","display_name":"Private Display","password":"test-password-secret\n"}"#;
-    const PASSWORD: &str = "test-valid-password-secret";
+    const PLAYER: &str = r#"{"username":"private-login@example.test","display_name":"Private_Display","password":"test-password-secret\n"}"#;
+    const PASSWORD: &str = "Test-valid-password-7!";
     let username = format!(
         "admin_test_{}@example.test",
         std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()
@@ -158,7 +158,7 @@ async fn exports_admin_http_request_inputs() {
     }
     let body = serde_json::json!({
         "username": username,
-        "display_name": "Dashboard Player",
+        "display_name": "DashboardPlayer",
         "password": PASSWORD,
     })
     .to_string();
@@ -246,8 +246,8 @@ async fn exports_admin_http_request_inputs() {
     assert_eq!(response.unwrap().status(), StatusCode::NOT_FOUND);
 
     let duplicate_body = serde_json::json!({
-        "username": username,
-        "display_name": "Another Dashboard Name",
+        "username": username.to_ascii_uppercase(),
+        "display_name": "AnotherDashboardName",
         "password": PASSWORD,
     })
     .to_string();
@@ -282,7 +282,7 @@ async fn exports_admin_http_request_inputs() {
         created["id"].as_str(),
         Some(snapshot.id.to_string().as_str())
     );
-    assert_eq!(snapshot.display_name, "Dashboard Player");
+    assert_eq!(snapshot.display_name, "DashboardPlayer");
     assert_eq!(snapshot.balances.credits, 200_000);
     assert_eq!(snapshot.balances.gold, 500);
     assert_eq!(snapshot.balances.bonds, 0);
@@ -337,6 +337,7 @@ async fn exports_admin_http_request_inputs() {
         &[
             ("http.response.status_code", "422"),
             ("input.username.bytes", "26"),
+            ("input.email.bytes", "26"),
             ("input.display_name.bytes", "15"),
         ],
         &[("http.response.status_code", "422")],
@@ -446,6 +447,22 @@ async fn exports_admin_http_request_inputs() {
     };
     assert!(contains_operation(roots[0], "admin.players.list"));
     assert!(contains_operation(roots[0], "postgresql.query"));
+    let rejection = spans
+        .iter()
+        .find(|span| {
+            span.name == "admin.players.create"
+                && span.parent_span_id == roots[4].span_context.span_id()
+        })
+        .unwrap();
+    assert_eq!(
+        attribute(rejection, "output.outcome").as_deref(),
+        Some("invalid_password")
+    );
+    assert!(contains_operation(
+        roots[4],
+        "accounts.registration.validate"
+    ));
+    assert!(!contains_operation(roots[4], "accounts.players.provision"));
     assert!(contains_operation(roots[7], "admin.garage.grant"));
     assert!(contains_operation(roots[7], "player_sessions.grants.grant"));
     assert!(contains_operation(roots[9], "player_sessions.grants.grant"));
@@ -454,6 +471,24 @@ async fn exports_admin_http_request_inputs() {
         (roots[16], "duplicate_login", "ROLLBACK"),
     ] {
         assert!(contains_operation(root, "accounts.players.provision"));
+        let operation = spans
+            .iter()
+            .find(|span| {
+                span.name == "admin.players.create"
+                    && span.parent_span_id == root.span_context.span_id()
+            })
+            .unwrap();
+        assert_eq!(
+            attribute(operation, "output.outcome").as_deref(),
+            Some(outcome)
+        );
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.name == "accounts.registration.validate"
+                    && span.parent_span_id == operation.span_context.span_id()
+                    && attribute(span, "input.email.bytes") == Some(username.len().to_string()))
+        );
         let provision = spans
             .iter()
             .find(|span| {
@@ -479,8 +514,12 @@ async fn exports_admin_http_request_inputs() {
         });
         assert!(queries.clone().any(|span| {
             attribute(span, "db.query.text").is_some_and(|statement| {
-                statement.starts_with("INSERT INTO accounts(")
-                    && statement.contains("credits, gold) SELECT $1, $2, $3, $4, $5, $6")
+                if outcome == "created" {
+                    statement.starts_with("INSERT INTO accounts(")
+                        && statement.contains("credits, gold) SELECT $1, $2, $3, $4, $5, $6")
+                } else {
+                    statement.contains("lower(username) = lower($1)")
+                }
             })
         }));
         assert!(
@@ -539,7 +578,7 @@ async fn exports_admin_http_request_inputs() {
         "test-password-secret",
         PASSWORD,
         "private-login@example.test",
-        "Private Display",
+        "Private_Display",
         "query-secret",
         "malformed-body-secret",
     ] {
@@ -640,11 +679,12 @@ async fn exports_admin_http_access_lifecycle() {
         )
         .unwrap()
     };
-    const OWNER: &str = r#"{"username":"owner@example.test","display_name":"Owner","password":"first-admin-password"}"#;
-    const OWNER_LOGIN: &str = r#"{"email":"owner@example.test","password":"first-admin-password"}"#;
-    const SECOND: &str = r#"{"username":"recruit@example.test","display_name":"Recruit","password":"other-player-password"}"#;
+    const OWNER: &str = r#"{"username":"owner@example.test","display_name":"Owner","password":"First-admin-password1!"}"#;
+    const OWNER_LOGIN: &str =
+        r#"{"email":"owner@example.test","password":"First-admin-password1!"}"#;
+    const SECOND: &str = r#"{"username":"recruit@example.test","display_name":"Recruit","password":"Other-player-password2!"}"#;
     const SECOND_LOGIN: &str =
-        r#"{"email":"recruit@example.test","password":"other-player-password"}"#;
+        r#"{"email":"recruit@example.test","password":"Other-player-password2!"}"#;
     assert_eq!(
         json(send("GET", "/session", "", "").await.unwrap()).await["status"],
         "setup_required"
@@ -740,7 +780,6 @@ async fn exports_admin_http_access_lifecycle() {
             REGISTRATION.replace("signup@example.test", "signup@example"),
             "email",
         ),
-        (REGISTRATION.replace("NewCadet", "New Cadet"), "username"),
         (
             REGISTRATION.replacen("Tank123!", "Different123!", 1),
             "confirm_password",
@@ -754,6 +793,47 @@ async fn exports_admin_http_access_lifecycle() {
         let response = send("POST", "/registration", "", &body).await.unwrap();
         assert_eq!(response.status(), 422);
         assert!(json(response).await["errors"][field].is_string());
+    }
+    for invalid_name in [
+        "New Cadet",
+        "New-Cadet",
+        "Éclair",
+        "ab",
+        "a".repeat(25).as_str(),
+    ] {
+        for (path, cookie, body, field) in [
+            (
+                "/registration/username",
+                "",
+                serde_json::json!({"username": invalid_name}),
+                "username",
+            ),
+            (
+                "/registration",
+                "",
+                serde_json::json!({
+                    "email": "signup@example.test",
+                    "username": invalid_name,
+                    "password": "Tank123!",
+                    "confirm_password": "Tank123!",
+                }),
+                "username",
+            ),
+            (
+                "/players",
+                owner_cookie.as_str(),
+                serde_json::json!({
+                    "username": "signup@example.test",
+                    "display_name": invalid_name,
+                    "password": "Tank123!",
+                }),
+                "display_name",
+            ),
+        ] {
+            let response = send("POST", path, cookie, &body.to_string()).await.unwrap();
+            assert_eq!(response.status(), 422);
+            assert!(json(response).await["errors"][field].is_string());
+        }
     }
     let availability = r#"{"username":"newcadet"}"#;
     assert_eq!(
@@ -1250,8 +1330,8 @@ async fn exports_admin_http_access_lifecycle() {
     for excluded in [
         "owner@example.test",
         "recruit@example.test",
-        "first-admin-password",
-        "other-player-password",
+        "First-admin-password1!",
+        "Other-player-password2!",
         "wrong-password",
         "signup@example.test",
         "rival@example.test",

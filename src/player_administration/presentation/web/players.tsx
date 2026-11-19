@@ -1,17 +1,10 @@
-import type { PlayerRecord } from "../../application/admin-contracts";
+import { Alert, Box, Button, Stack, Typography } from "@mui/material";
+import { useState } from "react";
+import { Create, DataTable, List, useRedirect, useRefresh } from "react-admin";
+import type { PlayerCredentials, PlayerRecord } from "../../application/admin-contracts";
+import { createManagedPlayer } from "../../infrastructure/admin-api";
+import { PlayerAccountForm } from "./player-account-form";
 import { PlayerRoleAction } from "./player-role";
-import { Box, Typography } from "@mui/material";
-import {
-  Create,
-  DataTable,
-  List,
-  PasswordInput,
-  SaveButton,
-  SimpleForm,
-  TextInput,
-  Toolbar,
-  required,
-} from "react-admin";
 
 export function PlayerList() {
   return (
@@ -33,46 +26,63 @@ export function PlayerList() {
   );
 }
 
-const createToolbar = (
-  <Toolbar sx={{ borderTop: 1, borderColor: "divider" }}>
-    <SaveButton label="Create player" />
-  </Toolbar>
-);
-
 export function PlayerCreate() {
+  const redirect = useRedirect();
+  const refresh = useRefresh();
+  const [credentials, setCredentials] = useState<PlayerCredentials>();
+  const [copyStatus, setCopyStatus] = useState("");
+
+  function backToPlayers() {
+    setCredentials(undefined);
+    redirect("list", "players");
+  }
+
+  async function copyPassword(password: string) {
+    try {
+      await navigator.clipboard.writeText(password);
+      setCopyStatus("Password copied.");
+    } catch {
+      setCopyStatus("Select the password to copy it manually.");
+    }
+  }
+
   return (
-    <Create title="Create player" redirect="list" sx={{ maxWidth: 680 }}>
-      <SimpleForm sanitizeEmptyValues toolbar={createToolbar} sx={{ p: { xs: 2, sm: 3 } }}>
-        <Box sx={{ mb: 2 }}>
-          <Typography color="text.secondary" variant="body2">
-            The player receives tier I tech tree tanks with crew and ammunition.
-          </Typography>
-        </Box>
-        <TextInput
-          source="username"
-          label="Login"
-          helperText="Case-sensitive. Use the email address entered in the game client."
-          autoComplete="off"
-          validate={required()}
-          fullWidth
-        />
-        <TextInput
-          source="display_name"
-          label="Display name"
-          helperText="The name other players see."
-          autoComplete="off"
-          validate={required()}
-          fullWidth
-        />
-        <PasswordInput
-          source="password"
-          label="Password"
-          helperText={false}
-          autoComplete="new-password"
-          validate={required()}
-          fullWidth
-        />
-      </SimpleForm>
+    <Create title="Create player" sx={{ maxWidth: 680 }}>
+      <Stack spacing={2} sx={{ p: { xs: 2, sm: 3 } }}>
+        {credentials ? (
+          <>
+            <Alert severity="success">Player account created.</Alert>
+            <Typography variant="body2">Sign-in email: {credentials.email}</Typography>
+            <Box role="group" aria-label="Generated password">
+              <Typography component="span">Generated password</Typography>
+              <Box component="code" sx={{ display: "block", overflowWrap: "anywhere", mt: 1 }}>
+                {credentials.password}
+              </Box>
+            </Box>
+            <Stack direction="row" spacing={1}>
+              <Button variant="outlined" onClick={() => void copyPassword(credentials.password)}>
+                Copy password
+              </Button>
+              <Button variant="contained" onClick={backToPlayers}>
+                Done
+              </Button>
+            </Stack>
+            <Typography role="status" variant="body2">
+              {copyStatus}
+            </Typography>
+          </>
+        ) : (
+          <PlayerAccountForm
+            mode="managed"
+            onBack={backToPlayers}
+            onCreate={async (created) => {
+              await createManagedPlayer(created);
+              setCredentials(created);
+              refresh();
+            }}
+          />
+        )}
+      </Stack>
     </Create>
   );
 }
