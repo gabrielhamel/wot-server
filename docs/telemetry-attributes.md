@@ -99,6 +99,9 @@ meanings on different operations; those differences are listed explicitly.
 | Attribute | Meaning and emission |
 | --- | --- |
 | [`input.client.address`](../src/player_sessions/infrastructure/gateway/mod.rs) | Client socket address (IP and port) for connection, gateway enable, or social dispatch/work/completion operations. |
+| [`input.port`](../src/player_sessions/infrastructure/gateway/sockets.rs) | Configured BaseApp and native XMPP port number. Zero requests automatic assignment. |
+| [`output.port`](../src/player_sessions/infrastructure/gateway/sockets.rs) | Shared port number once both BaseApp UDP and native XMPP TCP sockets are bound. |
+| [`output.bind_retries.count`](../src/player_sessions/infrastructure/gateway/sockets.rs) | Number of automatic port selections retried because the TCP port was in use. |
 | [`input.request_id`](../src/player_sessions/infrastructure/gateway/ammunition.rs) | Decoded Mercury command or legacy chat request correlation ID; also recorded by operation, resource, LoginApp reply and garage completion spans. Mercury client method spans record it for `onCmdResponse`, `onCmdResponseExt` and `onTokenReceived`. Omitted when the operation has no decoded correlation ID. |
 | [`input.command_id`](../src/player_sessions/infrastructure/gateway/commands.rs) | Decoded account command number on `game.command` and `player_sessions.commands.command`. |
 | [`input.method_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Numeric exposed Mercury method ID after wire decoding. |

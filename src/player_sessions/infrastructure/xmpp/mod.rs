@@ -52,13 +52,13 @@ pub struct XmppServer {
     shutdown: watch::Sender<bool>,
 }
 impl XmppServer {
-    pub fn bind(
-        address: SocketAddr,
+    pub fn from_listener(
+        socket: std::net::TcpListener,
         social: Social<PostgresSocial>,
         capacity: usize,
         runtime: &tokio::runtime::Handle,
     ) -> Result<Self> {
-        let socket = std::net::TcpListener::bind(address).context("Bind native XMPP TCP socket")?;
+        let address = socket.local_addr()?;
         socket.set_nonblocking(true)?;
         let _guard = runtime.enter();
         let listener = TcpListener::from_std(socket)?;
