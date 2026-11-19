@@ -9,10 +9,10 @@ use std::{
     time::{Duration, Instant},
 };
 use wot_server::{
-    accounts::{Accounts, GarageCatalog, PostgresAccounts},
+    accounts::test_support::{GarageCatalog, PostgresAccounts},
     player_sessions::{
         Gateway, GatewayConfig,
-        mercury::{app::dispatch::ScriptDispatch, script::StringValue},
+        test_support::mercury::{app::dispatch::ScriptDispatch, script::StringValue},
     },
 };
 
@@ -46,8 +46,11 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
     let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
     let directory = std::env::var("WG_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&directory)).unwrap();
-    let repository =
-        PostgresAccounts::new(wot_server::server::connect_database(&url, 6).await.unwrap());
+    let repository = PostgresAccounts::new(
+        wot_server::server::test_support::connect_database(&url, 6)
+            .await
+            .unwrap(),
+    );
     let pool = repository.connection_pool();
     let username = format!(
         "takeover_{}",
@@ -65,9 +68,10 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
     .unwrap();
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &starter).unwrap());
     let script = ScriptDispatch::new(
-        wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
+        wot_server::player_sessions::test_support::mercury::script::load(&resources).unwrap(),
     );
     let gateway = Gateway::bind(
+        &wot_server::server::test_support::composition(),
         GatewayConfig {
             training_room_visible: true,
             login_bind: "127.0.0.1:0".parse().unwrap(),
@@ -78,12 +82,11 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
             max_pending: 4,
         },
         &resources,
-        catalog.clone(),
-        Accounts::new(repository.clone()).into(),
-        wot_server::accounts::GarageWrites::new(Accounts::new(repository.clone()), catalog.clone()),
+        player_fixture::gateway_accounts(&repository, &catalog),
         wot_server::social::postgres::service(
+            &wot_server::server::test_support::composition(),
             repository.connection_pool(),
-            wot_server::accounts::postgres::directory(repository.connection_pool()),
+            wot_server::accounts::test_support::directory(repository.connection_pool()),
         ),
         tokio::runtime::Handle::current(),
     )

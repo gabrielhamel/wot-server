@@ -693,7 +693,7 @@ impl GarageCatalog {
         inventory_id: i64,
         change: CosmeticChange,
     ) -> Result<bool, ProgressionError> {
-        if inventory_id == 0 && matches!(change, CosmeticChange::Buy(_)) {
+        if inventory_id == 0 && change.is_purchase() {
             let rules = self
                 .cosmetics
                 .definitions

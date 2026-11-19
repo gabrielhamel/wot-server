@@ -1,21 +1,20 @@
 mod conversations;
 mod friendships;
-use super::{
+use super::application::SocialRepository;
+use super::domain::{
     Contact, ContactChange, Friendship, FriendshipAction, Player, PrivateConversation,
-    SocialRepository,
 };
 use crate::accounts::contract::PlayerDirectory;
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 
-#[derive(Clone)]
-pub struct PostgresSocial {
+pub(super) struct PostgresSocial {
     pool: PgPool,
     directory: std::sync::Arc<dyn PlayerDirectory>,
 }
 
 impl PostgresSocial {
-    pub fn new(pool: PgPool, directory: std::sync::Arc<dyn PlayerDirectory>) -> Self {
+    pub(super) fn new(pool: PgPool, directory: std::sync::Arc<dyn PlayerDirectory>) -> Self {
         Self { pool, directory }
     }
 
@@ -40,6 +39,7 @@ impl PostgresSocial {
     }
 }
 
+#[async_trait::async_trait]
 impl SocialRepository for PostgresSocial {
     #[tracing::instrument(name = "social.search", skip_all, fields(ddd.bounded_context.name = "social", input.prefix.bytes = prefix.len()), err)]
     async fn search(

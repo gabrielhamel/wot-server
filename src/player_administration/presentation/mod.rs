@@ -8,7 +8,7 @@ mod registration;
 mod request_traces;
 
 use crate::{
-    accounts::contract::{GameAccounts, GarageCatalog, PlayerAccess},
+    accounts::contract::{GameAccounts, GarageQueries, PlayerAccess},
     player_sessions::contract::{PlayerGrants, StoreRequests, dashboard_store_router},
 };
 use axum::{
@@ -33,7 +33,7 @@ struct AdminState {
     store_enabled: bool,
     sign_in_slots: Arc<Semaphore>,
     garage_accounts: GameAccounts,
-    catalog: Arc<GarageCatalog>,
+    catalog: GarageQueries,
     grants: PlayerGrants,
     create_slots: Arc<Semaphore>,
     username_check_slots: Arc<Semaphore>,
@@ -42,14 +42,22 @@ struct AdminState {
 #[derive(Clone)]
 struct RequestSpan(tracing::Span);
 
+pub(crate) struct DashboardConfig {
+    pub(crate) secure_cookies: bool,
+    pub(crate) trusted_proxies: Vec<IpAddr>,
+}
+
 pub(crate) fn router(
+    _composition: &crate::server::Composition,
     players: PlayerAccess,
     garage_accounts: GameAccounts,
-    catalog: Arc<GarageCatalog>,
+    catalog: GarageQueries,
     grants: PlayerGrants,
     store: Option<StoreRequests>,
-    secure_cookies: bool,
-    trusted_proxies: Vec<IpAddr>,
+    DashboardConfig {
+        secure_cookies,
+        trusted_proxies,
+    }: DashboardConfig,
 ) -> Router {
     let state = AdminState {
         accounts: players,

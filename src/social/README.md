@@ -22,8 +22,10 @@ and history responses. Native friendship changes lock both participants in ID
 order. Legacy contact changes lock the owner, and private writes lock both
 participants in ID order, keeping ignore checks and writes coherent.
 
-Player Sessions consumes the [published Social contract](mod.rs). Its native XMPP adapter owns
-XML/JID translation and presence/socket delivery. Its BW compatibility adapter
+Player Sessions consumes the [published Social contract](contract.rs), which
+exposes Social operations without the repository or PostgreSQL adapter. Server
+composition constructs the service and supplies its player directory. The native
+XMPP adapter owns XML/JID translation and presence/socket delivery. Its BW adapter
 still uses the separate in-memory `Conversations` model; that legacy lifecycle
 is not the durable native conversation contract.
 

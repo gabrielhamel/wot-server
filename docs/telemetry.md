@@ -325,7 +325,10 @@ then use the same trace ID through the existing Rust propagation.
 The expected sequence for a purchase is `web.store.purchase` →
 `web.http.request` → `store.http.request` → Store use case → SQL and garage
 delivery. Dashboard checkout follows the same sequence through
-`admin.http.request`, with session lookup before the Store request. Dashboard
+`admin.http.request`, with session lookup before the Store request. The
+dashboard transport creates the child `web.http.request` span in
+`player_administration` and preserves the parent Store operation in
+`player_sessions`. Dashboard
 catalog reads continue through `player_sessions.store.load_catalog` to the
 Accounts snapshot and catalog projection. A grant follows the equivalent path through `web.admin.grant` and
 `admin.http.request`. Registration follows `web.panel.register` →

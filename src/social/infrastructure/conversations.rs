@@ -1,5 +1,5 @@
+use super::super::domain::{ChatMessage, Player, PrivateConversation, PrivateConversationBlocked};
 use super::PostgresSocial;
-use crate::social::{ChatMessage, Player, PrivateConversation, PrivateConversationBlocked};
 use sqlx::{Postgres, Transaction};
 
 type Tx<'a> = Transaction<'a, Postgres>;

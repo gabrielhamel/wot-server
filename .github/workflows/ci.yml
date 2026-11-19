@@ -31,8 +31,12 @@ jobs:
         run: cargo +stable fmt --all --check
       - name: Clippy
         run: cargo +stable clippy --locked --workspace --all-targets -- -D warnings
+      - name: Clippy with integration fixtures
+        run: cargo +stable clippy --locked --workspace --all-targets --features integration-test-support -- -D warnings
       - name: Test
-        run: cargo +stable test --locked --workspace --all-targets
+        run: |
+          cargo +stable test --locked --doc -p wot-server
+          cargo +stable test --locked --workspace --all-targets --features integration-test-support
 
   e2e:
     name: E2E Tests
@@ -77,7 +81,7 @@ jobs:
         run: |
           cargo +stable test --locked --lib initializes_context_storage -- --ignored
           cargo +stable test --locked --lib exports_admin_http -- --ignored
-          cargo +stable test --locked -p wot-server --test garage -- --ignored
+          cargo +stable test --locked -p wot-server --features integration-test-support --test garage -- --ignored
 
   web:
     name: Web UI checks and tests

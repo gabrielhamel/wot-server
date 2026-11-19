@@ -47,13 +47,13 @@ use std::{
     },
 };
 use wot_server::platform::client_formats::pickle::Value as Pickle;
-use wot_server::player_sessions::mercury::app::{
+use wot_server::player_sessions::test_support::mercury::app::{
     dispatch::ScriptDispatch,
     login::element::{LoginError, LoginResponse},
 };
-use wot_server::player_sessions::mercury::script::Value;
+use wot_server::player_sessions::test_support::mercury::script::Value;
 use wot_server::{
-    accounts::{AccountRepository, Accounts, GarageCatalog, PostgresAccounts},
+    accounts::test_support::{AccountRepository, Accounts, GarageCatalog, PostgresAccounts},
     player_sessions::{Gateway, GatewayConfig},
 };
 
@@ -78,8 +78,11 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         &std::env::var("WG_RESOURCE_DIR").expect("WG_RESOURCE_DIR"),
     ))
     .unwrap();
-    let repository =
-        PostgresAccounts::new(wot_server::server::connect_database(&url, 8).await.unwrap());
+    let repository = PostgresAccounts::new(
+        wot_server::server::test_support::connect_database(&url, 8)
+            .await
+            .unwrap(),
+    );
     let prefix = format!(
         "test_{}",
         std::time::SystemTime::now()
@@ -238,8 +241,11 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     assert_eq!(stored.revision, 3);
     assert_eq!(stored.settings, BTreeMap::from([(10, 20), (11, 21)]));
     assert!(repository.snapshot(b.id).await.unwrap().settings.is_empty());
-    let reconnected =
-        PostgresAccounts::new(wot_server::server::connect_database(&url, 2).await.unwrap());
+    let reconnected = PostgresAccounts::new(
+        wot_server::server::test_support::connect_database(&url, 2)
+            .await
+            .unwrap(),
+    );
     assert_eq!(
         reconnected.snapshot(a.id).await.unwrap().settings,
         stored.settings
@@ -247,7 +253,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[tank_a, tank_b]).unwrap());
     let has_camouflage = resources.has_file("scripts/item_defs/customization/camouflages/list.xml");
     let script = ScriptDispatch::new(
-        wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
+        wot_server::player_sessions::test_support::mercury::script::load(&resources).unwrap(),
     );
     let private_key = encrypted_login
         .then(|| Arc::new(rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).unwrap()));
@@ -255,6 +261,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         .as_ref()
         .map(|key| Arc::new(rsa::RsaPublicKey::from(&**key)));
     let gateway = Gateway::bind(
+        &wot_server::server::test_support::composition(),
         GatewayConfig {
             login_bind: "127.0.0.1:0".parse().unwrap(),
             base_bind: "0.0.0.0:0".parse().unwrap(),
@@ -265,12 +272,11 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             training_room_visible,
         },
         &resources,
-        catalog.clone(),
-        accounts.clone().into(),
-        wot_server::accounts::GarageWrites::new(accounts.clone(), catalog.clone()),
+        player_fixture::gateway_accounts(&repository, &catalog),
         wot_server::social::postgres::service(
+            &wot_server::server::test_support::composition(),
             repository.connection_pool(),
-            wot_server::accounts::postgres::directory(repository.connection_pool()),
+            wot_server::accounts::test_support::directory(repository.connection_pool()),
         ),
         tokio::runtime::Handle::current(),
     )
@@ -529,10 +535,13 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             camouflage_flow::assert_traces(a.id, cosmetic_fixtures);
         }
     }
-    let fresh_pool = wot_server::server::connect_database(&url, 2).await.unwrap();
+    let fresh_pool = wot_server::server::test_support::connect_database(&url, 2)
+        .await
+        .unwrap();
     let fresh_social = wot_server::social::postgres::service(
+        &wot_server::server::test_support::composition(),
         fresh_pool.clone(),
-        wot_server::accounts::postgres::directory(fresh_pool),
+        wot_server::accounts::test_support::directory(fresh_pool),
     );
     if result.is_ok() {
         equipment_flow::verify_unaffordable_upgrade(
@@ -556,11 +565,15 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             }
         );
         assert_eq!(
-            PostgresAccounts::new(wot_server::server::connect_database(&url, 2).await.unwrap())
-                .snapshot(a.id)
-                .await
-                .unwrap()
-                .vehicles,
+            PostgresAccounts::new(
+                wot_server::server::test_support::connect_database(&url, 2)
+                    .await
+                    .unwrap()
+            )
+            .snapshot(a.id)
+            .await
+            .unwrap()
+            .vehicles,
             stored.vehicles
         );
         let modules = repository.snapshot(b.id).await.unwrap();
@@ -582,7 +595,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         );
         assert!(modules.progression.unlocks.contains(&515604));
         assert_eq!(
-            modules.progression.installed[&1][&wot_server::accounts::ModuleKind::Gun],
+            modules.progression.installed[&1][&wot_server::accounts::test_support::ModuleKind::Gun],
             515604
         );
         assert!(
@@ -599,17 +612,17 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         assert!(matches!(
             catalog.plan_progression(
                 full_barracks,
-                wot_server::accounts::ProgressionCommand::Crew(
-                    wot_server::accounts::CrewCommand::Hire {
+                wot_server::accounts::test_support::ProgressionCommand::Crew(
+                    wot_server::accounts::test_support::CrewCommand::Hire {
                         vehicle: 3089,
                         role: 1,
-                        course: wot_server::accounts::CrewRecruitment::Gold,
+                        course: wot_server::accounts::test_support::CrewRecruitment::Gold,
                     },
                 ),
             ),
-            Err(wot_server::accounts::ProgressionError::NoFreeBerth)
+            Err(wot_server::accounts::test_support::ProgressionError::NoFreeBerth)
         ));
-        use wot_server::accounts::{ProgressionCommand, ProgressionError};
+        use wot_server::accounts::test_support::{ProgressionCommand, ProgressionError};
         let mut free_slot = modules.clone();
         free_slot.balances.slots = 11;
         free_slot.balances.credits = 0;
@@ -630,7 +643,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         let module_change = catalog
             .plan_progression(
                 modules,
-                wot_server::accounts::ProgressionCommand::Buy {
+                wot_server::accounts::test_support::ProgressionCommand::Buy {
                     item: 515604,
                     count: 1,
                 },
@@ -641,11 +654,14 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             repository.save_progression(&module_change)
         );
         assert_ne!(first_commit.unwrap(), second_commit.unwrap());
-        let fresh =
-            PostgresAccounts::new(wot_server::server::connect_database(&url, 2).await.unwrap())
-                .snapshot(b.id)
+        let fresh = PostgresAccounts::new(
+            wot_server::server::test_support::connect_database(&url, 2)
                 .await
-                .unwrap();
+                .unwrap(),
+        )
+        .snapshot(b.id)
+        .await
+        .unwrap();
         assert_eq!(fresh.progression, module_change.snapshot.progression);
         assert_eq!(fresh.balances, module_change.snapshot.balances);
         // Simulate an ownership insert conflict after the account debit.
@@ -662,9 +678,9 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         let conflicting_purchase = catalog
             .plan_progression(
                 conflicting_source.clone(),
-                wot_server::accounts::ProgressionCommand::BuyVehicle {
+                wot_server::accounts::test_support::ProgressionCommand::BuyVehicle {
                     vehicle: 2065,
-                    options: wot_server::accounts::VehiclePurchaseOptions {
+                    options: wot_server::accounts::test_support::VehiclePurchaseOptions {
                         crew: None,
                         ammunition: false,
                     },
@@ -699,7 +715,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         let lost_ownership = catalog
             .plan_progression(
                 fresh.clone(),
-                wot_server::accounts::ProgressionCommand::Buy {
+                wot_server::accounts::test_support::ProgressionCommand::Buy {
                     item: 515604,
                     count: 1,
                 },
@@ -720,11 +736,13 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         let mut desired: Vec<_> = ammunition
             .loaded
             .iter()
-            .map(|&(id, count)| wot_server::accounts::ShellSelection {
-                id,
-                count,
-                alternate_price: false,
-            })
+            .map(
+                |&(id, count)| wot_server::accounts::test_support::ShellSelection {
+                    id,
+                    count,
+                    alternate_price: false,
+                },
+            )
             .collect();
         desired
             .iter_mut()
@@ -798,7 +816,11 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         assert_eq!(stored[0].history.len(), 100);
         assert_eq!(stored[0].history[0].text, "retained-5");
         fresh_social
-            .change(b.id, a.id, wot_server::social::ContactChange::Ignore)
+            .change(
+                b.id,
+                a.id,
+                wot_server::social::contract::ContactChange::Ignore,
+            )
             .await
             .unwrap();
         assert!(
@@ -809,7 +831,11 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         );
         assert!(fresh_social.restore(b.id).await.unwrap().is_empty());
         fresh_social
-            .change(b.id, a.id, wot_server::social::ContactChange::RemoveIgnored)
+            .change(
+                b.id,
+                a.id,
+                wot_server::social::contract::ContactChange::RemoveIgnored,
+            )
             .await
             .unwrap();
         assert_eq!(

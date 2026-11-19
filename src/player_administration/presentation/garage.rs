@@ -1,7 +1,7 @@
 use super::{AdminState, RequestSpan, access::lookup_session, players::ApiError};
 use crate::{
     accounts::contract::{
-        AccountNotFound, AccountSnapshot, CosmeticGrantEntry, GarageInspection, GrantCurrency,
+        AccountNotFound, AccountView, CosmeticGrantEntry, GarageInspection, GrantCurrency,
         GrantError, PlayerGarage, PlayerGrant, ProgressionError, VehicleCatalogEntry,
     },
     player_sessions::contract::{GrantDelivery, GrantRequestError},
@@ -91,13 +91,10 @@ pub(super) async fn show(
     let id = player_id(&id)?;
     request_span.record("input.account_id", id);
     let snapshot = read_garage(&state, id).await?;
-    Ok(Json(GarageInspection::from_snapshot(
-        snapshot,
-        &state.catalog,
-    )))
+    Ok(Json(state.catalog.inspect(snapshot)))
 }
 
-async fn read_garage(state: &AdminState, id: i64) -> Result<AccountSnapshot, ApiError> {
+async fn read_garage(state: &AdminState, id: i64) -> Result<AccountView, ApiError> {
     state.garage_accounts.snapshot(id).await.map_err(|error| {
         if error.is::<AccountNotFound>() {
             ApiError::new(StatusCode::NOT_FOUND, "Player not found.")
@@ -118,7 +115,7 @@ pub(super) async fn show_own(
     let span = tracing::Span::current();
     span.record("user.id", player.id);
     let snapshot = read_garage(&state, player.id).await?;
-    let garage = PlayerGarage::from_snapshot(snapshot, &state.catalog);
+    let garage = state.catalog.player_garage(snapshot);
     span.record("output.vehicle_count", garage.vehicle_count());
     Ok(Json(garage))
 }
@@ -298,9 +295,9 @@ pub(super) async fn grant(
     };
     let span = tracing::Span::current();
     span.record("output.delivery", delivery);
-    span.record("output.revision", snapshot.revision);
+    span.record("output.revision", snapshot.revision());
     Ok(Json(GrantResponse {
-        garage: GarageInspection::from_snapshot(snapshot, &state.catalog),
+        garage: state.catalog.inspect(snapshot),
         delivery,
     }))
 }

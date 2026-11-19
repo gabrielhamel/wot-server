@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use wot_server::accounts::{
+use wot_server::accounts::test_support::{
     AccountSnapshot, AmmoError, AmmunitionChange, AmmunitionRules, Balances, OwnedVehicle,
     ShellCurrency, ShellPrice, ShellSelection,
 };

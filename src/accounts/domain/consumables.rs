@@ -48,7 +48,7 @@ pub struct ConsumableRules {
 
 impl ConsumableRules {
     #[tracing::instrument(name = "accounts.consumables.buy_for_vehicle", skip_all, fields(ddd.bounded_context.name = "accounts", input.inventory_id = inventory_id, input.slots = slots), err)]
-    pub(crate) fn buy_for_vehicle(
+    pub(in crate::accounts) fn buy_for_vehicle(
         &self,
         snapshot: &mut AccountSnapshot,
         inventory_id: i64,

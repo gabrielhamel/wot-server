@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
 use crate::accounts::{
-    AccountRepository, Accounts, AmmoError, AmmunitionChange, GarageCatalog, GrantError,
-    PlayerGrant, PreparedAccount, ProgressionChange, ProgressionCommand, ProgressionError,
-    ShellSelection, StoreOrder, StoreOrderError,
+    Accounts, AmmoError, AmmunitionChange, GarageCatalog, GrantError, PlayerGrant, PreparedAccount,
+    ProgressionChange, ProgressionCommand, ProgressionError, ShellSelection, StoreOrder,
+    StoreOrderError,
 };
 use crate::platform::{client_formats::pickle::Value, observability::in_current_span};
 
 #[derive(Clone)]
-pub struct GarageWrites<R> {
-    accounts: Accounts<R>,
+pub struct GarageCommands {
+    accounts: Accounts,
     catalog: Arc<GarageCatalog>,
 }
 
@@ -29,8 +29,8 @@ pub enum GarageWrite<E> {
     Stale,
 }
 
-impl<R: AccountRepository> GarageWrites<R> {
-    pub fn new(accounts: Accounts<R>, catalog: Arc<GarageCatalog>) -> Self {
+impl GarageCommands {
+    pub(in crate::accounts) fn new(accounts: Accounts, catalog: Arc<GarageCatalog>) -> Self {
         Self { accounts, catalog }
     }
 

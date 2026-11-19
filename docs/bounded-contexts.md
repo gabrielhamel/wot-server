@@ -49,6 +49,17 @@ which operations and types it publishes across the boundary. This lets the
 owner change its implementation independently and keeps its invariants in one
 place.
 
+Keep Rust implementations in private modules and expose narrow operation and
+projection types through the contract. PostgreSQL and gateway assembly require
+a value that only server composition can create in production. The Rust
+doctests verify that consumers cannot access representative internal types
+or construct that value. Fixture APIs are available for tests.
+
+Browser contexts publish their cross-context APIs through `web.ts`. The web
+lint check enforces this entry point for relative imports, including dynamic
+imports and TypeScript type imports. Pass context-specific behavior through the
+published API, such as the dashboard's HTTP transport for the embedded Store.
+
 For example, Social resolves numeric player IDs through Accounts'
 [`PlayerDirectory`](../src/accounts/contract.rs). Player Sessions submits
 revision-checked commands through [Accounts' garage API](../src/accounts/application/garage.rs)

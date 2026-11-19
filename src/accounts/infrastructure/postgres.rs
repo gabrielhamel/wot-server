@@ -35,6 +35,7 @@ impl PostgresAccounts {
     }
 }
 
+#[async_trait::async_trait]
 impl AccountRepository for PostgresAccounts {
     #[tracing::instrument(name = "accounts.postgres.credentials", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = username.len()), err)]
     async fn credentials(&self, username: &str) -> Result<Option<(i64, String)>> {

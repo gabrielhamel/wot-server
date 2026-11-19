@@ -1,4 +1,4 @@
-use wot_server::accounts::*;
+use wot_server::accounts::test_support::*;
 
 fn snapshot() -> AccountSnapshot {
     AccountSnapshot {
@@ -25,7 +25,6 @@ fn snapshot() -> AccountSnapshot {
 }
 fn rules() -> VehiclePurchaseRules {
     VehiclePurchaseRules {
-        vehicle: 2065,
         catalog_key: "test:next".into(),
         price: Some(VehicleCost {
             credits: 3_000,

@@ -4,7 +4,7 @@ use rsa::rand_core::{OsRng, RngCore};
 use subtle::ConstantTimeEq;
 use tokio::sync::{mpsc, oneshot};
 
-pub(crate) struct StoreToken([u8; 32]);
+pub(in crate::player_sessions) struct StoreToken([u8; 32]);
 
 impl StoreToken {
     pub fn generate() -> anyhow::Result<Self> {
@@ -34,7 +34,7 @@ impl StoreToken {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum StoreError {
+pub(in crate::player_sessions) enum StoreError {
     #[error("Open the Store from a connected garage.")]
     Unauthorized,
     #[error("The account is busy. Try again shortly.")]
@@ -47,14 +47,14 @@ pub(crate) enum StoreError {
     Internal(#[from] anyhow::Error),
 }
 
-pub(crate) type StoreReply = oneshot::Sender<Result<StoreCatalog, StoreError>>;
+pub(in crate::player_sessions) type StoreReply = oneshot::Sender<Result<StoreCatalog, StoreError>>;
 
-pub(crate) enum StoreCustomer {
+pub(in crate::player_sessions) enum StoreCustomer {
     Garage(StoreToken),
     Dashboard(i64),
 }
 
-pub(crate) struct StoreRequest {
+pub(in crate::player_sessions) struct StoreRequest {
     pub parent: tracing::Span,
     pub customer: StoreCustomer,
     pub order: Option<StoreOrder>,
@@ -65,12 +65,12 @@ pub(crate) struct StoreRequest {
 pub(crate) struct StoreRequests(mpsc::Sender<StoreRequest>);
 
 impl StoreRequests {
-    pub fn channel() -> (Self, mpsc::Receiver<StoreRequest>) {
+    pub(in crate::player_sessions) fn channel() -> (Self, mpsc::Receiver<StoreRequest>) {
         let (sender, receiver) = mpsc::channel(16);
         (Self(sender), receiver)
     }
 
-    pub async fn request(
+    pub(in crate::player_sessions) async fn request(
         &self,
         customer: StoreCustomer,
         order: Option<StoreOrder>,

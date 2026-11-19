@@ -18,6 +18,7 @@ pub(super) async fn lock_accounts(tx: &mut Transaction<'_, Postgres>) -> Result<
     Ok(())
 }
 
+#[async_trait::async_trait]
 impl PlayerAccessRepository for PostgresPlayers {
     #[tracing::instrument(name = "accounts.players.setup_status", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "accounts"), err)]
     async fn setup_available(&self) -> Result<bool> {

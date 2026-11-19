@@ -9,7 +9,7 @@ impl Gateway {
         let span = event.span;
         let session = self.sessions.get(&event.client);
         if let Some(session) = session {
-            span.record("user.id", session.account.snapshot.id.to_string());
+            span.record("user.id", session.account.snapshot.id().to_string());
         }
         let owns_entity = session
             .and_then(|session| session.entity)
@@ -135,8 +135,8 @@ impl Gateway {
             }
             _ => {}
         }
-        let current_revision = session.account.snapshot.revision;
-        let account_id = session.account.snapshot.id;
+        let current_revision = session.account.snapshot.revision();
+        let account_id = session.account.snapshot.id();
         let cache = session.account.cache.clone();
         if self.crew_command(client, entity, &request)? {
             return Ok(());
@@ -579,7 +579,7 @@ impl Gateway {
         len: i64,
         crc: i64,
     ) -> Result<()> {
-        let data = self.catalog.shop.clone();
+        let data = self.catalog.shop_data();
         let cache_hit = len == data.len() as i64 && crc == i64::from(crc32fast::hash(&data) as i32);
         tracing::Span::current().record(
             "output.outcome",

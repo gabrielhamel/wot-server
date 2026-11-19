@@ -50,7 +50,10 @@ impl GarageInspection {
         self.vehicles.len()
     }
 
-    pub fn from_snapshot(snapshot: AccountSnapshot, catalog: &GarageCatalog) -> Self {
+    pub(in crate::accounts) fn from_snapshot(
+        snapshot: AccountSnapshot,
+        catalog: &GarageCatalog,
+    ) -> Self {
         let mut vehicles: Vec<_> = snapshot
             .vehicles
             .iter()
@@ -126,7 +129,10 @@ struct PlayerGarageVehicle {
 }
 
 impl PlayerGarage {
-    pub fn from_snapshot(snapshot: AccountSnapshot, catalog: &GarageCatalog) -> Self {
+    pub(in crate::accounts) fn from_snapshot(
+        snapshot: AccountSnapshot,
+        catalog: &GarageCatalog,
+    ) -> Self {
         let summary = GarageSummary::from(&snapshot);
         let mut vehicles: Vec<_> = snapshot
             .vehicles

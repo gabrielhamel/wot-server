@@ -122,8 +122,8 @@ impl Gateway {
                 .onCmdResponse(request_id, BUSY, "accountBusy".into())?;
             return Ok(());
         };
-        let revision = session.account.snapshot.revision;
-        let account_id = session.account.snapshot.id;
+        let revision = session.account.snapshot.revision();
+        let account_id = session.account.snapshot.id();
         span.record("output.outcome", "queued");
         session.saving = true;
         self.pending_writes.insert(account_id);

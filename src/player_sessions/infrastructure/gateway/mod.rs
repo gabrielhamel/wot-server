@@ -3,7 +3,7 @@ use super::{
     schema::{Account, AccountBase, AccountData, ServerStats},
 };
 use crate::{
-    accounts::contract::{GameAccounts, GarageCatalog, GarageCommands, PreparedAccount},
+    accounts::contract::{GameAccounts, GarageCommands, GarageQueries, PreparedAccount},
     player_sessions::domain::Admissions,
 };
 use anyhow::{Context, Result};
@@ -62,6 +62,12 @@ const FAILURE: i16 = -1;
 const SET_ACTIVE_VEHICLE_SEASON: i16 = 121;
 const RESET_SESSION_STATS: i16 = 10035;
 const REQUEST_NO_RESPONSE: i16 = 202;
+
+pub struct GatewayAccounts {
+    pub accounts: GameAccounts,
+    pub catalog: GarageQueries,
+    pub garage: GarageCommands,
+}
 
 pub struct GatewayConfig {
     pub login_bind: SocketAddrV4,
@@ -144,7 +150,7 @@ pub struct Gateway {
     login: login::App,
     base: base::App,
     config: GatewayConfig,
-    catalog: Arc<GarageCatalog>,
+    catalog: GarageQueries,
     accounts: crate::player_sessions::application::ClientAccounts,
     garage: GarageCommands,
     admissions: Admissions,
@@ -166,11 +172,14 @@ pub struct Gateway {
 
 impl Gateway {
     pub fn bind(
+        _composition: &crate::server::Composition,
         config: GatewayConfig,
         resources: &ResourceBundle,
-        catalog: Arc<GarageCatalog>,
-        accounts: GameAccounts,
-        garage: GarageCommands,
+        GatewayAccounts {
+            accounts,
+            catalog,
+            garage,
+        }: GatewayAccounts,
         social: SocialService,
         runtime: Handle,
     ) -> Result<Self> {
@@ -385,9 +394,9 @@ impl Gateway {
                         return Ok(None);
                     };
                     let span = tracing::Span::current();
-                    span.record("user.id", snapshot.id.to_string());
-                    if !snapshot.display_name.is_empty() {
-                        span.record("user.name", snapshot.display_name.as_str());
+                    span.record("user.id", snapshot.id().to_string());
+                    if !snapshot.display_name().is_empty() {
+                        span.record("user.name", snapshot.display_name());
                     }
                     if let Some((local, domain)) = username.split_once('@')
                         && !local.is_empty()
@@ -472,7 +481,7 @@ impl Gateway {
             return;
         };
         if let Some(client) = self.base.answer_login_success(event.addr, ticket.blowfish) {
-            let saving = self.pending_writes.contains(&ticket.account.snapshot.id);
+            let saving = self.pending_writes.contains(&ticket.account.snapshot.id());
             self.sessions.insert(
                 client,
                 Session {
@@ -519,9 +528,9 @@ impl Gateway {
         let entity = self.base.create_base_player::<Account>(
             client,
             AccountData {
-                name: snapshot.display_name.clone(),
+                name: snapshot.display_name().to_owned(),
                 incarnationID: 1000,
-                requiredVersion_2410: self.catalog.required_version.clone(),
+                requiredVersion_2410: self.catalog.required_version().to_owned(),
                 initialServerSettings: bootstrap::server_settings_with_chat(
                     super::endpoint::advertised_base(
                         self.config.advertised_base,
@@ -547,9 +556,9 @@ impl Gateway {
         session.entity = Some(entity);
         self.base
             .entity(entity)?
-            .showGUI(bootstrap::show_gui_ctx(snapshot.id))?;
-        let account_id = snapshot.id;
-        info!(account_id = snapshot.id, vehicles = snapshot.vehicles.len(), %client, "Garage account created");
+            .showGUI(bootstrap::show_gui_ctx(snapshot.id()))?;
+        let account_id = snapshot.id();
+        info!(account_id = snapshot.id(), vehicles = snapshot.vehicle_count(), %client, "Garage account created");
         self.notify_presence(account_id, true);
         Ok(())
     }

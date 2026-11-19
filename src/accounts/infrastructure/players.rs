@@ -32,6 +32,7 @@ impl PostgresPlayers {
     }
 }
 
+#[async_trait::async_trait]
 impl PlayerRepository for PostgresPlayers {
     #[tracing::instrument(name = "accounts.players.list", skip_all, fields(ddd.bounded_context.name = "accounts", input.offset = pagination.offset(), input.limit = pagination.limit()), err)]
     async fn list(&self, pagination: PlayerPagination) -> Result<PlayerPage> {

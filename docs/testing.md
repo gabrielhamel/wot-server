@@ -10,8 +10,13 @@ Container builds and publishing run only when a Git tag is created; see the
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace --all-targets
+cargo test --locked --doc -p wot-server
+cargo test --workspace --all-targets --features integration-test-support
 ```
+
+The server doctests check that Rust rejects access to private context APIs.
+The integration-test feature exposes fixture helpers for storage and protocol
+tests. Build the production binary with the default features.
 
 The integration suite builds a synthetic, rebased AMD64 PE in memory, invokes
 the real CLI and compiles its generated Rust. It verifies initializer ordering
@@ -80,8 +85,9 @@ docker compose up -d --wait
 export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
+cargo test --locked --lib initializes_context_storage -- --ignored
 cargo test --locked --lib exports_admin_http -- --ignored
-cargo test --locked -p wot-server --test garage -- --ignored
+cargo test --locked -p wot-server --features integration-test-support --test garage -- --ignored
 ```
 
 The admin HTTP tests send requests through the authenticated router and inspects
@@ -91,7 +97,7 @@ and verify that raw credentials and invalid input text stay out of spans. They
 also exercise concurrent first-admin setup, case-sensitive credentials,
 60-day session persistence across router and database-pool restarts, role
 changes, concurrent demotion, revocation, expiration and sign-out. The access
-lifecycle test uses a temporary PostgreSQL schema.
+lifecycle test uses a temporary PostgreSQL database.
 
 For an existing database, set `WG_TEST_DATABASE_URL` to the same connection
 URL used by the server. The test uses uniquely named temporary accounts and removes them after its network

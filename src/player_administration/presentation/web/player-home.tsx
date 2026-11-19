@@ -13,12 +13,12 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { TitlePortal, useLogout } from "react-admin";
 import type { PlayerGarage } from "../../application/admin-contracts";
-import { getOwnGarage } from "../../infrastructure/admin-api";
+import { dashboardStoreTransport, getOwnGarage } from "../../infrastructure/admin-api";
 import { errorMessage, responseStatus } from "../../../platform/infrastructure/web/http";
 import { GarageBalances, OwnedTanks } from "./garage/garage-inventory";
 
 const DashboardStore = lazy(async () => ({
-  default: (await import("../../../player_sessions/web")).DashboardStore,
+  default: (await import("../../../player_sessions/web")).EmbeddedStore,
 }));
 
 const viewTitles = { garage: "My garage", store: "Store", admin: "Admin" };
@@ -93,7 +93,11 @@ export function PlayerHome({
         >
           {view === "store" && (
             <Suspense fallback={<CircularProgress size={24} aria-label="Loading Store" />}>
-              <DashboardStore onUnauthorized={signInAgain} onPurchased={invalidateGarage} />
+              <DashboardStore
+                transport={dashboardStoreTransport}
+                onUnauthorized={signInAgain}
+                onPurchased={invalidateGarage}
+              />
             </Suspense>
           )}
           {view === "garage" && <Garage key={garageVersion} onUnauthorized={signInAgain} />}

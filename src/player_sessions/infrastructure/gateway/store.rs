@@ -22,6 +22,7 @@ pub(super) struct Completion {
 }
 
 impl Gateway {
+    #[cfg(feature = "integration-test-support")]
     pub fn enable_store(&mut self, origin: String) -> anyhow::Result<axum::Router> {
         self.configure_store(origin)
             .map(crate::player_sessions::presentation::store::router)
@@ -76,11 +77,11 @@ impl Gateway {
                     };
                     let snapshot = &session.account.snapshot;
                     if order.is_none() {
-                        tracing::Span::current().record("user.id", snapshot.id);
+                        tracing::Span::current().record("user.id", snapshot.id());
                         let _ = reply.send(Ok(self.catalog.store_catalog(snapshot)));
                         return;
                     }
-                    snapshot.id
+                    snapshot.id()
                 }
             };
             tracing::Span::current().record("user.id", account_id);
@@ -101,7 +102,7 @@ impl Gateway {
             if let Some(session) = self
                 .sessions
                 .values_mut()
-                .find(|session| session.account.snapshot.id == account_id)
+                .find(|session| session.account.snapshot.id() == account_id)
             {
                 session.saving = true;
             }

@@ -1,5 +1,5 @@
+use super::super::domain::{Friendship, FriendshipAction, Player};
 use super::PostgresSocial;
-use crate::social::{Friendship, FriendshipAction, Player};
 use sqlx::{Postgres, Transaction};
 
 type Tx<'a> = Transaction<'a, Postgres>;
@@ -20,6 +20,11 @@ async fn save(tx: &mut Tx<'_>, owner: i64, peer: i64, state: Friendship) -> anyh
         .await
     }?;
     anyhow::ensure!(count < 300, "Contact limit reached");
+    let stored_state: i16 = match state {
+        Friendship::Saved => 0,
+        Friendship::Pending => 1,
+        Friendship::Accepted => 2,
+    };
     let result = {
         let statement = "INSERT INTO social.social_contacts(owner_id,peer_id,friendship) VALUES($1,$2,$3) ON CONFLICT(owner_id,peer_id) DO UPDATE SET friendship=EXCLUDED.friendship WHERE NOT social_contacts.ignored AND social_contacts.friendship < EXCLUDED.friendship";
         crate::platform::observability::database(
@@ -28,7 +33,7 @@ async fn save(tx: &mut Tx<'_>, owner: i64, peer: i64, state: Friendship) -> anyh
             sqlx::query(statement)
                 .bind(owner)
                 .bind(peer)
-                .bind(state as i16)
+                .bind(stored_state)
                 .execute(&mut **tx),
         )
         .await

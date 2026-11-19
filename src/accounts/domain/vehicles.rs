@@ -4,7 +4,10 @@ const MAX_OWNED_VEHICLES: usize = 1024;
 
 impl AccountSnapshot {
     #[tracing::instrument(name = "accounts.vehicles.buy_vehicle_slot", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = self.id, input.slots = self.balances.slots), err)]
-    pub(crate) fn buy_vehicle_slot(&mut self, cost: VehicleCost) -> Result<(), ProgressionError> {
+    pub(in crate::accounts) fn buy_vehicle_slot(
+        &mut self,
+        cost: VehicleCost,
+    ) -> Result<(), ProgressionError> {
         let slots = self
             .balances
             .slots
@@ -16,7 +19,7 @@ impl AccountSnapshot {
         Ok(())
     }
 
-    pub(crate) fn next_vehicle_id(&self) -> Result<i64, ProgressionError> {
+    pub(in crate::accounts) fn next_vehicle_id(&self) -> Result<i64, ProgressionError> {
         self.vehicles
             .iter()
             .map(|vehicle| vehicle.inventory_id)
@@ -29,7 +32,10 @@ impl AccountSnapshot {
     }
 
     #[tracing::instrument(name = "accounts.vehicles.check_vehicle_capacity", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = self.id, input.catalog_key.bytes = catalog_key.len()), err)]
-    pub(crate) fn check_vehicle_capacity(&self, catalog_key: &str) -> Result<(), ProgressionError> {
+    pub(in crate::accounts) fn check_vehicle_capacity(
+        &self,
+        catalog_key: &str,
+    ) -> Result<(), ProgressionError> {
         if self
             .vehicles
             .iter()
@@ -43,12 +49,12 @@ impl AccountSnapshot {
         Ok(())
     }
 
-    pub(crate) fn vehicle_slots_full(&self) -> bool {
+    pub(in crate::accounts) fn vehicle_slots_full(&self) -> bool {
         self.vehicles.len() >= MAX_OWNED_VEHICLES
             || i64::try_from(self.vehicles.len()).map_or(true, |count| count >= self.balances.slots)
     }
 
-    pub(crate) fn add_vehicle(
+    pub(in crate::accounts) fn add_vehicle(
         &mut self,
         inventory_id: i64,
         catalog_key: &str,
@@ -63,7 +69,7 @@ impl AccountSnapshot {
         });
     }
 
-    pub(crate) fn remove_sold_vehicle(&mut self, inventory_id: i64) {
+    pub(in crate::accounts) fn remove_sold_vehicle(&mut self, inventory_id: i64) {
         self.progression.last_vehicle_id = Some(
             self.progression
                 .last_vehicle_id
@@ -121,7 +127,10 @@ impl VehicleCost {
     }
 
     #[tracing::instrument(name = "accounts.vehicles.charge", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.gold = self.gold, input.credits = self.credits), err)]
-    pub(crate) fn charge(self, snapshot: &mut AccountSnapshot) -> Result<(), ProgressionError> {
+    pub(in crate::accounts) fn charge(
+        self,
+        snapshot: &mut AccountSnapshot,
+    ) -> Result<(), ProgressionError> {
         if self.credits < 0 || self.gold < 0 {
             return Err(ProgressionError::NotForSale);
         }
@@ -148,7 +157,6 @@ pub struct VehiclePurchaseOptions {
 }
 
 pub struct VehiclePurchaseRules {
-    pub vehicle: i32,
     pub catalog_key: String,
     pub price: Option<VehicleCost>,
     pub requires_research: bool,

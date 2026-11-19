@@ -6,8 +6,8 @@ use std::{
     time::Duration,
 };
 use wot_server::platform::client_formats::pickle;
-use wot_server::player_sessions::mercury::app::dispatch::ScriptDispatch;
-use wot_server::player_sessions::mercury::script::{PythonValue, StringValue, Value};
+use wot_server::player_sessions::test_support::mercury::app::dispatch::ScriptDispatch;
+use wot_server::player_sessions::test_support::mercury::script::{PythonValue, StringValue, Value};
 
 struct Chat {
     stream: TcpStream,

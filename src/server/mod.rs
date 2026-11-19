@@ -1,13 +1,13 @@
 mod database;
 use crate::{
-    accounts::{Accounts, GarageCatalog, PostgresAccounts, PostgresPlayers},
+    accounts,
     platform::http,
     player_administration,
-    player_sessions::{Gateway, GatewayConfig},
+    player_sessions::{Gateway, GatewayAccounts, GatewayConfig},
 };
 use anyhow::{Context, Result};
 use clap::Parser;
-pub use database::connect_database;
+use database::connect_database;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -21,6 +21,22 @@ mod login_key;
 mod telemetry;
 mod web;
 use configuration::{Configuration, LogLevel};
+
+/// Proof that a caller is wiring the server's composition root.
+#[doc(hidden)]
+pub struct Composition {
+    _private: (),
+}
+
+#[cfg(any(test, feature = "integration-test-support"))]
+#[doc(hidden)]
+pub mod test_support {
+    pub use super::database::connect_database;
+
+    pub fn composition() -> super::Composition {
+        super::Composition { _private: () }
+    }
+}
 
 #[derive(Parser)]
 #[command(version, about = "World of Tanks game server")]
@@ -67,25 +83,22 @@ async fn serve(config: Configuration) -> Result<()> {
     let resources = tracing::info_span!("server.load_resources", "ddd.bounded_context.name" = "server", "input.resource_dir" = %config.resource_dir.display())
         .in_scope(|| ResourceBundle::open(&config.resource_dir))?;
     let pool = connect_database(&config.database_url, config.db_connections).await?;
-    let repository = PostgresAccounts::new(pool.clone());
-    let keys = repository.catalog_keys().await?;
-    let catalog_resources = resources.clone();
-    let catalog = Arc::new(
-        tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
-            GarageCatalog::load(catalog_resources, &keys)
-        }))
-        .await??,
-    );
+    let composition = Composition { _private: () };
+    let account_services =
+        accounts::postgres::service(&composition, pool.clone(), resources.clone()).await?;
     let key_path = config.private_key.clone();
     let private_key =
         tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
             login_key::load_login_key(&key_path)
         }))
         .await??;
-    let accounts = Accounts::new(repository.clone());
-    let social =
-        crate::social::postgres::service(pool.clone(), crate::accounts::postgres::directory(pool));
+    let social = crate::social::postgres::service(
+        &composition,
+        pool.clone(),
+        accounts::postgres::directory(&composition, pool),
+    );
     let mut gateway = Gateway::bind(
+        &composition,
         GatewayConfig {
             login_bind: config.login_bind,
             base_bind: config.base_bind,
@@ -96,9 +109,11 @@ async fn serve(config: Configuration) -> Result<()> {
             training_room_visible: config.training_room_visible,
         },
         &resources,
-        catalog.clone(),
-        accounts.clone().into(),
-        crate::accounts::GarageWrites::new(accounts.clone(), catalog.clone()),
+        GatewayAccounts {
+            accounts: account_services.accounts(),
+            catalog: account_services.garage_queries(),
+            garage: account_services.garage_commands(),
+        },
         social,
         tokio::runtime::Handle::current(),
     )?;
@@ -128,24 +143,30 @@ async fn serve(config: Configuration) -> Result<()> {
             .map(|store| gateway.configure_store(store.origin))
             .transpose()?;
         if let Some(store) = &store {
-            router = router.merge(crate::player_sessions::store_router(store.clone()));
+            router = router.merge(crate::player_sessions::store_router(
+                &composition,
+                store.clone(),
+            ));
         }
         if let Some(admin) = config.admin {
-            let (players, catalog) = tokio::task::spawn_blocking(
-                crate::platform::observability::in_current_span(move || {
-                    PostgresPlayers::new(&repository, catalog.clone())
-                        .map(|players| (crate::accounts::PlayerAccounts::new(players), catalog))
-                }),
-            )
-            .await??;
+            let garage_accounts = account_services.accounts();
+            let catalog = account_services.garage_queries();
+            let players =
+                tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
+                    move || account_services.player_access(),
+                ))
+                .await??;
             router = router.merge(player_administration::router(
+                &composition,
                 players,
-                accounts.into(),
+                garage_accounts,
                 catalog,
                 gateway.player_grants(),
                 store,
-                admin.secure_cookies,
-                trusted_proxies,
+                player_administration::DashboardConfig {
+                    secure_cookies: admin.secure_cookies,
+                    trusted_proxies,
+                },
             ));
         }
         let listener = tokio::net::TcpListener::bind(settings.bind)

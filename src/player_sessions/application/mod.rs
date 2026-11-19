@@ -1,4 +1,4 @@
-use crate::accounts::contract::{AccountSnapshot, GameAccounts};
+use crate::accounts::contract::{AccountView, GameAccounts};
 use std::collections::BTreeMap;
 pub(crate) mod grants;
 pub(crate) mod store;
@@ -19,7 +19,7 @@ impl ClientAccounts {
         &self,
         username: &str,
         password: String,
-    ) -> anyhow::Result<Option<AccountSnapshot>> {
+    ) -> anyhow::Result<Option<AccountView>> {
         if username.is_empty()
             || username.len() > 128
             || password.is_empty()
@@ -31,7 +31,7 @@ impl ClientAccounts {
     }
 
     #[tracing::instrument(name = "player_sessions.snapshot", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.id = id), err)]
-    pub async fn snapshot(&self, id: i64) -> anyhow::Result<AccountSnapshot> {
+    pub async fn snapshot(&self, id: i64) -> anyhow::Result<AccountView> {
         self.accounts.snapshot(id).await
     }
 
@@ -40,7 +40,7 @@ impl ClientAccounts {
         &self,
         id: i64,
         changes: BTreeMap<i32, i32>,
-    ) -> anyhow::Result<AccountSnapshot> {
+    ) -> anyhow::Result<AccountView> {
         self.accounts.change_settings(id, changes).await
     }
 }

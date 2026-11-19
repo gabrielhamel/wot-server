@@ -1,82 +1,76 @@
 pub(super) mod garage;
 pub(super) mod players;
+pub(super) mod queries;
 pub use players::{
-    CreatePlayerError, PlayerAccessRepository, PlayerAccounts, PlayerProvision, PlayerRepository,
+    CreatePlayerError, PlayerAccess, PlayerAccessRepository, PlayerProvision, PlayerRepository,
 };
 
+use super::contract::AccountView;
 use super::domain::{
     AccountSnapshot, AmmoError, AmmunitionRules, ShellPurchase, ShellSelection, VehicleAmmunition,
 };
-use std::{collections::BTreeMap, future::Future};
+use std::{collections::BTreeMap, sync::Arc};
 
 #[derive(Debug, thiserror::Error)]
 #[error("Account {0} was not found")]
 pub struct AccountNotFound(pub i64);
 
-pub trait AccountRepository: Clone + Send + Sync + 'static {
-    fn credentials(
-        &self,
-        username: &str,
-    ) -> impl Future<Output = anyhow::Result<Option<(i64, String)>>> + Send;
-    fn snapshot(&self, id: i64) -> impl Future<Output = anyhow::Result<AccountSnapshot>> + Send;
-    fn save_progression(
-        &self,
-        change: &ProgressionChange,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
-    fn save_ammunition(
-        &self,
-        change: &AmmunitionChange,
-    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
-    fn save_settings(
-        &self,
-        id: i64,
-        settings: BTreeMap<i32, i32>,
-    ) -> impl Future<Output = anyhow::Result<i64>> + Send;
+#[async_trait::async_trait]
+pub trait AccountRepository: Send + Sync + 'static {
+    async fn credentials(&self, username: &str) -> anyhow::Result<Option<(i64, String)>>;
+    async fn snapshot(&self, id: i64) -> anyhow::Result<AccountSnapshot>;
+    async fn save_progression(&self, change: &ProgressionChange) -> anyhow::Result<bool>;
+    async fn save_ammunition(&self, change: &AmmunitionChange) -> anyhow::Result<bool>;
+    async fn save_settings(&self, id: i64, settings: BTreeMap<i32, i32>) -> anyhow::Result<i64>;
 }
 
 /// The session-facing account operations. Garage mutations use GarageCommands.
 #[derive(Clone)]
 pub struct GameAccounts {
-    accounts: Accounts<super::PostgresAccounts>,
-}
-
-impl From<Accounts<super::PostgresAccounts>> for GameAccounts {
-    fn from(accounts: Accounts<super::PostgresAccounts>) -> Self {
-        Self { accounts }
-    }
+    accounts: Accounts,
 }
 
 impl GameAccounts {
+    pub(in crate::accounts) fn new(accounts: Accounts) -> Self {
+        Self { accounts }
+    }
+
     pub async fn authenticate(
         &self,
         login: &str,
         password: String,
-    ) -> anyhow::Result<Option<AccountSnapshot>> {
-        self.accounts.authenticate(login, password).await
+    ) -> anyhow::Result<Option<AccountView>> {
+        Ok(self
+            .accounts
+            .authenticate(login, password)
+            .await?
+            .map(AccountView))
     }
 
-    pub async fn snapshot(&self, id: i64) -> anyhow::Result<AccountSnapshot> {
-        self.accounts.snapshot(id).await
+    pub async fn snapshot(&self, id: i64) -> anyhow::Result<AccountView> {
+        self.accounts.snapshot(id).await.map(AccountView)
     }
 
     pub async fn change_settings(
         &self,
         id: i64,
         changes: BTreeMap<i32, i32>,
-    ) -> anyhow::Result<AccountSnapshot> {
+    ) -> anyhow::Result<AccountView> {
         self.accounts.save_settings(id, changes).await?;
-        self.accounts.snapshot(id).await
+        self.snapshot(id).await
     }
 }
 
 #[derive(Clone)]
-pub struct Accounts<R> {
-    repository: R,
+pub struct Accounts {
+    repository: Arc<dyn AccountRepository>,
 }
 
-impl<R: AccountRepository> Accounts<R> {
-    pub fn new(repository: R) -> Self {
-        Self { repository }
+impl Accounts {
+    pub fn new(repository: impl AccountRepository) -> Self {
+        Self {
+            repository: Arc::new(repository),
+        }
     }
 
     #[tracing::instrument(name = "accounts.authenticate", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = username.len()), err)]
@@ -248,7 +242,7 @@ pub enum ProgressionCommand {
 }
 
 impl ProgressionCommand {
-    pub(crate) fn operation(&self) -> &'static str {
+    pub(in crate::accounts) fn operation(&self) -> &'static str {
         match self {
             Self::Crew(_) => "crew",
             Self::BuyPremium { .. } => "buy_premium",

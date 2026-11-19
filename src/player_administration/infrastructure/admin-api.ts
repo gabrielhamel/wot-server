@@ -3,6 +3,7 @@ import { defaultDataProvider } from "react-admin";
 import type { AuthProvider, DataProvider, Identifier, RaRecord } from "react-admin";
 import { request, responseStatus } from "../../platform/infrastructure/web/http";
 import { webOperation } from "../../platform/infrastructure/web/telemetry";
+import type { StoreCatalog, StoreTransport } from "../../player_sessions/web";
 import type {
   AdminSession,
   CatalogVehicle,
@@ -25,7 +26,12 @@ const owner = "player_administration";
 function adminRequest<T>(
   parent: Context,
   endpoint: string,
-  options: { path?: string; body?: object; signal?: AbortSignal } = {},
+  options: {
+    path?: string;
+    body?: object;
+    signal?: AbortSignal;
+    errorFormat?: "json" | "text";
+  } = {},
 ) {
   return request<T>({
     owner,
@@ -36,9 +42,16 @@ function adminRequest<T>(
     headers: options.body ? { "X-Wot-Admin": "1" } : undefined,
     body: options.body,
     signal: options.signal,
-    errorFormat: "json",
+    errorFormat: options.errorFormat ?? "json",
   });
 }
+
+export const dashboardStoreTransport: StoreTransport = {
+  loadCatalog: (parent, signal) =>
+    adminRequest<StoreCatalog>(parent, "/me/shop/catalog", { signal, errorFormat: "text" }),
+  submitOrder: (parent, body) =>
+    adminRequest<StoreCatalog>(parent, "/me/shop/orders", { body, errorFormat: "text" }),
+};
 
 export function getSession(signal?: AbortSignal) {
   return webOperation(owner, "web.admin.session_status", {}, async (parent, span) => {

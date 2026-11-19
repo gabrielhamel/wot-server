@@ -17,11 +17,11 @@ use std::{
 };
 use tower::ServiceExt;
 use wot_server::{
-    accounts::{Accounts, GarageCatalog, PostgresAccounts},
+    accounts::test_support::{Accounts, GarageCatalog, PostgresAccounts},
     platform::client_formats::pickle::Value as Pickle,
     player_sessions::{
         Gateway, GatewayConfig,
-        mercury::{
+        test_support::mercury::{
             app::{dispatch::ScriptDispatch, login::element::LoginResponse},
             script::Value as WireValue,
         },
@@ -36,7 +36,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     let resource_dir = std::env::var("WG_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&resource_dir)).unwrap();
     let repository = PostgresAccounts::new(
-        wot_server::server::connect_database(&database_url, 4)
+        wot_server::server::test_support::connect_database(&database_url, 4)
             .await
             .unwrap(),
     );
@@ -82,9 +82,10 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     .await
     .unwrap();
     let dispatch = ScriptDispatch::new(
-        wot_server::player_sessions::mercury::script::load(&resources).unwrap(),
+        wot_server::player_sessions::test_support::mercury::script::load(&resources).unwrap(),
     );
     let mut gateway = Gateway::bind(
+        &wot_server::server::test_support::composition(),
         GatewayConfig {
             training_room_visible: true,
             login_bind: "127.0.0.1:0".parse().unwrap(),
@@ -95,12 +96,11 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             max_pending: 4,
         },
         &resources,
-        catalog.clone(),
-        accounts.clone().into(),
-        wot_server::accounts::GarageWrites::new(accounts.clone(), catalog.clone()),
+        player_fixture::gateway_accounts(&repository, &catalog),
         wot_server::social::postgres::service(
+            &wot_server::server::test_support::composition(),
             repository.connection_pool(),
-            wot_server::accounts::postgres::directory(repository.connection_pool()),
+            wot_server::accounts::test_support::directory(repository.connection_pool()),
         ),
         tokio::runtime::Handle::current(),
     )

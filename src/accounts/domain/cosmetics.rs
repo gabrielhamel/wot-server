@@ -238,7 +238,7 @@ pub struct CosmeticState {
 }
 
 impl CosmeticState {
-    pub(crate) fn retain_supported_slots(
+    pub(in crate::accounts) fn retain_supported_slots(
         &mut self,
         vehicle: i64,
         slots: &VehicleCosmeticSlots,
@@ -284,7 +284,7 @@ impl CosmeticState {
         fields(ddd.bounded_context.name = "accounts", input.attachment_id = id, input.amount = count, output.owned.count = tracing::field::Empty),
         err
     )]
-    pub(crate) fn grant_attachment(
+    pub(in crate::accounts) fn grant_attachment(
         &mut self,
         id: u16,
         count: u32,
@@ -313,7 +313,7 @@ impl CosmeticState {
         fields(ddd.bounded_context.name = "accounts", input.vehicle_type = vehicle_type, input.stat_tracker_id = id, input.amount = count, output.owned.count = tracing::field::Empty),
         err
     )]
-    pub(crate) fn grant_stat_tracker(
+    pub(in crate::accounts) fn grant_stat_tracker(
         &mut self,
         vehicle_type: i32,
         id: u16,
@@ -341,7 +341,7 @@ impl CosmeticState {
         &self.stat_trackers
     }
 
-    pub(crate) fn style_owned(&self, id: u16) -> u32 {
+    pub(in crate::accounts) fn style_owned(&self, id: u16) -> u32 {
         self.owned
             .get(&CosmeticKind::Style)
             .and_then(|styles| styles.get(&id))
@@ -349,7 +349,7 @@ impl CosmeticState {
             .unwrap_or_default()
     }
 
-    pub(crate) fn style_in_depot(&self, id: u16) -> u32 {
+    pub(in crate::accounts) fn style_in_depot(&self, id: u16) -> u32 {
         let mounted = self
             .outfits
             .values()
@@ -364,7 +364,7 @@ impl CosmeticState {
     }
 
     #[tracing::instrument(name = "accounts.cosmetics.add_style", skip_all, fields(ddd.bounded_context.name = "accounts", input.style_id = id, output.owned.count = tracing::field::Empty), err)]
-    pub(crate) fn add_style(
+    pub(in crate::accounts) fn add_style(
         &mut self,
         id: u16,
         limit: Option<u32>,
@@ -398,16 +398,31 @@ impl CosmeticState {
 }
 
 #[derive(Debug, Clone)]
-pub enum CosmeticChange {
+pub struct CosmeticChange(CosmeticAction);
+
+#[derive(Debug, Clone)]
+enum CosmeticAction {
     Buy(Vec<(CosmeticItem, u32)>),
     Apply(BTreeMap<OutfitSeason, VehicleOutfit>),
 }
 
 impl CosmeticChange {
-    pub fn line_count(&self) -> usize {
-        match self {
-            Self::Buy(items) => items.len(),
-            Self::Apply(seasons) => seasons
+    pub(in crate::accounts) fn buy(items: Vec<(CosmeticItem, u32)>) -> Self {
+        Self(CosmeticAction::Buy(items))
+    }
+
+    pub(in crate::accounts) fn apply(outfits: BTreeMap<OutfitSeason, VehicleOutfit>) -> Self {
+        Self(CosmeticAction::Apply(outfits))
+    }
+
+    pub(in crate::accounts) fn is_purchase(&self) -> bool {
+        matches!(self.0, CosmeticAction::Buy(_))
+    }
+
+    fn line_count(&self) -> usize {
+        match &self.0 {
+            CosmeticAction::Buy(items) => items.len(),
+            CosmeticAction::Apply(seasons) => seasons
                 .values()
                 .map(|outfit| {
                     outfit.seasonal_placements()
@@ -419,10 +434,10 @@ impl CosmeticChange {
         }
     }
 
-    pub fn operation(&self) -> &'static str {
-        match self {
-            Self::Buy(_) => "buy",
-            Self::Apply(_) => "apply",
+    fn operation(&self) -> &'static str {
+        match self.0 {
+            CosmeticAction::Buy(_) => "buy",
+            CosmeticAction::Apply(_) => "apply",
         }
     }
 }
@@ -522,7 +537,7 @@ fn plan_cosmetics(
 ) -> Result<bool, ProgressionError> {
     use ProgressionError::InvalidCosmetic;
 
-    let unbound_purchase = vehicle == 0 && matches!(change, CosmeticChange::Buy(_));
+    let unbound_purchase = vehicle == 0 && change.is_purchase();
     if !unbound_purchase
         && !snapshot
             .vehicles
@@ -534,8 +549,8 @@ fn plan_cosmetics(
     let state = &snapshot.progression.cosmetics;
     let mut next_outfits = None;
     let mut purchases = BTreeMap::new();
-    match change {
-        CosmeticChange::Buy(lines) => {
+    match change.0 {
+        CosmeticAction::Buy(lines) => {
             if !(1..=MAX_COSMETIC_PURCHASE_LINES).contains(&lines.len()) {
                 return Err(InvalidCosmetic);
             }
@@ -547,7 +562,7 @@ fn plan_cosmetics(
                 }
             }
         }
-        CosmeticChange::Apply(seasons) => {
+        CosmeticAction::Apply(seasons) => {
             if let Some(style) = seasons
                 .get(&OutfitSeason::Common)
                 .and_then(|outfit| outfit.style)
@@ -834,7 +849,7 @@ mod tests {
         };
         let layout = BTreeMap::from([(VehicleSurface::Hull, camo)]);
         let apply = |season, layout| {
-            CosmeticChange::Apply(BTreeMap::from([(
+            CosmeticChange::apply(BTreeMap::from([(
                 season,
                 VehicleOutfit {
                     camouflage: layout,

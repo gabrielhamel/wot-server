@@ -1,11 +1,17 @@
-use crate::accounts::{Accounts, PlayerAccounts, PostgresAccounts, PostgresPlayers};
+use crate::{
+    accounts::test_support::{
+        self as accounts_fixtures, Accounts, GarageCatalog, PostgresAccounts, PostgresPlayers,
+    },
+    player_sessions::{GatewayAccounts, test_grant_channel},
+    server::test_support::{composition, connect_database},
+};
 use std::{
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
 };
 
 use super::*;
-use crate::player_sessions::GrantRequestError;
+use crate::player_sessions::contract::GrantRequestError;
 use axum::{
     body::{Body, to_bytes},
     http::StatusCode,
@@ -35,7 +41,7 @@ async fn exports_admin_http_request_inputs() {
     let attachment_count = catalog.grantable_attachments().count();
     let tracker_count = catalog.grantable_stat_trackers().count();
     let starter_keys = catalog.tier_one_keys().unwrap();
-    let repository = PostgresAccounts::new(crate::server::connect_database(&url, 2).await.unwrap());
+    let repository = PostgresAccounts::new(connect_database(&url, 2).await.unwrap());
     let accounts = Accounts::new(repository.clone());
     let players = PostgresPlayers::new(&repository, catalog.clone()).unwrap();
     let admin: i64 = sqlx::query_scalar("INSERT INTO accounts.accounts(username, display_name, password_hash, role) VALUES ($1, 'Trace test admin', 'unused', 'admin') RETURNING id")
@@ -46,21 +52,24 @@ async fn exports_admin_http_request_inputs() {
     )
     .unwrap();
     assert!(
-        PlayerAccounts::new(players.clone())
+        accounts_fixtures::player_access(players.clone())
             .open_web_session(admin, &secret.digest(), 60)
             .await
             .unwrap()
     );
     let cookie = format!("wot_admin_session={}", secret.value());
-    let (grants, mut queued) = PlayerGrants::channel();
+    let (grants, mut queued) = test_grant_channel();
     let service = TowerToHyperService::new(router(
-        crate::accounts::PlayerAccounts::new(players),
-        accounts.clone().into(),
-        catalog,
+        &composition(),
+        accounts_fixtures::player_access(players),
+        accounts_fixtures::game_accounts(accounts.clone()),
+        accounts_fixtures::garage_queries(catalog),
         grants,
         None,
-        true,
-        vec!["192.0.2.10".parse().unwrap()],
+        DashboardConfig {
+            secure_cookies: true,
+            trusted_proxies: vec!["192.0.2.10".parse().unwrap()],
+        },
     ));
 
     let exporter = InMemorySpanExporter::default();
@@ -149,10 +158,7 @@ async fn exports_admin_http_request_inputs() {
                         .await
                         .expect("grant route must reach the queue")
                         .unwrap();
-                request
-                    .reply
-                    .send(Err(GrantRequestError::NotFound))
-                    .unwrap();
+                assert!(request.reply.send(Err(GrantRequestError::NotFound)).is_ok());
             });
             assert_eq!(response.unwrap().status(), 404);
         }
@@ -233,16 +239,13 @@ async fn exports_admin_http_request_inputs() {
             .unwrap();
         assert!(matches!(
             request.grant,
-            crate::accounts::PlayerGrant::StatTracker {
+            crate::accounts::contract::PlayerGrant::StatTracker {
                 vehicle: 43,
                 id: 1,
                 count: 1
             }
         ));
-        request
-            .reply
-            .send(Err(GrantRequestError::NotFound))
-            .unwrap();
+        assert!(request.reply.send(Err(GrantRequestError::NotFound)).is_ok());
     });
     assert_eq!(response.unwrap().status(), StatusCode::NOT_FOUND);
 
@@ -608,12 +611,9 @@ async fn exports_admin_http_access_lifecycle() {
         .unwrap()
         .database(&database);
     let scoped_url = sqlx::ConnectOptions::to_url_lossy(&options).to_string();
-    let repository = PostgresAccounts::new(
-        crate::server::connect_database(&scoped_url, 4)
-            .await
-            .unwrap(),
-    );
+    let repository = PostgresAccounts::new(connect_database(&scoped_url, 4).await.unwrap());
     let mut gateway = crate::player_sessions::Gateway::bind(
+        &composition(),
         crate::player_sessions::GatewayConfig {
             training_room_visible: false,
             login_bind: "127.0.0.1:0".parse().unwrap(),
@@ -624,12 +624,18 @@ async fn exports_admin_http_access_lifecycle() {
             max_pending: 4,
         },
         &resources,
-        catalog.clone(),
-        Accounts::new(repository.clone()).into(),
-        crate::accounts::GarageWrites::new(Accounts::new(repository.clone()), catalog.clone()),
+        GatewayAccounts {
+            accounts: accounts_fixtures::game_accounts(Accounts::new(repository.clone())),
+            catalog: accounts_fixtures::garage_queries(catalog.clone()),
+            garage: accounts_fixtures::garage_commands(
+                Accounts::new(repository.clone()),
+                catalog.clone(),
+            ),
+        },
         crate::social::postgres::service(
+            &composition(),
             repository.connection_pool(),
-            crate::accounts::postgres::directory(repository.connection_pool()),
+            accounts_fixtures::directory(repository.connection_pool()),
         ),
         tokio::runtime::Handle::current(),
     )
@@ -640,15 +646,18 @@ async fn exports_admin_http_access_lifecycle() {
     let grants = gateway.player_grants();
     let build_router = |repository: &PostgresAccounts| {
         TowerToHyperService::new(router(
-            crate::accounts::PlayerAccounts::new(
+            &composition(),
+            accounts_fixtures::player_access(
                 PostgresPlayers::new(repository, catalog.clone()).unwrap(),
             ),
-            Accounts::new(repository.clone()).into(),
-            catalog.clone(),
+            accounts_fixtures::game_accounts(Accounts::new(repository.clone())),
+            accounts_fixtures::garage_queries(catalog.clone()),
             grants.clone(),
             Some(store.clone()),
-            true,
-            vec![],
+            DashboardConfig {
+                secure_cookies: true,
+                trusted_proxies: vec![],
+            },
         ))
     };
     let service = build_router(&repository);
@@ -776,11 +785,7 @@ async fn exports_admin_http_access_lifecycle() {
         cookie.split(';').next().unwrap().to_owned()
     };
     let owner_cookie = session_cookie(send("POST", "/session", "", first_login).await.unwrap());
-    let restarted = PostgresAccounts::new(
-        crate::server::connect_database(&scoped_url, 2)
-            .await
-            .unwrap(),
-    );
+    let restarted = PostgresAccounts::new(connect_database(&scoped_url, 2).await.unwrap());
     let persisted = build_router(&restarted)
         .call(request("GET", "/session", &owner_cookie, ""))
         .await

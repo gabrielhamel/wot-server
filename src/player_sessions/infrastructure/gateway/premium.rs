@@ -1,4 +1,4 @@
-use super::{Account, ClientKey, EntityKey, GarageCatalog, Gateway, Pickle};
+use super::{Account, ClientKey, EntityKey, GarageQueries, Gateway, Pickle};
 
 impl Gateway {
     pub(super) fn expire_premium(&mut self) {
@@ -16,8 +16,8 @@ impl Gateway {
                     &mut self.base,
                     *client,
                     entity,
-                    snapshot.id,
-                    snapshot.revision,
+                    snapshot.id(),
+                    snapshot.revision(),
                     expiry,
                 );
             }
@@ -35,7 +35,7 @@ impl Gateway {
     ) {
         let span = tracing::Span::current();
         match base.entity(entity).and_then(|mut account| {
-            account.update(Pickle(GarageCatalog::premium_sync(revision, None)))
+            account.update(Pickle(GarageQueries::premium_sync(revision, None)))
         }) {
             Ok(()) => {
                 span.record("output.delivery", "queued");

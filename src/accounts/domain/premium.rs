@@ -1,12 +1,12 @@
 use super::{AccountSnapshot, EquipmentPrice, ProgressionError};
 
-pub(crate) fn unix_now() -> u64 {
+pub(in crate::accounts) fn unix_now() -> u64 {
     std::time::UNIX_EPOCH
         .elapsed()
         .map_or(0, |duration| duration.as_secs())
 }
 
-pub(crate) const PREMIUM_PACKAGES: [(i32, i64); 8] = [
+pub(in crate::accounts) const PREMIUM_PACKAGES: [(i32, i64); 8] = [
     (1, 250),
     (3, 650),
     (7, 1_250),
@@ -29,7 +29,11 @@ impl AccountSnapshot {
     }
 
     #[tracing::instrument(name = "accounts.premium.extend", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = self.id, input.duration.days = days, input.price.gold = tracing::field::Empty, output.premium.expires_at = tracing::field::Empty), err)]
-    pub(crate) fn extend_premium(&mut self, days: i32, now: u64) -> Result<(), ProgressionError> {
+    pub(in crate::accounts) fn extend_premium(
+        &mut self,
+        days: i32,
+        now: u64,
+    ) -> Result<(), ProgressionError> {
         let (_, gold) = PREMIUM_PACKAGES
             .into_iter()
             .find(|&(length, _)| length == days)

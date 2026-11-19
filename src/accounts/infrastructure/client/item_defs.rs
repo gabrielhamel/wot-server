@@ -247,11 +247,11 @@ pub(super) fn xml_flag(section: &Element, key: &str) -> bool {
             .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
 }
 
-pub(crate) fn read_xml(fs: &ResourceBundle, path: &str) -> io::Result<Box<Element>> {
+pub(in crate::accounts) fn read_xml(fs: &ResourceBundle, path: &str) -> io::Result<Box<Element>> {
     let file = fs.read(path)?;
     pxml::from_reader(io::BufReader::new(file)).map_err(|e| invalid(format!("{path}: {e}")))
 }
 
-pub(crate) fn invalid(message: String) -> io::Error {
+pub(in crate::accounts) fn invalid(message: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }

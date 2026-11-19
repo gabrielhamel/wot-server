@@ -39,8 +39,19 @@ async fn migrate(pool: &PgPool) -> Result<()> {
         )
         .await?;
     }
-    migrate_context(&mut conn, "accounts", accounts::postgres::MIGRATIONS).await?;
-    migrate_context(&mut conn, "social", social::postgres::MIGRATIONS).await?;
+    let composition = super::Composition { _private: () };
+    migrate_context(
+        &mut conn,
+        "accounts",
+        accounts::postgres::migrations(&composition),
+    )
+    .await?;
+    migrate_context(
+        &mut conn,
+        "social",
+        social::postgres::migrations(&composition),
+    )
+    .await?;
     conn.unlock().await?;
     Ok(())
 }
@@ -86,6 +97,7 @@ mod tests {
             .unwrap();
         let options = url.parse::<PgConnectOptions>().unwrap().database(&name);
         let database_url = options.to_url_lossy().to_string();
+        let composition = crate::server::test_support::composition();
         let initialized = connect_database(&database_url, 1).await.unwrap();
         let ids: Vec<i64> = sqlx::query_scalar("INSERT INTO accounts.accounts(username, display_name, password_hash) VALUES ('alice', 'Alice', 'fixture'), ('bob', 'Bob', 'fixture') RETURNING id")
             .fetch_all(&initialized).await.unwrap();
@@ -93,8 +105,9 @@ mod tests {
             panic!("Expected two accounts")
         };
         let social = social::postgres::service(
+            &composition,
             initialized.clone(),
-            accounts::postgres::directory(initialized.clone()),
+            accounts::postgres::directory(&composition, initialized.clone()),
         );
         social
             .change(*alice, *bob, ContactChange::Friend)
@@ -110,8 +123,9 @@ mod tests {
 
         let restarted = connect_database(&database_url, 1).await.unwrap();
         let social = social::postgres::service(
+            &composition,
             restarted.clone(),
-            accounts::postgres::directory(restarted.clone()),
+            accounts::postgres::directory(&composition, restarted.clone()),
         );
         let roster = social.roster(*alice).await.unwrap();
         assert_eq!(roster[0].player.name, "Bob");

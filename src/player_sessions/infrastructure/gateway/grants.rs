@@ -43,7 +43,7 @@ impl Gateway {
         if let Some(session) = self
             .sessions
             .values_mut()
-            .find(|s| s.account.snapshot.id == account_id)
+            .find(|s| s.account.snapshot.id() == account_id)
         {
             session.saving = true;
         }
@@ -92,7 +92,7 @@ impl Gateway {
             let delivery = self.publish_account_change(committed);
             tracing::info!(
                 account_id,
-                revision = snapshot.revision,
+                revision = snapshot.revision(),
                 ?delivery,
                 "Committed admin grant"
             );

@@ -23,11 +23,10 @@ pub enum ContactChange {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(i16)]
 pub enum Friendship {
-    Saved = 0,
-    Pending = 1,
-    Accepted = 2,
+    Saved,
+    Pending,
+    Accepted,
 }
 
 #[derive(Clone, Copy, Debug)]

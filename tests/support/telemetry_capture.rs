@@ -630,9 +630,12 @@ pub fn assert_operation_traces(account: i64, research_account: i64) {
 }
 
 pub async fn assert_database_failure(url: &str) {
-    use wot_server::accounts::{AccountRepository, PostgresAccounts};
-    let repository =
-        PostgresAccounts::new(wot_server::server::connect_database(url, 1).await.unwrap());
+    use wot_server::accounts::test_support::{AccountRepository, PostgresAccounts};
+    let repository = PostgresAccounts::new(
+        wot_server::server::test_support::connect_database(url, 1)
+            .await
+            .unwrap(),
+    );
     repository.connection_pool().close().await;
     let before = exporter().get_finished_spans().unwrap().len();
     assert!(repository.snapshot(-1).await.is_err());

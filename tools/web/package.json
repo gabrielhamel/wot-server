@@ -6,8 +6,8 @@
     "dev": "vp dev --config vite.config.ts",
     "dev:server": "vp dev --config vite.config.ts --mode server",
     "build": "vp build --config vite.config.ts",
-    "check": "tsc --noEmit && cd ../.. && vp fmt --check 'src/**/*.{ts,tsx}' package.json tools/web/mocks tools/web/test tools/web/index.html tools/web/main.ts tools/web/package.json tools/web/tsconfig.json tools/web/vite.config.ts && vp lint src tools/web/main.ts tools/web/mocks tools/web/test tools/web/vite.config.ts --react-plugin --deny-warnings",
-    "format": "cd ../.. && vp fmt 'src/**/*.{ts,tsx}' package.json tools/web/mocks tools/web/test tools/web/index.html tools/web/main.ts tools/web/package.json tools/web/tsconfig.json tools/web/vite.config.ts",
+    "check": "tsc --noEmit && cd ../.. && vp fmt --check 'src/**/*.{ts,tsx}' package.json tools/web/mocks tools/web/test tools/web/index.html tools/web/*.ts tools/web/package.json tools/web/tsconfig.json && vp lint --config tools/web/vite.config.ts src tools/web/*.ts tools/web/mocks tools/web/test --react-plugin --deny-warnings",
+    "format": "cd ../.. && vp fmt 'src/**/*.{ts,tsx}' package.json tools/web/mocks tools/web/test tools/web/index.html tools/web/*.ts tools/web/package.json tools/web/tsconfig.json",
     "test": "vp test --config vite.config.ts"
   },
   "dependencies": {

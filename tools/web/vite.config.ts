@@ -10,6 +10,10 @@ export default defineConfig(({ command, isPreview, mode }) => {
   const mockApi = command === "serve" && !isPreview && mode !== "server";
 
   return {
+    lint: {
+      jsPlugins: ["./bounded-context-imports.ts"],
+      rules: { "web/published-context-import": "error" },
+    },
     plugins: [
       {
         name: "msw-development-worker",

@@ -144,7 +144,11 @@ impl GarageCatalog {
         crate::pickle!({"unlocks": (Value::Set(unlocks))})
     }
 
-    pub(crate) fn store_depot_count(&self, account: &AccountSnapshot, offer: &StoreOffer) -> u32 {
+    pub(in crate::accounts) fn store_depot_count(
+        &self,
+        account: &AccountSnapshot,
+        offer: &StoreOffer,
+    ) -> u32 {
         if offer.category.is_style() {
             account
                 .progression

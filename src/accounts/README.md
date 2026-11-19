@@ -1,8 +1,7 @@
 # Accounts
 
 Accounts owns durable player identity, password hashes, player roles, dashboard sessions, balances, vehicle ownership,
-integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, cosmetic ownership and outfits, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes immutable snapshots to
-Player Sessions. It does not own transport sessions, entities, battles or matchmaking.
+integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, cosmetic ownership and outfits, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes account views and garage projections to Player Sessions.
 
 | Layer | Responsibilities |
 | --- | --- |
@@ -15,11 +14,12 @@ Player Sessions. It does not own transport sessions, entities, battles or matchm
 | `infrastructure/client/` | Anti-corruption layer adapting the versioned [resource bundle](../../docs/resources.md), garage catalog and account/shop cache formats. These wire models are not account domain models. |
 
 Runtime consumers import the context's [published contract](contract.rs).
-Game authentication, garage commands and account access have separate entry
-points. Accounts loads the current garage revision and owns command validation,
-projection preparation and commit. Player Sessions delivers the committed
-projection and receipt. Account-specific Store offers and dashboard garage
-inspection are published read models.
+Game authentication returns an opaque `AccountView` with identity and revision
+accessors. `GarageQueries` publishes session projections, Store offers and
+dashboard inspections. `GarageCommands` validates garage changes against the
+current revision and commits them. Player Sessions delivers the committed
+projection and receipt. Server composition creates these services through
+the [PostgreSQL entry point](postgres.rs).
 
 Accounts owns the `accounts` PostgreSQL schema and its
 [embedded migrations](infrastructure/migrations/). It owns identity and Garage
@@ -83,7 +83,7 @@ The published `PlayerDirectory` resolves numeric account IDs and display names
 for Social. Server composition shares one PostgreSQL pool. Each repository uses
 its own schema and Social holds account IDs as scalar values.
 
-[Player Administration](../player_administration/README.md) consumes `PlayerAccounts<R>` through the public
+[Player Administration](../player_administration/README.md) consumes `PlayerAccess` through the public
 context entry point. It receives account IDs, logins, display names and roles. Account
 creation hashes the password with Argon2id and commits the identity and starter
 garage in one PostgreSQL transaction. Bootstrap authorizes first-admin creation

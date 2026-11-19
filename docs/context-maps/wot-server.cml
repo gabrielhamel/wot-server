@@ -39,10 +39,10 @@ ContextMap Server {
     implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage and host-only Training Room RPCs; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "PlayerAccounts API for identity listing, registration, provisioning, roles and web sessions, plus published garage inspection and grant catalogs"
+    implementationTechnology = "PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "Bounded PlayerGrants and StoreRequests APIs coordinate grants and purchases for authenticated dashboard accounts with garage writes and publish committed updates to game sessions"
+    implementationTechnology = "Bounded PlayerGrants and StoreRequests APIs coordinate dashboard requests with garage writes. The embedded Store web entry point accepts the dashboard transport."
   }
   Accounts [U,OHS,PL] -> [D,ACL] Social {
     implementationTechnology = "Published PlayerDirectory operations resolve account IDs and display names in the Accounts schema. Social persists scalar IDs in its own schema."
@@ -51,7 +51,7 @@ ContextMap Server {
     implementationTechnology = "Published contacts/search and durable private message APIs adapted to native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Published authentication, preferences and garage operations with revision-checked commits, offer listings and client projections. Sessions orders commands and delivers committed results."
+    implementationTechnology = "Published authentication, opaque account view and garage projections with revision-checked commands. Sessions orders commands and delivers committed results."
   }
 }
 BoundedContext GameClient {

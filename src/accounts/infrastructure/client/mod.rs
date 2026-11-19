@@ -23,8 +23,8 @@ mod shop;
 mod starter_garage;
 mod store;
 pub use store::{
-    StoreAvailability, StoreCatalog, StoreCategory, StoreOffer, StoreOrder, StoreOrderError,
-    StorePrice,
+    StoreAvailability, StoreCatalog, StoreCategory, StoreListing, StoreOffer, StoreOrder,
+    StoreOrderError, StorePrice,
 };
 mod supply_slots;
 mod vehicle_defs;
@@ -34,6 +34,7 @@ mod vehicle_sales;
 use crate::accounts::{
     AccountSnapshot, AmmoError, AmmunitionChange, AmmunitionRules, ShellCurrency, ShellPrice,
     ShellSelection,
+    contract::{AccountView, PreparedAccount},
 };
 use crate::platform::client_formats::pickle::Value;
 use crate::platform::client_formats::pxml;
@@ -64,8 +65,8 @@ pub struct GarageCatalog {
     supply_slots: supply_slots::SupplySlots,
     observer_descriptor: Option<Vec<u8>>,
     elite_progression_trees: BTreeSet<String>,
-    pub required_version: String,
-    pub shop: Arc<Vec<u8>>,
+    pub(in crate::accounts) required_version: String,
+    pub(in crate::accounts) shop: Arc<Vec<u8>>,
 }
 
 struct CatalogVehicle {
@@ -134,11 +135,6 @@ impl CatalogVehicle {
             *installed.get(&crate::accounts::ModuleKind::Gun)?,
         ))
     }
-}
-
-pub struct PreparedAccount {
-    pub snapshot: AccountSnapshot,
-    pub cache: Arc<Vec<u8>>,
 }
 
 impl GarageCatalog {
@@ -440,7 +436,7 @@ impl GarageCatalog {
         let data = self.project_account(&snapshot)?;
         let cache = self.encode_garage(snapshot.revision, &data)?;
         Ok(PreparedAccount {
-            snapshot,
+            snapshot: AccountView(snapshot),
             cache: Arc::new(cache),
         })
     }

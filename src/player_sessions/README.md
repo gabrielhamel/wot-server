@@ -81,5 +81,8 @@ Administration. Both use the same write slot and cache publication as other
 external account changes.
 
 Player Administration uses the [published grants and Store contract](mod.rs)
-and the [Store browser entry point](web.ts). The server injects Accounts and
-Social services into the gateway. Session state is held in memory.
+and the [Store browser entry point](web.ts). The embedded Store receives a
+transport from the dashboard and uses it for catalog reads and orders. The
+server injects Accounts and Social contracts into the gateway. The catalog,
+account view, and committed changes expose the projections needed for client
+delivery. Session state is held in memory.

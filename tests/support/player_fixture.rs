@@ -3,7 +3,7 @@ use argon2::{
     Argon2, PasswordHasher,
     password_hash::{SaltString, rand_core::OsRng},
 };
-use wot_server::accounts::PostgresAccounts;
+use wot_server::accounts::test_support::PostgresAccounts;
 
 pub async fn insert_player(
     repository: &PostgresAccounts,
@@ -38,4 +38,20 @@ pub async fn insert_player(
     }
     tx.commit().await?;
     Ok(id)
+}
+
+pub fn gateway_accounts(
+    repository: &PostgresAccounts,
+    catalog: &std::sync::Arc<wot_server::accounts::test_support::GarageCatalog>,
+) -> wot_server::player_sessions::GatewayAccounts {
+    use wot_server::accounts::test_support::{
+        Accounts, game_accounts, garage_commands, garage_queries,
+    };
+
+    let accounts = Accounts::new(repository.clone());
+    wot_server::player_sessions::GatewayAccounts {
+        accounts: game_accounts(accounts.clone()),
+        catalog: garage_queries(catalog.clone()),
+        garage: garage_commands(accounts, catalog.clone()),
+    }
 }

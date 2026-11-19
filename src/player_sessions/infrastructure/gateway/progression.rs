@@ -104,8 +104,8 @@ impl Gateway {
             return Ok(());
         };
         tracing::Span::current().record("output.outcome", "started");
-        let revision = session.account.snapshot.revision;
-        let account_id = session.account.snapshot.id;
+        let revision = session.account.snapshot.revision();
+        let account_id = session.account.snapshot.id();
         session.saving = true;
         session.crew_running = is_crew;
         self.pending_writes.insert(account_id);
