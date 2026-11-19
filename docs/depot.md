@@ -20,12 +20,14 @@ Accounts validates the descriptor, item type, quantity, catalog price and
 available stock. Repeated lines draw from the same remaining quantity. Items
 tagged `notForSale` are rejected. The shop price determines the per-item credit
 proceeds, rounded up at the advertised 50% sale factor after conversion from
-gold or bonds when applicable. Sales that would pay unsupported currencies are
-rejected.
+gold or bonds when applicable. Experimental Equipment uses the same commands
+to [disassemble Depot stock](equipment.md#client-contract) and pays the full
+catalog price in Components. A batch may contain both kinds of proceeds.
+Sales that would pay other unsupported currencies are rejected.
 
 The existing revision-checked PostgreSQL transaction writes stock and proceeds
 together. After commit the server sends an Account update with the new revision,
-credits and affected inventory tables. A partial sale sends the remaining
+the new credit and Components balances, and the affected inventory tables. A partial sale sends the remaining
 count. A depleted entry is sent as `None`. Mounted equipment, loaded shells and
 installed modules are outside the stock used by sales.
 

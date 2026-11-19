@@ -18,6 +18,7 @@ pub(super) const BUY_VEHICLE_SLOT: i16 = 205;
 pub(super) const SELL_VEHICLE: i16 = 304;
 pub(super) const EQUIP_DEVICE: i16 = 102;
 pub(super) const EQUIP_DEVICE_SEQUENCE: i16 = 10060;
+pub(super) const DISASSEMBLE_DEVICE: i16 = 10115;
 pub(super) const BUY_AND_EQUIP: i16 = 308;
 
 pub(super) struct Completion {
@@ -328,6 +329,7 @@ pub(super) fn equip_devices(command: i16, args: &[i32]) -> Option<ProgressionCom
         {
             EquipmentChange::Apply(items.to_vec())
         }
+        (DISASSEMBLE_DEVICE, &[item]) if item > 0 => EquipmentChange::Disassemble { item },
         (EQUIP_DEVICE, &[item, slot, 0 | 1, paid_removal @ (0 | 1), 0])
             if item >= 0 && (item == 0 || paid_removal == 0) =>
         {

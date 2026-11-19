@@ -399,7 +399,10 @@ impl Gateway {
             }
             AccountBase::DoCmdIntArr {
                 request_id,
-                cmd: cmd @ (progression::EQUIP_DEVICE | progression::EQUIP_DEVICE_SEQUENCE),
+                cmd:
+                    cmd @ (progression::EQUIP_DEVICE
+                    | progression::EQUIP_DEVICE_SEQUENCE
+                    | progression::DISASSEMBLE_DEVICE),
                 args,
             } => {
                 self.change_progression(

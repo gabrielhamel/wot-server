@@ -28,8 +28,13 @@ the vehicle is sold and its equipment is retained.
 | Experimental level 2 | 50 components |
 | Experimental level 3 | 100 components |
 
-Freely removable devices return to the depot without a charge. The explicit
-destroy action discards the device.
+Freely removable devices return to the depot without a charge. Destroying
+ordinary non-removable equipment discards it. Disassembling Experimental
+Equipment removes the item and credits its full catalog `equipCoin` value.
+The verified catalog pays 100 Components per tier 1 item, 400 per tier 2 item
+and 1,600 per tier 3 item. Disassembly works for Depot stock and for a single
+mounted item. The mounted path clears the vehicle slot without paying a
+demount fee or adding the item to the Depot.
 
 Purchases, depot counts, mounted layouts, balances, and the revision commit
 together using the existing PostgreSQL progression transaction. The equipment
@@ -43,7 +48,9 @@ identical layout request does not debit the account or advance the revision.
 | --- | --- | --- |
 | `doCmdInt4` | `CMD_BUY_ITEM` (302) | Shop revision, equipment descriptor, quantity, gold-for-credits flag (0 for supported equipment). |
 | `doCmdIntArr` | `CMD_EQUIP_OPT_DEVS_SEQUENCE` (10060) | Shop revision, vehicle inventory ID, item count, ordered descriptors. Zero marks an empty slot. |
-| `doCmdIntArr` | `CMD_EQUIP_OPTDEV` (102) | Shop revision, vehicle inventory ID, descriptor or zero for removal, slot index, all-setups flag, paid-removal flag, demount-kit flag (0). |
+| `doCmdIntArr` | `CMD_EQUIP_OPTDEV` (102) | Shop revision, vehicle inventory ID, descriptor or zero for removal, slot index, all-setups flag, paid-removal flag, demount-kit flag (0). The Experimental Equipment slot action uses zero for both the descriptor and paid-removal flag. |
+| `doCmdIntArr` | `CMD_DSTR_MODERNIZED_OPTDEV` (10115) | Shop revision, vehicle inventory ID, mounted Experimental Equipment descriptor. The bulk dialog calls this once per selected vehicle item. |
+| `doCmdInt4` / `doCmdIntArr` | `CMD_SELL_ITEM` (305) / `CMD_SELL_MULTIPLE_ITEMS` (310) | Normal [Depot sale arguments](depot.md#client-contract). Experimental Equipment lines credit Components. |
 
 A successful mutation sends `Account.update` before the command response.
 `inventory[9]` carries depot counts and uses `None` to delete a depleted
@@ -73,7 +80,9 @@ decompilation under `docs/references/wot-src/sources/res/scripts/` give these en
 | `client/gui/shared/gui_items/processors/vehicle.py` and `module.py` | Garage Apply, individual mounting and shop purchase callers. |
 | `client/gui/impl/lobby/tank_setup/interactors/opt_device.py` | The garage demounts an occupied slot before fitting a replacement. |
 | `client/gui/impl/lobby/tank_setup/array_providers/opt_device.py` | The Bounty and Experimental tabs show owned items. |
-| `client/gui/shared/gui_items/artefacts.py` | Selects the shop demount price by equipment category and level. |
+| `client/gui/shared/gui_items/artefacts.py` | Selects the shop demount price and reads the disassembly value from the unmodified item price. |
+| `client/gui/shared/gui_items/items_actions/actions.py` and `processors/module.py` | The disassembly dialog sends Depot items via the sale processors and mounted items via the slot or descriptor-based removal processors. |
+| `client/account_helpers/Shop.py:getSellPrice` | An `equipCoin` price bypasses the ordinary sale factor. |
 | `client/gui/shared/gui_items/vehicle_equipment.py` | Equipment layout cache and setup format. |
 | `common/items/vehicles.py` | Supply slot checks and vehicle descriptor slot-mask order. |
 | `common/items/artefacts_helpers.py` | Include and exclude filters and installed-device tag conflicts. |
@@ -82,11 +91,14 @@ The encrypted Mercury garage integration exercises Standard equipment purchase,
 mounting, reordering, demounting and depot reuse on the T-34. On the ISU-130 it
 exercises Improved shop purchase and garage Apply, depot mounting for Bounty and
 Experimental equipment, and demounting for gold, bonds and components. It checks
-that failed purchases and demounts leave the balances and inventory intact, and
-verifies the account deltas and full cache after reconnecting to PostgreSQL.
+that failed purchases and demounts leave the balances and inventory intact.
+It covers Depot and mounted disassembly, including nine tier 3 items yielding
+14,400 Components, stock and descriptor validation, and rejection without
+partial changes. Reconnection verifies the persisted balance and loadout.
+The test uses resources from the installed EU `v.2.4.1.1 #993` executable
+with SHA-256 `fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
 
 Garage support covers one setup. The admin Components grant adds the
 `equipCoin` balance used by Experimental Equipment demounting. Reward
-distribution, in-game equipment upgrades,
-Experimental deconstruction, demount kits, alternate setups, and server-side
-battle effects still need implementation.
+distribution, in-game equipment upgrades, demount kits, alternate setups,
+and server-side battle effects still need implementation.

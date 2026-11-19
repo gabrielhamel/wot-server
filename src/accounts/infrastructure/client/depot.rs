@@ -4,7 +4,7 @@ use super::{
     shop::{AMMO_EXCHANGE_RATE, CRYSTAL_EXCHANGE_RATE, GOLD_EXCHANGE_RATE, SELL_PRICE_DIVISOR},
 };
 use crate::accounts::{
-    AccountSnapshot, DepotSale, DepotSaleRequest, DepotStock, MAX_DEPOT_SALE_LINES,
+    AccountSnapshot, DepotProceeds, DepotSale, DepotSaleRequest, DepotStock, MAX_DEPOT_SALE_LINES,
     ProgressionError,
 };
 
@@ -41,11 +41,15 @@ impl GarageCatalog {
             | item_type::CREW_BOOK => DepotStock::Fittings,
             _ => return Err(ProgressionError::InvalidRequest),
         };
+        let proceeds = match self.equipment.disassembly_value(request.item) {
+            Some(value) => DepotProceeds::Components(value),
+            None => DepotProceeds::Credits(self.sale_unit_credits(cd)?),
+        };
         Ok(DepotSale {
             stock,
             item: request.item,
             count: request.count,
-            unit_credits: self.sale_unit_credits(cd)?,
+            proceeds,
         })
     }
 

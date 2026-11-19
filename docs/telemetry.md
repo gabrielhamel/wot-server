@@ -74,6 +74,13 @@ delivery even though they run on separate workers.
 A stale quote produces HTTP 409 with `output.outcome=stale` and no account
 write. Store tokens and authorization headers are excluded from traces.
 
+Experimental Equipment disassembly traces carry either Depot sale line counts or
+the mounted equipment change through `accounts.progression.plan_progression`.
+Each priced disassembly records the descriptor, quantity, per-item payout and
+proposed Components balance. The same game command trace includes the
+revision-checked database write and the Mercury cache update and reply.
+Rejected requests report the failure and leave the account revision unchanged.
+
 An online XMPP private message follows this hierarchy. Repository operations
 can contain several query and transaction spans.
 

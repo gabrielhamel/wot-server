@@ -225,6 +225,10 @@ impl ProgressionCommand {
             Self::SellVehicle(_) => "sell_vehicle",
             Self::Buy { .. } => "buy_item",
             Self::Sell(_) => "sell_items",
+            Self::Equipment {
+                change: super::EquipmentChange::Disassemble { .. },
+                ..
+            } => "disassemble_equipment",
             Self::Equipment { .. } => "change_equipment",
             Self::FillConsumables { .. } => "fill_consumables",
             Self::ConsumableAutoResupply { .. } => "consumable_auto_resupply",

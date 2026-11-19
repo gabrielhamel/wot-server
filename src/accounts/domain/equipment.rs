@@ -1,4 +1,4 @@
-use super::{AccountSnapshot, Balances, ProgressionError};
+use super::{AccountSnapshot, Balances, MAX_GRANTED_BALANCE, ProgressionError};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_EQUIPMENT_SLOTS: usize = 4;
@@ -7,6 +7,9 @@ pub type EquipmentLayout = [i32; MAX_EQUIPMENT_SLOTS];
 #[derive(Debug, Clone)]
 pub enum EquipmentChange {
     Apply(Vec<i32>),
+    Disassemble {
+        item: i32,
+    },
     SetSlot {
         slot: usize,
         item: i32,
@@ -23,6 +26,7 @@ pub struct EquipmentDefinition {
     pub price: Option<EquipmentPrice>,
     pub removable: bool,
     pub demount_cost: EquipmentPrice,
+    pub disassembly_value: Option<i64>,
     pub tags: BTreeSet<String>,
     pub incompatible: BTreeSet<String>,
     pub include: Vec<EquipmentVehicleFilter>,
@@ -58,6 +62,29 @@ impl EquipmentPrice {
         *balance -= cost;
         Ok(())
     }
+}
+
+#[tracing::instrument(name = "accounts.equipment.credit_disassembly", skip_all, fields(ddd.bounded_context.name = "accounts", input.item = item, input.count = count, input.components.per_item = unit_value, output.components.received = tracing::field::Empty, output.components.balance = tracing::field::Empty), err)]
+pub(super) fn credit_disassembly(
+    balances: &mut Balances,
+    item: i32,
+    count: u32,
+    unit_value: i64,
+) -> Result<(), ProgressionError> {
+    let received = unit_value
+        .checked_mul(i64::from(count))
+        .filter(|&value| value > 0)
+        .ok_or(ProgressionError::InvalidRequest)?;
+    let balance = balances
+        .equipment_components
+        .checked_add(received)
+        .filter(|&value| value <= MAX_GRANTED_BALANCE)
+        .ok_or(ProgressionError::InvalidRequest)?;
+    balances.equipment_components = balance;
+    let span = tracing::Span::current();
+    span.record("output.components.received", received);
+    span.record("output.components.balance", balance);
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default)]
@@ -108,7 +135,7 @@ impl EquipmentRules {
         Ok(())
     }
 
-    #[tracing::instrument(name = "accounts.equipment.apply", skip_all, fields(ddd.bounded_context.name = "accounts", input.inventory_id = inventory_id), err)]
+    #[tracing::instrument(name = "accounts.equipment.apply", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id, input.equipment_change = ?change), err)]
     pub fn apply(
         &self,
         snapshot: &mut AccountSnapshot,
@@ -126,6 +153,17 @@ impl EquipmentRules {
                     .ok_or(ProgressionError::InvalidEquipment)?
                     .copy_from_slice(&items);
                 (layout, true, false)
+            }
+            EquipmentChange::Disassemble { item } => {
+                self.disassembly_value(item)
+                    .ok_or(ProgressionError::InvalidEquipment)?;
+                let mut layout = current;
+                let mounted = layout
+                    .iter_mut()
+                    .find(|slot| **slot == item)
+                    .ok_or(ProgressionError::InvalidEquipment)?;
+                *mounted = 0;
+                (layout, false, false)
             }
             EquipmentChange::SetSlot {
                 slot,
@@ -156,6 +194,13 @@ impl EquipmentRules {
             .filter(|item| *item != 0 && !target.contains(item))
         {
             let device = self.definition(item)?;
+            if !buy_missing
+                && !paid_removal
+                && let Some(value) = device.disassembly_value
+            {
+                credit_disassembly(&mut balances, item, 1, value)?;
+                continue;
+            }
             if !device.removable {
                 if buy_missing {
                     return Err(ProgressionError::DemountRequired);
@@ -226,6 +271,10 @@ impl EquipmentRules {
             mounted.push((item, device));
         }
         Ok(())
+    }
+
+    pub(crate) fn disassembly_value(&self, item: i32) -> Option<i64> {
+        self.items.get(&item)?.disassembly_value
     }
 
     fn definition(&self, item: i32) -> Result<&EquipmentDefinition, ProgressionError> {

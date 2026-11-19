@@ -87,11 +87,11 @@ pub(super) fn load(
             });
             grants.bounty.insert(item, format!("{label} · {level}"));
         }
-        if let Some(tier) = ["modernized_1", "modernized_2", "modernized_3"]
+        let experimental_tier = ["modernized_1", "modernized_2", "modernized_3"]
             .iter()
             .position(|&tag| tags.contains(tag))
-            .map(|index| index + 1)
-        {
+            .map(|index| index + 1);
+        if let Some(tier) = experimental_tier {
             let label = localized_name().unwrap_or_else(|| {
                 let family = match device.get_child_string("archetype").map(str::trim) {
                     Some("modernizedAimDrivesAimingStabilizer") => "Fire-Control System",
@@ -110,12 +110,19 @@ pub(super) fn load(
             });
             grants.experimental.insert(item, label);
         }
+        let disassembly_value = experimental_tier
+            .filter(|_| !prices.not_for_sale.contains(&cd))
+            .and_then(|_| {
+                let price = ItemPrices::definition_price(device);
+                (price.currency == "equipCoin" && price.amount > 0).then_some(price.amount)
+            });
         rules.items.insert(
             item,
             EquipmentDefinition {
                 price,
                 removable: device.get_child_boolean("removable").unwrap_or(false),
                 demount_cost,
+                disassembly_value,
                 tags,
                 incompatible,
                 include,
