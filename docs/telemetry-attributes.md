@@ -156,7 +156,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
 | [`input.inventory_id`](../src/accounts/application/mod.rs) | Vehicle inventory ID for ammunition planning, module mounting, equipment application, consumables, outfit changes, a bound stat tracker grant or Training Room readiness. Training Room readiness uses `-5000` for the observer. For a standalone cosmetic purchase the value can be zero for unbound stock. Distinct from a vehicle type descriptor. |
 | [`input.operation`](../src/accounts/domain/cosmetics.rs) | Exterior action on the ownership decision span, `buy` or `apply`. On progression planning, a server-defined operation label such as `research`, `buy_vehicle` or `crew`. Admin access uses `status` for session checks and `post` for the required write header check. |
-| [`input.items.count`](../src/accounts/domain/cosmetics.rs) | Number of purchase lines or requested placements across the supplied seasons. Each painted region counts as one placement. |
+| [`input.items.count`](../src/accounts/domain/cosmetics.rs) | Number of purchase lines or requested placements across the supplied seasons. Each painted region counts as one placement. A style counts once in the common outfit. |
 | [`input.vehicle`](../src/accounts/domain/directives.rs) | Owned vehicle inventory ID targeted by directive installation. |
 | [`input.vehicle_type`](../src/accounts/domain/crew.rs) | Vehicle type descriptor used to route battle experience to its crew. Also the numeric catalog vehicle descriptor for a bound stat tracker grant or vehicle-specific outfit change, and on the root HTTP span for a decoded vehicle grant. |
 | [`input.catalog_key.bytes`](../src/accounts/domain/vehicles.rs) | Byte length of the vehicle catalog key checked for duplicate ownership and garage capacity. |
@@ -167,7 +167,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.duration.days`, `input.price.gold`](../src/accounts/domain/premium.rs) | Requested Premium Account days and the server price in gold. Only recognized durations record a gold price. |
 | [`output.premium.expires_at`](../src/accounts/domain/premium.rs) | Expiration after a successful extension, in UTC Unix seconds. |
 | [`input.premium.expires_at`](../src/player_sessions/infrastructure/gateway/premium.rs) | Expired entitlement timestamp in UTC Unix seconds when the gateway sends an inactivity update. |
-| [`input.style_id`](../src/accounts/domain/cosmetics.rs) | Client style definition ID when a Store purchase adds a style to the account. |
+| [`input.style_id`](../src/accounts/domain/cosmetics.rs) | Client style definition ID when a Store purchase adds a style to the account or an outfit change requests a style in the common outfit. Omitted for outfit changes without a style ID. |
 | [`input.index`](../src/accounts/domain/modules.rs) | Zero-based index into a vehicle module research plan. |
 | [`input.gun`](../src/accounts/domain/modules.rs) | Gun descriptor supplied with a module equip request. |
 | [`input.buy`](../src/accounts/domain/modules.rs) | Whether module equip may buy the requested module rather than requiring depot stock. |

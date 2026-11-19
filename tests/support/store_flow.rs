@@ -42,7 +42,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         "store_{}",
         std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()
     );
-    let starter = ["usa:A01_T1_Cunningham".to_owned()];
+    let starter = ["usa:A01_T1_Cunningham", "ussr:R19_IS-3"].map(str::to_owned);
     let account_id =
         player_fixture::insert_player(&repository, &username, "Store test", "store", &starter)
             .await
@@ -53,6 +53,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .unwrap()
         .id;
     let restricted_tog = catalog.vehicle_catalog_entry("uk:GB63_TOG_II").unwrap().id;
+    let is3 = catalog.vehicle_catalog_entry("ussr:R19_IS-3").unwrap().id;
     let lowe_id = catalog
         .vehicle_catalog_entry("germany:G51_Lowe")
         .unwrap()
@@ -64,7 +65,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .unwrap();
     let item = i64::from(equipment.item);
     let credits = equipment.price.amount();
-    sqlx::query("UPDATE accounts SET credits = $2, gold = 3400, bonds = 4450 WHERE id = $1")
+    sqlx::query("UPDATE accounts SET credits = $2, gold = 3400, bonds = 6450 WHERE id = $1")
         .bind(account_id)
         .bind(credits)
         .execute(&repository.connection_pool())
@@ -269,26 +270,49 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(find_offer(&purchased, bond_item["item"].as_i64().unwrap())["availability"], "in_garage");
         let vehicle_diff = next_update(&mut peer, &dispatch, revision + 4);
-        assert_eq!(dict(&dict(&vehicle_diff, "stats"), "crystal"), Pickle::I64(450));
+        assert_eq!(dict(&dict(&vehicle_diff, "stats"), "crystal"), Pickle::I64(2450));
         let persisted = runtime.block_on(accounts.snapshot(account_id)).unwrap();
-        assert_eq!(persisted.balances.bonds, 450);
+        assert_eq!(persisted.balances.bonds, 2450);
         assert!(persisted.vehicles.iter().any(|vehicle| vehicle.catalog_key == "uk:GB63_TOG_II"));
         assert_eq!(u64::from(persisted.progression.premium_expires_at), expiry + 86_400);
-        let store_style = purchased["offers"].as_array().unwrap().iter()
-            .find(|offer| offer["name"] == "Hot TOG (TOG II*)").unwrap();
-        let style_item = store_style["item"].as_i64().unwrap();
-        let style_order = json!({"item": style_item, "price": store_style["price"], "revision": purchased["revision"]});
-        let (status, styled) = request(Some(&token), Some(&style_order));
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(find_offer(&styled, style_item)["in_depot"], 1);
-        let style_diff = next_update(&mut peer, &dispatch, revision + 5);
-        assert_eq!(dict(&dict(&style_diff, "stats"), "crystal"), Pickle::I64(0));
-        let tog = persisted.vehicles.iter().find(|vehicle| vehicle.catalog_key == "uk:GB63_TOG_II").unwrap();
-        let style_outfit = [4, 16, 163, 2];
-        camouflage_flow::send_outfits(&mut peer, &dispatch, 811, persisted.vehicles[0].inventory_id, &[(15, &style_outfit)], -1);
-        camouflage_flow::send_outfits(&mut peer, &dispatch, 812, tog.inventory_id, &[(15, &style_outfit)], 0);
-        let (_, fitted) = request(Some(&token), None);
-        assert_eq!(find_offer(&fitted, style_item)["in_depot"], 0);
+        let styles: [(_, _, _, _, _, &[u8]); 2] = [
+            (850, "Hot TOG (TOG II*)", "uk:GB63_TOG_II", restricted_tog, 291, &[4, 16, 163, 2]),
+            (860, "Montu (IS-3)", "ussr:R19_IS-3", is3, 111, &[4, 16, 111]),
+        ];
+        let mut fitted = purchased;
+        for (request_id, name, vehicle_key, vehicle_type, style_id, outfit) in styles {
+            let store_style = fitted["offers"].as_array().unwrap().iter()
+                .find(|offer| offer["name"] == name).unwrap();
+            let style_item = store_style["item"].as_i64().unwrap();
+            let inventory_id = persisted.vehicles.iter().find(|vehicle| vehicle.catalog_key == vehicle_key)
+                .unwrap().inventory_id;
+            let rows = [(1, outfit), (2, outfit), (4, outfit), (15, outfit)];
+            camouflage_flow::send_outfits(&mut peer, &dispatch, request_id, inventory_id, &rows, -1);
+            let style_order = json!({"item": style_item, "price": store_style["price"], "revision": fitted["revision"]});
+            let (status, styled) = request(Some(&token), Some(&style_order));
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(find_offer(&styled, style_item)["in_depot"], 1);
+
+            let revision = styled["revision"].as_str().unwrap().parse::<i64>().unwrap();
+            camouflage_flow::send_outfits(&mut peer, &dispatch, request_id + 1, 1, &rows, -1);
+            camouflage_flow::send_outfits(&mut peer, &dispatch, request_id + 2, inventory_id, &rows, 0);
+            let diff = next_update(&mut peer, &dispatch, revision + 1);
+            assert_style_fitted(&diff, vehicle_type, style_id, outfit, true);
+            camouflage_flow::send_outfits(&mut peer, &dispatch, request_id + 3, inventory_id, &rows, 0);
+            fitted = request(Some(&token), None).1;
+            assert_eq!(fitted["revision"], (revision + 1).to_string());
+            assert_eq!(find_offer(&fitted, style_item)["in_depot"], 0);
+
+            let empty = [(15, &[][..]), (1, &[][..]), (2, &[][..]), (4, &[][..])];
+            camouflage_flow::send_outfits(&mut peer, &dispatch, request_id + 4, inventory_id, &empty, 0);
+            let removed = request(Some(&token), None).1;
+            assert_eq!(find_offer(&removed, style_item)["in_depot"], 1);
+            camouflage_flow::send_outfits(&mut peer, &dispatch, request_id + 5, inventory_id, &rows, 0);
+            fitted = request(Some(&token), None).1;
+            assert_eq!(fitted["revision"], (revision + 3).to_string());
+            assert_eq!(find_offer(&fitted, style_item)["in_depot"], 0);
+            assert_style_traces(account_id, request_id, style_id);
+        }
 
         let su_gold = fitted["offers"].as_array().unwrap().iter()
             .find(|offer| offer["category"] == "premium_vehicles" && offer["name"] == "SU-100Y").unwrap();
@@ -326,6 +350,9 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         let (mut reconnected, fresh_token, state) = connect();
         assert_ne!(fresh_token, token);
         assert_depot_item(&state, item);
+        for (_, _, _, vehicle_type, style_id, outfit) in styles {
+            assert_style_fitted(&state, vehicle_type, style_id, outfit, false);
+        }
         assert_eq!(dict(&dict(&state, "premium"), "premMask"), Pickle::I64(2));
         assert_eq!(request(Some(&fresh_token), None).1["premium_expires_at"], expiry + 86_400);
         assert_eq!(
@@ -446,6 +473,103 @@ fn assert_depot_item(cache: &Pickle, item: i64) {
         panic!("Missing equipment stock")
     };
     assert_eq!(equipment[&Pickle::I64(item)], Pickle::I64(1));
+}
+
+fn assert_style_fitted(cache: &Pickle, vehicle_type: i32, style: i64, outfit: &[u8], diff: bool) {
+    let vehicle = i64::from(vehicle_type);
+    let inventory = dict(cache, "inventory");
+    let lookup = |keys: &[i64]| {
+        keys.iter().fold(&inventory, |value, key| {
+            let Pickle::Dict(rows) = value else {
+                panic!("Expected a customization inventory dictionary");
+            };
+            &rows[&Pickle::I64(*key)]
+        })
+    };
+    assert_eq!(
+        lookup(&[12, 2, vehicle]),
+        &Pickle::Dict([(Pickle::I64(15), Pickle::Bytes(outfit.to_vec()))].into())
+    );
+    let Pickle::Dict(fitted) = lookup(&[12, 4, 4]) else {
+        panic!("Expected fitted styles");
+    };
+    let style_key = if diff {
+        Pickle::Tuple(vec![Pickle::I64(style), Pickle::from("_r")])
+    } else {
+        Pickle::I64(style)
+    };
+    assert_eq!(
+        fitted[&style_key],
+        Pickle::Dict([(Pickle::I64(vehicle), Pickle::I64(1))].into())
+    );
+}
+
+fn assert_style_traces(account: i64, first_request: i16, style: i64) {
+    let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
+    let has = |span: &opentelemetry_sdk::trace::SpanData, key, value: &str| {
+        span.attributes
+            .iter()
+            .any(|attribute| attribute.key.as_str() == key && attribute.value.to_string() == value)
+    };
+    for (offset, outcome) in [(0, "rejected"), (2, "committed"), (3, "unchanged")] {
+        let request = (first_request + offset).to_string();
+        let apply = spans
+            .iter()
+            .find(|span| {
+                span.name == "game.cosmetics.apply" && has(span, "input.request_id", &request)
+            })
+            .unwrap();
+        let in_trace = |name| {
+            spans.iter().find(|span| {
+                span.name == name && span.span_context.trace_id() == apply.span_context.trace_id()
+            })
+        };
+        assert!(has(apply, "input.outfits.count", "4"));
+        let command = in_trace("player_sessions.commands.command").unwrap();
+        let progression = in_trace("player_sessions.gateway.change_progression").unwrap();
+        let plan = in_trace("accounts.progression.plan_progression").unwrap();
+        let decision = in_trace("accounts.cosmetics.change").unwrap();
+        let response = in_trace("player_sessions.gateway.progression_response").unwrap();
+        assert_eq!(apply.parent_span_id, command.span_context.span_id());
+        assert_eq!(progression.parent_span_id, apply.span_context.span_id());
+        assert_eq!(plan.parent_span_id, progression.span_context.span_id());
+        assert_eq!(decision.parent_span_id, plan.span_context.span_id());
+        assert_eq!(response.parent_span_id, progression.span_context.span_id());
+        assert!(has(decision, "user.id", &account.to_string()));
+        assert!(has(decision, "input.style_id", &style.to_string()));
+        assert!(has(decision, "input.items.count", "1"));
+        assert!(has(response, "output.outcome", outcome));
+        assert!(has(response, "output.delivery", "queued"));
+        assert!(spans.iter().any(|span| {
+            span.name == "mercury.response"
+                && span.parent_span_id == response.span_context.span_id()
+                && has(span, "input.request_id", &request)
+                && has(
+                    span,
+                    "output.response_code",
+                    if outcome == "rejected" { "-1" } else { "0" },
+                )
+                && has(span, "output.delivery", "sent")
+        }));
+        if outcome == "committed" {
+            let save = in_trace("accounts.postgres.save_progression").unwrap();
+            assert!(spans.iter().any(|span| {
+                span.name == "postgresql.query"
+                    && span.parent_span_id == save.span_context.span_id()
+                    && has(span, "db.operation.name", "UPDATE")
+                    && span
+                        .attributes
+                        .iter()
+                        .any(|a| a.key.as_str() == "db.query.text")
+            }));
+            assert!(has(decision, "output.purchases.count", "0"));
+        } else {
+            assert!(in_trace("postgresql.query").is_none());
+        }
+        if outcome == "rejected" {
+            assert_eq!(decision.status, opentelemetry::trace::Status::error(""));
+        }
+    }
 }
 
 fn next_update(peer: &mut Peer, dispatch: &ScriptDispatch, revision: i64) -> Pickle {
