@@ -147,12 +147,12 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`input.email.bytes`](../src/player_administration/presentation/registration.rs) | UTF-8 byte length of the submitted registration email on the HTTP request, handler and Accounts registration validation. Managed player creation records the email in the request's `username` field. The browser and shared registration validator record the byte length only. |
+| [`input.email.bytes`](../src/player_administration/presentation/registration.rs) | UTF-8 byte length of the submitted email on the HTTP request, handler and Accounts validation for registration, managed player creation and [first-admin setup](../src/player_administration/presentation/players.rs). Managed player creation and setup receive the email in the request's `username` field. |
 | [`output.registration_open`](../src/accounts/infrastructure/players.rs) | Boolean indicating whether an administrator exists. Emitted on the Accounts registration status span and signed-out session status. |
 | [`output.username.available`](../src/player_administration/presentation/registration.rs) | Boolean availability of the submitted in-game username after a case-insensitive check. |
 | [`output.vehicle_count`](../src/player_administration/presentation/garage.rs) | Number of owned tanks returned by the personal garage handler. |
 | [`input.username.bytes`](../src/player_sessions/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, or player creation. The root HTTP span records the length after decoding sign-in, player creation or first-admin setup JSON. On registration HTTP handlers and validation it is the UTF-8 byte length of the proposed in-game username. |
-| [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. |
+| [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. [First-admin validation](../src/accounts/domain/players.rs) also records the submitted length. |
 | [`input.algorithm`](../src/accounts/application/players.rs) | Password algorithm on `accounts.players.hash_password` and `accounts.verify_password`, currently `argon2id`. Password and hash are omitted. |
 | [`input.previous_revision`](../src/accounts/application/garage.rs) | Expected persisted revision for a Store quote, an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
 | [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input snapshot used for catalog preparation or mutation planning. On the Store purchase span, the submitted quote revision. On garage sync, the revision requested by the client. |
@@ -227,6 +227,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.offers.count`](../src/player_sessions/infrastructure/gateway/store.rs) | Number of offers included in a Store catalog response. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/admission.rs) | Login admission records `admitted`, `replaced`, `superseded`, `waiting_for_write`, `refreshing_snapshot`, `expired`, `full`, `destination_unavailable`, or `reply_unavailable`. |
 | [`output.outcome`](../src/player_sessions/infrastructure/xmpp/mod.rs) | XMPP connection spans record `disconnected` on normal closure or `failed` on error. XMPP stanza spans record `handled`, `rate_limited` or `failed`. |
+| [`output.outcome`](../src/player_administration/presentation/players.rs) | First-admin setup records `created`, `setup_closed` when setup is unavailable, or the provisioning error outcome. Field validation records `invalid_email`, `invalid_display_name` or `invalid_password`. |
 | [`output.outcome`](../src/accounts/infrastructure/players.rs) | Account provisioning records `created` after commit or `conflict` after rolling back an existing username or a first-admin setup that is closed. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/admission.rs) | Session replacement notice was `sent` to the old UDP peer, `unavailable` because it had no Account entity, or `failed` during enqueue or send. |
 | [`output.outcome`](../src/player_sessions/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_funds`, `research_required` or `failed`. The [dashboard catalog load](../src/player_sessions/infrastructure/gateway/store.rs) records `success`, `busy` or `failed`. |
@@ -369,7 +370,8 @@ code. On error, the exception event's `exception.type` is that failure code.
 | `input.catalog` | Catalog selected by the admin grant form. |
 | `input.grant.kind`, `input.grant.currency`, `input.amount` | Grant type and, for a resource grant, currency and amount in units. |
 | `input.vehicle_type`, `input.attachment_id`, `input.stat_tracker_id`, `input.inventory_id`, `input.item`, `input.count` | Applicable grant item IDs and cosmetic or depot grant quantity in copies. |
-| `input.email.bytes`, `input.username.bytes` | UTF-8 byte lengths of the email and in-game username for self-service registration and managed player creation. Username availability records the username length only. |
+| `input.email.bytes`, `input.username.bytes` | UTF-8 byte lengths of the email and in-game username for self-service registration and managed player creation. First-admin setup records the email length. Username availability records the username length only. |
+| `input.display_name.bytes` | UTF-8 byte length of the display name submitted during first-admin setup. |
 | `output.username.available` | Boolean availability returned by the username check. |
 | `output.player_count`, `output.vehicle_count`, `output.item_count` | Number of records returned by the player list, admin or personal garage, or grant catalog. |
 | `output.session.status` | Admin session state returned by the status endpoint. |

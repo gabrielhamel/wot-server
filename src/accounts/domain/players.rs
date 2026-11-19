@@ -93,10 +93,7 @@ impl NewPlayer {
         if !is_player_login(&username) {
             return Err(NewPlayerError::Username);
         }
-        if !(1..=128).contains(&display_name.chars().count())
-            || display_name.trim() != display_name
-            || display_name.chars().any(char::is_control)
-        {
+        if !is_display_name(&display_name) {
             return Err(NewPlayerError::DisplayName);
         }
         if !(1..=1024).contains(&password.len()) || password.chars().any(char::is_control) {
@@ -114,6 +111,12 @@ impl NewPlayer {
     }
 }
 
+fn is_display_name(display_name: &str) -> bool {
+    (1..=128).contains(&display_name.chars().count())
+        && display_name.trim() == display_name
+        && !display_name.chars().any(char::is_control)
+}
+
 #[derive(Debug, Error)]
 pub enum RegistrationError {
     #[error("Enter a valid email address of up to 128 characters.")]
@@ -122,6 +125,10 @@ pub enum RegistrationError {
         "Use 3 to 24 characters for your username. Use only English letters (A–Z), digits, and underscores."
     )]
     Username,
+    #[error(
+        "Enter a display name of 1 to 128 characters with no control characters or surrounding whitespace."
+    )]
+    DisplayName,
     #[error(
         "Use 8 to 128 characters, including at least one digit, one uppercase letter, one lowercase letter, and one symbol. Control characters are not allowed."
     )]
@@ -146,6 +153,28 @@ impl NewPlayer {
         password: String,
     ) -> Result<Self, RegistrationError> {
         Self::with_registration_rules(email, display_name, password, None)
+    }
+
+    #[tracing::instrument(name = "accounts.bootstrap.validate", skip_all, fields(ddd.bounded_context.name = "accounts", input.email.bytes = email.len(), input.display_name.bytes = display_name.len()), err)]
+    pub fn for_first_admin(
+        email: String,
+        display_name: String,
+        password: String,
+    ) -> Result<Self, RegistrationError> {
+        if !is_registration_email(&email) {
+            return Err(RegistrationError::Email);
+        }
+        if !is_display_name(&display_name) {
+            return Err(RegistrationError::DisplayName);
+        }
+        if !is_registration_password(&password) {
+            return Err(RegistrationError::Password);
+        }
+        Ok(Self {
+            username: email,
+            display_name,
+            password,
+        })
     }
 
     #[tracing::instrument(name = "accounts.registration.validate", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = display_name.len(), input.email.bytes = email.len()), err)]

@@ -703,7 +703,7 @@ async fn exports_admin_http_access_lifecycle() {
         )
         .unwrap()
     };
-    const OWNER: &str = r#"{"username":"owner@example.test","display_name":"Owner","password":"First-admin-password1!"}"#;
+    const OWNER: &str = r#"{"username":"owner@example.test","display_name":"Owner One","password":"First-admin-password1!"}"#;
     const OWNER_LOGIN: &str =
         r#"{"email":"owner@example.test","password":"First-admin-password1!"}"#;
     const SECOND: &str = r#"{"username":"recruit@example.test","display_name":"Recruit","password":"Other-player-password2!"}"#;
@@ -738,6 +738,19 @@ async fn exports_admin_http_access_lifecycle() {
         .status(),
         409
     );
+
+    let setup_rejections = [
+        ("owner@example.test", "owner@localhost", "username"),
+        ("Owner One", " Owner One", "display_name"),
+        ("First-admin-password1!", "weak-setup-password", "password"),
+    ];
+    for (valid, invalid, field) in setup_rejections {
+        let response = send("POST", "/setup", "", &OWNER.replace(valid, invalid))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 422);
+        assert!(json(response).await["errors"][field].is_string());
+    }
 
     let (first, second) = tokio::join!(
         send("POST", "/setup", "", OWNER),
@@ -1291,6 +1304,83 @@ async fn exports_admin_http_access_lifecycle() {
             .find(|span| span.parent_span_id == parent.span_context.span_id() && span.name == name)
             .unwrap_or_else(|| panic!("Missing {name} under {}", parent.name))
     };
+    for (outcome, status, email_bytes, display_name_bytes) in [
+        (
+            "invalid_email",
+            "422",
+            "owner@localhost".len(),
+            "Owner One".len(),
+        ),
+        (
+            "invalid_display_name",
+            "422",
+            "owner@example.test".len(),
+            " Owner One".len(),
+        ),
+        (
+            "invalid_password",
+            "422",
+            "owner@example.test".len(),
+            "Owner One".len(),
+        ),
+        (
+            "created",
+            "201",
+            owner["username"].as_str().unwrap().len(),
+            owner["display_name"].as_str().unwrap().len(),
+        ),
+    ] {
+        let handler = spans
+            .iter()
+            .find(|span| {
+                span.name == "admin.players.bootstrap"
+                    && attribute(span, "output.outcome").as_deref() == Some(outcome)
+            })
+            .unwrap();
+        let root = spans
+            .iter()
+            .find(|span| {
+                span.name == "admin.http.request"
+                    && span.span_context.span_id() == handler.parent_span_id
+            })
+            .unwrap();
+        assert_eq!(
+            handler.span_context.trace_id(),
+            root.span_context.trace_id()
+        );
+        assert_eq!(
+            root.parent_span_id,
+            SpanId::from_hex("1234567890abcdef").unwrap()
+        );
+        assert_eq!(
+            attribute(root, "http.response.status_code").as_deref(),
+            Some(status)
+        );
+        let validation = child(handler, "accounts.bootstrap.validate");
+        assert_eq!(
+            validation.span_context.trace_id(),
+            root.span_context.trace_id()
+        );
+        assert_eq!(
+            attribute(validation, "ddd.bounded_context.name").as_deref(),
+            Some("accounts")
+        );
+        for span in [root, handler, validation] {
+            assert_eq!(
+                attribute(span, "input.email.bytes"),
+                Some(email_bytes.to_string())
+            );
+            assert_eq!(
+                attribute(span, "input.display_name.bytes"),
+                Some(display_name_bytes.to_string())
+            );
+        }
+        let provisioned = spans.iter().any(|span| {
+            span.parent_span_id == handler.span_context.span_id()
+                && span.name == "accounts.players.bootstrap_admin"
+        });
+        assert_eq!(provisioned, outcome == "created");
+    }
     for (kind, item, count, status) in [
         ("currency", None, "71", "200"),
         ("crew_book", Some(book), "3", "200"),
@@ -1532,6 +1622,8 @@ async fn exports_admin_http_access_lifecycle() {
         "recruit@example.test",
         "First-admin-password1!",
         "Other-player-password2!",
+        "weak-setup-password",
+        "owner@localhost",
         "wrong-password",
         "signup@example.test",
         "rival@example.test",

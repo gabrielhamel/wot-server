@@ -341,6 +341,11 @@ Accounts snapshot and catalog projection. A grant follows the equivalent path th
 Accounts validation and provisioning spans, including the SQL transaction.
 Registration validation failures record the rejected field as a bounded
 outcome on the handler span and return HTTP 422.
+First-admin setup follows `web.admin.bootstrap` → `web.http.request` →
+`admin.http.request` → `admin.players.bootstrap` → `accounts.bootstrap.validate`.
+It traces the submitted email and display-name byte lengths. Accepted requests
+provision the administrator in Accounts. Invalid fields return HTTP 422 with
+a bounded handler outcome before credential hashing or account creation.
 Expected browser cancellations, rejections and conflicts
 record an outcome. Unexpected HTTP, network and decoding failures record
 error status and a diagnostic event. Window errors, failed resources,

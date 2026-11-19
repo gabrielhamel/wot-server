@@ -1,7 +1,6 @@
 use super::{AdminState, RequestSpan, registration::registration_error};
 use crate::accounts::contract::{
-    CreatePlayerError, NewPlayer, NewPlayerError, PlayerAccount, PlayerPagination, PlayerRole,
-    is_admin_email,
+    CreatePlayerError, NewPlayer, PlayerAccount, PlayerPagination, PlayerRole,
 };
 use axum::{
     Extension, Json,
@@ -88,7 +87,7 @@ pub(super) async fn create(
     provision(state, request_span, body, PlayerRole::Player).await
 }
 
-#[tracing::instrument(name = "admin.players.bootstrap", skip_all, fields(ddd.bounded_context.name = "player_administration", input.role = "admin", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
+#[tracing::instrument(name = "admin.players.bootstrap", skip_all, fields(ddd.bounded_context.name = "player_administration", input.role = "admin", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty, input.email.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty, user.id = tracing::field::Empty), err)]
 pub(super) async fn bootstrap(
     State(state): State<AdminState>,
     Extension(RequestSpan(request_span)): Extension<RequestSpan>,
@@ -100,6 +99,7 @@ pub(super) async fn bootstrap(
         .await
         .map_err(ApiError::internal)?
     {
+        tracing::Span::current().record("output.outcome", "setup_closed");
         return Err(setup_closed());
     }
     provision(state, request_span, body, PlayerRole::Admin).await
@@ -130,24 +130,17 @@ async fn provision(
     let span = tracing::Span::current();
     span.record("input.username.bytes", username_bytes);
     span.record("input.display_name.bytes", display_name_bytes);
+    span.record("input.email.bytes", username_bytes);
+    request_span.record("input.email.bytes", username_bytes);
     let player = match role {
         PlayerRole::Player => {
-            span.record("input.email.bytes", username_bytes);
-            request_span.record("input.email.bytes", username_bytes);
             NewPlayer::from_managed(body.username, body.display_name, body.password)
-                .map_err(|error| registration_error(error, "username", "display_name"))?
         }
         PlayerRole::Admin => {
-            if !is_admin_email(&body.username) {
-                return Err(ApiError::field(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "username",
-                    "Enter a valid email address.",
-                ));
-            }
-            NewPlayer::new(body.username, body.display_name, body.password)?
+            NewPlayer::for_first_admin(body.username, body.display_name, body.password)
         }
-    };
+    }
+    .map_err(|error| registration_error(error, "username", "display_name"))?;
     let permit = state.create_slots.try_acquire_owned().map_err(|_| {
         ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -241,17 +234,6 @@ impl ApiError {
             StatusCode::INTERNAL_SERVER_ERROR,
             "The player operation failed.",
         )
-    }
-}
-
-impl From<NewPlayerError> for ApiError {
-    fn from(error: NewPlayerError) -> Self {
-        let field = match error {
-            NewPlayerError::Username => "username",
-            NewPlayerError::DisplayName => "display_name",
-            NewPlayerError::Password => "password",
-        };
-        Self::field(StatusCode::UNPROCESSABLE_ENTITY, field, &error.to_string())
     }
 }
 
