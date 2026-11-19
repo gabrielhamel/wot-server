@@ -153,7 +153,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.username.bytes`](../src/player_sessions/application/mod.rs) | UTF-8 byte length of the account login for authentication, credentials lookup, or player creation. The root HTTP span records the length after decoding sign-in, player creation or first-admin setup JSON. On registration HTTP handlers and validation it is the UTF-8 byte length of the proposed in-game username. |
 | [`input.display_name.bytes`](../src/accounts/application/players.rs) | UTF-8 byte length of a player-creation display name, recorded after decoding/normalization at the relevant operation. The root HTTP span records the decoded length before validation. |
 | [`input.algorithm`](../src/accounts/application/players.rs) | Password algorithm on `accounts.players.hash_password` and `accounts.verify_password`, currently `argon2id`. Password and hash are omitted. |
-| [`input.previous_revision`](../src/player_sessions/application/mod.rs) | Expected persisted revision for a Store quote, an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
+| [`input.previous_revision`](../src/accounts/application/garage.rs) | Expected persisted revision for a Store quote, an optimistic account write or its client diff. A stale database revision prevents the proposed write. |
 | [`input.revision`](../src/accounts/application/mod.rs) | Revision of the input snapshot used for catalog preparation or mutation planning. On the Store purchase span, the submitted quote revision. On garage sync, the revision requested by the client. |
 | [`input.changes.count`](../src/player_sessions/application/mod.rs) | Number of incoming account-setting changes in the Player Sessions settings use case or completion, after deduplication by key. |
 | [`input.settings.count`](../src/accounts/application/mod.rs) | Number of settings entries passed to account persistence. |
@@ -257,8 +257,9 @@ meanings on different operations; those differences are listed explicitly.
 | Attribute | Meaning and emission |
 | --- | --- |
 | [`input.resource_dir`](../src/server/mod.rs) | Configured extracted server resource-bundle path loaded at startup. |
-| [`input.pool.max_connections`](../src/server/mod.rs) | Configured maximum PostgreSQL pool connections on `server.connect_database`. |
-| [`input.connections`](../src/accounts/infrastructure/postgres.rs) | Requested maximum PostgreSQL pool connections on `accounts.postgres.connect`. |
+| [`input.pool.max_connections`](../src/server/database.rs) | Configured maximum PostgreSQL pool connections on `server.connect_database`. |
+| [`input.schema`](../src/server/database.rs) | Owning PostgreSQL schema selected for a context's embedded migrations. |
+| [`input.ids.count`](../src/accounts/infrastructure/directory.rs) | Number of account IDs supplied to the published directory lookup. |
 | [`db.system.name`](../src/platform/infrastructure/observability.rs) | Database system, always `postgresql` in the shared database tracing adapter. |
 | [`db.operation.name`](../src/platform/infrastructure/observability.rs) | First SQL statement token, such as `SELECT`, `UPDATE`, `BEGIN`, or `COMMIT`; falls back to `QUERY` for an empty statement. |
 | [`db.query.text`](../src/platform/infrastructure/observability.rs) | Complete executed SQL statement with parameter placeholders. Bind values are not interpolated or serialized. |

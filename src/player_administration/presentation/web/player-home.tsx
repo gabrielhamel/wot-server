@@ -18,8 +18,7 @@ import { errorMessage, responseStatus } from "../../../platform/infrastructure/w
 import { GarageBalances, OwnedTanks } from "./garage/garage-inventory";
 
 const DashboardStore = lazy(async () => ({
-  default: (await import("../../../player_sessions/presentation/store/web/shop-page"))
-    .DashboardStore,
+  default: (await import("../../../player_sessions/web")).DashboardStore,
 }));
 
 const viewTitles = { garage: "My garage", store: "Store", admin: "Admin" };

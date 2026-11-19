@@ -13,7 +13,7 @@ const pages = {
   "/shop": {
     owner: "player_sessions",
     title: "Garage Store",
-    load: () => import("../../../player_sessions/presentation/store/web/shop-page"),
+    load: () => import("../../../player_sessions/web"),
   },
 } as const;
 

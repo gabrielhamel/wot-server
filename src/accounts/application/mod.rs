@@ -1,3 +1,4 @@
+pub(super) mod garage;
 pub(super) mod players;
 pub use players::{
     CreatePlayerError, PlayerAccessRepository, PlayerAccounts, PlayerProvision, PlayerRepository,
@@ -33,16 +34,47 @@ pub trait AccountRepository: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = anyhow::Result<i64>> + Send;
 }
 
+/// The session-facing account operations. Garage mutations use GarageCommands.
+#[derive(Clone)]
+pub struct GameAccounts {
+    accounts: Accounts<super::PostgresAccounts>,
+}
+
+impl From<Accounts<super::PostgresAccounts>> for GameAccounts {
+    fn from(accounts: Accounts<super::PostgresAccounts>) -> Self {
+        Self { accounts }
+    }
+}
+
+impl GameAccounts {
+    pub async fn authenticate(
+        &self,
+        login: &str,
+        password: String,
+    ) -> anyhow::Result<Option<AccountSnapshot>> {
+        self.accounts.authenticate(login, password).await
+    }
+
+    pub async fn snapshot(&self, id: i64) -> anyhow::Result<AccountSnapshot> {
+        self.accounts.snapshot(id).await
+    }
+
+    pub async fn change_settings(
+        &self,
+        id: i64,
+        changes: BTreeMap<i32, i32>,
+    ) -> anyhow::Result<AccountSnapshot> {
+        self.accounts.save_settings(id, changes).await?;
+        self.accounts.snapshot(id).await
+    }
+}
+
 #[derive(Clone)]
 pub struct Accounts<R> {
     repository: R,
 }
 
 impl<R: AccountRepository> Accounts<R> {
-    pub fn repository(&self) -> &R {
-        &self.repository
-    }
-
     pub fn new(repository: R) -> Self {
         Self { repository }
     }
@@ -271,3 +303,5 @@ async fn verify_password(password: String, hash: String) -> anyhow::Result<bool>
     }))
     .await?
 }
+
+pub(super) mod inspection;

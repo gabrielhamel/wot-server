@@ -1,3 +1,4 @@
+use crate::accounts::{Accounts, PlayerAccounts, PostgresAccounts, PostgresPlayers};
 use std::{
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -34,10 +35,10 @@ async fn exports_admin_http_request_inputs() {
     let attachment_count = catalog.grantable_attachments().count();
     let tracker_count = catalog.grantable_stat_trackers().count();
     let starter_keys = catalog.tier_one_keys().unwrap();
-    let repository = PostgresAccounts::connect(&url, 2).await.unwrap();
+    let repository = PostgresAccounts::new(crate::server::connect_database(&url, 2).await.unwrap());
     let accounts = Accounts::new(repository.clone());
     let players = PostgresPlayers::new(&repository, catalog.clone()).unwrap();
-    let admin: i64 = sqlx::query_scalar("INSERT INTO accounts(username, display_name, password_hash, role) VALUES ($1, 'Trace test admin', 'unused', 'admin') RETURNING id")
+    let admin: i64 = sqlx::query_scalar("INSERT INTO accounts.accounts(username, display_name, password_hash, role) VALUES ($1, 'Trace test admin', 'unused', 'admin') RETURNING id")
         .bind(format!("trace_admin_{}@example.test", std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()))
         .fetch_one(&repository.connection_pool()).await.unwrap();
     let secret = super::super::application::SessionSecret::parse(
@@ -53,8 +54,8 @@ async fn exports_admin_http_request_inputs() {
     let cookie = format!("wot_admin_session={}", secret.value());
     let (grants, mut queued) = PlayerGrants::channel();
     let service = TowerToHyperService::new(router(
-        players,
-        accounts.clone(),
+        crate::accounts::PlayerAccounts::new(players),
+        accounts.clone().into(),
         catalog,
         grants,
         None,
@@ -267,12 +268,12 @@ async fn exports_admin_http_request_inputs() {
         .authenticate(&username, PASSWORD.into())
         .await
         .unwrap();
-    sqlx::query("DELETE FROM accounts WHERE username = $1")
+    sqlx::query("DELETE FROM accounts.accounts WHERE username = $1")
         .bind(&username)
         .execute(&repository.connection_pool())
         .await
         .unwrap();
-    sqlx::query("DELETE FROM accounts WHERE id = $1")
+    sqlx::query("DELETE FROM accounts.accounts WHERE id = $1")
         .bind(admin)
         .execute(&repository.connection_pool())
         .await
@@ -515,7 +516,7 @@ async fn exports_admin_http_request_inputs() {
         assert!(queries.clone().any(|span| {
             attribute(span, "db.query.text").is_some_and(|statement| {
                 if outcome == "created" {
-                    statement.starts_with("INSERT INTO accounts(")
+                    statement.starts_with("INSERT INTO accounts.accounts(")
                         && statement.contains("credits, gold) SELECT $1, $2, $3, $4, $5, $6")
                 } else {
                     statement.contains("lower(username) = lower($1)")
@@ -594,17 +595,24 @@ async fn exports_admin_http_access_lifecycle() {
     let resources = wot_resources::ResourceBundle::open(Path::new(&directory)).unwrap();
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[]).unwrap());
     let root_pool = sqlx::PgPool::connect(&url).await.unwrap();
-    let schema = format!(
+    let database = format!(
         "admin_access_{}",
         std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos()
     );
-    sqlx::query(&format!("CREATE SCHEMA {schema}"))
+    sqlx::query(&format!("CREATE DATABASE {database}"))
         .execute(&root_pool)
         .await
         .unwrap();
-    let separator = if url.contains('?') { '&' } else { '?' };
-    let scoped_url = format!("{url}{separator}options[search_path]={schema}");
-    let repository = PostgresAccounts::connect(&scoped_url, 4).await.unwrap();
+    let options = url
+        .parse::<sqlx::postgres::PgConnectOptions>()
+        .unwrap()
+        .database(&database);
+    let scoped_url = sqlx::ConnectOptions::to_url_lossy(&options).to_string();
+    let repository = PostgresAccounts::new(
+        crate::server::connect_database(&scoped_url, 4)
+            .await
+            .unwrap(),
+    );
     let mut gateway = crate::player_sessions::Gateway::bind(
         crate::player_sessions::GatewayConfig {
             training_room_visible: false,
@@ -617,7 +625,12 @@ async fn exports_admin_http_access_lifecycle() {
         },
         &resources,
         catalog.clone(),
-        Accounts::new(repository.clone()),
+        Accounts::new(repository.clone()).into(),
+        crate::accounts::GarageWrites::new(Accounts::new(repository.clone()), catalog.clone()),
+        crate::social::postgres::service(
+            repository.connection_pool(),
+            crate::accounts::postgres::directory(repository.connection_pool()),
+        ),
         tokio::runtime::Handle::current(),
     )
     .unwrap();
@@ -627,8 +640,10 @@ async fn exports_admin_http_access_lifecycle() {
     let grants = gateway.player_grants();
     let build_router = |repository: &PostgresAccounts| {
         TowerToHyperService::new(router(
-            PostgresPlayers::new(repository, catalog.clone()).unwrap(),
-            Accounts::new(repository.clone()),
+            crate::accounts::PlayerAccounts::new(
+                PostgresPlayers::new(repository, catalog.clone()).unwrap(),
+            ),
+            Accounts::new(repository.clone()).into(),
             catalog.clone(),
             grants.clone(),
             Some(store.clone()),
@@ -761,14 +776,18 @@ async fn exports_admin_http_access_lifecycle() {
         cookie.split(';').next().unwrap().to_owned()
     };
     let owner_cookie = session_cookie(send("POST", "/session", "", first_login).await.unwrap());
-    let restarted = PostgresAccounts::connect(&scoped_url, 2).await.unwrap();
+    let restarted = PostgresAccounts::new(
+        crate::server::connect_database(&scoped_url, 2)
+            .await
+            .unwrap(),
+    );
     let persisted = build_router(&restarted)
         .call(request("GET", "/session", &owner_cookie, ""))
         .await
         .unwrap();
     assert_eq!(json(persisted).await["player"], owner);
     let remaining: f64 = sqlx::query_scalar(
-        "SELECT extract(epoch FROM expires_at - now())::float8 FROM web_sessions",
+        "SELECT extract(epoch FROM expires_at - now())::float8 FROM accounts.web_sessions",
     )
     .fetch_one(&repository.connection_pool())
     .await
@@ -1170,10 +1189,11 @@ async fn exports_admin_http_access_lifecycle() {
             .status(),
         204
     );
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM accounts WHERE role = 'admin'")
-        .fetch_one(&repository.connection_pool())
-        .await
-        .unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM accounts.accounts WHERE role = 'admin'")
+            .fetch_one(&repository.connection_pool())
+            .await
+            .unwrap();
     assert_eq!(count, 1);
     assert_eq!(
         send("POST", revoked_role, active_cookie, r#"{"role":"admin"}"#)
@@ -1210,7 +1230,7 @@ async fn exports_admin_http_access_lifecycle() {
         "signed_out"
     );
     let expired_cookie = session_cookie(send("POST", "/session", "", first_login).await.unwrap());
-    sqlx::query("UPDATE web_sessions SET expires_at = now() - interval '1 second'")
+    sqlx::query("UPDATE accounts.web_sessions SET expires_at = now() - interval '1 second'")
         .execute(&repository.connection_pool())
         .await
         .unwrap();
@@ -1244,7 +1264,7 @@ async fn exports_admin_http_access_lifecycle() {
             .status(),
         401
     );
-    sqlx::query("UPDATE accounts SET role = 'player'")
+    sqlx::query("UPDATE accounts.accounts SET role = 'player'")
         .execute(&repository.connection_pool())
         .await
         .unwrap();
@@ -1314,7 +1334,7 @@ async fn exports_admin_http_access_lifecycle() {
                 attribute(handler, "output.delivery").as_deref(),
                 Some("on_next_sync")
             );
-            let commit = child(gateway, "player_sessions.commit_progression");
+            let commit = child(gateway, "accounts.garage.commit_progression");
             let save = child(
                 child(commit, "accounts.save_progression"),
                 "accounts.postgres.save_progression",
@@ -1332,7 +1352,7 @@ async fn exports_admin_http_access_lifecycle() {
             ));
             assert!(!spans.iter().any(|span| {
                 span.parent_span_id == gateway.span_context.span_id()
-                    && span.name == "player_sessions.commit_progression"
+                    && span.name == "accounts.garage.commit_progression"
             }));
         }
     }
@@ -1384,7 +1404,7 @@ async fn exports_admin_http_access_lifecycle() {
             child(purchase, "accounts.store.plan_purchase");
             let completion = child(purchase, "player_sessions.store.complete_purchase");
             if outcome == "success" {
-                let commit = child(purchase, "player_sessions.commit_progression");
+                let commit = child(purchase, "accounts.garage.commit_progression");
                 let save = child(
                     child(commit, "accounts.save_progression"),
                     "accounts.postgres.save_progression",
@@ -1521,7 +1541,7 @@ async fn exports_admin_http_access_lifecycle() {
     ] {
         assert!(!exported.contains(excluded));
     }
-    sqlx::query(&format!("DROP SCHEMA {schema} CASCADE"))
+    sqlx::query(&format!("DROP DATABASE {database} WITH (FORCE)"))
         .execute(&root_pool)
         .await
         .unwrap();

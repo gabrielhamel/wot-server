@@ -32,3 +32,7 @@ contract.
 Player Administration continues the browser trace through HTTP handlers,
 Accounts operations and PostgreSQL. The grant and Store queues preserve the HTTP parent
 through gateway execution and response. See the [telemetry contract](../../docs/telemetry.md).
+
+Player Administration uses the Accounts contract for player access, garage
+inspection and grant catalogs. The Player Sessions contract coordinates grant
+and purchase delivery. Player Administration has no database schema of its own.

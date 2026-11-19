@@ -3,7 +3,7 @@ use super::{
     schema::{Account, AccountBase, AccountData, ServerStats},
 };
 use crate::{
-    accounts::{Accounts, GarageCatalog, PostgresAccounts, PreparedAccount},
+    accounts::contract::{GameAccounts, GarageCatalog, GarageCommands, PreparedAccount},
     player_sessions::domain::Admissions,
 };
 use anyhow::{Context, Result};
@@ -25,7 +25,7 @@ mod sockets;
 mod store;
 mod training;
 use crate::player_sessions::application::store::StoreToken;
-use crate::social::{Contact, Conversations, Player, PostgresSocial, Social};
+use crate::social::contract::{Contact, Conversations, Player, SocialService};
 use admission::{DeferredLogin, LoginAttempt};
 
 use crate::platform::client_formats::pickle::{self, Value};
@@ -93,7 +93,7 @@ struct Session {
     crew_queue: VecDeque<crew::QueuedCrewCommand>,
     social_pending: bool,
     social_ready: bool,
-    social_budget: crate::social::RequestBudget,
+    social_budget: crate::social::contract::RequestBudget,
     contacts: Vec<Contact>,
     social_next: Instant,
     message_next: Instant,
@@ -139,13 +139,14 @@ enum Completion {
 
 pub struct Gateway {
     xmpp: super::xmpp::XmppServer,
-    social: Social<PostgresSocial>,
+    social: SocialService,
     conversations: Conversations,
     login: login::App,
     base: base::App,
     config: GatewayConfig,
     catalog: Arc<GarageCatalog>,
-    accounts: crate::player_sessions::application::ClientAccounts<PostgresAccounts>,
+    accounts: crate::player_sessions::application::ClientAccounts,
+    garage: GarageCommands,
     admissions: Admissions,
     deferred_logins: HashMap<SocketAddr, DeferredLogin>,
     tickets: HashMap<u32, Ticket>,
@@ -168,7 +169,9 @@ impl Gateway {
         config: GatewayConfig,
         resources: &ResourceBundle,
         catalog: Arc<GarageCatalog>,
-        accounts: Accounts<PostgresAccounts>,
+        accounts: GameAccounts,
+        garage: GarageCommands,
+        social: SocialService,
         runtime: Handle,
     ) -> Result<Self> {
         anyhow::ensure!(
@@ -203,7 +206,6 @@ impl Gateway {
         let workers = Arc::new(Semaphore::new(config.max_pending));
         let (grant_handle, grants) = crate::player_sessions::PlayerGrants::channel();
         let admissions = Admissions::new(config.max_pending);
-        let social = Social::new(PostgresSocial::new(accounts.repository().connection_pool()));
         let xmpp = super::xmpp::XmppServer::from_listener(
             xmpp_listener,
             social.clone(),
@@ -218,6 +220,7 @@ impl Gateway {
             login,
             base,
             config,
+            garage,
             catalog,
             accounts: crate::player_sessions::application::ClientAccounts::new(accounts),
             admissions,

@@ -1,4 +1,4 @@
-use crate::accounts::{PlayerAccessRepository, PlayerAccounts, is_player_login};
+use crate::accounts::contract::{PlayerAccess, is_player_login};
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
@@ -33,8 +33,8 @@ impl SessionSecret {
 }
 
 #[tracing::instrument(name = "admin.verify_credentials", skip_all, fields(ddd.bounded_context.name = "player_administration", input.username.bytes = login.len(), output.outcome = tracing::field::Empty, user.id = tracing::field::Empty), err)]
-pub(super) async fn sign_in<R: PlayerAccessRepository>(
-    players: &PlayerAccounts<R>,
+pub(super) async fn sign_in(
+    players: &PlayerAccess,
     login: &str,
     password: String,
 ) -> anyhow::Result<Option<SessionSecret>> {

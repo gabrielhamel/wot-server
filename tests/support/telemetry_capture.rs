@@ -273,7 +273,7 @@ pub fn assert_equipment_traces(account: i64) {
             }));
         }
         if payout.is_some() || upgrade_result.is_some() {
-            let commit = child(gateway, "player_sessions.commit_progression");
+            let commit = child(gateway, "accounts.garage.commit_progression");
             let save = child(commit, "accounts.save_progression");
             let repository = child(save, "accounts.postgres.save_progression");
             assert!(spans.iter().any(|span| {
@@ -297,7 +297,7 @@ pub fn assert_equipment_traces(account: i64) {
             assert!(has(completion, "output.outcome", "rejected"));
             assert!(has(response, "output.response_code", "-1"));
             assert!(!spans.iter().any(|span| {
-                span.name == "postgresql.query"
+                span.name == "accounts.postgres.save_progression"
                     && span.span_context.trace_id() == root.span_context.trace_id()
             }));
         }
@@ -393,9 +393,9 @@ pub fn assert_operation_traces(account: i64, research_account: i64) {
                         && has(span, "ddd.bounded_context.name", "player_sessions")
                         && descendant(span, root)
                 })
-                && spans
-                    .iter()
-                    .any(|span| span.name == "postgresql.query" && descendant(span, root))
+                && spans.iter().any(|span| {
+                    span.name == "accounts.postgres.save_progression" && descendant(span, root)
+                })
         })
         .expect("command trace must include queued persistence and response");
     assert_eq!(
@@ -507,10 +507,14 @@ pub fn assert_operation_traces(account: i64, research_account: i64) {
             && span.parent_span_id == action.span_context.span_id()
             && has(span, "output.response_code", code)
             && has(span, "output.delivery", "sent")));
-        assert!(
-            !spans
-                .iter()
-                .any(|span| span.name == "postgresql.query" && descendant(span, root))
+        assert!(!spans.iter().any(|span| {
+            span.name == "accounts.postgres.save_ammunition" && descendant(span, root)
+        }));
+        assert_eq!(
+            spans.iter().any(|span| {
+                span.name == "accounts.postgres.snapshot" && descendant(span, root)
+            }),
+            outcome == "unchanged"
         );
     }
 
@@ -585,16 +589,33 @@ pub fn assert_operation_traces(account: i64, research_account: i64) {
             && has(
                 span,
                 "db.query.text",
-                "INSERT INTO private_messages(conversation_id,sender_id,body) VALUES($1,$2,$3)",
+                "INSERT INTO social.private_messages(conversation_id,sender_id,body) VALUES($1,$2,$3)",
             )
             && has(span, "db.system.name", "postgresql")
     }));
-    assert!(
-        spans
-            .iter()
-            .any(|span| span.name == "social.conversations.send_message"
-                && descendant(span, message))
-    );
+    let send = spans
+        .iter()
+        .find(|span| span.name == "social.conversations.send_message" && descendant(span, message))
+        .expect("Social must persist the message under the incoming request");
+    let directory = spans
+        .iter()
+        .find(|span| {
+            span.name == "accounts.directory.find"
+                && span.parent_span_id == send.span_context.span_id()
+                && has(span, "ddd.bounded_context.name", "accounts")
+                && has(span, "input.ids.count", "2")
+        })
+        .expect("Social must resolve both participants through Accounts");
+    assert!(spans.iter().any(|span| {
+        span.name == "postgresql.query"
+            && span.parent_span_id == directory.span_context.span_id()
+            && has(span, "ddd.bounded_context.name", "accounts")
+            && has(
+                span,
+                "db.query.text",
+                "SELECT id, display_name FROM accounts.accounts WHERE id = ANY($1)",
+            )
+    }));
     assert!(
         spans
             .iter()
@@ -610,7 +631,8 @@ pub fn assert_operation_traces(account: i64, research_account: i64) {
 
 pub async fn assert_database_failure(url: &str) {
     use wot_server::accounts::{AccountRepository, PostgresAccounts};
-    let repository = PostgresAccounts::connect(url, 1).await.unwrap();
+    let repository =
+        PostgresAccounts::new(wot_server::server::connect_database(url, 1).await.unwrap());
     repository.connection_pool().close().await;
     let before = exporter().get_finished_spans().unwrap().len();
     assert!(repository.snapshot(-1).await.is_err());

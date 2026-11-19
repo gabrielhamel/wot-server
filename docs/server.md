@@ -72,9 +72,22 @@ Passwords use salted Argon2id hashes. The Compose DB port is bound to loopback.
 The PostgreSQL volume survives `docker compose down`. The `--volumes` flag
 deletes it. Ctrl-C gracefully stops the gateway.
 
-The migration `migrations/0001_initial_schema.sql` creates the complete database
-schema. Start with an empty PostgreSQL database; the server applies the migration
-automatically and tracks it in `_sqlx_migrations`.
+The server uses one PostgreSQL database and one connection pool. Accounts and
+Social run their own embedded SQLx migrations and track them in
+`accounts._sqlx_migrations` and `social._sqlx_migrations`. A new installation
+runs those migrations directly. An existing installation with legacy SQLx
+history first runs the upgrade in [legacy migrations](../migrations/), which
+moves tables and their sequences into their owning schemas and removes the
+cross-context view and foreign keys. Run the upgrade with a role that owns
+the existing tables and can create schemas in the database. Stop the previous
+server binary before upgrading an existing database because it uses the old
+table locations.
+
+The schema and migration owners are [Accounts](../src/accounts/README.md) and
+[Social](../src/social/README.md). Player Administration and Player Sessions
+consume their application contracts. Social stores numeric player IDs and
+resolves them through the Accounts directory API. An account removed directly
+from the database no longer cascades into Social storage.
 
 ### Logging and telemetry
 

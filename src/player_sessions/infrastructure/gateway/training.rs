@@ -130,7 +130,7 @@ impl HostedRoom {
         &self,
         base: &mut base::App,
         entity: EntityKey<Account>,
-        snapshot: &crate::accounts::AccountSnapshot,
+        snapshot: &crate::accounts::contract::AccountSnapshot,
     ) -> Result<()> {
         let name = snapshot.display_name.as_str();
         let account_id = snapshot.id;
@@ -160,7 +160,7 @@ impl HostedRoom {
     fn roster_snapshot(
         &self,
         entity: EntityKey<Account>,
-        snapshot: &crate::accounts::AccountSnapshot,
+        snapshot: &crate::accounts::contract::AccountSnapshot,
         slot: RosterSlot,
     ) -> Pickle {
         let player_entity = entity.id().0;

@@ -846,7 +846,7 @@ pub fn assert_traces(account: i64, fixtures: CosmeticFixtures) {
                         .any(|a| a.key.as_str() == "db.query.text")
             }));
         } else {
-            assert!(child("postgresql.query").is_none());
+            assert!(child("accounts.postgres.save_progression").is_none());
         }
         if outcome == "rejected" {
             assert_eq!(decision.status, opentelemetry::trace::Status::error(""));
@@ -913,7 +913,7 @@ fn assert_cosmetic_grant_trace(
     let write = in_trace("accounts.postgres.save_progression");
     let save = in_trace("accounts.save_progression");
     assert_eq!(write.parent_span_id, save.span_context.span_id());
-    let commit = in_trace("player_sessions.commit_progression");
+    let commit = in_trace("accounts.garage.commit_progression");
     assert_eq!(save.parent_span_id, commit.span_context.span_id());
     assert_eq!(commit.parent_span_id, gateway.span_context.span_id());
     assert!(spans.iter().any(|span| {

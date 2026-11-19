@@ -8,8 +8,8 @@ mod registration;
 mod request_traces;
 
 use crate::{
-    accounts::{Accounts, GarageCatalog, PlayerAccounts, PostgresAccounts, PostgresPlayers},
-    player_sessions::{PlayerGrants, StoreRequests, dashboard_store_router},
+    accounts::contract::{GameAccounts, GarageCatalog, PlayerAccess},
+    player_sessions::contract::{PlayerGrants, StoreRequests, dashboard_store_router},
 };
 use axum::{
     Router,
@@ -28,11 +28,11 @@ use tracing::Instrument;
 
 #[derive(Clone)]
 struct AdminState {
-    accounts: PlayerAccounts<PostgresPlayers>,
+    accounts: PlayerAccess,
     secure_cookies: bool,
     store_enabled: bool,
     sign_in_slots: Arc<Semaphore>,
-    garage_accounts: Accounts<PostgresAccounts>,
+    garage_accounts: GameAccounts,
     catalog: Arc<GarageCatalog>,
     grants: PlayerGrants,
     create_slots: Arc<Semaphore>,
@@ -43,8 +43,8 @@ struct AdminState {
 struct RequestSpan(tracing::Span);
 
 pub(crate) fn router(
-    players: PostgresPlayers,
-    garage_accounts: Accounts<PostgresAccounts>,
+    players: PlayerAccess,
+    garage_accounts: GameAccounts,
     catalog: Arc<GarageCatalog>,
     grants: PlayerGrants,
     store: Option<StoreRequests>,
@@ -52,7 +52,7 @@ pub(crate) fn router(
     trusted_proxies: Vec<IpAddr>,
 ) -> Router {
     let state = AdminState {
-        accounts: PlayerAccounts::new(players),
+        accounts: players,
         secure_cookies,
         store_enabled: store.is_some(),
         garage_accounts,

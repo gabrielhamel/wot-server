@@ -23,7 +23,8 @@ mod shop;
 mod starter_garage;
 mod store;
 pub use store::{
-    StoreAvailability, StoreCategory, StoreOffer, StoreOrder, StoreOrderError, StorePrice,
+    StoreAvailability, StoreCatalog, StoreCategory, StoreOffer, StoreOrder, StoreOrderError,
+    StorePrice,
 };
 mod supply_slots;
 mod vehicle_defs;

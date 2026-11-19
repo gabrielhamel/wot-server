@@ -67,7 +67,7 @@ pub enum CreatePlayerError {
 }
 
 impl CreatePlayerError {
-    pub(crate) fn outcome(&self) -> &'static str {
+    pub fn outcome(&self) -> &'static str {
         match self {
             Self::Duplicate => "duplicate_login",
             Self::DuplicateDisplayName => "duplicate_username",

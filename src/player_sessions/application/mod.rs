@@ -1,18 +1,16 @@
-use crate::accounts::{
-    AccountRepository, AccountSnapshot, Accounts, AmmunitionChange, ProgressionChange,
-};
+use crate::accounts::contract::{AccountSnapshot, GameAccounts};
 use std::collections::BTreeMap;
 pub(crate) mod grants;
 pub(crate) mod store;
 pub use grants::{GrantDelivery, GrantRequestError, PlayerGrants};
 
 #[derive(Clone)]
-pub struct ClientAccounts<R> {
-    accounts: Accounts<R>,
+pub struct ClientAccounts {
+    accounts: GameAccounts,
 }
 
-impl<R: AccountRepository> ClientAccounts<R> {
-    pub fn new(accounts: Accounts<R>) -> Self {
+impl ClientAccounts {
+    pub fn new(accounts: GameAccounts) -> Self {
         Self { accounts }
     }
 
@@ -32,16 +30,6 @@ impl<R: AccountRepository> ClientAccounts<R> {
         self.accounts.authenticate(username, password).await
     }
 
-    #[tracing::instrument(name = "player_sessions.commit_progression", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
-    pub async fn commit_progression(&self, change: &ProgressionChange) -> anyhow::Result<bool> {
-        self.accounts.save_progression(change).await
-    }
-
-    #[tracing::instrument(name = "player_sessions.commit_ammunition", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = change.snapshot.id, input.previous_revision = change.previous_revision), err)]
-    pub async fn commit_ammunition(&self, change: &AmmunitionChange) -> anyhow::Result<bool> {
-        self.accounts.save_ammunition(change).await
-    }
-
     #[tracing::instrument(name = "player_sessions.snapshot", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.id = id), err)]
     pub async fn snapshot(&self, id: i64) -> anyhow::Result<AccountSnapshot> {
         self.accounts.snapshot(id).await
@@ -53,7 +41,6 @@ impl<R: AccountRepository> ClientAccounts<R> {
         id: i64,
         changes: BTreeMap<i32, i32>,
     ) -> anyhow::Result<AccountSnapshot> {
-        self.accounts.save_settings(id, changes).await?;
-        self.accounts.snapshot(id).await
+        self.accounts.change_settings(id, changes).await
     }
 }

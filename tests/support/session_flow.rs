@@ -46,7 +46,8 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
     let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
     let directory = std::env::var("WG_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&directory)).unwrap();
-    let repository = PostgresAccounts::connect(&url, 6).await.unwrap();
+    let repository =
+        PostgresAccounts::new(wot_server::server::connect_database(&url, 6).await.unwrap());
     let pool = repository.connection_pool();
     let username = format!(
         "takeover_{}",
@@ -77,8 +78,13 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
             max_pending: 4,
         },
         &resources,
-        catalog,
-        Accounts::new(repository),
+        catalog.clone(),
+        Accounts::new(repository.clone()).into(),
+        wot_server::accounts::GarageWrites::new(Accounts::new(repository.clone()), catalog.clone()),
+        wot_server::social::postgres::service(
+            repository.connection_pool(),
+            wot_server::accounts::postgres::directory(repository.connection_pool()),
+        ),
         tokio::runtime::Handle::current(),
     )
     .unwrap();
@@ -92,7 +98,7 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
         .fetch_one(&mut *lock)
         .await
         .unwrap();
-    sqlx::query("SELECT id FROM accounts WHERE id = $1 FOR UPDATE")
+    sqlx::query("SELECT id FROM accounts.accounts WHERE id = $1 FOR UPDATE")
         .bind(account_id)
         .execute(&mut *lock)
         .await
@@ -164,7 +170,7 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
     let result = exercise.await;
     stop.store(true, Ordering::Relaxed);
     worker.await.unwrap().unwrap();
-    sqlx::query("DELETE FROM accounts WHERE id=$1")
+    sqlx::query("DELETE FROM accounts.accounts WHERE id=$1")
         .bind(account_id)
         .execute(&pool)
         .await

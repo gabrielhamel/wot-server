@@ -1,5 +1,5 @@
 use super::{DOMAIN, Online, Outbound, RESOURCE, Shared};
-use crate::social::{
+use crate::social::contract::{
     ChatMessage, ContactChange, Friendship, FriendshipAction, Player, PrivateConversationBlocked,
     RequestBudget,
 };

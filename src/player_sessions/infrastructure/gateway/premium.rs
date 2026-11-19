@@ -2,14 +2,12 @@ use super::{Account, ClientKey, EntityKey, GarageCatalog, Gateway, Pickle};
 
 impl Gateway {
     pub(super) fn expire_premium(&mut self) {
-        let now = crate::accounts::unix_now();
         for (client, session) in &mut self.sessions {
             let snapshot = &session.account.snapshot;
-            let expiry = snapshot.progression.premium_expires_at;
-            if expiry == 0
-                || u64::from(expiry) > now
-                || session.reported_premium_expiry == Some(expiry)
-            {
+            let Some(expiry) = snapshot.expired_premium_at() else {
+                continue;
+            };
+            if session.reported_premium_expiry == Some(expiry) {
                 continue;
             }
             if let Some(entity) = session.entity.filter(|_| session.garage_synced) {

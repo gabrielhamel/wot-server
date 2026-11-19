@@ -157,11 +157,11 @@ To inspect the result:
 
 ```sql
 SELECT id, credits, gold, free_xp, jsonb_pretty(progression)
-FROM accounts
+FROM accounts.accounts
 WHERE id = YOUR_ACCOUNT_ID;
 
 SELECT inventory_id, catalog_key, has_crew, ammunition
-FROM owned_vehicles
+FROM accounts.owned_vehicles
 WHERE account_id = YOUR_ACCOUNT_ID
 ORDER BY inventory_id;
 ```

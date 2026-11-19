@@ -1,6 +1,6 @@
 use super::{Account, ClientKey, EntityKey, FAILURE, Gateway, Pickle, PreparedAccount, SUCCESS};
 use crate::{
-    accounts::{AmmoError, ShellSelection},
+    accounts::contract::{AmmoError, GarageWrite, ShellSelection},
     platform::client_formats::pickle::Value,
 };
 
@@ -122,52 +122,28 @@ impl Gateway {
                 .onCmdResponse(request_id, BUSY, "accountBusy".into())?;
             return Ok(());
         };
-        let previous = session.account.snapshot.clone();
-        let account_id = previous.id;
+        let revision = session.account.snapshot.revision;
+        let account_id = session.account.snapshot.id;
         span.record("output.outcome", "queued");
         session.saving = true;
         self.pending_writes.insert(account_id);
-        let catalog = self.catalog.clone();
-        let accounts = self.accounts.clone();
+        let garage = self.garage.clone();
         let sender = self.sender.clone();
         self.runtime
             .spawn(tracing::Instrument::in_current_span(async move {
-                let result = async {
-                    let projection = tokio::task::spawn_blocking(
-                        crate::platform::observability::in_current_span(move || {
-                            let change = match catalog.plan_ammunition(
-                                previous.clone(),
-                                request.inventory_id,
-                                &request.shells,
-                            ) {
-                                Ok(change) => change,
-                                Err(error) => return Ok(Err(error)),
-                            };
-                            if !change.changed() {
-                                return Ok(Ok(None));
-                            }
-                            let diff = catalog.ammunition_diff(&previous, &change)?;
-                            let prepared = catalog.prepare(change.snapshot.clone())?;
-                            let receipt = catalog.ammunition_response(&change);
-                            Ok::<_, anyhow::Error>(Ok(Some((change, prepared, diff, receipt))))
-                        }),
-                    )
-                    .await??;
-                    let (change, prepared, diff, receipt) = match projection {
-                        Ok(Some(values)) => values,
-                        Ok(None) => return Ok(Outcome::Unchanged),
-                        Err(error) => return Ok(Outcome::Rejected(error)),
-                    };
-                    if !accounts.commit_ammunition(&change).await? {
-                        return Ok(Outcome::StaleAccount);
-                    }
-                    Ok(Outcome::Committed {
-                        prepared: Box::new(prepared),
-                        diff,
-                        receipt,
-                    })
-                }
-                .await;
+                let result = garage
+                    .change_ammunition(account_id, revision, request.inventory_id, request.shells)
+                    .await
+                    .map(|outcome| match outcome {
+                        GarageWrite::Unchanged => Outcome::Unchanged,
+                        GarageWrite::Rejected(error) => Outcome::Rejected(error),
+                        GarageWrite::Stale => Outcome::StaleAccount,
+                        GarageWrite::Committed { change, receipt } => Outcome::Committed {
+                            prepared: Box::new(change.prepared),
+                            diff: change.diff,
+                            receipt,
+                        },
+                    });
                 // Hold the worker permit until the completion is queued, even after disconnect.
                 tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
                     move || {

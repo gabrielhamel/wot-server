@@ -1,5 +1,11 @@
 fn main() {
-    println!("cargo:rerun-if-changed=migrations");
+    for path in [
+        "migrations",
+        "src/accounts/infrastructure/migrations",
+        "src/social/infrastructure/migrations",
+    ] {
+        println!("cargo:rerun-if-changed={path}");
+    }
     println!("cargo:rerun-if-env-changed=WOT_SERVER_VERSION");
     println!("cargo:rerun-if-env-changed=WOT_GAME_VERSION");
     for name in ["WOT_SERVER_VERSION", "WOT_GAME_VERSION"] {

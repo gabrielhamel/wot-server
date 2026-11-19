@@ -1,6 +1,6 @@
 use super::{Account, ClientKey, EntityKey, Gateway};
 use crate::{
-    accounts::{
+    accounts::contract::{
         CosmeticChange, MAX_COSMETIC_PURCHASE_LINES, ProgressionCommand, cosmetic_item,
         decode_outfits,
     },

@@ -1,7 +1,7 @@
 use super::*;
 use crate::player_sessions::infrastructure::schema::{ChatActionData, MessengerArgs};
 use crate::player_sessions::mercury::app::entity::{Bytes, EntityId};
-use crate::social::{ContactChange, Conversation};
+use crate::social::contract::{ContactChange, Conversation};
 
 mod command {
     pub const ADD_FRIEND: u8 = 3;

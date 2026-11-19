@@ -2,7 +2,7 @@ use super::{
     AdminState, RequestSpan,
     players::{ApiError, PlayerRecord, creation_error},
 };
-use crate::accounts::{NewPlayer, RegistrationError, is_registration_username};
+use crate::accounts::contract::{NewPlayer, RegistrationError, is_registration_username};
 use axum::{
     Extension, Json,
     extract::{State, rejection::JsonRejection},
@@ -15,7 +15,8 @@ use tracing::Instrument;
 #[serde(deny_unknown_fields)]
 pub(super) struct RegistrationRequest {
     email: String,
-    username: String,
+    #[serde(rename = "username")]
+    display_name: String,
     password: String,
     confirm_password: String,
 }
@@ -23,7 +24,8 @@ pub(super) struct RegistrationRequest {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct UsernameRequest {
-    username: String,
+    #[serde(rename = "username")]
+    display_name: String,
 }
 
 #[derive(Serialize)]
@@ -56,8 +58,8 @@ pub(super) async fn check_username(
     let Json(body) =
         body.map_err(|error| ApiError::new(error.status(), "Send a username as JSON."))?;
     let span = tracing::Span::current();
-    span.record("input.username.bytes", body.username.len());
-    if !is_registration_username(&body.username) {
+    span.record("input.username.bytes", body.display_name.len());
+    if !is_registration_username(&body.display_name) {
         return Err(registration_error(
             RegistrationError::Username,
             "email",
@@ -73,7 +75,7 @@ pub(super) async fn check_username(
     require_registration(&state).await?;
     let available = state
         .accounts
-        .registration_name_available(&body.username)
+        .registration_name_available(&body.display_name)
         .await
         .map_err(ApiError::internal)?;
     span.record("output.username.available", available);
@@ -94,7 +96,7 @@ pub(super) async fn register(
     })?;
     let span = tracing::Span::current();
     for current in [&span, &request_span] {
-        current.record("input.username.bytes", body.username.len());
+        current.record("input.username.bytes", body.display_name.len());
         current.record("input.email.bytes", body.email.len());
     }
     let permit = state
@@ -110,7 +112,7 @@ pub(super) async fn register(
     require_registration(&state).await?;
     let player = NewPlayer::from_registration(
         body.email,
-        body.username,
+        body.display_name,
         body.password,
         &body.confirm_password,
     )

@@ -18,6 +18,11 @@ pub(crate) const PREMIUM_PACKAGES: [(i32, i64); 8] = [
 ];
 
 impl AccountSnapshot {
+    pub fn expired_premium_at(&self) -> Option<u32> {
+        let expiry = self.progression.premium_expires_at;
+        (expiry != 0 && u64::from(expiry) <= unix_now()).then_some(expiry)
+    }
+
     pub fn active_premium_until(&self) -> Option<u32> {
         let expiry = self.progression.premium_expires_at;
         (u64::from(expiry) > unix_now()).then_some(expiry)

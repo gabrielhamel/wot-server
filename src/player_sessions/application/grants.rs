@@ -1,4 +1,4 @@
-use crate::accounts::{AccountSnapshot, GrantError, PlayerGrant};
+use crate::accounts::contract::{AccountSnapshot, GrantError, PlayerGrant};
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

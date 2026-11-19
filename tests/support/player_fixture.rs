@@ -19,7 +19,7 @@ pub async fn insert_player(
     let pool = repository.connection_pool();
     let mut tx = pool.begin().await?;
     let id = sqlx::query_scalar(
-        "INSERT INTO accounts(username, display_name, password_hash) VALUES($1,$2,$3) RETURNING id",
+        "INSERT INTO accounts.accounts(username, display_name, password_hash) VALUES($1,$2,$3) RETURNING id",
     )
     .bind(username)
     .bind(display_name)
@@ -28,7 +28,7 @@ pub async fn insert_player(
     .await?;
     for (index, key) in vehicles.iter().enumerate() {
         sqlx::query(
-            "INSERT INTO owned_vehicles(account_id, inventory_id, catalog_key) VALUES($1,$2,$3)",
+            "INSERT INTO accounts.owned_vehicles(account_id, inventory_id, catalog_key) VALUES($1,$2,$3)",
         )
         .bind(id)
         .bind(i64::try_from(index)? + 1)

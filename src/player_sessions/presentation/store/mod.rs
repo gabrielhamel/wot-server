@@ -1,5 +1,5 @@
 use crate::{
-    accounts::{ProgressionError, StoreOrder, StoreOrderError, StorePrice},
+    accounts::contract::{ProgressionError, StoreOrder, StoreOrderError, StorePrice},
     player_sessions::application::store::{StoreCustomer, StoreError, StoreRequests, StoreToken},
 };
 use axum::{

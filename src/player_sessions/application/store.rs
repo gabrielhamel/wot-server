@@ -1,4 +1,4 @@
-use crate::accounts::{StoreAvailability, StoreOffer, StoreOrder, StoreOrderError};
+use crate::accounts::contract::{StoreCatalog, StoreOrder, StoreOrderError};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rsa::rand_core::{OsRng, RngCore};
 use subtle::ConstantTimeEq;
@@ -31,21 +31,6 @@ impl StoreToken {
     pub fn matches(&self, other: &Self) -> bool {
         bool::from(self.0.ct_eq(&other.0))
     }
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct StoreCatalog {
-    pub revision: String,
-    pub premium_expires_at: Option<u32>,
-    pub offers: Vec<StoreListing>,
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct StoreListing {
-    #[serde(flatten)]
-    pub offer: StoreOffer,
-    pub in_depot: u32,
-    pub availability: StoreAvailability,
 }
 
 #[derive(Debug, thiserror::Error)]

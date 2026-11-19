@@ -1,11 +1,5 @@
-use super::{Gateway, Pickle, PreparedAccount};
-use crate::{platform::client_formats::pickle::Value, player_sessions::GrantDelivery};
-
-pub(super) struct CommittedAccountChange {
-    pub previous_revision: i64,
-    pub prepared: PreparedAccount,
-    pub diff: Value,
-}
+use super::{Gateway, Pickle};
+use crate::{accounts::contract::CommittedGarageChange, player_sessions::GrantDelivery};
 
 impl Gateway {
     pub(super) fn finish_account_write(&mut self, account_id: i64) {
@@ -27,7 +21,7 @@ impl Gateway {
     #[tracing::instrument(name = "player_sessions.publish_account_change", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = change.prepared.snapshot.id, input.previous_revision = change.previous_revision, output.revision = change.prepared.snapshot.revision, output.delivery = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
     pub(super) fn publish_account_change(
         &mut self,
-        change: CommittedAccountChange,
+        change: CommittedGarageChange,
     ) -> GrantDelivery {
         let account_id = change.prepared.snapshot.id;
         let mut delivery = GrantDelivery::OnNextSync;

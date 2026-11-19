@@ -32,13 +32,14 @@ garage catalog from the bundle, and Player Sessions loads its ABI definitions an
 component class metadata.
 
 [Social](src/social/README.md) owns directed contacts and private conversation
-membership, durable history and legacy per-player subscriptions. Accounts publishes a read-only SQL directory; Social owns its contact
-table and consumes that directory through an anti-corruption adapter. Player Sessions
+membership, durable history and legacy per-player subscriptions. Accounts publishes the PlayerDirectory application contract. Social owns its
+PostgreSQL schema and stores numeric account references. Accounts and Social
+run independent SQLx migrations on one shared pool. Player Sessions
 consumes Social application operations and adapts native XMPP, both legacy
 messenger RPC versions, presence and committed participant delivery. See [social protocol](docs/social.md).
 
 [Player Administration](src/player_administration/README.md) authenticates operators and adapts Accounts' player
-listing, bootstrap, provisioning, roles and dashboard sessions to HTTP and the React Admin dashboard. It submits
+listing, bootstrap, provisioning, roles, garage inspection and dashboard sessions to HTTP and the React Admin dashboard. It submits
 currency, vehicle and cosmetic grants through Player Sessions for serialized
 garage updates.
 

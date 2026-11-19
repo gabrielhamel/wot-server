@@ -1,3 +1,4 @@
+mod database;
 use crate::{
     accounts::{Accounts, GarageCatalog, PostgresAccounts, PostgresPlayers},
     platform::http,
@@ -6,11 +7,11 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use clap::Parser;
+pub use database::connect_database;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use tracing::Instrument;
 use wot_resources::ResourceBundle;
 
 mod browser_telemetry;
@@ -65,13 +66,8 @@ async fn serve(config: Configuration) -> Result<()> {
     let shutdown = shutdown_signal().context("Listen for shutdown signals")?;
     let resources = tracing::info_span!("server.load_resources", "ddd.bounded_context.name" = "server", "input.resource_dir" = %config.resource_dir.display())
         .in_scope(|| ResourceBundle::open(&config.resource_dir))?;
-    let repository = PostgresAccounts::connect(&config.database_url, config.db_connections)
-        .instrument(tracing::info_span!(
-            "server.connect_database",
-            "ddd.bounded_context.name" = "server",
-            "input.pool.max_connections" = config.db_connections
-        ))
-        .await?;
+    let pool = connect_database(&config.database_url, config.db_connections).await?;
+    let repository = PostgresAccounts::new(pool.clone());
     let keys = repository.catalog_keys().await?;
     let catalog_resources = resources.clone();
     let catalog = Arc::new(
@@ -87,6 +83,8 @@ async fn serve(config: Configuration) -> Result<()> {
         }))
         .await??;
     let accounts = Accounts::new(repository.clone());
+    let social =
+        crate::social::postgres::service(pool.clone(), crate::accounts::postgres::directory(pool));
     let mut gateway = Gateway::bind(
         GatewayConfig {
             login_bind: config.login_bind,
@@ -99,7 +97,9 @@ async fn serve(config: Configuration) -> Result<()> {
         },
         &resources,
         catalog.clone(),
-        accounts.clone(),
+        accounts.clone().into(),
+        crate::accounts::GarageWrites::new(accounts.clone(), catalog.clone()),
+        social,
         tokio::runtime::Handle::current(),
     )?;
     let (web_stop, web_shutdown) = tokio::sync::oneshot::channel();
@@ -134,13 +134,13 @@ async fn serve(config: Configuration) -> Result<()> {
             let (players, catalog) = tokio::task::spawn_blocking(
                 crate::platform::observability::in_current_span(move || {
                     PostgresPlayers::new(&repository, catalog.clone())
-                        .map(|players| (players, catalog))
+                        .map(|players| (crate::accounts::PlayerAccounts::new(players), catalog))
                 }),
             )
             .await??;
             router = router.merge(player_administration::router(
                 players,
-                accounts,
+                accounts.into(),
                 catalog,
                 gateway.player_grants(),
                 store,

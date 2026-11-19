@@ -39,19 +39,19 @@ ContextMap Server {
     implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage and host-only Training Room RPCs; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "PlayerAccounts API for identity listing, registration, provisioning, roles and web sessions, plus snapshots and the vehicle catalog for player and operator garage views"
+    implementationTechnology = "PlayerAccounts API for identity listing, registration, provisioning, roles and web sessions, plus published garage inspection and grant catalogs"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "Bounded PlayerGrants and StoreRequests APIs coordinate grants and purchases for authenticated dashboard accounts with garage writes and publish committed updates to game sessions"
   }
   Accounts [U,OHS,PL] -> [D,ACL] Social {
-    implementationTechnology = "Read-only account_directory SQL identity projection and account-ID foreign keys; shared SQLx pool"
+    implementationTechnology = "Published PlayerDirectory operations resolve account IDs and display names in the Accounts schema. Social persists scalar IDs in its own schema."
   }
   Social [U,OHS,PL] -> [D,ACL] PlayerSessions {
     implementationTechnology = "Published contacts/search and durable private message APIs adapted to native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Published account application API and immutable snapshots adapted to authenticated sessions, preferences, inventory, progression, Store offer purchases, Premium Account entitlement, garage projections and Training Room vehicle and observer descriptors"
+    implementationTechnology = "Published authentication, preferences and garage operations with revision-checked commits, offer listings and client projections. Sessions orders commands and delivers committed results."
   }
 }
 BoundedContext GameClient {

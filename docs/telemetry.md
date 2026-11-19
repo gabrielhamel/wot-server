@@ -63,7 +63,7 @@ delivery even though they run on separate workers.
           accounts.store.plan_purchase
             accounts.progression.plan_progression
               accounts.equipment.buy
-          player_sessions.commit_progression
+          accounts.garage.commit_progression
             accounts.save_progression
               accounts.postgres.save_progression
                 postgresql.query                  [BEGIN / UPDATE / COMMIT]
@@ -170,7 +170,7 @@ Player Sessions spans retain their own bounded context.
           accounts.prepare
             accounts.project_garage
             accounts.encode_garage
-          player_sessions.commit_progression
+          accounts.garage.commit_progression
             accounts.save_progression
               accounts.postgres.save_progression
                 postgresql.query                  [BEGIN / UPDATE / COMMIT]

@@ -1,8 +1,9 @@
 use super::{Account, ClientKey, EntityKey, FAILURE, Gateway, Pickle, PreparedAccount, SUCCESS};
 use crate::{
-    accounts::{
-        DepotSaleRequest, EquipmentChange, EquipmentUpgradeSource, MAX_DEPOT_SALE_LINES,
-        MAX_EQUIPMENT_SLOTS, ProgressionCommand, ProgressionError, VehicleSaleRequest,
+    accounts::contract::{
+        DepotSaleRequest, EquipmentChange, EquipmentUpgradeSource, GarageWrite,
+        MAX_DEPOT_SALE_LINES, MAX_EQUIPMENT_SLOTS, ProgressionCommand, ProgressionError,
+        VehicleSaleRequest,
     },
     platform::client_formats::pickle::Value,
 };
@@ -103,56 +104,44 @@ impl Gateway {
             return Ok(());
         };
         tracing::Span::current().record("output.outcome", "started");
-        let previous = session.account.snapshot.clone();
-        let account_id = previous.id;
+        let revision = session.account.snapshot.revision;
+        let account_id = session.account.snapshot.id;
         session.saving = true;
         session.crew_running = is_crew;
         self.pending_writes.insert(account_id);
-        let catalog = self.catalog.clone();
-        let accounts = self.accounts.clone();
+        let garage = self.garage.clone();
         let sender = self.sender.clone();
-        self.runtime.spawn(tracing::Instrument::in_current_span(async move {
-            let result = async {
-                let projection = tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
-                    let change = match catalog.plan_progression(previous.clone(), command.clone()) {
-                        Ok(change) => change,
-                        Err(error) => {
-                            tracing::debug!(%error,account_id,"Rejected garage progression command");
-                            return Ok(Err(error));
-                        }
-                    };
-                    if change.snapshot.revision == change.previous_revision {
-                        return Ok(Ok(None));
-                    }
-                    let diff = catalog.progression_diff(&previous, &change)?;
-                    let response = catalog.progression_response(&previous, &change, &command);
-                    let prepared = catalog.prepare(change.snapshot.clone())?;
-                    Ok::<_, anyhow::Error>(Ok(Some((change, prepared, diff, response))))
-                }))
-                .await??;
-                let (change, prepared, diff, response) = match projection {
-                    Ok(Some(values)) => values,
-                    Ok(None) => return Ok(Outcome::Unchanged),
-                    Err(error)=>return Ok(Outcome::Rejected(error)),
-                };
-                if !accounts.commit_progression(&change).await? {
-                    return Ok(Outcome::Stale);
-                }
-                Ok(Outcome::Committed {prepared:Box::new(prepared),diff,response})
-            }
-            .await;
-            tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
-                let _permit = permit;
-                let _ = sender.send(super::TracedCompletion::new(super::Completion::Progression(Completion {
-                    client,
-                    account_id,
-                    request_id,
-                    result,
-                })));
-            }))
-            .await
-            .ok();
-        }));
+        self.runtime
+            .spawn(tracing::Instrument::in_current_span(async move {
+                let result = garage
+                    .change_progression(account_id, revision, command)
+                    .await
+                    .map(|outcome| match outcome {
+                        GarageWrite::Unchanged => Outcome::Unchanged,
+                        GarageWrite::Rejected(error) => Outcome::Rejected(error),
+                        GarageWrite::Stale => Outcome::Stale,
+                        GarageWrite::Committed { change, receipt } => Outcome::Committed {
+                            prepared: Box::new(change.prepared),
+                            diff: change.diff,
+                            response: receipt,
+                        },
+                    });
+                tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
+                    move || {
+                        let _permit = permit;
+                        let _ = sender.send(super::TracedCompletion::new(
+                            super::Completion::Progression(Completion {
+                                client,
+                                account_id,
+                                request_id,
+                                result,
+                            }),
+                        ));
+                    },
+                ))
+                .await
+                .ok();
+            }));
         Ok(())
     }
 
@@ -366,7 +355,9 @@ pub(super) fn equip_devices(command: i16, args: &[i32]) -> Option<ProgressionCom
 }
 
 pub(super) fn buy_vehicle(args: &[i32]) -> Option<ProgressionCommand> {
-    use crate::accounts::{CrewRecruitment, MAX_CONSUMABLE_SLOTS, VehiclePurchaseOptions};
+    use crate::accounts::contract::{
+        CrewRecruitment, MAX_CONSUMABLE_SLOTS, VehiclePurchaseOptions,
+    };
     let &[
         _,
         vehicle,

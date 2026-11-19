@@ -23,7 +23,8 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         &std::env::var("WG_RESOURCE_DIR").unwrap(),
     ))
     .unwrap();
-    let repository = PostgresAccounts::connect(&url, 4).await.unwrap();
+    let repository =
+        PostgresAccounts::new(wot_server::server::connect_database(&url, 4).await.unwrap());
     let accounts = Accounts::new(repository.clone());
     let username = format!(
         "grants_{}@example.test",
@@ -135,8 +136,13 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             max_pending: 4,
         },
         &resources,
-        catalog,
-        accounts.clone(),
+        catalog.clone(),
+        accounts.clone().into(),
+        wot_server::accounts::GarageWrites::new(accounts.clone(), catalog.clone()),
+        wot_server::social::postgres::service(
+            repository.connection_pool(),
+            wot_server::accounts::postgres::directory(repository.connection_pool()),
+        ),
         tokio::runtime::Handle::current(),
     )
     .unwrap();
@@ -270,7 +276,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
     }).await;
     stop.store(true, Ordering::Relaxed);
     worker.await.unwrap().unwrap();
-    sqlx::query("DELETE FROM accounts WHERE id = $1")
+    sqlx::query("DELETE FROM accounts.accounts WHERE id = $1")
         .bind(id)
         .execute(&repository.connection_pool())
         .await

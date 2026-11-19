@@ -78,7 +78,8 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         &std::env::var("WG_RESOURCE_DIR").expect("WG_RESOURCE_DIR"),
     ))
     .unwrap();
-    let repository = PostgresAccounts::connect(&url, 8).await.unwrap();
+    let repository =
+        PostgresAccounts::new(wot_server::server::connect_database(&url, 8).await.unwrap());
     let prefix = format!(
         "test_{}",
         std::time::SystemTime::now()
@@ -189,30 +190,30 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     assert_ne!(a.id, b.id);
     assert_eq!(a.vehicles[0].catalog_key, tank_a);
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
-    sqlx::query("UPDATE accounts SET progression = jsonb_set(progression, '{depot}', $2), equipment_components = 150, bonds = 10000 WHERE id=$1")
+    sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{depot}', $2), equipment_components = 150, bonds = 10000 WHERE id=$1")
         .bind(equipment_account)
         .bind(sqlx::types::Json(equipment_flow::reward_stock()))
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE accounts SET progression = jsonb_set(progression, '{unlocks}', to_jsonb(ARRAY[$2::integer])), free_xp = 1000000 WHERE id=$1")
+    sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{unlocks}', to_jsonb(ARRAY[$2::integer])), free_xp = 1000000 WHERE id=$1")
         .bind(b.id)
         .bind(vehicles_flow::M14_41)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE accounts SET credits=1234 WHERE id=$1")
+    sqlx::query("UPDATE accounts.accounts SET credits=1234 WHERE id=$1")
         .bind(a.id)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE owned_vehicles SET inventory_id=42 WHERE account_id=$1")
+    sqlx::query("UPDATE accounts.owned_vehicles SET inventory_id=42 WHERE account_id=$1")
         .bind(a.id)
         .execute(&pool)
         .await
         .unwrap();
     if has_extension_styles {
-        sqlx::query("INSERT INTO owned_vehicles (account_id, inventory_id, catalog_key) VALUES ($1, 43, 'uk:GB158_Executor')")
+        sqlx::query("INSERT INTO accounts.owned_vehicles (account_id, inventory_id, catalog_key) VALUES ($1, 43, 'uk:GB158_Executor')")
             .bind(a.id)
             .execute(&pool)
             .await
@@ -237,7 +238,8 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     assert_eq!(stored.revision, 3);
     assert_eq!(stored.settings, BTreeMap::from([(10, 20), (11, 21)]));
     assert!(repository.snapshot(b.id).await.unwrap().settings.is_empty());
-    let reconnected = PostgresAccounts::connect(&url, 2).await.unwrap();
+    let reconnected =
+        PostgresAccounts::new(wot_server::server::connect_database(&url, 2).await.unwrap());
     assert_eq!(
         reconnected.snapshot(a.id).await.unwrap().settings,
         stored.settings
@@ -264,7 +266,12 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         },
         &resources,
         catalog.clone(),
-        accounts,
+        accounts.clone().into(),
+        wot_server::accounts::GarageWrites::new(accounts.clone(), catalog.clone()),
+        wot_server::social::postgres::service(
+            repository.connection_pool(),
+            wot_server::accounts::postgres::directory(repository.connection_pool()),
+        ),
         tokio::runtime::Handle::current(),
     )
     .unwrap();
@@ -522,12 +529,11 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             camouflage_flow::assert_traces(a.id, cosmetic_fixtures);
         }
     }
-    let fresh_social = wot_server::social::Social::new(wot_server::social::PostgresSocial::new(
-        PostgresAccounts::connect(&url, 2)
-            .await
-            .unwrap()
-            .connection_pool(),
-    ));
+    let fresh_pool = wot_server::server::connect_database(&url, 2).await.unwrap();
+    let fresh_social = wot_server::social::postgres::service(
+        fresh_pool.clone(),
+        wot_server::accounts::postgres::directory(fresh_pool),
+    );
     if result.is_ok() {
         equipment_flow::verify_unaffordable_upgrade(
             &catalog,
@@ -550,9 +556,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             }
         );
         assert_eq!(
-            PostgresAccounts::connect(&url, 2)
-                .await
-                .unwrap()
+            PostgresAccounts::new(wot_server::server::connect_database(&url, 2).await.unwrap())
                 .snapshot(a.id)
                 .await
                 .unwrap()
@@ -637,12 +641,11 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             repository.save_progression(&module_change)
         );
         assert_ne!(first_commit.unwrap(), second_commit.unwrap());
-        let fresh = PostgresAccounts::connect(&url, 2)
-            .await
-            .unwrap()
-            .snapshot(b.id)
-            .await
-            .unwrap();
+        let fresh =
+            PostgresAccounts::new(wot_server::server::connect_database(&url, 2).await.unwrap())
+                .snapshot(b.id)
+                .await
+                .unwrap();
         assert_eq!(fresh.progression, module_change.snapshot.progression);
         assert_eq!(fresh.balances, module_change.snapshot.balances);
         // Simulate an ownership insert conflict after the account debit.
@@ -702,7 +705,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
                 },
             )
             .unwrap();
-        sqlx::query("DELETE FROM owned_vehicles WHERE account_id=$1")
+        sqlx::query("DELETE FROM accounts.owned_vehicles WHERE account_id=$1")
             .bind(b.id)
             .execute(&pool)
             .await
@@ -749,7 +752,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         let orphaned_change = catalog
             .plan_ammunition(committed.clone(), 42, &desired)
             .unwrap();
-        sqlx::query("DELETE FROM owned_vehicles WHERE account_id=$1")
+        sqlx::query("DELETE FROM accounts.owned_vehicles WHERE account_id=$1")
             .bind(a.id)
             .execute(&pool)
             .await
@@ -819,7 +822,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         );
     }
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
-    sqlx::query("DELETE FROM accounts WHERE id = ANY($1)")
+    sqlx::query("DELETE FROM accounts.accounts WHERE id = ANY($1)")
         .bind(vec![a.id, b.id, equipment_account])
         .execute(&pool)
         .await

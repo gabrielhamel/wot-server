@@ -57,7 +57,7 @@ impl PlayerRepository for PostgresPlayers {
             .await
         }?;
         let total = {
-            let statement = "SELECT count(*) FROM accounts";
+            let statement = "SELECT count(*) FROM accounts.accounts";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -66,7 +66,7 @@ impl PlayerRepository for PostgresPlayers {
             .await
         }?;
         let rows: Vec<(i64, String, String, bool)> = {
-            let statement = "SELECT id, username, display_name, role = 'admin' FROM accounts ORDER BY id DESC LIMIT $1 OFFSET $2";
+            let statement = "SELECT id, username, display_name, role = 'admin' FROM accounts.accounts ORDER BY id DESC LIMIT $1 OFFSET $2";
             crate::platform::observability::database(
                 "accounts",
                 statement,
@@ -205,9 +205,9 @@ impl PostgresPlayers {
     }
 }
 
-const ADMIN_EXISTS: &str = "SELECT EXISTS (SELECT 1 FROM accounts WHERE role = 'admin')";
+const ADMIN_EXISTS: &str = "SELECT EXISTS (SELECT 1 FROM accounts.accounts WHERE role = 'admin')";
 const DISPLAY_NAME_EXISTS: &str =
-    "SELECT EXISTS (SELECT 1 FROM accounts WHERE lower(display_name) = lower($1))";
+    "SELECT EXISTS (SELECT 1 FROM accounts.accounts WHERE lower(display_name) = lower($1))";
 
 async fn create_account(
     tx: &mut Transaction<'_, Postgres>,
@@ -229,7 +229,8 @@ async fn create_account(
         }
     }
     if mode != PlayerProvision::FirstAdmin {
-        let statement = "SELECT EXISTS (SELECT 1 FROM accounts WHERE lower(username) = lower($1))";
+        let statement =
+            "SELECT EXISTS (SELECT 1 FROM accounts.accounts WHERE lower(username) = lower($1))";
         let email_taken: bool = database(
             "accounts",
             statement,
@@ -256,7 +257,7 @@ async fn create_account(
         }
     }
 
-    let statement = "INSERT INTO accounts(username, display_name, password_hash, role, credits, gold) SELECT $1, $2, $3, $4, $5, $6 WHERE $4 = 'player' OR NOT EXISTS (SELECT 1 FROM accounts) ON CONFLICT(username) DO NOTHING RETURNING id";
+    let statement = "INSERT INTO accounts.accounts(username, display_name, password_hash, role, credits, gold) SELECT $1, $2, $3, $4, $5, $6 WHERE $4 = 'player' OR NOT EXISTS (SELECT 1 FROM accounts.accounts) ON CONFLICT(username) DO NOTHING RETURNING id";
     database(
         "accounts",
         statement,
@@ -284,7 +285,7 @@ async fn persist_starter_garage(
 ) -> Result<()> {
     let id = next.id;
     {
-        let statement = "UPDATE accounts SET revision=$2, settings=$3, progression=$4, crew_roster=$5, slots=$6 WHERE id=$1";
+        let statement = "UPDATE accounts.accounts SET revision=$2, settings=$3, progression=$4, crew_roster=$5, slots=$6 WHERE id=$1";
         crate::platform::observability::database(
             "accounts",
             statement,
@@ -301,7 +302,7 @@ async fn persist_starter_garage(
     }?;
     for owned in &next.vehicles {
         {
-            let statement = "INSERT INTO owned_vehicles(account_id,inventory_id,catalog_key,ammunition,has_crew) VALUES($1,$2,$3,$4,$5)";
+            let statement = "INSERT INTO accounts.owned_vehicles(account_id,inventory_id,catalog_key,ammunition,has_crew) VALUES($1,$2,$3,$4,$5)";
             crate::platform::observability::database(
                 "accounts",
                 statement,
