@@ -1,4 +1,4 @@
-import { Alert, Button, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Button, Stack, TextField } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { errorMessage, fieldError } from "../../../platform/infrastructure/web/http";
@@ -111,7 +111,6 @@ export function PlayerAccountForm({
   onBack: () => void;
 }) {
   const managed = mode === "managed";
-  const [generatedPassword, setGeneratedPassword] = useState("");
   const [usernameError, setUsernameError] = useState("");
   const [username, setUsername] = useState("");
   const [usernameTouched, setUsernameTouched] = useState(false);
@@ -136,7 +135,7 @@ export function PlayerAccountForm({
     if (pending || availability === "taken") return;
     const data = new FormData(event.currentTarget);
     const email = String(data.get("email") ?? "");
-    const password = managed ? generatedPassword : String(data.get("password") ?? "");
+    const password = String(data.get("password") ?? "");
     const confirm = String(data.get("confirm_password") ?? "");
     setError("");
     setEmailError("");
@@ -151,7 +150,7 @@ export function PlayerAccountForm({
       showInvalidUsername();
       return;
     }
-    if (!validPassword(password)) {
+    if (!managed && !validPassword(password)) {
       setPasswordError(/\p{Cc}/u.test(password) ? passwordControlHelp : passwordHelp);
       return;
     }
@@ -162,7 +161,7 @@ export function PlayerAccountForm({
 
     setPending(true);
     try {
-      await onCreate({ email, username, password });
+      await onCreate({ email, username, password: managed ? generatePassword() : password });
     } catch (failure) {
       const emailFailure = fieldError(failure, managed ? "username" : "email");
       const usernameFailure = fieldError(failure, managed ? "display_name" : "username");
@@ -244,24 +243,7 @@ export function PlayerAccountForm({
         }}
       />
       {managed ? (
-        <Stack spacing={1} sx={{ alignItems: "flex-start" }}>
-          <Button
-            variant="outlined"
-            disabled={pending}
-            onClick={() => {
-              setGeneratedPassword(generatePassword());
-              setPasswordError("");
-            }}
-          >
-            {generatedPassword ? "Regenerate password" : "Generate password"}
-          </Button>
-          {generatedPassword && (
-            <Typography variant="body2" color="text.secondary" role="status">
-              The generated password will be shown after the account is created.
-            </Typography>
-          )}
-          {passwordError && <Alert severity="error">{passwordError}</Alert>}
-        </Stack>
+        passwordError && <Alert severity="error">{passwordError}</Alert>
       ) : (
         <>
           <TextField
@@ -287,11 +269,7 @@ export function PlayerAccountForm({
           />
         </>
       )}
-      <Button
-        type="submit"
-        variant="contained"
-        disabled={pending || availability === "taken" || (managed && !generatedPassword)}
-      >
+      <Button type="submit" variant="contained" disabled={pending || availability === "taken"}>
         {managed ? "Create player" : "Create account"}
       </Button>
       <Button onClick={onBack} disabled={pending}>

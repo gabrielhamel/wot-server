@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Stack, Typography } from "@mui/material";
+import { Alert, Box, Button, Stack, TextField, Typography } from "@mui/material";
 import { useState } from "react";
 import { Create, DataTable, List, useRedirect, useRefresh } from "react-admin";
 import type { PlayerCredentials, PlayerRecord } from "../../application/admin-contracts";
@@ -37,12 +37,12 @@ export function PlayerCreate() {
     redirect("list", "players");
   }
 
-  async function copyPassword(password: string) {
+  async function copyCredential(field: "Email" | "Password", value: string) {
     try {
-      await navigator.clipboard.writeText(password);
-      setCopyStatus("Password copied.");
+      await navigator.clipboard.writeText(value);
+      setCopyStatus(`${field} copied.`);
     } catch {
-      setCopyStatus("Select the password to copy it manually.");
+      setCopyStatus(`Select the ${field.toLowerCase()} to copy it manually.`);
     }
   }
 
@@ -52,21 +52,33 @@ export function PlayerCreate() {
         {credentials ? (
           <>
             <Alert severity="success">Player account created.</Alert>
-            <Typography variant="body2">Sign-in email: {credentials.email}</Typography>
-            <Box role="group" aria-label="Generated password">
-              <Typography component="span">Generated password</Typography>
-              <Box component="code" sx={{ display: "block", overflowWrap: "anywhere", mt: 1 }}>
-                {credentials.password}
-              </Box>
-            </Box>
-            <Stack direction="row" spacing={1}>
-              <Button variant="outlined" onClick={() => void copyPassword(credentials.password)}>
+            <Box sx={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 1 }}>
+              <TextField
+                label="Sign-in email"
+                value={credentials.email}
+                slotProps={{ input: { readOnly: true } }}
+              />
+              <Button
+                variant="outlined"
+                onClick={() => void copyCredential("Email", credentials.email)}
+              >
+                Copy email
+              </Button>
+              <TextField
+                label="Generated password"
+                value={credentials.password}
+                slotProps={{ input: { readOnly: true } }}
+              />
+              <Button
+                variant="outlined"
+                onClick={() => void copyCredential("Password", credentials.password)}
+              >
                 Copy password
               </Button>
-              <Button variant="contained" onClick={backToPlayers}>
-                Done
-              </Button>
-            </Stack>
+            </Box>
+            <Button variant="contained" onClick={backToPlayers}>
+              Done
+            </Button>
             <Typography role="status" variant="body2">
               {copyStatus}
             </Typography>

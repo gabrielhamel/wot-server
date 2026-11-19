@@ -82,9 +82,9 @@ Administrators sign in with their game credentials and open **Admin** to see
 
 In **Player accounts**, choose **Create** and enter the player's email and
 in-game username. The form uses the same validation and username availability
-check as registration. Choose **Generate password**, then **Create player**.
-Copy the generated password from the confirmation screen before choosing
-**Done** so you can give the player their sign-in credentials.
+check as registration. Choose **Create player** to generate a password and
+create the account. Copy the sign-in email and generated password from the
+confirmation screen before choosing **Done**.
 
 Use the role action in another player's row to promote them to **Administrator**
 or demote them to **Player**. Promotion requires an email address as the player's game login.

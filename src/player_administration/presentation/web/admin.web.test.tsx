@@ -577,11 +577,12 @@ describe("Server Administration", () => {
       const usernameInput = screen.getByRole("textbox", { name: "Username" });
       const submit = screen.getByRole("button", { name: "Create player" });
       expect(screen.queryByLabelText(/password/i, { selector: "input" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /generate password/i })).not.toBeInTheDocument();
+      expect(submit).toBeEnabled();
 
       await user.type(emailInput, "recruit@example");
       await user.type(usernameInput, "TakenName");
       expect(await screen.findByText("That username is already taken.")).toBeVisible();
-      await user.click(screen.getByRole("button", { name: "Generate password" }));
       expect(submit).toBeDisabled();
       await user.clear(usernameInput);
       await user.type(usernameInput, "no spaces");
@@ -601,10 +602,10 @@ describe("Server Administration", () => {
       await user.click(submit);
       expect(await screen.findByText(conflict)).toBeVisible();
       expect(emailInput).toHaveAccessibleDescription(conflict);
+      expect(screen.queryByRole("button", { name: "Copy password" })).not.toBeInTheDocument();
 
       await user.clear(emailInput);
       await user.type(emailInput, email);
-      await user.click(screen.getByRole("button", { name: "Regenerate password" }));
       await user.click(submit);
       expect(await screen.findByText("Player account created.")).toBeVisible();
       const [rejected, created] = requests;
@@ -615,7 +616,15 @@ describe("Server Administration", () => {
       for (const requirement of [/[A-Z]/, /[a-z]/, /[0-9]/, /[!@]/])
         expect(password).toMatch(requirement);
       expect(password).not.toBe(rejected.body.password);
-      expect(screen.getByRole("group", { name: "Generated password" })).toHaveTextContent(password);
+      const signInEmail = screen.getByRole("textbox", { name: "Sign-in email" });
+      const generatedPassword = screen.getByRole("textbox", { name: "Generated password" });
+      expect(signInEmail).toHaveValue(email);
+      expect(generatedPassword).toHaveValue(password);
+      expect(signInEmail).toHaveAttribute("readonly");
+      expect(generatedPassword).toHaveAttribute("readonly");
+      await user.click(screen.getByRole("button", { name: "Copy email" }));
+      expect(await screen.findByText("Email copied.")).toBeVisible();
+      expect(await navigator.clipboard.readText()).toBe(email);
       await user.click(screen.getByRole("button", { name: "Copy password" }));
       expect(await screen.findByText("Password copied.")).toBeVisible();
       expect(await navigator.clipboard.readText()).toBe(password);
