@@ -74,16 +74,15 @@ deletes it. Ctrl-C gracefully stops the gateway.
 
 The server uses one PostgreSQL database and one connection pool. Accounts and
 Social run their own embedded SQLx migrations and track them in
-`accounts._sqlx_migrations` and `social._sqlx_migrations`. This version requires
-an empty database when replacing a server that used the old shared tables.
-Provision a fresh database or reset the old one before starting this version.
-The database role must be able to create schemas during the first startup.
+`accounts._sqlx_migrations` and `social._sqlx_migrations`. For a new
+installation, start with an empty PostgreSQL database. The database role must
+be able to create schemas during the first startup.
 
 The schema and migration owners are [Accounts](../src/accounts/README.md) and
 [Social](../src/social/README.md). Player Administration and Player Sessions
 consume their application contracts. Social stores numeric player IDs and
-resolves them through the Accounts directory API. An account removed directly
-from the database no longer cascades into Social storage.
+resolves them through the Accounts directory API. Social omits missing accounts
+from roster and conversation responses.
 
 ### Logging and telemetry
 
