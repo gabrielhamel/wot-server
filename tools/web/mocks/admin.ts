@@ -9,6 +9,7 @@ import type {
   NewPlayer,
   PlayerRecord,
   PlayerRole,
+  Registration,
 } from "../../../src/player_administration/application/admin-contracts";
 
 const endpoint = "/api/admin";
@@ -95,29 +96,61 @@ export function adminHandlers() {
     { id: "2", username: "commander@example.test", display_name: "Demo Commander", role: "player" },
   ];
   const garages = new Map(players.map((player) => [player.id, demoGarage(player.display_name)]));
-  let authenticated = true;
+  const passwords = new Map([[admin.username, "demo-admin"], [players[1].username, "demo-player"]]);
+  let signedIn: PlayerRecord | undefined = admin;
+  const nameTaken = (name: string) =>
+    players.some((player) => player.display_name.toLowerCase() === name.toLowerCase());
 
   return [
     http.get(`${endpoint}/session`, () =>
       HttpResponse.json<AdminSession>(
-        authenticated ? { status: "authenticated", player: admin } : { status: "signed_out" },
+        signedIn ? { status: "authenticated", player: signedIn } : { status: "signed_out", registration_open: true },
       ),
     ),
     http.post(`${endpoint}/session`, async ({ request }) => {
       const { email, password } = (await request.json()) as { email: string; password: string };
-      if (email !== admin.username || password !== "demo-admin") {
-        return problem(401, "Invalid administrator credentials.");
-      }
-      authenticated = true;
+      if (passwords.get(email) !== password) return problem(401, "Invalid email or password.");
+      signedIn = players.find((player) => player.username === email);
       return new HttpResponse(null, { status: 204 });
     }),
     http.post(`${endpoint}/setup`, () => problem(409, "An administrator already exists.")),
-    http.all(`${endpoint}/*`, () => {
-      if (!authenticated) return problem(401, "Sign in as an administrator.");
+    http.post(`${endpoint}/registration/username`, async ({ request }) => {
+      const { username } = (await request.json()) as Pick<Registration, "username">;
+      return HttpResponse.json({ available: !nameTaken(username) });
+    }),
+    http.post(`${endpoint}/registration`, async ({ request }) => {
+      const { email, username, password } = (await request.json()) as Registration;
+      if (players.some((player) => player.username.toLowerCase() === email.toLowerCase())) {
+        return problem(409, "That login is already in use.");
+      }
+      if (nameTaken(username)) return problem(409, "That username is already taken.");
+      const player: PlayerRecord = {
+        id: String(players.length + 1),
+        username: email,
+        display_name: username,
+        role: "player",
+      };
+      players.push(player);
+      passwords.set(email, password);
+      garages.set(player.id, {
+        ...demoGarage(username),
+        credits: "200000",
+        gold: "500",
+        bonds: "0",
+        free_xp: "0",
+      });
+      return HttpResponse.json(player, { status: 201 });
+    }),
+    http.get(`${endpoint}/me/garage`, () => {
+      if (!signedIn) return problem(401, "Sign in to view your garage.");
+      return HttpResponse.json(garages.get(signedIn.id));
     }),
     http.post(`${endpoint}/logout`, () => {
-      authenticated = false;
+      signedIn = undefined;
       return new HttpResponse(null, { status: 204 });
+    }),
+    http.all(`${endpoint}/*`, () => {
+      if (signedIn?.role !== "admin") return problem(401, "Sign in as an administrator.");
     }),
     http.get(`${endpoint}/players`, ({ request }) => {
       const query = new URL(request.url).searchParams;
@@ -127,13 +160,15 @@ export function adminHandlers() {
       return HttpResponse.json({ data: players.slice(start, start + perPage), total: players.length });
     }),
     http.post(`${endpoint}/players`, async ({ request }) => {
-      const { username, display_name } = (await request.json()) as NewPlayer;
+      const { username, display_name, password } = (await request.json()) as NewPlayer;
       if (players.some((player) => player.username === username)) {
         return problem(409, "That login is already in use.");
       }
       const player: PlayerRecord = { id: String(players.length + 1), username, display_name, role: "player" };
+      if (nameTaken(display_name)) return problem(409, "That username is already taken.");
       players.push(player);
-      garages.set(player.id, demoGarage(player.display_name));
+      passwords.set(username, password);
+      garages.set(player.id, { ...demoGarage(player.display_name), bonds: "0", free_xp: "0" });
       return HttpResponse.json(player, { status: 201 });
     }),
     http.post(`${endpoint}/players/:id/role`, async ({ request, params }) => {

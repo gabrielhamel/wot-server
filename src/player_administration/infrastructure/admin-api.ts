@@ -11,6 +11,8 @@ import type {
   Grant,
   GrantResult,
   NewPlayer,
+  PlayerGarage,
+  Registration,
   PlayerRecord,
   PlayerRole,
 } from "../application/admin-contracts";
@@ -49,6 +51,44 @@ export function createFirstAdmin(body: NewPlayer) {
   );
 }
 
+export function checkUsername(username: string, signal: AbortSignal) {
+  return webOperation(
+    owner,
+    "web.panel.check_username",
+    { "input.username.bytes": username.length },
+    async (parent, span) => {
+      const { available } = await adminRequest<{ available: boolean }>(
+        parent,
+        "/registration/username",
+        { body: { username }, signal },
+      );
+      span.setAttribute("output.username.available", available);
+      return available;
+    },
+  );
+}
+
+export function registerPlayer(body: Registration) {
+  const encoder = new TextEncoder();
+  return webOperation(
+    owner,
+    "web.panel.register",
+    {
+      "input.username.bytes": encoder.encode(body.username).length,
+      "input.email.bytes": encoder.encode(body.email).length,
+    },
+    (parent) => adminRequest<PlayerRecord>(parent, "/registration", { body }),
+  );
+}
+
+export function getOwnGarage(signal: AbortSignal) {
+  return webOperation(owner, "web.panel.load_own_garage", {}, async (parent, span) => {
+    const garage = await adminRequest<PlayerGarage>(parent, "/me/garage", { signal });
+    span.setAttribute("output.vehicle_count", garage.vehicles.length);
+    return garage;
+  });
+}
+
 function changePlayerRole(id: Identifier, role: PlayerRole) {
   return webOperation(
     owner,
@@ -80,7 +120,11 @@ export const authProvider: AuthProvider = {
   async getIdentity() {
     const session = await getSession();
     if (session.status !== "authenticated") throw new Error();
-    return { id: session.player.id, fullName: session.player.display_name };
+    return {
+      id: session.player.id,
+      fullName: session.player.display_name,
+      role: session.player.role,
+    };
   },
   async checkError(error: unknown) {
     if (responseStatus(error) === 401) throw error;

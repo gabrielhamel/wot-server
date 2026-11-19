@@ -10,13 +10,13 @@ import {
   Typography,
 } from "@mui/material";
 import { currencies } from "../../../application/admin-contracts";
-import type { Garage, Vehicle } from "../../../application/admin-contracts";
+import type { PlayerGarage, Vehicle } from "../../../application/admin-contracts";
 
 export function vehicleName(vehicle: Vehicle) {
   return vehicle.name && vehicle.name !== vehicle.key ? vehicle.name : "Unknown tank";
 }
 
-export function GarageBalances({ garage }: { garage: Garage }) {
+export function GarageBalances({ garage }: { garage: PlayerGarage }) {
   return (
     <Card>
       <CardContent>
@@ -48,7 +48,7 @@ export function GarageBalances({ garage }: { garage: Garage }) {
   );
 }
 
-export function OwnedTanks({ garage }: { garage: Garage }) {
+export function OwnedTanks({ garage }: { garage: PlayerGarage }) {
   return (
     <Card>
       <CardContent>

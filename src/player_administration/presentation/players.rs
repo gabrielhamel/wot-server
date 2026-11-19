@@ -153,15 +153,27 @@ async fn provision(
     .await
     .map_err(ApiError::internal)?;
 
-    match result {
-        Ok(player) => Ok((StatusCode::CREATED, Json(player.into()))),
-        Err(CreatePlayerError::Duplicate) => Err(ApiError::field(
-            StatusCode::CONFLICT,
-            "username",
-            "That login is already in use.",
-        )),
-        Err(CreatePlayerError::SetupClosed) => Err(setup_closed()),
-        Err(CreatePlayerError::Internal(error)) => Err(ApiError::internal(error)),
+    result
+        .map(|player| (StatusCode::CREATED, Json(player.into())))
+        .map_err(|error| creation_error(error, "username", "display_name"))
+}
+
+pub(super) fn creation_error(
+    error: CreatePlayerError,
+    login_field: &'static str,
+    name_field: &'static str,
+) -> ApiError {
+    match error {
+        CreatePlayerError::Duplicate => {
+            ApiError::field(StatusCode::CONFLICT, login_field, &error.to_string())
+        }
+        CreatePlayerError::DuplicateDisplayName => {
+            ApiError::field(StatusCode::CONFLICT, name_field, &error.to_string())
+        }
+        CreatePlayerError::RegistrationClosed | CreatePlayerError::SetupClosed => {
+            ApiError::new(StatusCode::CONFLICT, &error.to_string())
+        }
+        CreatePlayerError::Internal(error) => ApiError::internal(error),
     }
 }
 
@@ -190,7 +202,7 @@ impl ApiError {
         }
     }
 
-    fn field(status: StatusCode, field: &'static str, message: &str) -> Self {
+    pub(super) fn field(status: StatusCode, field: &'static str, message: &str) -> Self {
         Self {
             field: Some(field),
             ..Self::new(status, message)

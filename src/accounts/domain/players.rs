@@ -42,12 +42,16 @@ impl RoleChange {
     }
 }
 
-pub fn is_admin_email(username: &str) -> bool {
+pub fn is_player_login(username: &str) -> bool {
     (1..=128).contains(&username.len())
         && !username.starts_with('{')
         && !username
             .chars()
             .any(|c| c.is_whitespace() || c.is_control())
+}
+
+pub fn is_admin_email(username: &str) -> bool {
+    is_player_login(username)
         && username.split_once('@').is_some_and(|(local, domain)| {
             !local.is_empty() && !domain.is_empty() && !domain.contains('@')
         })
@@ -85,12 +89,7 @@ impl NewPlayer {
         display_name: String,
         password: String,
     ) -> Result<Self, NewPlayerError> {
-        if !(1..=128).contains(&username.len())
-            || username.starts_with('{')
-            || username
-                .chars()
-                .any(|c| c.is_whitespace() || c.is_control())
-        {
+        if !is_player_login(&username) {
             return Err(NewPlayerError::Username);
         }
         if !(1..=128).contains(&display_name.chars().count())
@@ -112,6 +111,79 @@ impl NewPlayer {
     pub(crate) fn into_parts(self) -> (String, String, String) {
         (self.username, self.display_name, self.password)
     }
+}
+
+#[derive(Debug, Error)]
+pub enum RegistrationError {
+    #[error("Enter a valid email address of up to 128 characters.")]
+    Email,
+    #[error("Use 3 to 24 letters, numbers or underscores for your username.")]
+    Username,
+    #[error("Use 12 to 128 characters and avoid control characters.")]
+    Password,
+    #[error("The passwords do not match.")]
+    PasswordConfirmation,
+}
+
+impl NewPlayer {
+    #[tracing::instrument(name = "accounts.registration.validate", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = display_name.len(), input.email.bytes = email.len()), err)]
+    pub fn from_registration(
+        email: String,
+        display_name: String,
+        password: String,
+        confirm_password: &str,
+    ) -> Result<Self, RegistrationError> {
+        if !is_registration_email(&email) {
+            return Err(RegistrationError::Email);
+        }
+        if !is_registration_username(&display_name) {
+            return Err(RegistrationError::Username);
+        }
+        if !(12..=128).contains(&password.chars().count()) || password.chars().any(char::is_control)
+        {
+            return Err(RegistrationError::Password);
+        }
+        if password != confirm_password {
+            return Err(RegistrationError::PasswordConfirmation);
+        }
+        Ok(Self {
+            username: email,
+            display_name,
+            password,
+        })
+    }
+}
+
+pub fn is_registration_username(username: &str) -> bool {
+    (3..=24).contains(&username.len())
+        && username
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn is_registration_email(email: &str) -> bool {
+    if !is_admin_email(email) {
+        return false;
+    }
+    let Some((local, domain)) = email.split_once('@') else {
+        return false;
+    };
+    local.len() <= 64
+        && local.split('.').all(|part| {
+            !part.is_empty()
+                && part.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || b"!#$%&'*+-/=?^_`{|}~".contains(&byte)
+                })
+        })
+        && domain.contains('.')
+        && domain.split('.').all(|label| {
+            (1..=63).contains(&label.len())
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
 }
 
 pub struct PlayerPage {

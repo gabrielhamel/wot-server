@@ -1,4 +1,4 @@
-use super::{AdminState, RequestSpan, players::ApiError};
+use super::{AdminState, RequestSpan, access::lookup_session, players::ApiError};
 use crate::{
     accounts::{
         AccountNotFound, AccountSnapshot, CosmeticGrantEntry, CosmeticKind, GarageCatalog,
@@ -10,7 +10,7 @@ use crate::{
 use axum::{
     Extension, Json,
     extract::{Path, State, rejection::JsonRejection},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -51,13 +51,32 @@ struct GarageVehicle {
 }
 
 #[derive(Serialize)]
-pub(super) struct Garage {
+struct GarageSummary {
     display_name: String,
     credits: String,
     gold: String,
     bonds: String,
     free_xp: String,
     slots: i64,
+}
+
+impl From<&AccountSnapshot> for GarageSummary {
+    fn from(snapshot: &AccountSnapshot) -> Self {
+        Self {
+            display_name: snapshot.display_name.clone(),
+            credits: snapshot.balances.credits.to_string(),
+            gold: snapshot.balances.gold.to_string(),
+            bonds: snapshot.balances.bonds.to_string(),
+            free_xp: snapshot.balances.free_xp.to_string(),
+            slots: snapshot.balances.slots,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub(super) struct Garage {
+    #[serde(flatten)]
+    summary: GarageSummary,
     vehicles: Vec<GarageVehicle>,
     attachments: BTreeMap<u16, u32>,
 }
@@ -106,12 +125,7 @@ impl Garage {
             .collect();
         vehicles.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.key.cmp(&b.key)));
         Self {
-            display_name: snapshot.display_name,
-            credits: snapshot.balances.credits.to_string(),
-            gold: snapshot.balances.gold.to_string(),
-            bonds: snapshot.balances.bonds.to_string(),
-            free_xp: snapshot.balances.free_xp.to_string(),
-            slots: snapshot.balances.slots,
+            summary: GarageSummary::from(&snapshot),
             vehicles,
             attachments: snapshot
                 .progression
@@ -164,14 +178,64 @@ pub(super) async fn show(
 ) -> Result<Json<Garage>, ApiError> {
     let id = player_id(&id)?;
     request_span.record("input.account_id", id);
-    let snapshot = state.garage_accounts.snapshot(id).await.map_err(|error| {
+    let snapshot = read_garage(&state, id).await?;
+    Ok(Json(Garage::from_snapshot(snapshot, &state.catalog)))
+}
+
+async fn read_garage(state: &AdminState, id: i64) -> Result<AccountSnapshot, ApiError> {
+    state.garage_accounts.snapshot(id).await.map_err(|error| {
         if error.is::<AccountNotFound>() {
             ApiError::new(StatusCode::NOT_FOUND, "Player not found.")
         } else {
             ApiError::internal(error)
         }
-    })?;
-    Ok(Json(Garage::from_snapshot(snapshot, &state.catalog)))
+    })
+}
+
+#[derive(Serialize)]
+pub(super) struct PlayerGarage {
+    #[serde(flatten)]
+    summary: GarageSummary,
+    vehicles: Vec<PlayerGarageVehicle>,
+}
+
+#[derive(Serialize)]
+struct PlayerGarageVehicle {
+    key: String,
+    name: String,
+    tier: Option<i64>,
+}
+
+#[tracing::instrument(name = "web_panel.garage.show_own", skip_all, fields(ddd.bounded_context.name = "player_administration", input.operation = "read_own_garage", user.id = tracing::field::Empty, output.vehicle_count = tracing::field::Empty), err)]
+pub(super) async fn show_own(
+    State(state): State<AdminState>,
+    headers: HeaderMap,
+) -> Result<Json<PlayerGarage>, ApiError> {
+    let player = lookup_session(&state, &headers)
+        .await?
+        .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "Sign in to view your garage."))?;
+    let span = tracing::Span::current();
+    span.record("user.id", player.id);
+    let snapshot = read_garage(&state, player.id).await?;
+    let summary = GarageSummary::from(&snapshot);
+    let mut vehicles: Vec<_> = snapshot
+        .vehicles
+        .into_iter()
+        .map(|vehicle| {
+            let catalog_entry = state.catalog.vehicle_catalog_entry(&vehicle.catalog_key);
+            PlayerGarageVehicle {
+                name: catalog_entry
+                    .as_ref()
+                    .map_or("Unknown tank", |entry| entry.name)
+                    .to_owned(),
+                tier: catalog_entry.and_then(|entry| entry.tier),
+                key: vehicle.catalog_key,
+            }
+        })
+        .collect();
+    vehicles.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.key.cmp(&b.key)));
+    span.record("output.vehicle_count", vehicles.len());
+    Ok(Json(PlayerGarage { summary, vehicles }))
 }
 
 #[tracing::instrument(name = "admin.garage.catalog", skip_all, fields(ddd.bounded_context.name = "player_administration", input.collection = "vehicles"))]

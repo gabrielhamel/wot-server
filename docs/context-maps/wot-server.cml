@@ -39,7 +39,7 @@ ContextMap Server {
     implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage and host-only Training Room RPCs; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "PlayerAccounts API for identity listing, provisioning, roles and dashboard sessions, plus snapshots and the vehicle catalog for the operator garage"
+    implementationTechnology = "PlayerAccounts API for identity listing, registration, provisioning, roles and web sessions, plus snapshots and the vehicle catalog for player and operator garage views"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "Bounded PlayerGrants application API coordinates currency, vehicle and cosmetic grants with garage writes and publishes committed updates to game sessions"
@@ -75,7 +75,7 @@ BoundedContext Social {
 }
 
 BoundedContext PlayerAdministration {
-  domainVisionStatement = "Authenticate administrators and enable them to provision players, manage roles, inspect garages and grant currency, vehicles or cosmetics through the admin API and browser dashboard."
+  domainVisionStatement = "Serve player registration, web sign-in and a read-only personal garage, and authorize administrators to provision players, manage roles, inspect garages and grant currency, vehicles or cosmetics."
 }
 
 BoundedContext SharedKernel {

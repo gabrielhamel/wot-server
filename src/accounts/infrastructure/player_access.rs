@@ -30,10 +30,9 @@ impl PlayerAccessRepository for PostgresPlayers {
         .await?)
     }
 
-    #[tracing::instrument(name = "accounts.admin.credentials", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = email.len()), err)]
-    async fn admin_credentials(&self, email: &str) -> Result<Option<(i64, String)>> {
-        let statement =
-            "SELECT id, password_hash FROM accounts WHERE username = $1 AND role = 'admin'";
+    #[tracing::instrument(name = "accounts.web.credentials", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = email.len()), err)]
+    async fn web_credentials(&self, email: &str) -> Result<Option<(i64, String)>> {
+        let statement = "SELECT id, password_hash FROM accounts WHERE username = $1";
         Ok(database(
             "accounts",
             statement,
@@ -44,23 +43,23 @@ impl PlayerAccessRepository for PostgresPlayers {
         .await?)
     }
 
-    #[tracing::instrument(name = "accounts.admin.open_session", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = account_id, input.session.lifetime_seconds = lifetime_seconds), err)]
-    async fn open_admin_session(
+    #[tracing::instrument(name = "accounts.web.open_session", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = account_id, input.session.lifetime_seconds = lifetime_seconds), err)]
+    async fn open_web_session(
         &self,
         account_id: i64,
         digest: &[u8; 32],
         lifetime_seconds: i64,
     ) -> Result<bool> {
-        let statement = "DELETE FROM admin_sessions WHERE expires_at <= now()";
+        let statement = "DELETE FROM web_sessions WHERE expires_at <= now()";
         database(
             "accounts",
             statement,
             sqlx::query(statement).execute(&self.pool),
         )
         .await?;
-        let statement = "INSERT INTO admin_sessions(secret_hash, account_id, expires_at)
-                         SELECT $1, id, now() + make_interval(secs => $3)
-                         FROM accounts WHERE id = $2 AND role = 'admin' FOR SHARE";
+        let statement = "INSERT INTO web_sessions(secret_hash, account_id, expires_at, role)
+                         SELECT $1, id, now() + make_interval(secs => $3), role
+                         FROM accounts WHERE id = $2 FOR SHARE";
         let result = database(
             "accounts",
             statement,
@@ -74,12 +73,12 @@ impl PlayerAccessRepository for PostgresPlayers {
         Ok(result.rows_affected() == 1)
     }
 
-    #[tracing::instrument(name = "accounts.admin.find_session", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "admin_sessions", output.outcome = tracing::field::Empty), err)]
-    async fn find_admin_session(&self, digest: &[u8; 32]) -> Result<Option<PlayerAccount>> {
-        let statement = "SELECT a.id, a.username, a.display_name
-                         FROM admin_sessions s JOIN accounts a ON a.id = s.account_id
-                         WHERE s.secret_hash = $1 AND s.expires_at > now() AND a.role = 'admin'";
-        let result: Option<(i64, String, String)> = database(
+    #[tracing::instrument(name = "accounts.web.find_session", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "web_sessions", output.outcome = tracing::field::Empty), err)]
+    async fn find_web_session(&self, digest: &[u8; 32]) -> Result<Option<PlayerAccount>> {
+        let statement = "SELECT a.id, a.username, a.display_name, a.role = 'admin'
+                         FROM web_sessions s JOIN accounts a ON a.id = s.account_id
+                         WHERE s.secret_hash = $1 AND s.expires_at > now() AND s.role = a.role";
+        let result: Option<(i64, String, String, bool)> = database(
             "accounts",
             statement,
             sqlx::query_as(statement)
@@ -95,17 +94,23 @@ impl PlayerAccessRepository for PostgresPlayers {
                 "rejected"
             },
         );
-        Ok(result.map(|(id, username, display_name)| PlayerAccount {
-            id,
-            username,
-            display_name,
-            role: PlayerRole::Admin,
-        }))
+        Ok(
+            result.map(|(id, username, display_name, admin)| PlayerAccount {
+                id,
+                username,
+                display_name,
+                role: if admin {
+                    PlayerRole::Admin
+                } else {
+                    PlayerRole::Player
+                },
+            }),
+        )
     }
 
-    #[tracing::instrument(name = "accounts.admin.close_session", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "admin_sessions", output.session_count = tracing::field::Empty), err)]
-    async fn close_admin_session(&self, digest: &[u8; 32]) -> Result<()> {
-        let statement = "DELETE FROM admin_sessions WHERE secret_hash = $1";
+    #[tracing::instrument(name = "accounts.web.close_session", skip_all, fields(ddd.bounded_context.name = "accounts", input.collection = "web_sessions", output.session_count = tracing::field::Empty), err)]
+    async fn close_web_session(&self, digest: &[u8; 32]) -> Result<()> {
+        let statement = "DELETE FROM web_sessions WHERE secret_hash = $1";
         let result = database(
             "accounts",
             statement,
@@ -198,14 +203,12 @@ async fn change_role_in_transaction(
     if result.rows_affected() == 0 {
         return Ok(RoleChange::LastAdmin);
     }
-    if role == PlayerRole::Player {
-        let statement = "DELETE FROM admin_sessions WHERE account_id = $1";
-        database(
-            "accounts",
-            statement,
-            sqlx::query(statement).bind(target_id).execute(&mut **tx),
-        )
-        .await?;
-    }
+    let statement = "DELETE FROM web_sessions WHERE account_id = $1";
+    database(
+        "accounts",
+        statement,
+        sqlx::query(statement).bind(target_id).execute(&mut **tx),
+    )
+    .await?;
     Ok(RoleChange::Updated)
 }

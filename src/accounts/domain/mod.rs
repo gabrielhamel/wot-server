@@ -43,9 +43,9 @@ impl Default for Balances {
         Self {
             credits: 100_000_000,
             gold: 1_000_000,
-            bonds: 10_000,
+            bonds: 0,
             equipment_components: 0,
-            free_xp: 1_000_000,
+            free_xp: 0,
             slots: 100,
             berths: 100,
         }

@@ -6,6 +6,7 @@ import type { FieldValues } from "react-hook-form";
 import { useFormState } from "react-hook-form";
 import { errorMessage, responseStatus } from "../../../platform/infrastructure/web/http";
 import { createFirstAdmin, getSession } from "../../infrastructure/admin-api";
+import { RegistrationConfirmation, RegistrationForm } from "./registration";
 
 function SubmitButton({ label }: { label: string }) {
   const { isSubmitting } = useFormState();
@@ -22,6 +23,9 @@ export function AdminLogin() {
   const [attempt, setAttempt] = useState(0);
   const [error, setError] = useState("");
   const [created, setCreated] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [screen, setScreen] = useState<"login" | "registration" | "confirmation">("login");
+  const [registeredEmail, setRegisteredEmail] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -29,6 +33,7 @@ export function AdminLogin() {
       (session) => {
         if (!controller.signal.aborted) {
           setMode(session.status === "setup_required" ? "setup" : "login");
+          setRegistrationOpen(session.status === "signed_out" && session.registration_open);
         }
       },
       (failure) => {
@@ -51,15 +56,25 @@ export function AdminLogin() {
           password: values.password,
         });
         setCreated(true);
+        setRegistrationOpen(true);
         setMode("login");
       } else {
         await login({ email: values.email, password: values.password });
       }
     } catch (failure) {
       setError(errorMessage(failure, "Could not sign in."));
-      if (mode === "setup" && responseStatus(failure) === 409) setMode("login");
+      if (mode === "setup" && responseStatus(failure) === 409) setAttempt(attempt + 1);
     }
   }
+
+  const title =
+    mode === "setup"
+      ? "Create the first administrator"
+      : screen === "registration"
+        ? "Create a player account"
+        : screen === "confirmation"
+          ? "Account created"
+          : "World of Tanks Server";
 
   return (
     <Login
@@ -72,7 +87,7 @@ export function AdminLogin() {
     >
       <Box sx={{ px: 3, pb: 3 }}>
         <Typography component="h1" variant="h5" sx={{ mb: 2, textAlign: "center" }}>
-          {mode === "setup" ? "Create the first administrator" : "World of Tanks Server"}
+          {title}
         </Typography>
         {created && <Alert severity="success">Administrator created. Sign in to continue.</Alert>}
         {error && <Alert severity="error">{error}</Alert>}
@@ -88,7 +103,7 @@ export function AdminLogin() {
             Retry
           </Button>
         )}
-        {(mode === "setup" || mode === "login") && (
+        {(mode === "setup" || (mode === "login" && screen === "login")) && (
           <Form key={mode} onSubmit={submit}>
             <TextInput
               source="email"
@@ -118,6 +133,31 @@ export function AdminLogin() {
             />
             <SubmitButton label={mode === "setup" ? "Create administrator" : "Sign in"} />
           </Form>
+        )}
+        {mode === "login" && registrationOpen && screen === "login" && (
+          <Button
+            fullWidth
+            sx={{ mt: 1 }}
+            onClick={() => {
+              setError("");
+              setCreated(false);
+              setScreen("registration");
+            }}
+          >
+            Create a player account
+          </Button>
+        )}
+        {screen === "registration" && (
+          <RegistrationForm
+            onBack={() => setScreen("login")}
+            onComplete={(email) => {
+              setRegisteredEmail(email);
+              setScreen("confirmation");
+            }}
+          />
+        )}
+        {screen === "confirmation" && (
+          <RegistrationConfirmation email={registeredEmail} onBack={() => setScreen("login")} />
         )}
       </Box>
     </Login>

@@ -174,9 +174,11 @@ Admin grants carry the HTTP request parent into the gateway's bounded
 queue. The admin session check and handler are siblings under the HTTP root.
 The session check traces database authorization, and the grant handler traces
 inventory processing. Browser session status, sign-in, sign-out, first-admin
-setup and role changes propagate the same W3C parent through HTTP and SQL.
-Email lengths, account IDs, role choices and outcomes are allowlisted. Passwords,
-email values and cookie secrets stay out of spans.
+setup, player registration, username availability, the personal garage and
+role changes propagate the same W3C parent through HTTP and SQL. Input lengths,
+account IDs, role choices, availability and outcomes are allowlisted. Passwords,
+email values, player-entered registration usernames and cookie secrets stay out
+of these spans.
 A connected player's garage update has a Mercury response span under the grant
 completion.
 
@@ -295,7 +297,10 @@ then use the same trace ID through the existing Rust propagation.
 The expected sequence for a purchase is `web.store.purchase` →
 `web.http.request` → `store.http.request` → Store use case → SQL and garage
 delivery. A grant follows the equivalent path through `web.admin.grant` and
-`admin.http.request`. Expected browser cancellations, rejections and conflicts
+`admin.http.request`. Registration follows `web.panel.register` →
+`web.http.request` → `admin.http.request` → `web_panel.registration.create` →
+Accounts validation and provisioning spans, including the SQL transaction.
+Expected browser cancellations, rejections and conflicts
 record an outcome. Unexpected HTTP, network and decoding failures record
 error status and a diagnostic event. Window errors, failed resources,
 unhandled rejections and React error callbacks record `web.exception`

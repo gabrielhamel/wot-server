@@ -34,9 +34,13 @@ export interface GarageVehicle extends Vehicle {
   stat_trackers: OwnedCosmetics;
 }
 
-export type Garage = Record<Currency, string> & {
+export type PlayerGarage = Record<Currency, string> & {
   display_name: string;
   slots: number;
+  vehicles: Vehicle[];
+};
+
+export type Garage = Omit<PlayerGarage, "vehicles"> & {
   vehicles: GarageVehicle[];
   attachments: OwnedCosmetics;
 };
@@ -58,6 +62,14 @@ export interface GrantResult {
   delivery: "queued_for_garage" | "on_next_sync";
 }
 
+export type Registration = {
+  email: string;
+  username: string;
+  password: string;
+  confirm_password: string;
+};
+
 export type AdminSession =
-  | { status: "setup_required" | "signed_out" }
+  | { status: "setup_required" }
+  | { status: "signed_out"; registration_open: boolean }
   | { status: "authenticated"; player: PlayerRecord };
