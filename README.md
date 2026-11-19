@@ -51,7 +51,7 @@ installation and configuration.
 
 The web dashboard lets you create player accounts, view their garages, and grant
 tanks, credits, gold, bonds and free XP. Enable it in `server.json`, then open
-[localhost:8080](http://127.0.0.1:8080/) and follow the first-administrator setup or sign in with an administrator account.
+[localhost:8080](http://127.0.0.1:8080/) and follow the first-administrator setup. After setup, players can register and sign in to view their own garage.
 See the [dashboard guide](docs/admin.md) for setup.
 
 ![Admin dashboard showing a player's balances, resource grants and garage](docs/images/dashboard.png)

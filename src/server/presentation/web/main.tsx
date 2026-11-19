@@ -7,7 +7,7 @@ declare const __WEB_MOCK_API__: boolean;
 const pages = {
   "/admin": {
     owner: "player_administration",
-    title: "Server Administration",
+    title: "World of Tanks Server",
     load: () => import("../../../player_administration/presentation/web/admin-page"),
   },
   "/shop": {

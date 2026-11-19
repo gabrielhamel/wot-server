@@ -1,16 +1,18 @@
 import ShieldOutlined from "@mui/icons-material/ShieldOutlined";
-import { MenuItem, Typography } from "@mui/material";
+import { Alert, Button, CircularProgress, MenuItem, Typography } from "@mui/material";
 import {
   AppBar,
   Layout,
   TitlePortal,
   UserMenu,
+  useGetIdentity,
   useLogout,
   useNotify,
   useUserMenu,
 } from "react-admin";
 import type { AppBarProps, LayoutProps } from "react-admin";
 import { errorMessage } from "../../../platform/infrastructure/web/http";
+import { PlayerHome } from "./player-home";
 
 function SignOut() {
   const logout = useLogout();
@@ -52,6 +54,18 @@ function ServerBar(props: AppBarProps) {
 }
 
 export function ServerLayout(props: LayoutProps) {
+  const { identity, isPending, error, refetch } = useGetIdentity();
+  if (isPending)
+    return <CircularProgress size={24} aria-label="Loading your account" sx={{ m: 3 }} />;
+  if (error || (identity?.role !== "admin" && identity?.role !== "player")) {
+    return (
+      <Alert severity="error" action={<Button onClick={() => void refetch()}>Retry</Button>}>
+        Could not load your account.
+      </Alert>
+    );
+  }
+  if (identity.role === "player")
+    return <PlayerHome key={identity.id} displayName={identity.fullName ?? "Player"} />;
   return (
     <Layout
       {...props}

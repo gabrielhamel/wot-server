@@ -1,9 +1,9 @@
-# Admin dashboard and HTTP API
+# Web panel and HTTP API
 
-The game server can serve a React Admin dashboard to list and create player
-accounts and grant resources, tanks, 3D attachments and stat trackers. Accounts
-creates the player with 500 gold, 200,000 credits, and a starter garage in one
-transaction. The garage contains the regular Tech Tree tier I tanks with stock
+The game server can serve a web panel for player registration, read-only access
+to a player's garage, and server administration. Accounts creates each web
+account with 500 gold, 200,000 credits, zero bonds, zero free XP, and a starter
+garage in one transaction. The balance defaults apply to new accounts. The garage contains the regular Tech Tree tier I tanks with stock
 modules, basic crew and default ammunition. Players can use their new
 credentials in the game client's basic login flow immediately after creation.
 
@@ -47,11 +47,29 @@ no players, the dashboard opens the first administrator form. Enter an email,
 a display name and a password, then sign in with those credentials. Limit
 access to the listener until setup is complete.
 
-Administrators sign in with the email and password they use in the game.
-The dashboard keeps the session for 60 days from sign-in, across browser
-and server restarts. Choose **Sign out** from the profile menu to revoke
-that browser session. Demoting an
-administrator revokes all their dashboard sessions immediately.
+### Player registration and sign-in
+
+Once the first administrator exists, choose **Create a player account** on the
+sign-in page. The email address is the sign-in name for the game and the panel.
+The username is the name other players see in the game. Choose 3–24 ASCII
+letters, digits or underscores. The form checks availability while you type.
+The API checks email syntax and checks both email and username for
+case-insensitive duplicates when saving the account. Sign in with the email as
+entered during registration.
+
+Use a password of 12–128 characters and enter it twice. The confirmation page
+shows how to sign in to the game immediately. The panel sends no verification
+email. Returning players can sign in to see their own credits, gold, bonds,
+free XP and tanks in **My garage**.
+
+The panel keeps a session for 60 days from sign-in, across browser and server
+restarts. Choose **Sign out** to revoke that browser session. Changing an
+account's role revokes all of its web sessions. The account can sign in again
+with its current permissions.
+
+### Administration
+
+Administrators sign in with their game credentials and see **Player accounts**.
 
 In **Player accounts**, use **Create** to add a player. Use the role action in
 another player's row to promote them to **Administrator** or demote them to
@@ -95,8 +113,8 @@ Both pages open with demo data without Rust, PostgreSQL, or a connected game
 client. The Store replaces old garage session fragments with its demo session.
 The dashboard starts signed in, even when a saved URL points to the login page.
 After signing out, use `admin@example.test` and `demo-admin`, or reload.
-Player creation, role changes, garage grants, and Store purchases update
-the demo data in memory. Reload the page to reset it.
+Player registration, account creation, role changes, garage grants and Store
+purchases update the demo data in memory. Reload the page to reset it.
 
 Use `npm run dev:server` to proxy API requests to a running server at
 `http://127.0.0.1:8080`.
@@ -109,16 +127,20 @@ belong in the API and application state.
 
 ## API
 
-Protected routes require the session cookie returned by sign-in. Send
+The self-service garage requires a session cookie. Player management and
+grant routes require a current administrator session. Send
 `X-Wot-Admin: 1` on every POST and `Content-Type: application/json` when
 sending a JSON body. The browser sends the cookie on same-origin API calls.
 
 | Method and path | Response |
 | --- | --- |
-| `GET /api/admin/session` | `200 OK` with `status` set to `setup_required`, `signed_out`, or `authenticated`. An authenticated response includes the current `player` record. |
+| `GET /api/admin/session` | `200 OK` with `status` set to `setup_required`, `signed_out`, or `authenticated`. A signed-out response includes `registration_open`. An authenticated response includes the current `player` record and role. |
 | `POST /api/admin/setup` | Creates the first administrator with the player creation fields below. Returns `201 Created` without signing in, or `409 Conflict` when the database already has players. |
-| `POST /api/admin/session` | Accepts `{ "email": "...", "password": "..." }`. Returns `204 No Content` and sets the session cookie on success, or `401 Unauthorized` for invalid credentials or a player without the administrator role. |
+| `POST /api/admin/session` | Accepts `{ "email": "...", "password": "..." }`. Returns `204 No Content` and sets the session cookie on success, or `401 Unauthorized` for invalid credentials. |
 | `POST /api/admin/logout` | Revokes the current browser session and clears its cookie. Returns `204 No Content`. |
+| `POST /api/admin/registration/username` | Accepts `{ "username": "NewPlayer" }` and returns `{ "available": true }` or `{ "available": false }` in a `200 OK` response. Returns `409 Conflict` while registration is closed. |
+| `POST /api/admin/registration` | Accepts `email`, `username`, `password` and `confirm_password`. Returns `201 Created` with the new Player record. Returns `409 Conflict` for a duplicate email or username or when registration is closed, and `422 Unprocessable Entity` for invalid fields. |
+| `GET /api/admin/me/garage` | `200 OK` with the signed-in player's balances, garage slot count and owned tank names and tiers. Balances are decimal strings. |
 | `GET /api/admin/players?page=1&per_page=25` | `200 OK` with `{ "data": [player records], "total": 2 }`. Pages start at 1. Page size is 1–100. Defaults are page 1 and 25 records. |
 | `POST /api/admin/players` | `201 Created` with the new player record. The new account has the `player` role. |
 | `POST /api/admin/players/{id}/role` | Accepts `{ "role": "admin" }` or `{ "role": "player" }` and returns `204 No Content`. Self-role changes return `403 Forbidden`. |
@@ -128,7 +150,7 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | `GET /api/admin/stat-trackers` | `200 OK` with grantable trackers containing `id`, `name`, and `max_owned`. |
 | `POST /api/admin/players/{id}/grants` | `200 OK` with `garage` and `delivery` after commit. |
 
-Send `Content-Type: application/json` and the following fields for creation.
+Administrator setup and managed player creation accept the following JSON fields. New display names must be unique regardless of case.
 
 ```json
 {

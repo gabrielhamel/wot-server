@@ -189,13 +189,13 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     assert_ne!(a.id, b.id);
     assert_eq!(a.vehicles[0].catalog_key, tank_a);
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
-    sqlx::query("UPDATE accounts SET progression = jsonb_set(progression, '{depot}', $2), equipment_components = 150 WHERE id=$1")
+    sqlx::query("UPDATE accounts SET progression = jsonb_set(progression, '{depot}', $2), equipment_components = 150, bonds = 10000 WHERE id=$1")
         .bind(equipment_account)
         .bind(sqlx::types::Json(equipment_flow::reward_stock()))
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE accounts SET progression = jsonb_set(progression, '{unlocks}', to_jsonb(ARRAY[$2::integer])) WHERE id=$1")
+    sqlx::query("UPDATE accounts SET progression = jsonb_set(progression, '{unlocks}', to_jsonb(ARRAY[$2::integer])), free_xp = 1000000 WHERE id=$1")
         .bind(b.id)
         .bind(vehicles_flow::M14_41)
         .execute(&pool)

@@ -3,6 +3,7 @@ mod access;
 mod client_address;
 mod garage;
 mod players;
+mod registration;
 #[cfg(test)]
 mod request_traces;
 
@@ -34,6 +35,7 @@ struct AdminState {
     catalog: Arc<GarageCatalog>,
     grants: PlayerGrants,
     create_slots: Arc<Semaphore>,
+    username_check_slots: Arc<Semaphore>,
 }
 
 #[derive(Clone)]
@@ -54,6 +56,7 @@ pub(crate) fn router(
         catalog,
         grants,
         create_slots: Arc::new(Semaphore::new(2)),
+        username_check_slots: Arc::new(Semaphore::new(4)),
         sign_in_slots: Arc::new(Semaphore::new(2)),
     };
     let protected = Router::new()
@@ -72,6 +75,9 @@ pub(crate) fn router(
         .route("/session", get(access::session).post(access::sign_in))
         .route("/logout", post(access::sign_out))
         .route("/setup", post(players::bootstrap))
+        .route("/registration", post(registration::register))
+        .route("/registration/username", post(registration::check_username))
+        .route("/me/garage", get(garage::show_own))
         .layer(DefaultBodyLimit::max(8 * 1024))
         .layer(middleware::from_fn(access::protect_writes))
         .layer(middleware::from_fn(prevent_caching))
@@ -122,6 +128,7 @@ async fn set_browser_headers(
         input.account_id = tracing::field::Empty,
         input.role = tracing::field::Empty,
         input.username.bytes = tracing::field::Empty,
+        input.email.bytes = tracing::field::Empty,
         input.display_name.bytes = tracing::field::Empty,
         input.grant.kind = tracing::field::Empty,
         input.grant.currency = tracing::field::Empty,

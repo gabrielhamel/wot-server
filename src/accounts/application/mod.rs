@@ -1,5 +1,7 @@
 pub(super) mod players;
-pub use players::{CreatePlayerError, PlayerAccessRepository, PlayerAccounts, PlayerRepository};
+pub use players::{
+    CreatePlayerError, PlayerAccessRepository, PlayerAccounts, PlayerProvision, PlayerRepository,
+};
 
 use super::domain::{
     AccountSnapshot, AmmoError, AmmunitionRules, ShellPurchase, ShellSelection, VehicleAmmunition,

@@ -23,7 +23,7 @@ const COOKIE_NAME: &str = "wot_admin_session";
 #[serde(tag = "status", rename_all = "snake_case")]
 pub(super) enum Session {
     SetupRequired,
-    SignedOut,
+    SignedOut { registration_open: bool },
     Authenticated { player: PlayerRecord },
 }
 
@@ -67,11 +67,11 @@ pub(super) async fn authenticate(
     next: Next,
 ) -> Response {
     match lookup_session(&state, request.headers()).await {
-        Ok(Some(admin)) => {
+        Ok(Some(admin)) if admin.role == PlayerRole::Admin => {
             request.extensions_mut().insert(admin);
             next.run(request).await
         }
-        Ok(None) => {
+        Ok(_) => {
             ApiError::new(StatusCode::UNAUTHORIZED, "Sign in as an administrator.").into_response()
         }
         Err(error) => error.into_response(),
@@ -79,7 +79,7 @@ pub(super) async fn authenticate(
 }
 
 #[tracing::instrument(name = "admin.authenticate", skip_all, fields(ddd.bounded_context.name = "player_administration", input.session.present = tracing::field::Empty, output.outcome = tracing::field::Empty, user.id = tracing::field::Empty), err)]
-async fn lookup_session(
+pub(super) async fn lookup_session(
     state: &AdminState,
     headers: &HeaderMap,
 ) -> Result<Option<PlayerAccount>, ApiError> {
@@ -89,13 +89,13 @@ async fn lookup_session(
     let player = match secret {
         Some(secret) => state
             .accounts
-            .find_admin_session(&secret.digest())
+            .find_web_session(&secret.digest())
             .await
             .map_err(ApiError::internal)?,
         None => None,
     };
-    if let Some(admin) = &player {
-        span.record("user.id", admin.id);
+    if let Some(player) = &player {
+        span.record("user.id", player.id);
     }
     span.record(
         "output.outcome",
@@ -108,14 +108,14 @@ async fn lookup_session(
     Ok(player)
 }
 
-#[tracing::instrument(name = "admin.session.status", skip_all, fields(ddd.bounded_context.name = "player_administration", input.operation = "status", output.outcome = tracing::field::Empty), err)]
+#[tracing::instrument(name = "admin.session.status", skip_all, fields(ddd.bounded_context.name = "player_administration", input.operation = "status", output.registration_open = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
 pub(super) async fn session(
     State(state): State<AdminState>,
     headers: HeaderMap,
 ) -> Result<Json<Session>, ApiError> {
-    let session = if let Some(admin) = lookup_session(&state, &headers).await? {
+    let session = if let Some(player) = lookup_session(&state, &headers).await? {
         Session::Authenticated {
-            player: admin.into(),
+            player: player.into(),
         }
     } else if state
         .accounts
@@ -125,13 +125,19 @@ pub(super) async fn session(
     {
         Session::SetupRequired
     } else {
-        Session::SignedOut
+        let registration_open = state
+            .accounts
+            .registration_enabled()
+            .await
+            .map_err(ApiError::internal)?;
+        tracing::Span::current().record("output.registration_open", registration_open);
+        Session::SignedOut { registration_open }
     };
     tracing::Span::current().record(
         "output.outcome",
         match &session {
             Session::SetupRequired => "setup_required",
-            Session::SignedOut => "signed_out",
+            Session::SignedOut { .. } => "signed_out",
             Session::Authenticated { .. } => "authenticated",
         },
     );
@@ -168,7 +174,7 @@ pub(super) async fn sign_in(
         tracing::Span::current().record("output.outcome", "rejected");
         return Err(ApiError::new(
             StatusCode::UNAUTHORIZED,
-            "Invalid administrator email or password.",
+            "Invalid email or password.",
         ));
     };
     tracing::Span::current().record("output.outcome", "authorized");
@@ -191,7 +197,7 @@ pub(super) async fn sign_out(
     if let Some(secret) = secret {
         state
             .accounts
-            .close_admin_session(&secret.digest())
+            .close_web_session(&secret.digest())
             .await
             .map_err(ApiError::internal)?;
     }

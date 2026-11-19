@@ -1,4 +1,4 @@
-use crate::accounts::{PlayerAccessRepository, PlayerAccounts, is_admin_email};
+use crate::accounts::{PlayerAccessRepository, PlayerAccounts, is_player_login};
 use argon2::password_hash::rand_core::{OsRng, RngCore};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
@@ -19,7 +19,7 @@ impl SessionSecret {
         let mut bytes = [0; 32];
         OsRng
             .try_fill_bytes(&mut bytes)
-            .map_err(|error| anyhow::anyhow!("Generate admin session secret: {error}"))?;
+            .map_err(|error| anyhow::anyhow!("Generate web session secret: {error}"))?;
         Ok(Self(URL_SAFE_NO_PAD.encode(bytes)))
     }
 
@@ -32,27 +32,27 @@ impl SessionSecret {
     }
 }
 
-#[tracing::instrument(name = "admin.verify_credentials", skip_all, fields(ddd.bounded_context.name = "player_administration", input.username.bytes = email.len(), output.outcome = tracing::field::Empty, user.id = tracing::field::Empty), err)]
+#[tracing::instrument(name = "admin.verify_credentials", skip_all, fields(ddd.bounded_context.name = "player_administration", input.username.bytes = login.len(), output.outcome = tracing::field::Empty, user.id = tracing::field::Empty), err)]
 pub(super) async fn sign_in<R: PlayerAccessRepository>(
     players: &PlayerAccounts<R>,
-    email: &str,
+    login: &str,
     password: String,
 ) -> anyhow::Result<Option<SessionSecret>> {
     let span = tracing::Span::current();
-    if !is_admin_email(email)
+    if !is_player_login(login)
         || !(1..=1024).contains(&password.len())
         || password.chars().any(char::is_control)
     {
         span.record("output.outcome", "rejected");
         return Ok(None);
     }
-    let Some(id) = players.authenticate_admin(email, password).await? else {
+    let Some(id) = players.authenticate_web(login, password).await? else {
         span.record("output.outcome", "rejected");
         return Ok(None);
     };
     let secret = SessionSecret::generate()?;
     if !players
-        .open_admin_session(id, &secret.digest(), SESSION_SECONDS)
+        .open_web_session(id, &secret.digest(), SESSION_SECONDS)
         .await?
     {
         span.record("output.outcome", "rejected");

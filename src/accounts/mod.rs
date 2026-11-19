@@ -6,7 +6,7 @@ pub use application::{
     MAX_DEPOT_SALE_LINES, ProgressionChange, ProgressionCommand, VehicleSaleRequest,
 };
 pub use application::{
-    CreatePlayerError, PlayerAccessRepository, PlayerAccounts, PlayerRepository,
+    CreatePlayerError, PlayerAccessRepository, PlayerAccounts, PlayerProvision, PlayerRepository,
 };
 pub use domain::*;
 pub use infrastructure::client::{

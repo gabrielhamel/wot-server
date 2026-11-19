@@ -15,27 +15,32 @@ pub trait PlayerRepository: Clone + Send + Sync + 'static {
         username: String,
         display_name: String,
         password_hash: String,
-        role: PlayerRole,
-    ) -> impl Future<Output = anyhow::Result<Option<PlayerAccount>>> + Send;
+        mode: PlayerProvision,
+    ) -> impl Future<Output = Result<PlayerAccount, CreatePlayerError>> + Send;
+    fn registration_enabled(&self) -> impl Future<Output = anyhow::Result<bool>> + Send;
+    fn registration_name_available(
+        &self,
+        username: &str,
+    ) -> impl Future<Output = anyhow::Result<bool>> + Send;
 }
 
 pub trait PlayerAccessRepository: PlayerRepository {
     fn setup_available(&self) -> impl Future<Output = anyhow::Result<bool>> + Send;
-    fn admin_credentials(
+    fn web_credentials(
         &self,
         email: &str,
     ) -> impl Future<Output = anyhow::Result<Option<(i64, String)>>> + Send;
-    fn open_admin_session(
+    fn open_web_session(
         &self,
         account_id: i64,
         digest: &[u8; 32],
         lifetime_seconds: i64,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;
-    fn find_admin_session(
+    fn find_web_session(
         &self,
         digest: &[u8; 32],
     ) -> impl Future<Output = anyhow::Result<Option<PlayerAccount>>> + Send;
-    fn close_admin_session(
+    fn close_web_session(
         &self,
         digest: &[u8; 32],
     ) -> impl Future<Output = anyhow::Result<()>> + Send;
@@ -51,10 +56,42 @@ pub trait PlayerAccessRepository: PlayerRepository {
 pub enum CreatePlayerError {
     #[error("That login is already in use.")]
     Duplicate,
+    #[error("That username is already taken.")]
+    DuplicateDisplayName,
+    #[error("Registration opens after the first administrator is created.")]
+    RegistrationClosed,
     #[error("First administrator setup is closed.")]
     SetupClosed,
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
+}
+
+impl CreatePlayerError {
+    pub(crate) fn outcome(&self) -> &'static str {
+        match self {
+            Self::Duplicate => "duplicate_login",
+            Self::DuplicateDisplayName => "duplicate_username",
+            Self::RegistrationClosed => "registration_closed",
+            Self::SetupClosed => "conflict",
+            Self::Internal(_) => "failed",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PlayerProvision {
+    Managed,
+    FirstAdmin,
+    Registration,
+}
+
+impl PlayerProvision {
+    pub fn role(self) -> PlayerRole {
+        match self {
+            Self::Managed | Self::Registration => PlayerRole::Player,
+            Self::FirstAdmin => PlayerRole::Admin,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -74,7 +111,7 @@ impl<R: PlayerRepository> PlayerAccounts<R> {
 
     #[tracing::instrument(name = "accounts.players.create", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
     pub async fn create(&self, player: NewPlayer) -> Result<PlayerAccount, CreatePlayerError> {
-        self.provision(player, PlayerRole::Player).await
+        self.provision(player, PlayerProvision::Managed).await
     }
 
     #[tracing::instrument(name = "accounts.players.bootstrap_admin", skip_all, fields(ddd.bounded_context.name = "accounts", input.role = "admin", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
@@ -82,25 +119,34 @@ impl<R: PlayerRepository> PlayerAccounts<R> {
         &self,
         player: NewPlayer,
     ) -> Result<PlayerAccount, CreatePlayerError> {
-        self.provision(player, PlayerRole::Admin).await
+        self.provision(player, PlayerProvision::FirstAdmin).await
+    }
+
+    #[tracing::instrument(name = "accounts.registration.create", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty, input.role = "player"), err)]
+    pub async fn register(&self, player: NewPlayer) -> Result<PlayerAccount, CreatePlayerError> {
+        self.provision(player, PlayerProvision::Registration).await
+    }
+
+    pub async fn registration_enabled(&self) -> anyhow::Result<bool> {
+        self.repository.registration_enabled().await
+    }
+
+    pub async fn registration_name_available(&self, username: &str) -> anyhow::Result<bool> {
+        self.repository.registration_name_available(username).await
     }
 
     async fn provision(
         &self,
         player: NewPlayer,
-        role: PlayerRole,
+        mode: PlayerProvision,
     ) -> Result<PlayerAccount, CreatePlayerError> {
         let (username, display_name, password) = player.into_parts();
         tracing::Span::current().record("input.username.bytes", username.len());
         tracing::Span::current().record("input.display_name.bytes", display_name.len());
         let hash = hash_password(password).await?;
         self.repository
-            .provision(username, display_name, hash, role)
-            .await?
-            .ok_or(match role {
-                PlayerRole::Player => CreatePlayerError::Duplicate,
-                PlayerRole::Admin => CreatePlayerError::SetupClosed,
-            })
+            .provision(username, display_name, hash, mode)
+            .await
     }
 }
 
@@ -109,15 +155,15 @@ impl<R: PlayerAccessRepository> PlayerAccounts<R> {
         self.repository.setup_available().await
     }
 
-    #[tracing::instrument(name = "accounts.admin.authenticate", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = email.len(), output.outcome = tracing::field::Empty), err)]
-    pub async fn authenticate_admin(
+    #[tracing::instrument(name = "accounts.web.authenticate", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = email.len(), output.outcome = tracing::field::Empty), err)]
+    pub async fn authenticate_web(
         &self,
         email: &str,
         password: String,
     ) -> anyhow::Result<Option<i64>> {
-        // Use the same Argon2 parameters for absent and present administrator credentials.
+        // Use the same Argon2 parameters for absent and present web credentials.
         const PLACEHOLDER_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        let credentials = self.repository.admin_credentials(email).await?;
+        let credentials = self.repository.web_credentials(email).await?;
         let (account, hash) = match credentials {
             Some((id, hash)) => (Some(id), hash),
             None => (None, PLACEHOLDER_HASH.to_owned()),
@@ -138,26 +184,26 @@ impl<R: PlayerAccessRepository> PlayerAccounts<R> {
         Ok(authenticated)
     }
 
-    pub async fn open_admin_session(
+    pub async fn open_web_session(
         &self,
         account_id: i64,
         digest: &[u8; 32],
         lifetime_seconds: i64,
     ) -> anyhow::Result<bool> {
         self.repository
-            .open_admin_session(account_id, digest, lifetime_seconds)
+            .open_web_session(account_id, digest, lifetime_seconds)
             .await
     }
 
-    pub async fn find_admin_session(
+    pub async fn find_web_session(
         &self,
         digest: &[u8; 32],
     ) -> anyhow::Result<Option<PlayerAccount>> {
-        self.repository.find_admin_session(digest).await
+        self.repository.find_web_session(digest).await
     }
 
-    pub async fn close_admin_session(&self, digest: &[u8; 32]) -> anyhow::Result<()> {
-        self.repository.close_admin_session(digest).await
+    pub async fn close_web_session(&self, digest: &[u8; 32]) -> anyhow::Result<()> {
+        self.repository.close_web_session(digest).await
     }
 
     pub async fn change_role(

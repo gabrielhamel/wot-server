@@ -6,8 +6,8 @@ Player Sessions. It does not own transport sessions, entities, battles or matchm
 
 | Layer | Responsibilities |
 | --- | --- |
-| `domain/` | Account snapshots, balances, owned vehicles and ammunition, progression, equipment, consumables, directives, depot sales, crew rosters, training and vehicle purchase rules; no SQL or protocol types. |
-| `application/` | Repository ports, credential verification, paginated player listing and provisioning, snapshot queries, preferences and ammunition/progression proposals/commit use cases. |
+| `domain/` | Account snapshots, balances, owned vehicles and ammunition, progression, equipment, consumables, directives, depot sales, crew rosters, training and vehicle purchase rules; registration validation. Contains no SQL or protocol types. |
+| `application/` | Repository ports, credential verification, paginated player listing, managed provisioning and self-service registration, snapshot queries, preferences and ammunition/progression proposals/commit use cases. |
 | `infrastructure/postgres.rs` | SQLx pool, embedded migrations, coherent snapshot reads, atomic preference updates and revision-checked inventory transactions. |
 | `infrastructure/players.rs` | PostgreSQL player directory pages and atomic creation with initial balances and starter garage provisioning. |
 | `infrastructure/player_access.rs` | Role-aware account and session access, serialized role changes and session revocation. |
@@ -23,9 +23,9 @@ context is a possible future boundary, not an implemented one.
 
 | Term | Meaning |
 | --- | --- |
-| Account | A durable identity selected by a unique, case-sensitive username. |
+| Account | A durable identity selected by a unique, case-sensitive sign-in name (an email for self-registered players). |
 | Player role | The account's Player or Administrator access level. |
-| Dashboard session | A 60-day administrator credential backed by a revocable PostgreSQL record. |
+| Dashboard session | A 60-day panel credential bound to the account's role at issuance and backed by a revocable PostgreSQL record. |
 | Starter garage | Tier I regular tech tree tanks with stock modules, ammunition, and trained crew. |
 | Owned vehicle | A stable inventory ID and catalog key attached to one account. |
 | Catalog key | A resource identifier such as `usa:A01_T1_Cunningham`. |

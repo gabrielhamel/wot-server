@@ -60,7 +60,7 @@ describe("Server Administration", () => {
   it("rejects incorrect credentials, then signs in and signs out", async () => {
     const telemetry = captureTraces();
     const attempts: Array<{ body: unknown; trace: string | null }> = [];
-    let session: AdminSession = { status: "signed_out" };
+    let session: AdminSession = { status: "signed_out", registration_open: true };
     let signOutTrace: string | null = null;
     httpServer.use(
       players(),
@@ -68,7 +68,7 @@ describe("Server Administration", () => {
       http.post(`${origin}/logout`, ({ request }) => {
         signOutTrace = request.headers.get("traceparent");
         expect(request.headers.get("x-wot-admin")).toBe("1");
-        session = { status: "signed_out" };
+        session = { status: "signed_out", registration_open: true };
         return new HttpResponse(null, { status: 204 });
       }),
       http.post(`${origin}/session`, async ({ request }) => {
@@ -79,10 +79,7 @@ describe("Server Administration", () => {
           session = authenticated;
           return new HttpResponse(null, { status: 204 });
         }
-        return HttpResponse.json(
-          { message: "Invalid administrator email or password." },
-          { status: 401 },
-        );
+        return HttpResponse.json({ message: "Invalid email or password." }, { status: 401 });
       }),
     );
     try {
@@ -90,7 +87,7 @@ describe("Server Administration", () => {
       await user.type(await screen.findByRole("textbox", { name: "Email" }), admin.username);
       await user.type(passwordInput(), "bad-password");
       await user.click(screen.getByRole("button", { name: "Sign in" }));
-      expect(await screen.findByText("Invalid administrator email or password.")).toBeVisible();
+      expect(await screen.findByText("Invalid email or password.")).toBeVisible();
       await user.clear(passwordInput());
       await user.type(passwordInput(), password);
       await user.click(screen.getByRole("button", { name: "Sign in" }));
@@ -128,7 +125,7 @@ describe("Server Administration", () => {
       http.post(`${origin}/setup`, async ({ request }) => {
         setup = await request.json();
         trace = request.headers.get("traceparent");
-        session = { status: "signed_out" };
+        session = { status: "signed_out", registration_open: true };
         return HttpResponse.json(admin, { status: 201 });
       }),
     );
@@ -137,6 +134,9 @@ describe("Server Administration", () => {
       expect(
         await screen.findByRole("heading", { name: "Create the first administrator" }),
       ).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "Create a player account" }),
+      ).not.toBeInTheDocument();
       await user.type(screen.getByRole("textbox", { name: "Email" }), admin.username);
       await user.type(screen.getByRole("textbox", { name: "Display name" }), admin.display_name);
       await user.type(passwordInput(), password);
@@ -144,6 +144,7 @@ describe("Server Administration", () => {
       expect(await screen.findByText("Administrator created. Sign in to continue.")).toBeVisible();
       expect(screen.getByRole("button", { name: "Sign in" })).toBeVisible();
       expect(passwordInput()).toHaveValue("");
+      expect(screen.getByRole("button", { name: "Create a player account" })).toBeVisible();
       expect(setup).toEqual({
         username: admin.username,
         display_name: admin.display_name,
@@ -152,6 +153,109 @@ describe("Server Administration", () => {
       telemetry.expectRequest(trace, "web.admin.bootstrap", "/api/admin/setup", 201);
       expect(telemetry.serializedSpanData()).not.toContain(password);
       expect(telemetry.serializedSpanData()).not.toContain(admin.username);
+    } finally {
+      await telemetry.stop();
+    }
+  });
+
+  it("registers a player and opens their read-only garage after sign-in", async () => {
+    const telemetry = captureTraces();
+    let session: AdminSession = { status: "signed_out", registration_open: true };
+    const traces = new Map<string, string | null>();
+    const passphrase = "a brand new player passphrase";
+    const registered = { ...player, display_name: "NewCommander" };
+    httpServer.use(
+      http.get(`${origin}/session`, () => HttpResponse.json(session)),
+      http.post(`${origin}/registration/username`, async ({ request }) => {
+        const { username } = (await request.json()) as { username: string };
+        expect(request.headers.get("x-wot-admin")).toBe("1");
+        traces.set(username, request.headers.get("traceparent"));
+        return HttpResponse.json({ available: username !== "TakenName" });
+      }),
+      http.post(`${origin}/registration`, async ({ request }) => {
+        expect(request.headers.get("x-wot-admin")).toBe("1");
+        expect(await request.json()).toEqual({
+          email: registered.username,
+          username: registered.display_name,
+          password: passphrase,
+          confirm_password: passphrase,
+        });
+        traces.set("register", request.headers.get("traceparent"));
+        return HttpResponse.json(registered, { status: 201 });
+      }),
+      http.post(`${origin}/session`, async ({ request }) => {
+        expect(await request.json()).toEqual({ email: registered.username, password: passphrase });
+        session = { status: "authenticated", player: registered };
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.get(`${origin}/me/garage`, ({ request }) => {
+        traces.set("garage", request.headers.get("traceparent"));
+        return HttpResponse.json({ ...garage, display_name: registered.display_name });
+      }),
+      http.post(`${origin}/logout`, () => {
+        session = { status: "signed_out", registration_open: true };
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    try {
+      const { user } = openAdmin();
+      await user.click(await screen.findByRole("button", { name: "Create a player account" }));
+      const username = screen.getByRole("textbox", { name: "Username" });
+      await user.type(username, "TakenName");
+      expect(await screen.findByText("That username is already taken.")).toBeVisible();
+      expect(screen.getByRole("button", { name: "Create account" })).toBeDisabled();
+      await user.clear(username);
+      await user.type(username, registered.display_name);
+      expect(await screen.findByText("Username available.")).toBeVisible();
+      await user.type(screen.getByRole("textbox", { name: "Email" }), registered.username);
+      await user.type(screen.getByLabelText(/^Password/), passphrase);
+      const confirmation = screen.getByLabelText(/^Confirm password/);
+      await user.type(confirmation, "different passphrase");
+      await user.click(screen.getByRole("button", { name: "Create account" }));
+      expect(await screen.findByText("The passwords do not match.")).toBeVisible();
+      await user.clear(confirmation);
+      await user.type(confirmation, passphrase);
+      await user.click(screen.getByRole("button", { name: "Create account" }));
+      expect(await screen.findByRole("heading", { name: "Account created" })).toBeVisible();
+      expect(screen.getByText("How to sign in to World of Tanks")).toBeVisible();
+      expect(screen.getByText(registered.username)).toBeVisible();
+
+      await user.click(screen.getByRole("button", { name: "Sign in to the panel" }));
+      await user.type(screen.getByRole("textbox", { name: "Email" }), registered.username);
+      await user.type(passwordInput(), passphrase);
+      await user.click(screen.getByRole("button", { name: "Sign in" }));
+      expect(await screen.findByRole("heading", { name: "My garage" })).toBeVisible();
+      expect(await screen.findByRole("heading", { name: "Current balances" })).toBeVisible();
+      expect(screen.getByText("Bonds")).toBeVisible();
+      expect(screen.getByRole("rowheader", { name: "T1 Cunningham" })).toBeVisible();
+      expect(screen.queryByText("Player accounts")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Grant/ })).not.toBeInTheDocument();
+
+      const unavailable = telemetry.expectRequest(
+        traces.get("TakenName") ?? null,
+        "web.panel.check_username",
+        "/api/admin/registration/username",
+        200,
+      );
+      expect(unavailable.parent?.attributes["output.username.available"]).toBe(false);
+      telemetry.expectRequest(
+        traces.get("register") ?? null,
+        "web.panel.register",
+        "/api/admin/registration",
+        201,
+      );
+      telemetry.expectRequest(
+        traces.get("garage") ?? null,
+        "web.panel.load_own_garage",
+        "/api/admin/me/garage",
+        200,
+      );
+      for (const input of [registered.username, registered.display_name, "TakenName", passphrase]) {
+        expect(telemetry.serializedSpanData()).not.toContain(input);
+      }
+      await user.click(screen.getByRole("button", { name: "Sign out" }));
+      expect(await screen.findByRole("button", { name: "Sign in" })).toBeVisible();
     } finally {
       await telemetry.stop();
     }

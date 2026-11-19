@@ -43,7 +43,7 @@ async fn exports_admin_http_request_inputs() {
     .unwrap();
     assert!(
         PlayerAccounts::new(players.clone())
-            .open_admin_session(admin, &secret.digest(), 60)
+            .open_web_session(admin, &secret.digest(), 60)
             .await
             .unwrap()
     );
@@ -241,9 +241,20 @@ async fn exports_admin_http_request_inputs() {
     });
     assert_eq!(response.unwrap().status(), StatusCode::NOT_FOUND);
 
-    let duplicate = send("POST", "/api/admin/players", session_cookie, &body)
-        .await
-        .unwrap();
+    let duplicate_body = serde_json::json!({
+        "username": username,
+        "display_name": "Another Dashboard Name",
+        "password": PASSWORD,
+    })
+    .to_string();
+    let duplicate = send(
+        "POST",
+        "/api/admin/players",
+        session_cookie,
+        &duplicate_body,
+    )
+    .await
+    .unwrap();
     assert_eq!(duplicate.status(), StatusCode::CONFLICT);
 
     let spans = exporter.get_finished_spans().unwrap();
@@ -270,6 +281,8 @@ async fn exports_admin_http_request_inputs() {
     assert_eq!(snapshot.display_name, "Dashboard Player");
     assert_eq!(snapshot.balances.credits, 200_000);
     assert_eq!(snapshot.balances.gold, 500);
+    assert_eq!(snapshot.balances.bonds, 0);
+    assert_eq!(snapshot.balances.free_xp, 0);
     let mut owned_keys: Vec<_> = snapshot
         .vehicles
         .iter()
@@ -434,7 +447,7 @@ async fn exports_admin_http_request_inputs() {
     assert!(contains_operation(roots[9], "player_sessions.grants.grant"));
     for (root, outcome, transaction_end) in [
         (roots[10], "created", "COMMIT"),
-        (roots[16], "conflict", "ROLLBACK"),
+        (roots[16], "duplicate_login", "ROLLBACK"),
     ] {
         assert!(contains_operation(root, "accounts.players.provision"));
         let provision = spans
@@ -582,7 +595,9 @@ async fn exports_admin_http_access_lifecycle() {
             .body(Body::from(body.to_owned()))
             .unwrap()
     };
-    let send = |method, path, cookie, body| service.call(request(method, path, cookie, body));
+    let send = |method, path: &str, cookie: &str, body: &str| {
+        service.call(request(method, path, cookie, body))
+    };
     let json = |response: Response| async {
         serde_json::from_slice::<serde_json::Value>(
             &to_bytes(response.into_body(), 8192).await.unwrap(),
@@ -599,6 +614,30 @@ async fn exports_admin_http_access_lifecycle() {
         "setup_required"
     );
     assert_eq!(send("GET", "/players", "", "").await.unwrap().status(), 401);
+    assert_eq!(
+        send("GET", "/me/garage", "", "").await.unwrap().status(),
+        401
+    );
+    const REGISTRATION: &str = r#"{"email":"signup@example.test","username":"NewCadet","password":"signup-test-passphrase","confirm_password":"signup-test-passphrase"}"#;
+    assert_eq!(
+        send("POST", "/registration", "", REGISTRATION)
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    assert_eq!(
+        send(
+            "POST",
+            "/registration/username",
+            "",
+            r#"{"username":"NewCadet"}"#
+        )
+        .await
+        .unwrap()
+        .status(),
+        409
+    );
 
     let (first, second) = tokio::join!(
         send("POST", "/setup", "", OWNER),
@@ -653,12 +692,158 @@ async fn exports_admin_http_access_lifecycle() {
         .unwrap();
     assert_eq!(json(persisted).await["player"], owner);
     let remaining: f64 = sqlx::query_scalar(
-        "SELECT extract(epoch FROM expires_at - now())::float8 FROM admin_sessions",
+        "SELECT extract(epoch FROM expires_at - now())::float8 FROM web_sessions",
     )
     .fetch_one(&repository.connection_pool())
     .await
     .unwrap();
     assert!((5_183_900.0..=5_184_000.0).contains(&remaining));
+
+    for (body, field) in [
+        (
+            REGISTRATION.replace("signup@example.test", "signup@example"),
+            "email",
+        ),
+        (REGISTRATION.replace("NewCadet", "New Cadet"), "username"),
+        (
+            REGISTRATION.replace("signup-test-passphrase", "short"),
+            "password",
+        ),
+        (
+            REGISTRATION.replacen("signup-test-passphrase", "different passphrase", 1),
+            "confirm_password",
+        ),
+    ] {
+        let response = send("POST", "/registration", "", &body).await.unwrap();
+        assert_eq!(response.status(), 422);
+        assert!(json(response).await["errors"][field].is_string());
+    }
+    let availability = r#"{"username":"newcadet"}"#;
+    assert_eq!(
+        json(
+            send("POST", "/registration/username", "", availability)
+                .await
+                .unwrap()
+        )
+        .await["available"],
+        true
+    );
+    let rival = REGISTRATION
+        .replace("signup@example.test", "rival@example.test")
+        .replace("NewCadet", "newcadet");
+    let (registered, rival) = tokio::join!(
+        send("POST", "/registration", "", REGISTRATION),
+        send("POST", "/registration", "", &rival)
+    );
+    let (first, second) = (registered.unwrap(), rival.unwrap());
+    let (registered, conflict) = if first.status() == 201 {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    assert_eq!(registered.status(), 201);
+    assert!(!registered.headers().contains_key(header::SET_COOKIE));
+    assert_eq!(conflict.status(), 409);
+    assert!(json(conflict).await["errors"]["username"].is_string());
+    let registered = json(registered).await;
+    assert_eq!(registered["role"], "player");
+    let claimed_email = registered["username"].as_str().unwrap();
+    let duplicate_email = REGISTRATION
+        .replace("signup@example.test", &claimed_email.to_ascii_uppercase())
+        .replace("NewCadet", "AnotherCadet");
+    let conflict = send("POST", "/registration", "", &duplicate_email)
+        .await
+        .unwrap();
+    assert_eq!(conflict.status(), 409);
+    assert!(json(conflict).await["errors"]["email"].is_string());
+    assert_eq!(
+        json(
+            send("POST", "/registration/username", "", availability)
+                .await
+                .unwrap()
+        )
+        .await["available"],
+        false
+    );
+    let player_login =
+        serde_json::json!({"email": claimed_email, "password": "signup-test-passphrase"})
+            .to_string();
+    let player_cookie = session_cookie(send("POST", "/session", "", &player_login).await.unwrap());
+    assert_eq!(
+        json(send("GET", "/session", &player_cookie, "").await.unwrap()).await["player"],
+        registered
+    );
+    let own_garage = json(send("GET", "/me/garage", &player_cookie, "").await.unwrap()).await;
+    assert_eq!(own_garage["display_name"], registered["display_name"]);
+    assert_eq!(own_garage["bonds"], "0");
+    assert_eq!(own_garage["free_xp"], "0");
+    assert!(!own_garage["vehicles"].as_array().unwrap().is_empty());
+    let game_account = Accounts::new(repository.clone())
+        .authenticate(claimed_email, "signup-test-passphrase".into())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        game_account.display_name,
+        registered["display_name"].as_str().unwrap()
+    );
+    let other_garage = format!("/players/{}/garage", owner["id"].as_str().unwrap());
+    let other_grants = format!("/players/{}/grants", owner["id"].as_str().unwrap());
+    assert_eq!(
+        send("GET", "/players", &player_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        send("GET", &other_garage, &player_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        send(
+            "POST",
+            &other_grants,
+            &player_cookie,
+            r#"{"kind":"currency","currency":"gold","amount":1}"#
+        )
+        .await
+        .unwrap()
+        .status(),
+        401,
+    );
+    let player_role = format!("/players/{}/role", registered["id"].as_str().unwrap());
+    assert_eq!(
+        send("POST", &player_role, &owner_cookie, r#"{"role":"admin"}"#)
+            .await
+            .unwrap()
+            .status(),
+        204
+    );
+    assert_eq!(
+        send("GET", "/players", &player_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        send("GET", "/me/garage", &player_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    assert_eq!(
+        send("POST", &player_role, &owner_cookie, r#"{"role":"player"}"#)
+            .await
+            .unwrap()
+            .status(),
+        204
+    );
 
     let owner_role = format!("/players/{}/role", owner["id"].as_str().unwrap());
     assert_eq!(
@@ -680,7 +865,7 @@ async fn exports_admin_http_access_lifecycle() {
             .await
             .unwrap()
             .status(),
-        401
+        204
     );
     let second_role = format!("/players/{}/role", second["id"].as_str().unwrap());
     let mut without_header = request("POST", &second_role, &owner_cookie, r#"{"role":"admin"}"#);
@@ -718,7 +903,7 @@ async fn exports_admin_http_access_lifecycle() {
             .await
             .unwrap()
             .status(),
-        401
+        204
     );
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM accounts WHERE role = 'admin'")
         .fetch_one(&repository.connection_pool())
@@ -756,7 +941,7 @@ async fn exports_admin_http_access_lifecycle() {
         401
     );
     let expired_cookie = session_cookie(send("POST", "/session", "", first_login).await.unwrap());
-    sqlx::query("UPDATE admin_sessions SET expires_at = now() - interval '1 second'")
+    sqlx::query("UPDATE web_sessions SET expires_at = now() - interval '1 second'")
         .execute(&repository.connection_pool())
         .await
         .unwrap();
@@ -796,17 +981,55 @@ async fn exports_admin_http_access_lifecycle() {
     );
 
     let spans = exporter.get_finished_spans().unwrap();
-    for (name, outcome, status) in [
-        ("admin.sign_in", "authorized", "204"),
-        ("admin.sign_in", "rejected", "401"),
-        ("admin.players.change_role", "updated", "204"),
-        ("admin.players.change_role", "own_role", "403"),
+    for (name, key, outcome, status) in [
+        ("admin.sign_in", "output.outcome", "authorized", "204"),
+        ("admin.sign_in", "output.outcome", "rejected", "401"),
+        (
+            "admin.players.change_role",
+            "output.outcome",
+            "updated",
+            "204",
+        ),
+        (
+            "admin.players.change_role",
+            "output.outcome",
+            "own_role",
+            "403",
+        ),
+        (
+            "web_panel.registration.create",
+            "output.outcome",
+            "created",
+            "201",
+        ),
+        (
+            "web_panel.registration.create",
+            "output.outcome",
+            "duplicate_username",
+            "409",
+        ),
+        (
+            "web_panel.registration.create",
+            "output.outcome",
+            "duplicate_login",
+            "409",
+        ),
+        (
+            "web_panel.registration.check_username",
+            "output.username.available",
+            "false",
+            "200",
+        ),
+        (
+            "web_panel.garage.show_own",
+            "user.id",
+            registered["id"].as_str().unwrap(),
+            "200",
+        ),
     ] {
         let span = spans
             .iter()
-            .find(|span| {
-                span.name == name && attribute(span, "output.outcome").as_deref() == Some(outcome)
-            })
+            .find(|span| span.name == name && attribute(span, key).as_deref() == Some(outcome))
             .unwrap();
         let root = spans
             .iter()
@@ -850,6 +1073,12 @@ async fn exports_admin_http_access_lifecycle() {
         "first-admin-password",
         "other-player-password",
         "wrong-password",
+        "signup@example.test",
+        "rival@example.test",
+        "signup-test-passphrase",
+        "NewCadet",
+        "newcadet",
+        player_cookie.split_once('=').unwrap().1,
         owner_cookie.split_once('=').unwrap().1,
         second_cookie.split_once('=').unwrap().1,
     ] {
