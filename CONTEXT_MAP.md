@@ -1,7 +1,7 @@
 # Context map
 
-See [naming bounded contexts](docs/bounded-contexts.md) for naming criteria and
-a review of the names used in this map.
+See the [bounded context guide](docs/bounded-contexts.md) for naming criteria,
+published contracts, and storage ownership rules.
 
 ## wot-server
 

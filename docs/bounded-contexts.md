@@ -1,4 +1,6 @@
-# Naming bounded contexts
+# Bounded contexts
+
+## Naming and ubiquitous language
 
 A bounded context defines where a model and its vocabulary have a consistent
 meaning. Start by identifying the decisions the context owns and the terms used
@@ -30,6 +32,38 @@ Put reusable infrastructure in [Platform](../src/platform/README.md) when it
 works independently of a domain context. Infrastructure specific to a workflow
 stays with that workflow. Offline tools with their own inputs, outputs, and
 research vocabulary remain explicit boundaries.
+
+## Published contracts
+
+Publish a contract at the owning context's entry point for every interaction
+with another context. Document what each operation accepts, what it returns,
+and who owns its invariants. The owner runs the command and commits its changes.
+Consumers receive a result or read projection and adapt it to their own
+language. Server composition creates the adapters and injects the services.
+
+For example, Social resolves numeric player IDs through Accounts'
+[`PlayerDirectory`](../src/accounts/contract.rs). Player Sessions submits
+revision-checked commands through [Accounts' garage API](../src/accounts/application/garage.rs)
+and delivers the committed result to the connected client. These calls cross
+the same boundaries inside one binary that they would cross after extraction.
+
+## PostgreSQL ownership and migrations
+
+The server shares one PostgreSQL database and connection pool. Each persistent
+context owns one schema and its own SQLx migration history. Put new migrations
+under the owning context's `infrastructure/migrations/` and keep runtime
+queries schema-qualified. Contexts that hold state in memory need no schema.
+
+Keep foreign keys, joins, views, and triggers within one context. Persist a
+reference to another context as a scalar ID. Resolve or validate it through
+the owner's published contract, and account for missing identities in the
+consuming context. Calls that need another context's database access run
+outside the caller's database transaction so both can use a single connection.
+
+Accounts and Social track migrations in their own schemas. The root
+[`migrations/`](../migrations/) contains the historical shared migrations and
+the upgrade that moves existing data. Applied migrations retain their
+checksums. See the [server guide](server.md#running) for the upgrade procedure.
 
 ## Review of the current names
 
