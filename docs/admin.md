@@ -55,8 +55,11 @@ access to the listener until setup is complete.
 
 Once the first administrator exists, choose **Create a player account** on the
 sign-in page. The email address is the sign-in name for the game and the panel.
-The username is the name other players see in the game. Choose 3–24 ASCII
-letters, digits or underscores. The form checks availability while you type.
+The username is the name other players see in the game. Use 3–24 characters
+from A–Z, a–z, 0–9 and underscores. This follows the character set published
+by [Wargaming registration](https://wargaming.net/registration/en/?change_realm=1&login_form=enabled).
+Both forms show a field error for an invalid username and check availability
+as soon as the name has a valid format.
 The email field shows a message for an invalid address or an address already
 in use. The API checks both email and username for case-insensitive duplicates
 when saving the account. Sign in with the email as entered during registration.

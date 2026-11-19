@@ -118,7 +118,9 @@ impl NewPlayer {
 pub enum RegistrationError {
     #[error("Enter a valid email address of up to 128 characters.")]
     Email,
-    #[error("Use 3 to 24 letters, numbers or underscores for your username.")]
+    #[error(
+        "Use 3 to 24 characters for your username. Use only English letters (A–Z), digits, and underscores."
+    )]
     Username,
     #[error(
         "Use 8 to 128 characters, including at least one digit, one uppercase letter, one lowercase letter, and one symbol. Control characters are not allowed."

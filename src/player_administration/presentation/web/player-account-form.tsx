@@ -5,8 +5,14 @@ import { errorMessage, fieldError } from "../../../platform/infrastructure/web/h
 import type { PlayerCredentials } from "../../application/admin-contracts";
 import { checkUsername } from "../../infrastructure/admin-api";
 
-const usernamePattern = "[A-Za-z0-9_]{3,24}";
-const usernameHelp = "Use 3 to 24 letters, numbers or underscores.";
+const usernameCharacters = "A-Za-z0-9_";
+const minUsernameLength = 3;
+const maxUsernameLength = 24;
+const usernamePattern = `[${usernameCharacters}]{${minUsernameLength},${maxUsernameLength}}`;
+const invalidUsernameCharacter = new RegExp(`[^${usernameCharacters}]`);
+const usernameCharacterHelp = "Use only English letters (A–Z), digits, and underscores.";
+const usernameLengthHelp = `Use ${minUsernameLength} to ${maxUsernameLength} characters.`;
+const usernameHelp = `${usernameLengthHelp} ${usernameCharacterHelp}`;
 const emailHelp = "Enter a valid email address of up to 128 characters.";
 const emailAtom = /^[A-Za-z0-9!#$%&'*+\-/=?^`{|}~]+$/;
 const domainLabel = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
@@ -43,6 +49,13 @@ function validPassword(password: string) {
   );
 }
 
+function usernameFormatError(username: string) {
+  if (invalidUsernameCharacter.test(username)) return usernameCharacterHelp;
+  if (username.length < minUsernameLength || username.length > maxUsernameLength)
+    return usernameLengthHelp;
+  return "";
+}
+
 type Availability = "checking" | "available" | "taken" | "unconfirmed";
 const availabilityMessages: Record<Availability, string> = {
   checking: "Checking availability…",
@@ -51,8 +64,7 @@ const availabilityMessages: Record<Availability, string> = {
   unconfirmed: "Availability will be checked when you submit.",
 };
 
-function useUsernameAvailability(username: string) {
-  const valid = new RegExp(`^${usernamePattern}$`).test(username);
+function useUsernameAvailability(username: string, valid: boolean) {
   const [result, setResult] = useState<{ username: string; status: Availability }>();
 
   useEffect(() => {
@@ -102,12 +114,22 @@ export function PlayerAccountForm({
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [usernameError, setUsernameError] = useState("");
   const [username, setUsername] = useState("");
+  const [usernameTouched, setUsernameTouched] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [emailError, setEmailError] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const emailInput = useRef<HTMLInputElement>(null);
-  const availability = useUsernameAvailability(username);
+  const usernameInput = useRef<HTMLInputElement>(null);
+  const formatError = usernameFormatError(username);
+  const availability = useUsernameAvailability(username, !formatError);
+  const usernameMessage =
+    usernameError || (usernameTouched || username.length >= minUsernameLength ? formatError : "");
+
+  function showInvalidUsername() {
+    setUsernameTouched(true);
+    usernameInput.current?.focus();
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -123,6 +145,10 @@ export function PlayerAccountForm({
     if (!validEmail(email)) {
       setEmailError(emailHelp);
       emailInput.current?.focus();
+      return;
+    }
+    if (formatError) {
+      showInvalidUsername();
       return;
     }
     if (!validPassword(password)) {
@@ -191,6 +217,7 @@ export function PlayerAccountForm({
       <TextField
         label="Username"
         name="username"
+        inputRef={usernameInput}
         autoComplete="nickname"
         required
         value={username}
@@ -198,14 +225,18 @@ export function PlayerAccountForm({
           setUsernameError("");
           setUsername(event.target.value);
         }}
-        error={Boolean(usernameError) || availability === "taken"}
+        onBlur={() => setUsernameTouched(true)}
+        onInvalid={(event) => {
+          event.preventDefault();
+          showInvalidUsername();
+        }}
+        error={Boolean(usernameMessage) || availability === "taken"}
         helperText={
-          usernameError || (availability ? availabilityMessages[availability] : usernameHelp)
+          usernameMessage || (availability ? availabilityMessages[availability] : usernameHelp)
         }
         slotProps={{
           htmlInput: {
             pattern: usernamePattern,
-            maxLength: 24,
             autoCapitalize: "none",
             readOnly: pending,
           },

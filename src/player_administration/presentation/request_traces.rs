@@ -780,7 +780,6 @@ async fn exports_admin_http_access_lifecycle() {
             REGISTRATION.replace("signup@example.test", "signup@example"),
             "email",
         ),
-        (REGISTRATION.replace("NewCadet", "New Cadet"), "username"),
         (
             REGISTRATION.replacen("Tank123!", "Different123!", 1),
             "confirm_password",
@@ -794,6 +793,47 @@ async fn exports_admin_http_access_lifecycle() {
         let response = send("POST", "/registration", "", &body).await.unwrap();
         assert_eq!(response.status(), 422);
         assert!(json(response).await["errors"][field].is_string());
+    }
+    for invalid_name in [
+        "New Cadet",
+        "New-Cadet",
+        "Éclair",
+        "ab",
+        "a".repeat(25).as_str(),
+    ] {
+        for (path, cookie, body, field) in [
+            (
+                "/registration/username",
+                "",
+                serde_json::json!({"username": invalid_name}),
+                "username",
+            ),
+            (
+                "/registration",
+                "",
+                serde_json::json!({
+                    "email": "signup@example.test",
+                    "username": invalid_name,
+                    "password": "Tank123!",
+                    "confirm_password": "Tank123!",
+                }),
+                "username",
+            ),
+            (
+                "/players",
+                owner_cookie.as_str(),
+                serde_json::json!({
+                    "username": "signup@example.test",
+                    "display_name": invalid_name,
+                    "password": "Tank123!",
+                }),
+                "display_name",
+            ),
+        ] {
+            let response = send("POST", path, cookie, &body.to_string()).await.unwrap();
+            assert_eq!(response.status(), 422);
+            assert!(json(response).await["errors"][field].is_string());
+        }
     }
     let availability = r#"{"username":"newcadet"}"#;
     assert_eq!(

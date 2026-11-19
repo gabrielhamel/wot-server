@@ -305,7 +305,7 @@ describe("Server Administration", () => {
     const passphrase = "Tank123!";
     const takenEmail = "taken@example.test";
     const emailConflict = "That email is already in use.";
-    const registered = { ...player, display_name: "NewCommander" };
+    const registered = { ...player, display_name: "New_Commander9" };
     httpServer.use(
       http.get(`${origin}/session`, () => HttpResponse.json(session)),
       http.post(`${origin}/registration/username`, async ({ request }) => {
@@ -352,6 +352,23 @@ describe("Server Administration", () => {
       const { user } = openAdmin();
       await user.click(await screen.findByRole("button", { name: "Create a player account" }));
       const username = screen.getByRole("textbox", { name: "Username" });
+      for (const invalidName of ["New Cadet", "New-Cadet", "Éclair"]) {
+        await user.type(username, invalidName);
+        expect(username).toBeInvalid();
+        expect(username).toHaveAccessibleDescription(
+          "Use only English letters (A–Z), digits, and underscores.",
+        );
+        await user.clear(username);
+      }
+      await user.type(username, "ab");
+      await user.tab();
+      expect(username).toHaveAccessibleDescription("Use 3 to 24 characters.");
+      await user.clear(username);
+      await user.paste("a".repeat(25));
+      expect(username).toHaveValue("a".repeat(25));
+      expect(username).toBeInvalid();
+      expect(username).toHaveAccessibleDescription("Use 3 to 24 characters.");
+      await user.clear(username);
       await user.type(username, "TakenName");
       expect(await screen.findByText("That username is already taken.")).toBeVisible();
       expect(screen.getByRole("button", { name: "Create account" })).toBeDisabled();
@@ -517,7 +534,7 @@ describe("Server Administration", () => {
     const telemetry = captureTraces();
     const records = [player];
     const email = "recruit@example.test";
-    const username = "Recruit";
+    const username = "Recruit_7";
     const duplicateEmail = "taken@example.test";
     const conflict = "That login is already in use.";
     const requests: Array<{
@@ -567,6 +584,9 @@ describe("Server Administration", () => {
       await user.clear(usernameInput);
       await user.type(usernameInput, "no spaces");
       expect(usernameInput).toBeInvalid();
+      expect(usernameInput).toHaveAccessibleDescription(
+        "Use only English letters (A–Z), digits, and underscores.",
+      );
       await user.clear(usernameInput);
       await user.type(usernameInput, username);
       expect(await screen.findByText("Username available.")).toBeVisible();
