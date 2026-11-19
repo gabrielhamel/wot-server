@@ -9,16 +9,17 @@ and later versions**. Newer client versions may require compatibility updates.
 the project's latest published server release. The current release uses
 the World of Tanks EU client build **2.4.1.5514**.
 
-1. DM **`gabouchet`** on Discord to request a server account.
+1. Go to [wot.gabrielhamel.fr](https://wot.gabrielhamel.fr/) and choose
+   **Create a player account**.
 2. Close World of Tanks. In your installation's `res` folder, back up your
    existing `scripts_config.xml`.
 3. Download [scripts_config.xml](docs/public-server/scripts_config.xml) and
    [loginapp_wot_server.pubkey](docs/public-server/loginapp_wot_server.pubkey).
    On GitHub, use **Download raw file** to save each file with its original
    name. Copy both into `res` and replace `scripts_config.xml` when prompted.
-4. Launch World of Tanks, select **WoT Server**, and sign in with the account
-   you received on Discord. If Game Center signs you in automatically, choose
-   **Switch Account** first.
+4. Launch World of Tanks, select **WoT Server**, and sign in with the email
+   and password you registered with. If Game Center signs you in automatically,
+   choose **Switch Account** first.
 
 The supplied server list keeps the five official EU entries for this build.
 To undo the change, restore your backup. Game Center updates and repairs can
