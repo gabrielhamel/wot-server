@@ -703,7 +703,8 @@ async fn exports_admin_http_access_lifecycle() {
         )
         .unwrap()
     };
-    const OWNER: &str = r#"{"username":"owner@example.test","display_name":"Owner One","password":"First-admin-password1!"}"#;
+    // The losing setup candidate is later created through the managed player endpoint.
+    const OWNER: &str = r#"{"username":"owner@example.test","display_name":"Owner_One","password":"First-admin-password1!"}"#;
     const OWNER_LOGIN: &str =
         r#"{"email":"owner@example.test","password":"First-admin-password1!"}"#;
     const SECOND: &str = r#"{"username":"recruit@example.test","display_name":"Recruit","password":"Other-player-password2!"}"#;
@@ -741,7 +742,7 @@ async fn exports_admin_http_access_lifecycle() {
 
     let setup_rejections = [
         ("owner@example.test", "owner@localhost", "username"),
-        ("Owner One", " Owner One", "display_name"),
+        ("Owner_One", " Owner_One", "display_name"),
         ("First-admin-password1!", "weak-setup-password", "password"),
     ];
     for (valid, invalid, field) in setup_rejections {
@@ -1309,19 +1310,19 @@ async fn exports_admin_http_access_lifecycle() {
             "invalid_email",
             "422",
             "owner@localhost".len(),
-            "Owner One".len(),
+            "Owner_One".len(),
         ),
         (
             "invalid_display_name",
             "422",
             "owner@example.test".len(),
-            " Owner One".len(),
+            " Owner_One".len(),
         ),
         (
             "invalid_password",
             "422",
             "owner@example.test".len(),
-            "Owner One".len(),
+            "Owner_One".len(),
         ),
         (
             "created",
