@@ -107,10 +107,10 @@ contracts with the context that owns them.
 
 ### Cross-context contracts and persistence
 
-- Put each cross-context contract at the owning context's entry point. Have
-  consumers depend on the published commands, queries, and result types. Keep
-  repositories, database handles, and transaction steps behind that boundary.
-  Wire services and adapters together in `src/server/`.
+- Put each cross-context contract at the owning context's entry point. Limit
+  consumers to the published commands, queries, and result types. Cross-context
+  access to internal modules, helpers, repositories, database handles, and
+  transaction steps is prohibited. Wire services and adapters in `src/server/`.
 - Give every persistent context its own PostgreSQL schema, embedded migration
   directory, and SQLx migration history. Use schema-qualified SQL against
   objects owned by the context. Runtime contexts share the server's database

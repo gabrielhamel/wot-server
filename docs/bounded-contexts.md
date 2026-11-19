@@ -41,6 +41,14 @@ and who owns its invariants. The owner runs the command and commits its changes.
 Consumers receive a result or read projection and adapt it to their own
 language. Server composition creates the adapters and injects the services.
 
+The published contract is the only dependency a consumer may take on another
+context. Internal modules, helpers, repositories, database handles, and
+persistence models are private to their owner. Rust visibility such as
+`pub(crate)` allows access within the binary. The context's entry point defines
+which operations and types it publishes across the boundary. This lets the
+owner change its implementation independently and keeps its invariants in one
+place.
+
 For example, Social resolves numeric player IDs through Accounts'
 [`PlayerDirectory`](../src/accounts/contract.rs). Player Sessions submits
 revision-checked commands through [Accounts' garage API](../src/accounts/application/garage.rs)
