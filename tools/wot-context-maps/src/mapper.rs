@@ -13,6 +13,8 @@ use std::{
 
 const VERSION: &str = "6.12.0";
 const SHA256: &str = "1a3e2a6a48b428c32831c8f43e6152f45e2538836bad8852cea7e0ca6c04f6b6";
+const MAVEN_CENTRAL: &str = "https://repo.maven.apache.org/maven2";
+const MAVEN_CENTRAL_MIRROR: &str = "https://maven-central.storage-download.googleapis.com/maven2";
 const JAVA_CLASS: &str = "org.contextmapper.cli.ContextMapperCLI";
 const ARCHIVE_LIMIT: u64 = 128 * 1024 * 1024;
 
@@ -41,23 +43,7 @@ impl Mapper {
         let classpath_dir = work.join("lib");
         fs::create_dir(&classpath_dir)?;
         let archive_name = format!("context-mapper-cli-{VERSION}");
-        let url = format!(
-            "https://repo.maven.apache.org/maven2/org/contextmapper/context-mapper-cli/{VERSION}/{archive_name}.tar"
-        );
-        let mut bytes = Vec::new();
-        reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()?
-            .get(url)
-            .send()
-            .context("Download the pinned Context Mapper CLI")?
-            .error_for_status()?
-            .take(ARCHIVE_LIMIT + 1)
-            .read_to_end(&mut bytes)?;
-        ensure!(
-            bytes.len() as u64 <= ARCHIVE_LIMIT,
-            "Context Mapper archive is too large"
-        );
+        let bytes = download_archive(&archive_name)?;
         let hash: String = Sha256::digest(&bytes)
             .iter()
             .map(|byte| format!("{byte:02x}"))
@@ -113,6 +99,35 @@ impl Mapper {
         );
         Ok(stdout)
     }
+}
+
+fn download_archive(archive_name: &str) -> Result<Vec<u8>> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()?;
+    let download = |repository| -> Result<Vec<u8>> {
+        let url = format!(
+            "{repository}/org/contextmapper/context-mapper-cli/{VERSION}/{archive_name}.tar"
+        );
+        let mut bytes = Vec::new();
+        client
+            .get(&url)
+            .send()?
+            .error_for_status()?
+            .take(ARCHIVE_LIMIT + 1)
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("Read Context Mapper archive from {url}"))?;
+        ensure!(
+            bytes.len() as u64 <= ARCHIVE_LIMIT,
+            "Context Mapper archive from {url} is too large"
+        );
+        Ok(bytes)
+    };
+    download(MAVEN_CENTRAL).or_else(|error| {
+        eprintln!("Maven Central download failed: {error:#}. Trying the mirror.");
+        download(MAVEN_CENTRAL_MIRROR)
+            .context("Download the pinned Context Mapper CLI from the mirror")
+    })
 }
 
 fn extract_jars(archive: &[u8], lib_path: &Path, destination: &Path) -> Result<()> {
