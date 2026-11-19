@@ -162,7 +162,9 @@ describe("Server Administration", () => {
     const telemetry = captureTraces();
     let session: AdminSession = { status: "signed_out", registration_open: true };
     const traces = new Map<string, string | null>();
-    const passphrase = "a brand new player passphrase";
+    const passphrase = "Tank123!";
+    const takenEmail = "taken@example.test";
+    const emailConflict = "That email is already in use.";
     const registered = { ...player, display_name: "NewCommander" };
     httpServer.use(
       http.get(`${origin}/session`, () => HttpResponse.json(session)),
@@ -174,7 +176,15 @@ describe("Server Administration", () => {
       }),
       http.post(`${origin}/registration`, async ({ request }) => {
         expect(request.headers.get("x-wot-admin")).toBe("1");
-        expect(await request.json()).toEqual({
+        const body = (await request.json()) as { email?: unknown } | null;
+        if (body?.email === takenEmail) {
+          traces.set("duplicate", request.headers.get("traceparent"));
+          return HttpResponse.json(
+            { message: emailConflict, errors: { email: emailConflict } },
+            { status: 409 },
+          );
+        }
+        expect(body).toEqual({
           email: registered.username,
           username: registered.display_name,
           password: passphrase,
@@ -208,15 +218,53 @@ describe("Server Administration", () => {
       await user.clear(username);
       await user.type(username, registered.display_name);
       expect(await screen.findByText("Username available.")).toBeVisible();
-      await user.type(screen.getByRole("textbox", { name: "Email" }), registered.username);
-      await user.type(screen.getByLabelText(/^Password/), passphrase);
+      const email = screen.getByRole("textbox", { name: "Email" });
+      const password = screen.getByLabelText(/^Password/);
       const confirmation = screen.getByLabelText(/^Confirm password/);
+      const submit = screen.getByRole("button", { name: "Create account" });
+      await user.type(email, "new");
+      await user.click(submit);
+      expect(email).toHaveFocus();
+      expect(email).toHaveAccessibleDescription(
+        "Enter a valid email address of up to 128 characters.",
+      );
+      await user.clear(email);
+      await user.type(email, "new@example");
+      await user.tab();
+      expect(email).toBeInvalid();
+      expect(email).toHaveAccessibleDescription(
+        "Enter a valid email address of up to 128 characters.",
+      );
+      await user.clear(email);
+      await user.type(email, takenEmail);
+      expect(email).toBeValid();
+
+      for (const weakPassword of ["Tank1!", "TankTest!", "tank123!", "TANK123!", "Tank123 "]) {
+        await user.clear(password);
+        await user.type(password, weakPassword);
+        await user.clear(confirmation);
+        await user.type(confirmation, weakPassword);
+        await user.click(submit);
+        expect(password).toBeInvalid();
+        expect(password).toHaveAccessibleDescription(/at least one digit/);
+      }
+      expect(traces.has("duplicate")).toBe(false);
+      await user.clear(password);
+      await user.type(password, passphrase);
+      await user.clear(confirmation);
       await user.type(confirmation, "different passphrase");
-      await user.click(screen.getByRole("button", { name: "Create account" }));
+      await user.click(submit);
       expect(await screen.findByText("The passwords do not match.")).toBeVisible();
       await user.clear(confirmation);
       await user.type(confirmation, passphrase);
-      await user.click(screen.getByRole("button", { name: "Create account" }));
+      await user.click(submit);
+      expect(await screen.findByText(emailConflict)).toBeVisible();
+      expect(email).toBeInvalid();
+      expect(email).toHaveAccessibleDescription(emailConflict);
+      await user.clear(email);
+      await user.type(email, registered.username);
+      expect(email).toBeValid();
+      await user.click(submit);
       expect(await screen.findByRole("heading", { name: "Account created" })).toBeVisible();
       expect(screen.getByText("How to sign in to World of Tanks")).toBeVisible();
       expect(screen.getByText(registered.username)).toBeVisible();
@@ -239,6 +287,14 @@ describe("Server Administration", () => {
         200,
       );
       expect(unavailable.parent?.attributes["output.username.available"]).toBe(false);
+      const duplicate = telemetry.expectRequest(
+        traces.get("duplicate") ?? null,
+        "web.panel.register",
+        "/api/admin/registration",
+        409,
+      );
+      expect(duplicate.parent?.attributes["output.outcome"]).toBe("conflict");
+      expect(duplicate.parent?.attributes["input.email.bytes"]).toBe(takenEmail.length);
       telemetry.expectRequest(
         traces.get("register") ?? null,
         "web.panel.register",
@@ -251,7 +307,13 @@ describe("Server Administration", () => {
         "/api/admin/me/garage",
         200,
       );
-      for (const input of [registered.username, registered.display_name, "TakenName", passphrase]) {
+      for (const input of [
+        registered.username,
+        registered.display_name,
+        "TakenName",
+        takenEmail,
+        passphrase,
+      ]) {
         expect(telemetry.serializedSpanData()).not.toContain(input);
       }
       await user.click(screen.getByRole("button", { name: "Sign out" }));

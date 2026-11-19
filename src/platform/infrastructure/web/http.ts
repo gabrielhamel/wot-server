@@ -7,6 +7,7 @@ class HttpFailure extends WebFailure {
   constructor(
     message: string,
     readonly status: number,
+    readonly fields?: unknown,
   ) {
     super(message, status === 409 ? "conflict" : status < 500 ? "rejected" : "server_error");
   }
@@ -14,6 +15,13 @@ class HttpFailure extends WebFailure {
 
 export function responseStatus(error: unknown) {
   return error instanceof HttpFailure ? error.status : undefined;
+}
+
+export function fieldError(error: unknown, field: string) {
+  const fields = error instanceof HttpFailure ? error.fields : undefined;
+  if (typeof fields !== "object" || fields === null || !Object.hasOwn(fields, field)) return;
+  const message = (fields as Record<string, unknown>)[field];
+  return typeof message === "string" ? message : undefined;
 }
 
 export function errorMessage(error: unknown, fallback = "The request could not be completed.") {
@@ -35,14 +43,16 @@ interface WebRequest {
 
 async function readError(response: Response, format: WebRequest["errorFormat"]) {
   const fallback = "The server returned an unexpected response.";
-  if (format === "text") return (await response.text()) || fallback;
+  if (format === "text")
+    return new HttpFailure((await response.text()) || fallback, response.status);
   const result: unknown = await response.json().catch(() => null);
-  return typeof result === "object" &&
-    result !== null &&
-    "message" in result &&
-    typeof result.message === "string"
-    ? result.message
-    : fallback;
+  if (typeof result !== "object" || result === null)
+    return new HttpFailure(fallback, response.status);
+  return new HttpFailure(
+    "message" in result && typeof result.message === "string" ? result.message : fallback,
+    response.status,
+    "errors" in result ? result.errors : undefined,
+  );
 }
 
 export async function request<T>(options: WebRequest): Promise<T> {
@@ -77,8 +87,7 @@ export async function request<T>(options: WebRequest): Promise<T> {
       redirect: "error",
     });
     span.setAttribute("http.response.status_code", response.status);
-    if (!response.ok)
-      throw new HttpFailure(await readError(response, errorFormat), response.status);
+    if (!response.ok) throw await readError(response, errorFormat);
     const result: unknown = response.status === 204 ? undefined : await response.json();
     if (result === null)
       throw new WebFailure("The server returned an unexpected response.", "invalid_response");
