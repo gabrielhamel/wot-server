@@ -150,6 +150,30 @@ fn token(peer: &mut Peer, script: &ScriptDispatch, request: u16) -> String {
     String::from_utf8(bytes.clone()).unwrap()
 }
 
+pub fn exercise_game_disconnect(
+    game: &mut Peer,
+    script: &ScriptDispatch,
+    address: SocketAddr,
+    account: i64,
+) {
+    let token = token(game, script, 4003);
+    let mut chat = Chat::connect(address, account, &token);
+    chat.before_ping();
+    let chat_peer = chat.stream.local_addr().unwrap();
+    game.disconnect();
+    chat.stream.read_to_end(&mut Vec::new()).unwrap();
+    crate::telemetry_capture::assert_xmpp_disconnect(chat_peer, account);
+
+    let mut malformed = TcpStream::connect(address).unwrap();
+    malformed
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let malformed_peer = malformed.local_addr().unwrap();
+    malformed.write_all(b"</unexpected>").unwrap();
+    malformed.read_to_end(&mut Vec::new()).unwrap();
+    crate::telemetry_capture::assert_xmpp_connection_failure(malformed_peer);
+}
+
 pub fn exercise(
     a: &mut Peer,
     b: &mut Peer,

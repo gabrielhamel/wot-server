@@ -298,6 +298,11 @@ envelopes and enter it around synchronous completion handling. Entered span
 guards must not cross an await. Long-lived socket and gateway loops must
 not accumulate independent requests into a single trace.
 
+When the game session ends and revokes the chat credential, the XMPP
+connection closes with `output.outcome=disconnected` and
+`output.disconnect.reason=session_revoked`. The connection span stays open
+through offline presence cleanup. XMPP connection failures set error status.
+
 The telemetry capture helper under tests/support inspects exported spans
 from normal garage and XMPP flows. Regression coverage verifies same-trace
 ancestry through application, domain and repository work, complete SQL text,

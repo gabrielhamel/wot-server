@@ -248,7 +248,7 @@ impl Connection {
                 .parse()?;
             let credential = std::str::from_utf8(parts.get(2).context("Missing SASL credential")?)?;
             let authz = std::str::from_utf8(parts.first().context("Missing SASL authorization")?)?;
-            if !self.shared.authorized(id, credential, self.ip, true)
+            if !self.shared.authorized(id, credential, self.ip, true)?
                 || (!authz.is_empty() && authz != jid(id))
             {
                 return Ok(vec![
