@@ -214,7 +214,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.roster.previous_slot`](../src/player_sessions/infrastructure/gateway/training.rs) | Host's previous roster slot on a valid roster assignment or team swap. |
 | [`output.roster.slot`](../src/player_sessions/infrastructure/gateway/training.rs) | Host's resulting roster slot on a valid team swap. |
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
-| [`output.unlocked_vehicle_count`](../src/accounts/infrastructure/client/store.rs) | Number of purchasable gold vehicle descriptors projected in the Tech Tree economics unlock set during garage sync. |
+| [`output.unlocked_vehicle_count`](../src/accounts/infrastructure/client/store.rs) | Number of gold vehicle descriptors purchasable through the native shop and projected in the Tech Tree economics unlock set during garage sync. |
 | [`output.offers.count`](../src/player_sessions/infrastructure/gateway/store.rs) | Number of offers included in a Store catalog response. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/admission.rs) | Login admission records `admitted`, `replaced`, `superseded`, `waiting_for_write`, `refreshing_snapshot`, `expired`, `full`, `destination_unavailable`, or `reply_unavailable`. |
 | [`output.outcome`](../src/accounts/infrastructure/players.rs) | Account provisioning records `created` after commit or `conflict` after rolling back an existing username or a first-admin setup that is closed. |

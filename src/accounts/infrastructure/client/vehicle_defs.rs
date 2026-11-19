@@ -34,6 +34,7 @@ pub(super) struct VehicleOffer {
     pub key: String,
     pub name: String,
     pub price: Option<VehicleCost>,
+    pub store_gold_price: Option<i64>,
     pub requires_research: bool,
     pub level: Option<i64>,
     pub tags: BTreeSet<String>,
@@ -107,6 +108,10 @@ pub(super) fn offers(
                 let premium = vehicle
                     .get_child_string("tags")
                     .is_some_and(|tags| tags.split_whitespace().any(|tag| tag == "premium"));
+                let definition_price = ItemPrices::definition_price(vehicle);
+                let store_gold_price = (definition_price.currency == "gold"
+                    && definition_price.amount > 0)
+                    .then_some(definition_price.amount);
                 let key = format!("{nation_name}:{name}");
                 offers.entry(cd.to_int() as i32).or_insert(VehicleOffer {
                     forbidden_for_battle: forbidden.contains(&key),
@@ -122,6 +127,7 @@ pub(super) fn offers(
                                 .replace('_', " ")
                         }),
                     price,
+                    store_gold_price,
                     level: vehicle.get_child_integer("level"),
                     tags: vehicle
                         .get_child_string("tags")
