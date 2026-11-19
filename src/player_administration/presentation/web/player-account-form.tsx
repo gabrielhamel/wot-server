@@ -4,6 +4,12 @@ import type { FormEvent } from "react";
 import { errorMessage, fieldError } from "../../../platform/infrastructure/web/http";
 import type { PlayerCredentials } from "../../application/admin-contracts";
 import { checkUsername } from "../../infrastructure/admin-api";
+import {
+  emailHelp,
+  passwordHelp,
+  registrationEmailError,
+  registrationPasswordError,
+} from "./account-credential-rules";
 
 const usernameCharacters = "A-Za-z0-9_";
 const minUsernameLength = 3;
@@ -13,41 +19,6 @@ const invalidUsernameCharacter = new RegExp(`[^${usernameCharacters}]`);
 const usernameCharacterHelp = "Use only English letters (A–Z), digits, and underscores.";
 const usernameLengthHelp = `Use ${minUsernameLength} to ${maxUsernameLength} characters.`;
 const usernameHelp = `${usernameLengthHelp} ${usernameCharacterHelp}`;
-const emailHelp = "Enter a valid email address of up to 128 characters.";
-const emailAtom = /^[A-Za-z0-9!#$%&'*+\-/=?^`{|}~]+$/;
-const domainLabel = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
-const passwordHelp =
-  "Use 8 to 128 characters, including at least one digit, one uppercase letter, one lowercase letter, and one symbol.";
-const passwordControlHelp = "Control characters are not allowed.";
-
-function validEmail(email: string) {
-  const [local, domain, extra] = email.split("@");
-  return (
-    email.length <= 128 &&
-    !email.startsWith("{") &&
-    !/\s/.test(email) &&
-    extra === undefined &&
-    local !== undefined &&
-    local.length <= 64 &&
-    local.split(".").every((part) => emailAtom.test(part)) &&
-    domain !== undefined &&
-    domain.includes(".") &&
-    domain.split(".").every((label) => domainLabel.test(label))
-  );
-}
-
-function validPassword(password: string) {
-  const length = Array.from(password).length;
-  return (
-    length >= 8 &&
-    length <= 128 &&
-    !/\p{Cc}/u.test(password) &&
-    /\p{Nd}/u.test(password) &&
-    /\p{Lu}/u.test(password) &&
-    /\p{Ll}/u.test(password) &&
-    /[\p{P}\p{S}]/u.test(password)
-  );
-}
 
 function usernameFormatError(username: string) {
   if (invalidUsernameCharacter.test(username)) return usernameCharacterHelp;
@@ -97,7 +68,7 @@ function generatePassword() {
   do {
     crypto.getRandomValues(bytes);
     value = Array.from(bytes, (byte) => alphabet.charAt(byte % alphabet.length)).join("");
-  } while (!validPassword(value));
+  } while (registrationPasswordError(value));
   return value;
 }
 
@@ -141,8 +112,9 @@ export function PlayerAccountForm({
     setEmailError("");
     setPasswordError("");
     setUsernameError("");
-    if (!validEmail(email)) {
-      setEmailError(emailHelp);
+    const invalidEmail = registrationEmailError(email);
+    if (invalidEmail) {
+      setEmailError(invalidEmail);
       emailInput.current?.focus();
       return;
     }
@@ -150,8 +122,9 @@ export function PlayerAccountForm({
       showInvalidUsername();
       return;
     }
-    if (!managed && !validPassword(password)) {
-      setPasswordError(/\p{Cc}/u.test(password) ? passwordControlHelp : passwordHelp);
+    const invalidPassword = !managed && registrationPasswordError(password);
+    if (invalidPassword) {
+      setPasswordError(invalidPassword);
       return;
     }
     if (!managed && password !== confirm) {
@@ -197,10 +170,11 @@ export function PlayerAccountForm({
         error={Boolean(emailError)}
         helperText={emailError || " "}
         onBlur={(event) => {
-          if (event.target.value && !validEmail(event.target.value)) setEmailError(emailHelp);
+          const issue = event.target.value && registrationEmailError(event.target.value);
+          if (issue) setEmailError(issue);
         }}
         onChange={(event) => {
-          if (emailError) setEmailError(validEmail(event.target.value) ? "" : emailHelp);
+          if (emailError) setEmailError(registrationEmailError(event.target.value) ?? "");
         }}
         onInvalid={(event) => {
           event.preventDefault();

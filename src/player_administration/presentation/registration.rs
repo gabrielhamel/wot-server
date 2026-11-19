@@ -148,6 +148,7 @@ pub(super) fn registration_error(
     let (field, outcome) = match error {
         RegistrationError::Email => (email_field, "invalid_email"),
         RegistrationError::Username => (username_field, "invalid_username"),
+        RegistrationError::DisplayName => (username_field, "invalid_display_name"),
         RegistrationError::Password => ("password", "invalid_password"),
         RegistrationError::PasswordConfirmation => ("confirm_password", "password_mismatch"),
     };

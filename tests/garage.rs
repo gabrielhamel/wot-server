@@ -470,7 +470,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
                 |grant| runtime.block_on(grants.grant(a.id, grant)),
             );
         }
-        first_peer.disconnect();
+        xmpp_flow::exercise_game_disconnect(&mut first_peer, &script, chat_address, a.id);
         social_flow::wait_presence(&mut second_peer, &script, a.id, false);
         std::thread::sleep(std::time::Duration::from_millis(250));
         let mut reconnect = Peer::new(public_key.clone());

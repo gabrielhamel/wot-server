@@ -129,14 +129,16 @@ impl Drop for XmppServer {
 }
 
 impl Shared {
-    fn authorized(&self, id: i64, credential: &str, ip: IpAddr, initial: bool) -> bool {
-        self.tokens.lock().ok().is_some_and(|tokens| {
-            tokens.get(&id).is_some_and(|token| {
-                token.ip == ip
-                    && token.value == credential
-                    && (!initial || token.issued.elapsed() < Duration::from_secs(60))
-            })
-        })
+    fn authorized(&self, id: i64, credential: &str, ip: IpAddr, initial: bool) -> Result<bool> {
+        let tokens = self
+            .tokens
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Chat token registry unavailable"))?;
+        Ok(tokens.get(&id).is_some_and(|token| {
+            token.ip == ip
+                && token.value == credential
+                && (!initial || token.issued.elapsed() < Duration::from_secs(60))
+        }))
     }
     #[tracing::instrument(name = "player_sessions.push", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.id = id, input.stanza.bytes = stanza.len()))]
     async fn push(&self, id: i64, stanza: String) {
@@ -221,7 +223,12 @@ impl Shared {
     }
 }
 
-#[tracing::instrument(name = "player_sessions.serve", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %address), err)]
+#[tracing::instrument(name = "player_sessions.serve", skip_all, fields(
+    ddd.bounded_context.name = "player_sessions",
+    input.client.address = %address,
+    output.outcome = tracing::field::Empty,
+    output.disconnect.reason = tracing::field::Empty
+), err)]
 async fn serve(
     socket: TcpStream,
     address: SocketAddr,
@@ -235,18 +242,20 @@ async fn serve(
     let mut framing = Framing::default();
     let mut check = tokio::time::interval(Duration::from_secs(1));
     let started = Instant::now();
-    let result:Result<()>=async {
+    let result:Result<&str>=async {
         loop {
             tokio::select! {
-                _=shutdown.changed()=>break,
+                _=shutdown.changed()=>break Ok("server_shutdown"),
                 _=check.tick()=>{
                     if let Some((id,credential))=&connection.identity {
-                        anyhow::ensure!(state.authorized(*id,credential,address.ip(),false),"Game session revoked");
+                        if !state.authorized(*id,credential,address.ip(),false)? {
+                            break Ok("session_revoked");
+                        }
                         if connection.bound() {anyhow::ensure!(state.online.lock().await.get(id).is_some_and(|p|p.generation==connection.generation), "XMPP output queue overflow");}
                     } else {anyhow::ensure!(started.elapsed()<Duration::from_secs(30),"XMPP authentication timeout");}
                 }
                 stanza=receiver.recv()=>{
-                    let Some(stanza)=stanza else {break;};
+                    let Some(stanza)=stanza else {break Ok("outbound_closed");};
                     let TracedOutbound { parent, value } = stanza;
                     if let Some(stanza) = parent.in_scope(|| connection.outbound(value)) {
                         tracing::Instrument::instrument(write_stanza(&mut write, &stanza), parent).await?;
@@ -254,7 +263,7 @@ async fn serve(
                 }
                 frame=framing.next(&mut read)=>{
                     match frame? {
-                        Frame::End=>break,
+                        Frame::End=>break Ok("peer_closed"),
                         Frame::Stream=>{
                             tracing::debug!(%address, authenticated=connection.identity.is_some(), "Received XMPP stream header");
                             anyhow::ensure!(connection.budget.admit(Instant::now()),"XMPP request budget exceeded");
@@ -301,7 +310,6 @@ async fn serve(
                 }
             }
         }
-        Ok(())
     }.await;
     if let Some((id, _)) = &connection.identity {
         let mut online = state.online.lock().await;
@@ -316,7 +324,18 @@ async fn serve(
             let _ = tokio::time::timeout(Duration::from_secs(10), state.presence(*id, false)).await;
         }
     }
-    result
+    let span = tracing::Span::current();
+    match result {
+        Ok(reason) => {
+            span.record("output.outcome", "disconnected");
+            span.record("output.disconnect.reason", reason);
+            Ok(())
+        }
+        Err(error) => {
+            span.record("output.outcome", "failed");
+            Err(error)
+        }
+    }
 }
 
 #[tracing::instrument(name = "xmpp.response", skip_all, fields(ddd.bounded_context.name = "player_sessions", output.bytes = stanza.len()), err)]

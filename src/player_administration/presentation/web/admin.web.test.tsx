@@ -263,16 +263,19 @@ describe("Server Administration", () => {
     }
   });
 
-  it("creates the first administrator and requires a separate sign-in", async () => {
+  it("validates first administrator credentials and requires a separate sign-in", async () => {
     const telemetry = captureTraces();
     let session: AdminSession = { status: "setup_required" };
-    let setup: unknown;
-    let trace: string | null = null;
+    const setupPassword = "Private-admin-password1!";
+    const attempts: Array<{ body: unknown; trace: string | null }> = [];
     httpServer.use(
       http.get(`${origin}/session`, () => HttpResponse.json(session)),
       http.post(`${origin}/setup`, async ({ request }) => {
-        setup = await request.json();
-        trace = request.headers.get("traceparent");
+        attempts.push({ body: await request.json(), trace: request.headers.get("traceparent") });
+        if (attempts.length === 1) {
+          const message = "Enter a valid email address of up to 128 characters.";
+          return HttpResponse.json({ message, errors: { username: message } }, { status: 422 });
+        }
         session = { status: "signed_out", registration_open: true };
         return HttpResponse.json(admin, { status: 201 });
       }),
@@ -285,21 +288,59 @@ describe("Server Administration", () => {
       expect(
         screen.queryByRole("button", { name: "Create a player account" }),
       ).not.toBeInTheDocument();
-      await user.type(screen.getByRole("textbox", { name: "Email" }), admin.username);
+      const email = screen.getByRole("textbox", { name: "Email" });
+      const passwordField = passwordInput();
+      const create = screen.getByRole("button", { name: "Create administrator" });
+      expect(passwordField).toHaveAccessibleDescription(/Use 8 to 128 characters/);
+      await user.type(email, "admin@localhost");
+      await user.tab();
+      expect(email).toBeInvalid();
+      expect(email).toHaveAccessibleDescription(
+        "Enter a valid email address of up to 128 characters.",
+      );
+      await user.clear(email);
+      await user.type(email, admin.username);
+      expect(email).toBeValid();
       await user.type(screen.getByRole("textbox", { name: "Display name" }), admin.display_name);
-      await user.type(passwordInput(), password);
-      await user.click(screen.getByRole("button", { name: "Create administrator" }));
+      await user.type(passwordField, password);
+      await user.click(create);
+      expect(passwordField).toBeInvalid();
+      expect(attempts).toHaveLength(0);
+      await user.clear(passwordField);
+      await user.type(passwordField, setupPassword);
+      await user.click(create);
+      expect(
+        await screen.findByText("Enter a valid email address of up to 128 characters."),
+      ).toBeVisible();
+      expect(email).toBeInvalid();
+      await user.clear(email);
+      await user.type(email, admin.username);
+      await user.click(create);
       expect(await screen.findByText("Administrator created. Sign in to continue.")).toBeVisible();
       expect(screen.getByRole("button", { name: "Sign in" })).toBeVisible();
       expect(passwordInput()).toHaveValue("");
       expect(screen.getByRole("button", { name: "Create a player account" })).toBeVisible();
-      expect(setup).toEqual({
+      const expected = {
         username: admin.username,
         display_name: admin.display_name,
-        password,
-      });
-      telemetry.expectRequest(trace, "web.admin.bootstrap", "/api/admin/setup", 201);
-      expect(telemetry.serializedSpanData()).not.toContain(password);
+        password: setupPassword,
+      };
+      expect(attempts.map(({ body }) => body)).toEqual([expected, expected]);
+      for (const [index, status] of [422, 201].entries()) {
+        const { parent } = telemetry.expectRequest(
+          attempts[index].trace,
+          "web.admin.bootstrap",
+          "/api/admin/setup",
+          status,
+        );
+        expect(parent?.attributes).toMatchObject({
+          "input.role": "admin",
+          "input.email.bytes": admin.username.length,
+          "input.display_name.bytes": admin.display_name.length,
+          "output.outcome": status === 201 ? "success" : "rejected",
+        });
+      }
+      expect(telemetry.serializedSpanData()).not.toContain(setupPassword);
       expect(telemetry.serializedSpanData()).not.toContain(admin.username);
     } finally {
       await telemetry.stop();

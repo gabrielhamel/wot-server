@@ -1,6 +1,10 @@
-use opentelemetry::trace::TracerProvider;
-use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
-use std::sync::OnceLock;
+use opentelemetry::trace::{Status, TracerProvider};
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
+use std::{
+    net::SocketAddr,
+    sync::OnceLock,
+    time::{Duration, Instant},
+};
 use tracing_subscriber::prelude::*;
 
 pub fn exporter() -> &'static InMemorySpanExporter {
@@ -23,6 +27,72 @@ pub fn exporter() -> &'static InMemorySpanExporter {
             .init();
         exporter
     })
+}
+
+fn xmpp_connection_span(peer: SocketAddr) -> (SpanData, Vec<SpanData>) {
+    let address = peer.to_string();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let spans = exporter().get_finished_spans().unwrap();
+        if let Some(span) = spans.iter().find(|span| {
+            span.name == "player_sessions.serve"
+                && has_attribute(span, "input.client.address", &address)
+        }) {
+            assert!(has_attribute(
+                span,
+                "ddd.bounded_context.name",
+                "player_sessions"
+            ));
+            return (span.clone(), spans);
+        }
+        assert!(Instant::now() < deadline, "Missing XMPP span for {peer}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn has_attribute(span: &SpanData, key: &str, expected: &str) -> bool {
+    span.attributes
+        .iter()
+        .any(|attribute| attribute.key.as_str() == key && attribute.value.to_string() == expected)
+}
+
+pub fn assert_xmpp_disconnect(peer: SocketAddr, account: i64) {
+    let (connection, spans) = xmpp_connection_span(peer);
+    assert_eq!(connection.status, Status::Unset);
+    assert!(
+        connection
+            .events
+            .iter()
+            .all(|event| event.name != "exception")
+    );
+    assert!(has_attribute(&connection, "output.outcome", "disconnected"));
+    assert!(has_attribute(
+        &connection,
+        "output.disconnect.reason",
+        "session_revoked"
+    ));
+    assert!(spans.iter().any(|span| {
+        span.name == "player_sessions.presence"
+            && span.span_context.trace_id() == connection.span_context.trace_id()
+            && span.parent_span_id == connection.span_context.span_id()
+            && has_attribute(span, "input.id", &account.to_string())
+            && has_attribute(span, "input.available", "false")
+    }));
+}
+
+pub fn assert_xmpp_connection_failure(peer: SocketAddr) {
+    let (connection, _) = xmpp_connection_span(peer);
+    assert_eq!(
+        connection.status,
+        Status::error("Unexpected XMPP closing element")
+    );
+    assert!(
+        connection
+            .events
+            .iter()
+            .any(|event| event.name == "exception")
+    );
+    assert!(has_attribute(&connection, "output.outcome", "failed"));
 }
 
 pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {

@@ -298,6 +298,11 @@ envelopes and enter it around synchronous completion handling. Entered span
 guards must not cross an await. Long-lived socket and gateway loops must
 not accumulate independent requests into a single trace.
 
+When the game session ends and revokes the chat credential, the XMPP
+connection closes with `output.outcome=disconnected` and
+`output.disconnect.reason=session_revoked`. The connection span stays open
+through offline presence cleanup. XMPP connection failures set error status.
+
 The telemetry capture helper under tests/support inspects exported spans
 from normal garage and XMPP flows. Regression coverage verifies same-trace
 ancestry through application, domain and repository work, complete SQL text,
@@ -336,6 +341,11 @@ Accounts snapshot and catalog projection. A grant follows the equivalent path th
 Accounts validation and provisioning spans, including the SQL transaction.
 Registration validation failures record the rejected field as a bounded
 outcome on the handler span and return HTTP 422.
+First-admin setup follows `web.admin.bootstrap` → `web.http.request` →
+`admin.http.request` → `admin.players.bootstrap` → `accounts.bootstrap.validate`.
+It traces the submitted email and display-name byte lengths. Accepted requests
+provision the administrator in Accounts. Invalid fields return HTTP 422 with
+a bounded handler outcome before credential hashing or account creation.
 Expected browser cancellations, rejections and conflicts
 record an outcome. Unexpected HTTP, network and decoding failures record
 error status and a diagnostic event. Window errors, failed resources,

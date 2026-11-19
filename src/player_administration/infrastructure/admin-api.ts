@@ -62,8 +62,16 @@ export function getSession(signal?: AbortSignal) {
 }
 
 export function createFirstAdmin(body: NewPlayer) {
-  return webOperation(owner, "web.admin.bootstrap", { "input.role": "admin" }, (parent) =>
-    adminRequest<PlayerRecord>(parent, "/setup", { body }),
+  const encoder = new TextEncoder();
+  return webOperation(
+    owner,
+    "web.admin.bootstrap",
+    {
+      "input.role": "admin",
+      "input.email.bytes": encoder.encode(body.username).length,
+      "input.display_name.bytes": encoder.encode(body.display_name).length,
+    },
+    (parent) => adminRequest<PlayerRecord>(parent, "/setup", { body }),
   );
 }
 

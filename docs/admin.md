@@ -47,9 +47,10 @@ Legacy `admin.bind` and `admin.dashboard_dir` still supply the listener
 settings when there is no `web` object.
 
 Restart the server and open <http://127.0.0.1:8080/dashboard/>. If the database has
-no players, the dashboard opens the first administrator form. Enter an email,
-a display name and a password, then sign in with those credentials. Limit
-access to the listener until setup is complete.
+no players, the dashboard opens the first administrator form. Enter an email
+and password that meet the player registration rules below, and choose a
+display name. After creating the administrator, sign in with those credentials.
+Limit access to the listener until setup is complete.
 
 ### Player registration and sign-in
 
@@ -157,7 +158,7 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | Method and path | Response |
 | --- | --- |
 | `GET /api/admin/session` | `200 OK` with `status` set to `setup_required`, `signed_out`, or `authenticated`. A signed-out response includes `registration_open`. An authenticated response includes the current `player` record and role, plus the `store_enabled` flag. |
-| `POST /api/admin/setup` | Creates the first administrator with the player creation fields below. Returns `201 Created` without signing in, or `409 Conflict` when the database already has players. |
+| `POST /api/admin/setup` | Creates the first administrator with the player creation fields below. Returns `201 Created` without signing in, `422 Unprocessable Entity` for invalid fields, or `409 Conflict` when the database already has players. |
 | `POST /api/admin/session` | Accepts `{ "email": "...", "password": "..." }`. Returns `204 No Content` and sets the session cookie on success, or `401 Unauthorized` for invalid credentials. |
 | `POST /api/admin/logout` | Revokes the current browser session and clears its cookie. Returns `204 No Content`. |
 | `POST /api/admin/registration/username` | Accepts `{ "username": "NewPlayer" }` and returns `{ "available": true }` or `{ "available": false }` in a `200 OK` response. Returns `409 Conflict` while registration is closed. |
@@ -190,10 +191,10 @@ and password, including case-insensitive duplicate checks for both names.
 The admin browser generates a 24-character password. The confirmation
 screen displays it until you leave. Login matching is case-sensitive.
 
-First-administrator setup accepts an email of at most 128 bytes, a display
-name of 1–128 characters and a password of 1–1024 bytes. These fields reject
-control characters. The email also rejects whitespace and a leading `{`, and
-the display name rejects surrounding whitespace. The API stores salted Argon2id hashes.
+First-administrator setup uses the player registration rules for the sign-in
+email and password. Enter the password once. The display name accepts 1–128
+characters, including internal spaces, and rejects control characters and
+surrounding whitespace. The API stores salted Argon2id hashes.
 
 Player records contain `id` (a decimal string), `username`, `display_name`
 and `role` (either `player` or `admin`).

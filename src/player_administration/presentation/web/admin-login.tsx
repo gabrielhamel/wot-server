@@ -4,8 +4,17 @@ import { useEffect, useState } from "react";
 import { Form, Login, PasswordInput, TextInput, required, useLogin } from "react-admin";
 import type { FieldValues } from "react-hook-form";
 import { useFormState } from "react-hook-form";
-import { errorMessage, responseStatus } from "../../../platform/infrastructure/web/http";
+import {
+  errorMessage,
+  fieldError,
+  responseStatus,
+} from "../../../platform/infrastructure/web/http";
 import { createFirstAdmin, getSession } from "../../infrastructure/admin-api";
+import {
+  passwordHelp,
+  registrationEmailError,
+  registrationPasswordError,
+} from "./account-credential-rules";
 import { RegistrationConfirmation, RegistrationForm } from "./registration";
 
 function SubmitButton({ label }: { label: string }) {
@@ -46,10 +55,12 @@ export function AdminLogin() {
     return () => controller.abort();
   }, [attempt]);
 
+  const settingUp = mode === "setup";
+
   async function submit(values: FieldValues) {
     setError("");
     try {
-      if (mode === "setup") {
+      if (settingUp) {
         await createFirstAdmin({
           username: values.email,
           display_name: values.display_name,
@@ -62,19 +73,35 @@ export function AdminLogin() {
         await login({ email: values.email, password: values.password });
       }
     } catch (failure) {
-      setError(errorMessage(failure, "Could not sign in."));
-      if (mode === "setup" && responseStatus(failure) === 409) setAttempt(attempt + 1);
+      if (settingUp) {
+        const email = fieldError(failure, "username");
+        const displayName = fieldError(failure, "display_name");
+        const password = fieldError(failure, "password");
+        if (email || displayName || password) {
+          return {
+            ...(email && { email }),
+            ...(displayName && { display_name: displayName }),
+            ...(password && { password }),
+          };
+        }
+        if (responseStatus(failure) === 409) setAttempt(attempt + 1);
+      }
+      setError(
+        errorMessage(
+          failure,
+          settingUp ? "Could not create the administrator." : "Could not sign in.",
+        ),
+      );
     }
   }
 
-  const title =
-    mode === "setup"
-      ? "Create the first administrator"
-      : screen === "registration"
-        ? "Create a player account"
-        : screen === "confirmation"
-          ? "Account created"
-          : "World of Tanks Server";
+  const title = settingUp
+    ? "Create the first administrator"
+    : screen === "registration"
+      ? "Create a player account"
+      : screen === "confirmation"
+        ? "Account created"
+        : "World of Tanks Server";
 
   return (
     <Login
@@ -103,18 +130,29 @@ export function AdminLogin() {
             Retry
           </Button>
         )}
-        {(mode === "setup" || (mode === "login" && screen === "login")) && (
-          <Form key={mode} onSubmit={submit}>
+        {(settingUp || (mode === "login" && screen === "login")) && (
+          <Form
+            key={mode}
+            onSubmit={submit}
+            mode={settingUp ? "onTouched" : "onSubmit"}
+            noValidate={settingUp}
+            disableInvalidFormNotification={settingUp}
+          >
             <TextInput
               source="email"
               label="Email"
-              slotProps={{ htmlInput: { inputMode: "email" } }}
-              autoComplete="username"
-              helperText={false}
-              validate={required()}
+              type={settingUp ? "email" : "text"}
+              slotProps={{
+                htmlInput: { inputMode: "email", maxLength: settingUp ? 128 : undefined },
+                formHelperText: { "aria-live": "polite" },
+              }}
+              autoComplete={settingUp ? "email" : "username"}
+              helperText={settingUp ? " " : false}
+              validate={settingUp ? registrationEmailError : required()}
+              isRequired
               fullWidth
             />
-            {mode === "setup" && (
+            {settingUp && (
               <TextInput
                 source="display_name"
                 label="Display name"
@@ -126,12 +164,13 @@ export function AdminLogin() {
             <PasswordInput
               source="password"
               label="Password"
-              autoComplete={mode === "setup" ? "new-password" : "current-password"}
-              helperText={false}
-              validate={required()}
+              autoComplete={settingUp ? "new-password" : "current-password"}
+              helperText={settingUp ? passwordHelp : false}
+              validate={settingUp ? registrationPasswordError : required()}
+              isRequired
               fullWidth
             />
-            <SubmitButton label={mode === "setup" ? "Create administrator" : "Sign in"} />
+            <SubmitButton label={settingUp ? "Create administrator" : "Sign in"} />
           </Form>
         )}
         {mode === "login" && registrationOpen && screen === "login" && (
