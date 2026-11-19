@@ -42,3 +42,22 @@ pub(super) fn localized_names(fs: &ResourceBundle, path: &str) -> Option<BTreeMa
     }
     Some(names)
 }
+
+pub(super) fn humanize_item_name(name: &str) -> String {
+    let mut result = String::new();
+    let mut previous_lowercase = false;
+    for ch in name.chars() {
+        if ch == '_' {
+            result.push(' ');
+        } else if result.is_empty() {
+            result.extend(ch.to_uppercase());
+        } else {
+            if previous_lowercase && ch.is_ascii_uppercase() {
+                result.push(' ');
+            }
+            result.push(ch);
+        }
+        previous_lowercase = ch.is_ascii_lowercase();
+    }
+    result
+}

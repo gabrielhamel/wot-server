@@ -131,6 +131,179 @@ pub fn assert_training_room_bootstrap(visible: bool) {
     );
 }
 
+pub fn assert_equipment_traces(account: i64) {
+    use opentelemetry_sdk::trace::SpanData;
+
+    let spans = exporter().get_finished_spans().unwrap();
+    let has = |span: &SpanData, key: &str, expected: &str| {
+        span.attributes.iter().any(|attribute| {
+            attribute.key.as_str() == key && attribute.value.to_string() == expected
+        })
+    };
+    let child = |parent: &SpanData, name| {
+        spans
+            .iter()
+            .find(|span| {
+                span.name == name
+                    && span.span_context.trace_id() == parent.span_context.trace_id()
+                    && span.parent_span_id == parent.span_context.span_id()
+            })
+            .unwrap_or_else(|| panic!("Missing {name} under {}", parent.name))
+    };
+    let cases = [
+        (
+            "863",
+            "310",
+            "sell_items",
+            "accounts.depot.sell_depot_stock",
+            None,
+        ),
+        (
+            "865",
+            "305",
+            "sell_items",
+            "accounts.depot.sell_depot_stock",
+            Some(("9", "1600", "14400", "14400")),
+        ),
+        (
+            "867",
+            "310",
+            "sell_items",
+            "accounts.depot.sell_depot_stock",
+            Some(("1", "400", "400", "14900")),
+        ),
+        (
+            "870",
+            "10115",
+            "disassemble_equipment",
+            "accounts.equipment.apply",
+            None,
+        ),
+        (
+            "871",
+            "10115",
+            "disassemble_equipment",
+            "accounts.equipment.apply",
+            Some(("1", "1600", "1600", "16500")),
+        ),
+        (
+            "874",
+            "102",
+            "change_equipment",
+            "accounts.equipment.apply",
+            Some(("1", "100", "100", "16600")),
+        ),
+    ];
+    let upgrades = [
+        (
+            "888",
+            "accounts.equipment.upgrade_depot",
+            Some(("29689", "29945", "input.price.credits", "3000000")),
+        ),
+        ("889", "accounts.equipment.upgrade_depot", None),
+        (
+            "891",
+            "accounts.equipment.upgrade_mounted",
+            Some(("13049", "13305", "input.price.credits", "3000000")),
+        ),
+        ("892", "accounts.equipment.upgrade_mounted", None),
+        (
+            "894",
+            "accounts.equipment.upgrade_depot",
+            Some(("40953", "41209", "input.price.components", "400")),
+        ),
+        ("895", "accounts.equipment.upgrade_depot", None),
+        (
+            "897",
+            "accounts.equipment.upgrade_mounted",
+            Some(("41209", "41465", "input.price.components", "2000")),
+        ),
+        ("898", "accounts.equipment.upgrade_mounted", None),
+    ];
+    let upgrade_cases =
+        upgrades.map(|(request, span, _)| (request, "10050", "upgrade_equipment", span, None));
+    for (request, command, operation, use_case, payout) in cases.into_iter().chain(upgrade_cases) {
+        let root = spans
+            .iter()
+            .find(|span| {
+                span.name == "game.command"
+                    && has(span, "user.id", &account.to_string())
+                    && has(span, "input.command_id", command)
+                    && has(span, "input.request_id", request)
+            })
+            .unwrap();
+        let dispatch = child(root, "player_sessions.commands.command");
+        let gateway = child(dispatch, "player_sessions.gateway.change_progression");
+        assert!(has(gateway, "input.shop_revision", "1"));
+        let plan = child(gateway, "accounts.progression.plan_progression");
+        assert!(has(plan, "input.operation", operation));
+        let completion = child(gateway, "player_sessions.gateway.progression_response");
+        let response = spans
+            .iter()
+            .find(|span| {
+                span.name == "mercury.response"
+                    && span.parent_span_id == completion.span_context.span_id()
+                    && has(span, "input.request_id", request)
+            })
+            .unwrap();
+        assert!(has(response, "output.delivery", "sent"));
+
+        let use_case = child(plan, use_case);
+        let upgrade_result = upgrades
+            .iter()
+            .find(|(id, _, _)| *id == request)
+            .and_then(|(_, _, result)| *result);
+        if let Some((item, target, price_attribute, amount)) = upgrade_result {
+            assert!(has(use_case, "input.item", item));
+            assert!(has(use_case, price_attribute, amount));
+            assert!(has(use_case, "output.item", target));
+            if request == "891" {
+                assert!(has(use_case, "input.inventory_id", "3"));
+                assert!(has(use_case, "input.slot", "1"));
+            }
+        }
+        if let Some((count, unit_value, received, balance)) = payout {
+            assert!(spans.iter().any(|span| {
+                span.name == "accounts.equipment.credit_disassembly"
+                    && span.parent_span_id == use_case.span_context.span_id()
+                    && has(span, "input.count", count)
+                    && has(span, "input.components.per_item", unit_value)
+                    && has(span, "output.components.received", received)
+                    && has(span, "output.components.balance", balance)
+            }));
+        }
+        if payout.is_some() || upgrade_result.is_some() {
+            let commit = child(gateway, "player_sessions.commit_progression");
+            let save = child(commit, "accounts.save_progression");
+            let repository = child(save, "accounts.postgres.save_progression");
+            assert!(spans.iter().any(|span| {
+                span.name == "postgresql.query"
+                    && span.parent_span_id == repository.span_context.span_id()
+                    && has(span, "db.operation.name", "UPDATE")
+            }));
+            assert!(has(completion, "output.outcome", "committed"));
+            assert!(has(response, "output.response_code", "0"));
+            assert!(spans.iter().any(|span| {
+                span.name == "mercury.response"
+                    && span.parent_span_id == completion.span_context.span_id()
+                    && has(span, "rpc.method", "update")
+                    && has(span, "output.delivery", "sent")
+            }));
+        } else {
+            assert!(matches!(
+                plan.status,
+                opentelemetry::trace::Status::Error { .. }
+            ));
+            assert!(has(completion, "output.outcome", "rejected"));
+            assert!(has(response, "output.response_code", "-1"));
+            assert!(!spans.iter().any(|span| {
+                span.name == "postgresql.query"
+                    && span.span_context.trace_id() == root.span_context.trace_id()
+            }));
+        }
+    }
+}
+
 pub fn assert_operation_traces(account: i64, research_account: i64) {
     let spans = exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {

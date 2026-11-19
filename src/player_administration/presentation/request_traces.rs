@@ -624,13 +624,13 @@ async fn exports_admin_http_access_lifecycle() {
     let store = gateway
         .configure_store("http://127.0.0.1:8081".to_owned())
         .unwrap();
+    let grants = gateway.player_grants();
     let build_router = |repository: &PostgresAccounts| {
-        let (grants, _) = PlayerGrants::channel();
         TowerToHyperService::new(router(
             PostgresPlayers::new(repository, catalog.clone()).unwrap(),
             Accounts::new(repository.clone()),
             catalog.clone(),
-            grants,
+            grants.clone(),
             Some(store.clone()),
             true,
             vec![],
@@ -939,6 +939,110 @@ async fn exports_admin_http_access_lifecycle() {
     let updated_garage = json(send("GET", "/me/garage", &player_cookie, "").await.unwrap()).await;
     assert_eq!(updated_garage["gold"], "250");
 
+    let mut depot_ids = Vec::new();
+    for (path, label) in [
+        ("/crew-books", "Universal Guide"),
+        ("/experimental-equipment", "Fire-Control System T3"),
+        ("/bounty-equipment", " · Upgraded"),
+    ] {
+        assert_eq!(send("GET", path, "", "").await.unwrap().status(), 401);
+        assert_eq!(
+            send("GET", path, &player_cookie, "")
+                .await
+                .unwrap()
+                .status(),
+            401
+        );
+        let response = send("GET", path, &owner_cookie, "").await.unwrap();
+        assert_eq!(response.status(), 200);
+        let items = json(response).await;
+        let item = items
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| {
+                item["name"]
+                    .as_str()
+                    .is_some_and(|name| name.ends_with(label))
+            })
+            .unwrap();
+        depot_ids.push(item["id"].as_i64().unwrap());
+    }
+    let [book, equipment, bounty] = depot_ids[..] else {
+        panic!("Expected each depot catalog selection");
+    };
+    let grant_path = format!("/players/{player_id}/grants");
+    let components = r#"{"kind":"currency","currency":"equipment_components","amount":71}"#;
+    assert_eq!(
+        send("POST", &grant_path, &player_cookie, components)
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    for (body, status, expected) in [
+        (
+            serde_json::from_str(components).unwrap(),
+            200,
+            serde_json::json!({"equipment_components": "71"}),
+        ),
+        (
+            serde_json::json!({"kind": "crew_book", "id": book, "count": 3}),
+            200,
+            serde_json::json!({"depot": {book.to_string(): 3}}),
+        ),
+        (
+            serde_json::json!({"kind": "experimental_equipment", "id": equipment, "count": 2}),
+            200,
+            serde_json::json!({"depot": {book.to_string(): 3, equipment.to_string(): 2}}),
+        ),
+        (
+            serde_json::json!({"kind": "bounty_equipment", "id": bounty, "count": 1}),
+            200,
+            serde_json::json!({"depot": {book.to_string(): 3, equipment.to_string(): 2, bounty.to_string(): 1}}),
+        ),
+        (
+            serde_json::json!({"kind": "experimental_equipment", "id": book, "count": 1}),
+            422,
+            serde_json::json!({"message": "Select Experimental Equipment from the installed catalog."}),
+        ),
+        (
+            serde_json::json!({"kind": "bounty_equipment", "id": equipment, "count": 1}),
+            422,
+            serde_json::json!({"message": "Select Bounty Equipment from the installed catalog."}),
+        ),
+    ] {
+        let response = send("POST", &grant_path, &owner_cookie, &body.to_string())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        let response = json(response).await;
+        if status == 200 {
+            assert_eq!(response["delivery"], "on_next_sync");
+            for (key, value) in expected.as_object().unwrap() {
+                assert_eq!(response["garage"][key], *value);
+            }
+        } else {
+            assert_eq!(response, expected);
+        }
+    }
+    let garage = json(
+        send(
+            "GET",
+            &format!("/players/{player_id}/garage"),
+            &owner_cookie,
+            "",
+        )
+        .await
+        .unwrap(),
+    )
+    .await;
+    assert_eq!(garage["equipment_components"], "71");
+    assert_eq!(
+        garage["depot"],
+        serde_json::json!({book.to_string(): 3, equipment.to_string(): 2, bounty.to_string(): 1})
+    );
+
     let game_account = Accounts::new(repository.clone())
         .authenticate(claimed_email, "Tank123!".into())
         .await
@@ -1162,6 +1266,77 @@ async fn exports_admin_http_access_lifecycle() {
             .find(|span| span.parent_span_id == parent.span_context.span_id() && span.name == name)
             .unwrap_or_else(|| panic!("Missing {name} under {}", parent.name))
     };
+    for (kind, item, count, status) in [
+        ("currency", None, "71", "200"),
+        ("crew_book", Some(book), "3", "200"),
+        ("experimental_equipment", Some(equipment), "2", "200"),
+        ("experimental_equipment", Some(book), "1", "422"),
+        ("bounty_equipment", Some(bounty), "1", "200"),
+        ("bounty_equipment", Some(equipment), "1", "422"),
+    ] {
+        let root = spans
+            .iter()
+            .find(|span| {
+                span.name == "admin.http.request"
+                    && attribute(span, "input.grant.kind").as_deref() == Some(kind)
+                    && attribute(span, "http.response.status_code").as_deref() == Some(status)
+            })
+            .unwrap();
+        assert_eq!(
+            root.parent_span_id,
+            SpanId::from_hex("1234567890abcdef").unwrap()
+        );
+        assert_eq!(
+            attribute(root, "input.account_id"),
+            Some(player_id.to_string())
+        );
+        if let Some(item) = item {
+            assert_eq!(attribute(root, "input.item"), Some(item.to_string()));
+            assert_eq!(attribute(root, "input.count").as_deref(), Some(count));
+        } else {
+            assert_eq!(
+                attribute(root, "input.grant.currency").as_deref(),
+                Some("equipment_components")
+            );
+            assert_eq!(attribute(root, "input.amount").as_deref(), Some(count));
+        }
+        assert_eq!(
+            attribute(child(root, "admin.authenticate"), "output.outcome").as_deref(),
+            Some("authorized")
+        );
+        let handler = child(root, "admin.garage.grant");
+        let request = child(handler, "player_sessions.grants.grant");
+        let gateway = child(request, "player_sessions.gateway.grant");
+        let plan = child(gateway, "accounts.grants.plan_grant");
+        let reply = child(gateway, "player_sessions.gateway.grant_response");
+        if status == "200" {
+            assert_eq!(
+                attribute(handler, "output.delivery").as_deref(),
+                Some("on_next_sync")
+            );
+            let commit = child(gateway, "player_sessions.commit_progression");
+            let save = child(
+                child(commit, "accounts.save_progression"),
+                "accounts.postgres.save_progression",
+            );
+            assert!(spans.iter().any(|span| {
+                span.parent_span_id == save.span_context.span_id()
+                    && attribute(span, "db.operation.name").as_deref() == Some("UPDATE")
+                    && attribute(span, "db.query.text").is_some()
+            }));
+            child(reply, "player_sessions.publish_account_change");
+        } else {
+            assert!(matches!(
+                plan.status,
+                opentelemetry::trace::Status::Error { .. }
+            ));
+            assert!(!spans.iter().any(|span| {
+                span.parent_span_id == gateway.span_context.span_id()
+                    && span.name == "player_sessions.commit_progression"
+            }));
+        }
+    }
+
     for (handler, outcome, status) in [
         ("player_sessions.store.catalog_request", "success", "200"),
         ("player_sessions.store.purchase_request", "success", "200"),

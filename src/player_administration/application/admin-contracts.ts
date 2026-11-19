@@ -14,6 +14,7 @@ export const currencies = [
   ["gold", "Gold"],
   ["bonds", "Bonds"],
   ["free_xp", "Free XP"],
+  ["equipment_components", "Experimental Equipment components"],
 ] as const;
 
 export type Currency = (typeof currencies)[number][0];
@@ -43,7 +44,15 @@ export type PlayerGarage = Record<Currency, string> & {
 export type Garage = Omit<PlayerGarage, "vehicles"> & {
   vehicles: GarageVehicle[];
   attachments: OwnedCosmetics;
+  depot: Record<number, number>;
 };
+
+export interface DepotItem {
+  id: number;
+  name: string;
+}
+
+export type DepotGrantKind = "crew_book" | "experimental_equipment" | "bounty_equipment";
 
 export interface Cosmetic {
   id: number;
@@ -54,6 +63,7 @@ export interface Cosmetic {
 export type Grant =
   | { kind: "currency"; currency: Currency; amount: number }
   | { kind: "vehicle"; vehicle: number }
+  | { kind: DepotGrantKind; id: number; count: number }
   | { kind: "attachment"; id: number; count: number }
   | { kind: "stat_tracker"; vehicle: number; id: number; count: number };
 

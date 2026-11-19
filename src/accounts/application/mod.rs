@@ -184,6 +184,7 @@ pub enum ProgressionCommand {
         inventory_id: i64,
         change: super::domain::EquipmentChange,
     },
+    UpgradeEquipment(super::EquipmentUpgradeSource),
     FillConsumables {
         inventory_id: i64,
         slots: Vec<super::ConsumableSelection>,
@@ -225,7 +226,12 @@ impl ProgressionCommand {
             Self::SellVehicle(_) => "sell_vehicle",
             Self::Buy { .. } => "buy_item",
             Self::Sell(_) => "sell_items",
+            Self::Equipment {
+                change: super::EquipmentChange::Disassemble { .. },
+                ..
+            } => "disassemble_equipment",
             Self::Equipment { .. } => "change_equipment",
+            Self::UpgradeEquipment(_) => "upgrade_equipment",
             Self::FillConsumables { .. } => "fill_consumables",
             Self::ConsumableAutoResupply { .. } => "consumable_auto_resupply",
             Self::InstallDirective { .. } => "install_directive",

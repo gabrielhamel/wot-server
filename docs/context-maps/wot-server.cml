@@ -75,7 +75,7 @@ BoundedContext Social {
 }
 
 BoundedContext PlayerAdministration {
-  domainVisionStatement = "Serve player registration, web sign-in, a personal garage view and dashboard Store access, and authorize administrators to provision players, manage roles, inspect garages and grant currency, vehicles or cosmetics."
+  domainVisionStatement = "Serve player registration, web sign-in, a personal garage view and dashboard Store access, and authorize administrators to provision players, manage roles, inspect garages and grant currency, vehicles, cosmetics, crew books, Bounty Equipment or Experimental Equipment."
 }
 
 BoundedContext SharedKernel {

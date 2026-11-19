@@ -4,6 +4,7 @@ import type {
   AdminSession,
   CatalogVehicle,
   Cosmetic,
+  DepotItem,
   Garage,
   Grant,
   GrantResult,
@@ -20,6 +21,17 @@ const vehicles: CatalogVehicle[] = [
   { id: 813, key: "germany:G01_Pz_IV", name: "Panzer IV", tier: 5 },
 ];
 const attachments: Cosmetic[] = [{ id: 12, name: "Field crate", max_owned: 3 }];
+const crewBooks: DepotItem[] = [{ id: 286, name: "Training Booklet (U.S.S.R.)" }];
+const experimentalEquipment: DepotItem[] = [{ id: 38649, name: "Fire-Control System T1" }];
+const bountyEquipment: DepotItem[] = [
+  { id: 13049, name: "Bounty Gun Laying Drive · Basic" },
+  { id: 13305, name: "Bounty Gun Laying Drive · Upgraded" },
+];
+const depotCatalogs = {
+  crew_book: crewBooks,
+  experimental_equipment: experimentalEquipment,
+  bounty_equipment: bountyEquipment,
+};
 const trackers: Cosmetic[] = [{ id: 37, name: "Victories", max_owned: 1 }];
 
 function problem(status: number, message: string) {
@@ -34,9 +46,11 @@ function demoGarage(displayName: string): Garage {
     gold: "250",
     bonds: "100",
     free_xp: "1500",
+    equipment_components: "250",
     slots: 5,
     vehicles: [{ ...starter, inventory_id: id, stat_trackers: { 37: 0 } }],
     attachments: {},
+    depot: {},
   };
 }
 
@@ -58,6 +72,23 @@ function applyGrant(garage: Garage, grant: Grant) {
       }
       const { id, ...tank } = vehicle;
       garage.vehicles.push({ ...tank, inventory_id: id, stat_trackers: { 37: 0 } });
+      break;
+    }
+    case "crew_book":
+    case "experimental_equipment":
+    case "bounty_equipment": {
+      const items = depotCatalogs[grant.kind];
+      if (!items.some(({ id }) => id === grant.id)) return problem(422, "Item unavailable.");
+      const count = (garage.depot[grant.id] ?? 0) + grant.count;
+      if (
+        !Number.isInteger(grant.count) ||
+        grant.count < 1 ||
+        grant.count > 100 ||
+        count > 2_147_483_647
+      ) {
+        return problem(422, "Invalid grant count.");
+      }
+      garage.depot[grant.id] = count;
       break;
     }
     case "attachment":
@@ -98,7 +129,10 @@ export function adminHandlers(storage: Storage = window.localStorage) {
     { id: "2", username: "commander@example.test", display_name: "Demo Commander", role: "player" },
   ];
   const garages = new Map(players.map((player) => [player.id, demoGarage(player.display_name)]));
-  const passwords = new Map([[admin.username, "demo-admin"], [players[1].username, "demo-player"]]);
+  const passwords = new Map([
+    [admin.username, "demo-admin"],
+    [players[1].username, "demo-player"],
+  ]);
   const savedPlayer = storage.getItem(sessionKey);
   let signedIn = savedPlayer === null ? admin : players.find(({ id }) => id === savedPlayer);
   const nameTaken = (name: string) =>
@@ -107,7 +141,9 @@ export function adminHandlers(storage: Storage = window.localStorage) {
   return [
     http.get(`${endpoint}/session`, () =>
       HttpResponse.json<AdminSession>(
-        signedIn ? { status: "authenticated", player: signedIn, store_enabled: true } : { status: "signed_out", registration_open: true },
+        signedIn
+          ? { status: "authenticated", player: signedIn, store_enabled: true }
+          : { status: "signed_out", registration_open: true },
       ),
     ),
     http.post(`${endpoint}/session`, async ({ request }) => {
@@ -142,6 +178,7 @@ export function adminHandlers(storage: Storage = window.localStorage) {
         gold: "500",
         bonds: "0",
         free_xp: "0",
+        equipment_components: "0",
       });
       return HttpResponse.json(player, { status: 201 });
     }),
@@ -163,18 +200,31 @@ export function adminHandlers(storage: Storage = window.localStorage) {
       const page = Number(query.get("page") ?? 1);
       const perPage = Number(query.get("per_page") ?? 25);
       const start = (page - 1) * perPage;
-      return HttpResponse.json({ data: players.slice(start, start + perPage), total: players.length });
+      return HttpResponse.json({
+        data: players.slice(start, start + perPage),
+        total: players.length,
+      });
     }),
     http.post(`${endpoint}/players`, async ({ request }) => {
       const { username, display_name, password } = (await request.json()) as NewPlayer;
       if (players.some((player) => player.username.toLowerCase() === username.toLowerCase())) {
         return problem(409, "That login is already in use.");
       }
-      const player: PlayerRecord = { id: String(players.length + 1), username, display_name, role: "player" };
+      const player: PlayerRecord = {
+        id: String(players.length + 1),
+        username,
+        display_name,
+        role: "player",
+      };
       if (nameTaken(display_name)) return problem(409, "That username is already taken.");
       players.push(player);
       passwords.set(username, password);
-      garages.set(player.id, { ...demoGarage(player.display_name), bonds: "0", free_xp: "0" });
+      garages.set(player.id, {
+        ...demoGarage(player.display_name),
+        bonds: "0",
+        free_xp: "0",
+        equipment_components: "0",
+      });
       return HttpResponse.json(player, { status: 201 });
     }),
     http.post(`${endpoint}/players/:id/role`, async ({ request, params }) => {
@@ -195,6 +245,9 @@ export function adminHandlers(storage: Storage = window.localStorage) {
       return applyGrant(garage, (await request.json()) as Grant);
     }),
     http.get(`${endpoint}/vehicles`, () => HttpResponse.json(vehicles)),
+    http.get(`${endpoint}/crew-books`, () => HttpResponse.json(crewBooks)),
+    http.get(`${endpoint}/experimental-equipment`, () => HttpResponse.json(experimentalEquipment)),
+    http.get(`${endpoint}/bounty-equipment`, () => HttpResponse.json(bountyEquipment)),
     http.get(`${endpoint}/attachments`, () => HttpResponse.json(attachments)),
     http.get(`${endpoint}/stat-trackers`, () => HttpResponse.json(trackers)),
   ];

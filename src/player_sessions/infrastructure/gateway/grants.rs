@@ -26,7 +26,8 @@ impl Gateway {
         let span = tracing::info_span!(
             "player_sessions.gateway.grant",
             "ddd.bounded_context.name" = "player_sessions",
-            "user.id" = account_id
+            "user.id" = account_id,
+            input.grant = ?grant
         );
         let _grant = span.enter();
         if self.pending_writes.contains(&account_id) {

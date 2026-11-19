@@ -3,7 +3,7 @@
 Player Administration serves the web panel for player registration, sign-in
 and a view of the signed-in player's garage with access to the Store when enabled.
 Administrators share those views and get an Admin section for finding and provisioning
-players, managing roles, inspecting garages, and granting currency, vehicles or cosmetics. [Accounts](../accounts/README.md)
+players, managing roles, inspecting garages, and granting currency, vehicles, cosmetics, crew books, Bounty Equipment or Experimental Equipment. [Accounts](../accounts/README.md)
 owns player identities, roles, dashboard session records and garage state.
 Player Administration uses the published account and catalog data and submits
 grants through [Player Sessions](../player_sessions/README.md) to coordinate

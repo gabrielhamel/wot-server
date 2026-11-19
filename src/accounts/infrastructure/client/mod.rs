@@ -56,6 +56,7 @@ pub struct GarageCatalog {
     cosmetics: cosmetic_catalog::CosmeticCatalog,
     shell_prices: BTreeMap<i32, ShellPrice>,
     equipment: crate::accounts::EquipmentRules,
+    equipment_grants: equipment::EquipmentGrantCatalog,
     store_offers: Vec<StoreOffer>,
     directives: crate::accounts::DirectiveRules,
     consumables: crate::accounts::ConsumableRules,
@@ -177,7 +178,7 @@ impl GarageCatalog {
         cosmetic_catalog::index_exterior_shop(&fs, &mut prices)?;
         let crew_books = crew_books::load(&fs, &mut prices)?;
         let crew_skins = crew_skins::load(&fs, &mut prices)?;
-        let equipment = equipment::load(&fs, &prices)?;
+        let (equipment, equipment_grants) = equipment::load(&fs, &prices)?;
         let directives = directives::load(&fs, &prices)?;
         let consumables = consumables::load(&fs, &prices)?;
         let supply_slots = supply_slots::SupplySlots::load(&fs)?;
@@ -196,7 +197,7 @@ impl GarageCatalog {
             })
             .map(|(name, _)| name.clone())
             .collect();
-        let shop = Arc::new(shop::Shop::new(&prices)?.data);
+        let shop = Arc::new(shop::Shop::new(&prices, &equipment)?.data);
         let shell_prices: BTreeMap<_, _> = prices
             .prices
             .iter()
@@ -252,6 +253,7 @@ impl GarageCatalog {
             cosmetics,
             shell_prices,
             equipment,
+            equipment_grants,
             store_offers,
             directives,
             consumables,
@@ -327,6 +329,13 @@ impl GarageCatalog {
             .write()
             .map_err(|_| anyhow::anyhow!("Vehicle catalog lock poisoned"))?;
         Ok(cache.entry(key.to_owned()).or_insert(vehicle).clone())
+    }
+
+    pub fn equipment_upgrades_enabled(&self) -> bool {
+        self.equipment
+            .items
+            .values()
+            .any(|device| device.upgrade.is_some())
     }
 
     pub fn shop_revision(&self) -> i32 {

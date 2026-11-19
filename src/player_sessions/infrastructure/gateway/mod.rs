@@ -495,7 +495,7 @@ impl Gateway {
         }
     }
 
-    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty, output.equipment_upgrades.enabled = tracing::field::Empty), err)]
     fn enable(&mut self, client: ClientKey) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
@@ -512,6 +512,7 @@ impl Gateway {
             None
         };
         let snapshot = &session.account.snapshot;
+        let equipment_upgrades = self.catalog.equipment_upgrades_enabled();
         let entity = self.base.create_base_player::<Account>(
             client,
             AccountData {
@@ -528,6 +529,7 @@ impl Gateway {
                         .as_ref()
                         .map(|(url, host)| (url.as_str(), *host)),
                     self.config.training_room_visible,
+                    equipment_upgrades,
                 ),
             },
         )?;
@@ -535,6 +537,7 @@ impl Gateway {
             "output.training_room.visible",
             self.config.training_room_visible,
         );
+        tracing::Span::current().record("output.equipment_upgrades.enabled", equipment_upgrades);
         if let Some((_, host)) = store_settings {
             tracing::Span::current().record("output.store.host", host);
         }
