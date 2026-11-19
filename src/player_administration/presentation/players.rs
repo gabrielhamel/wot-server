@@ -1,4 +1,4 @@
-use super::{AdminState, RequestSpan};
+use super::{AdminState, RequestSpan, registration::registration_error};
 use crate::accounts::{
     CreatePlayerError, NewPlayer, NewPlayerError, PlayerAccount, PlayerPagination, PlayerRole,
     is_admin_email,
@@ -79,7 +79,7 @@ pub(super) async fn list(
     }))
 }
 
-#[tracing::instrument(name = "admin.players.create", skip_all, fields(ddd.bounded_context.name = "player_administration", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty), err)]
+#[tracing::instrument(name = "admin.players.create", skip_all, fields(ddd.bounded_context.name = "player_administration", input.username.bytes = tracing::field::Empty, input.display_name.bytes = tracing::field::Empty, input.email.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty, user.id = tracing::field::Empty), err)]
 pub(super) async fn create(
     State(state): State<AdminState>,
     Extension(RequestSpan(request_span)): Extension<RequestSpan>,
@@ -127,16 +127,27 @@ async fn provision(
     let display_name_bytes = body.display_name.len();
     request_span.record("input.username.bytes", username_bytes);
     request_span.record("input.display_name.bytes", display_name_bytes);
-    tracing::Span::current().record("input.username.bytes", username_bytes);
-    tracing::Span::current().record("input.display_name.bytes", display_name_bytes);
-    if role == PlayerRole::Admin && !is_admin_email(&body.username) {
-        return Err(ApiError::field(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "username",
-            "Enter a valid email address.",
-        ));
-    }
-    let player = NewPlayer::new(body.username, body.display_name, body.password)?;
+    let span = tracing::Span::current();
+    span.record("input.username.bytes", username_bytes);
+    span.record("input.display_name.bytes", display_name_bytes);
+    let player = match role {
+        PlayerRole::Player => {
+            span.record("input.email.bytes", username_bytes);
+            request_span.record("input.email.bytes", username_bytes);
+            NewPlayer::from_managed(body.username, body.display_name, body.password)
+                .map_err(|error| registration_error(error, "username", "display_name"))?
+        }
+        PlayerRole::Admin => {
+            if !is_admin_email(&body.username) {
+                return Err(ApiError::field(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "username",
+                    "Enter a valid email address.",
+                ));
+            }
+            NewPlayer::new(body.username, body.display_name, body.password)?
+        }
+    };
     let permit = state.create_slots.try_acquire_owned().map_err(|_| {
         ApiError::new(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -153,9 +164,17 @@ async fn provision(
     .await
     .map_err(ApiError::internal)?;
 
-    result
-        .map(|player| (StatusCode::CREATED, Json(player.into())))
-        .map_err(|error| creation_error(error, "username", "display_name"))
+    match result {
+        Ok(player) => {
+            span.record("user.id", player.id);
+            span.record("output.outcome", "created");
+            Ok((StatusCode::CREATED, Json(player.into())))
+        }
+        Err(error) => {
+            span.record("output.outcome", error.outcome());
+            Err(creation_error(error, "username", "display_name"))
+        }
+    }
 }
 
 pub(super) fn creation_error(

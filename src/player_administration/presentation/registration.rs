@@ -58,7 +58,11 @@ pub(super) async fn check_username(
     let span = tracing::Span::current();
     span.record("input.username.bytes", body.username.len());
     if !is_registration_username(&body.username) {
-        return Err(registration_error(RegistrationError::Username));
+        return Err(registration_error(
+            RegistrationError::Username,
+            "email",
+            "username",
+        ));
     }
     let _permit = state.username_check_slots.try_acquire().map_err(|_| {
         ApiError::new(
@@ -110,7 +114,7 @@ pub(super) async fn register(
         body.password,
         &body.confirm_password,
     )
-    .map_err(registration_error)?;
+    .map_err(|error| registration_error(error, "email", "username"))?;
 
     let result = tokio::spawn(
         async move {
@@ -134,10 +138,14 @@ pub(super) async fn register(
     }
 }
 
-fn registration_error(error: RegistrationError) -> ApiError {
+pub(super) fn registration_error(
+    error: RegistrationError,
+    email_field: &'static str,
+    username_field: &'static str,
+) -> ApiError {
     let (field, outcome) = match error {
-        RegistrationError::Email => ("email", "invalid_email"),
-        RegistrationError::Username => ("username", "invalid_username"),
+        RegistrationError::Email => (email_field, "invalid_email"),
+        RegistrationError::Username => (username_field, "invalid_username"),
         RegistrationError::Password => ("password", "invalid_password"),
         RegistrationError::PasswordConfirmation => ("confirm_password", "password_mismatch"),
     };

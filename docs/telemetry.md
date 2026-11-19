@@ -48,6 +48,12 @@ The shared web listener composes the admin and Store APIs. Page shells and
 shared assets emit `web.ui.request` with their matched route and HTTP status.
 Admin and Store API requests keep their own request spans.
 
+Managed player creation traces the input lengths and validation outcome
+through `admin.players.create` and `accounts.registration.validate`. An accepted
+request continues through account provisioning and its SQL transaction.
+The browser sends the generated password to the creation API and the server
+stores its hash. Neither the password nor the hash is a trace attribute.
+
 A Store checkout joins the HTTP request to the account transaction and garage
 delivery even though they run on separate workers.
 

@@ -1,6 +1,6 @@
 import type { Context, Attributes } from "@opentelemetry/api";
 import { defaultDataProvider } from "react-admin";
-import type { AuthProvider, CreateParams, DataProvider, Identifier, RaRecord } from "react-admin";
+import type { AuthProvider, DataProvider, Identifier, RaRecord } from "react-admin";
 import { request, responseStatus } from "../../platform/infrastructure/web/http";
 import { webOperation } from "../../platform/infrastructure/web/telemetry";
 import type {
@@ -15,6 +15,7 @@ import type {
   Registration,
   PlayerRecord,
   PlayerRole,
+  PlayerCredentials,
 } from "../application/admin-contracts";
 
 const owner = "player_administration";
@@ -78,6 +79,22 @@ export function registerPlayer(body: Registration) {
       "input.email.bytes": encoder.encode(body.email).length,
     },
     (parent) => adminRequest<PlayerRecord>(parent, "/registration", { body }),
+  );
+}
+
+export function createManagedPlayer({ email, username, password }: PlayerCredentials) {
+  const encoder = new TextEncoder();
+  return webOperation(
+    owner,
+    "web.admin.create_player",
+    {
+      "input.email.bytes": encoder.encode(email).length,
+      "input.username.bytes": encoder.encode(username).length,
+    },
+    (parent) =>
+      adminRequest<PlayerRecord>(parent, "/players", {
+        body: { username: email, display_name: username, password },
+      }),
   );
 }
 
@@ -247,18 +264,5 @@ export const dataProvider: AdminDataProvider = {
         return result;
       },
     );
-  },
-  async create<
-    Payload extends Omit<RaRecord, "id">,
-    Result extends RaRecord = Payload & { id: Identifier },
-  >(_resource: string, { data }: CreateParams<Payload>) {
-    const body = {
-      username: data.username,
-      display_name: data.display_name,
-      password: data.password,
-    } as NewPlayer;
-    return webOperation(owner, "web.admin.create_player", {}, async (parent) => ({
-      data: await adminRequest<Result>(parent, "/players", { body }),
-    }));
   },
 };

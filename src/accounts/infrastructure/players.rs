@@ -227,6 +227,8 @@ async fn create_account(
         if !enabled {
             return Err(CreatePlayerError::RegistrationClosed);
         }
+    }
+    if mode != PlayerProvision::FirstAdmin {
         let statement = "SELECT EXISTS (SELECT 1 FROM accounts WHERE lower(username) = lower($1))";
         let email_taken: bool = database(
             "accounts",
@@ -240,8 +242,6 @@ async fn create_account(
         if email_taken {
             return Err(CreatePlayerError::Duplicate);
         }
-    }
-    if mode != PlayerProvision::FirstAdmin {
         let name_taken: bool = database(
             "accounts",
             DISPLAY_NAME_EXISTS,

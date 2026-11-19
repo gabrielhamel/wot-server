@@ -62,12 +62,13 @@ export interface GrantResult {
   delivery: "queued_for_garage" | "on_next_sync";
 }
 
-export type Registration = {
+export type PlayerCredentials = {
   email: string;
   username: string;
   password: string;
-  confirm_password: string;
 };
+
+export type Registration = PlayerCredentials & { confirm_password: string };
 
 export type AdminSession =
   | { status: "setup_required" }

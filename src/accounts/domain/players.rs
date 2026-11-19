@@ -129,12 +129,29 @@ pub enum RegistrationError {
 }
 
 impl NewPlayer {
-    #[tracing::instrument(name = "accounts.registration.validate", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = display_name.len(), input.email.bytes = email.len()), err)]
     pub fn from_registration(
         email: String,
         display_name: String,
         password: String,
         confirm_password: &str,
+    ) -> Result<Self, RegistrationError> {
+        Self::with_registration_rules(email, display_name, password, Some(confirm_password))
+    }
+
+    pub fn from_managed(
+        email: String,
+        display_name: String,
+        password: String,
+    ) -> Result<Self, RegistrationError> {
+        Self::with_registration_rules(email, display_name, password, None)
+    }
+
+    #[tracing::instrument(name = "accounts.registration.validate", skip_all, fields(ddd.bounded_context.name = "accounts", input.username.bytes = display_name.len(), input.email.bytes = email.len()), err)]
+    fn with_registration_rules(
+        email: String,
+        display_name: String,
+        password: String,
+        confirmation: Option<&str>,
     ) -> Result<Self, RegistrationError> {
         if !is_registration_email(&email) {
             return Err(RegistrationError::Email);
@@ -145,7 +162,7 @@ impl NewPlayer {
         if !is_registration_password(&password) {
             return Err(RegistrationError::Password);
         }
-        if password != confirm_password {
+        if confirmation.is_some_and(|confirmation| password != confirmation) {
             return Err(RegistrationError::PasswordConfirmation);
         }
         Ok(Self {

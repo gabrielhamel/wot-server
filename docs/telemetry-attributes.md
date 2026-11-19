@@ -146,7 +146,7 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`input.email.bytes`](../src/player_administration/presentation/registration.rs) | UTF-8 byte length of the submitted registration email on the HTTP request, handler and Accounts registration validation. |
+| [`input.email.bytes`](../src/player_administration/presentation/registration.rs) | UTF-8 byte length of the submitted registration email on the HTTP request, handler and Accounts registration validation. Managed player creation records the email in the request's `username` field. The browser and shared registration validator record the byte length only. |
 | [`output.registration_open`](../src/accounts/infrastructure/players.rs) | Boolean indicating whether an administrator exists. Emitted on the Accounts registration status span and signed-out session status. |
 | [`output.username.available`](../src/player_administration/presentation/registration.rs) | Boolean availability of the submitted in-game username after a case-insensitive check. |
 | [`output.vehicle_count`](../src/player_administration/presentation/garage.rs) | Number of owned tanks returned by the personal garage handler. |
@@ -356,7 +356,7 @@ code. On error, the exception event's `exception.type` is that failure code.
 | `input.catalog` | Catalog selected by the admin grant form. |
 | `input.grant.kind`, `input.grant.currency`, `input.amount` | Grant type and, for a resource grant, currency and amount in units. |
 | `input.vehicle_type`, `input.attachment_id`, `input.stat_tracker_id`, `input.inventory_id`, `input.count` | Applicable grant item IDs and cosmetic quantity in copies. |
-| `input.email.bytes`, `input.username.bytes` | UTF-8 byte lengths of the submitted registration email and in-game username. Username availability sends the username length only. |
+| `input.email.bytes`, `input.username.bytes` | UTF-8 byte lengths of the email and in-game username for self-service registration and managed player creation. Username availability records the username length only. |
 | `output.username.available` | Boolean availability returned by the username check. |
 | `output.player_count`, `output.vehicle_count`, `output.item_count` | Number of records returned by the player list, admin or personal garage, or grant catalog. |
 | `output.session.status` | Admin session state returned by the status endpoint. |

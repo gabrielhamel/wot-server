@@ -167,7 +167,7 @@ export function adminHandlers(storage: Storage = window.localStorage) {
     }),
     http.post(`${endpoint}/players`, async ({ request }) => {
       const { username, display_name, password } = (await request.json()) as NewPlayer;
-      if (players.some((player) => player.username === username)) {
+      if (players.some((player) => player.username.toLowerCase() === username.toLowerCase())) {
         return problem(409, "That login is already in use.");
       }
       const player: PlayerRecord = { id: String(players.length + 1), username, display_name, role: "player" };
