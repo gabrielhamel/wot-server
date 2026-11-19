@@ -415,6 +415,17 @@ impl Gateway {
             }
             AccountBase::DoCmdIntArr {
                 request_id,
+                cmd: progression::UPGRADE_DEVICE,
+                args,
+            } => self.change_progression(
+                client,
+                entity,
+                request_id,
+                progression::upgrade_device(&args),
+                args.first().copied().map(i64::from),
+            )?,
+            AccountBase::DoCmdIntArr {
+                request_id,
                 cmd: progression::BUY_VEHICLE,
                 args,
             } => {

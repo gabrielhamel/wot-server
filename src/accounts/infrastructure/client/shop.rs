@@ -10,7 +10,7 @@ use std::io;
 use crate::{
     accounts::{
         BERTH_PACK_GOLD, BERTH_PACK_SIZE, CREW_FREE_RESTORE_DURATION, CREW_RESTORE_CREDITS,
-        CREW_RESTORE_DURATION, CREW_RESTORE_LIMIT, FREE_XP_RATE,
+        CREW_RESTORE_DURATION, CREW_RESTORE_LIMIT, EquipmentRules, FREE_XP_RATE,
     },
     platform::client_formats::pickle::{Global, Value},
 };
@@ -39,14 +39,14 @@ pub struct Shop {
 }
 
 impl Shop {
-    pub fn new(prices: &ItemPrices) -> io::Result<Self> {
+    pub fn new(prices: &ItemPrices, equipment: &EquipmentRules) -> io::Result<Self> {
         Ok(Self {
-            data: account::compress(&shop(prices))?,
+            data: account::compress(&shop(prices, equipment))?,
         })
     }
 }
 
-fn shop(prices: &ItemPrices) -> Value {
+fn shop(prices: &ItemPrices, equipment: &EquipmentRules) -> Value {
     let per_nation = |value: Value| Value::List(vec![value; NATIONS.len()]);
     let empty_set = || Value::Set(BTreeSet::new());
 
@@ -87,6 +87,21 @@ fn shop(prices: &ItemPrices) -> Value {
             .collect(),
     );
 
+    let bounty_prices = Value::Dict(
+        equipment
+            .items
+            .iter()
+            .filter_map(|(&item, device)| {
+                let upgrade = device.bounty_upgrade?;
+                Some((
+                    Value::Tuple(vec![Value::from(item), Value::from(upgrade.target)]),
+                    crate::pickle!({"credits": (upgrade.credits)}),
+                ))
+            })
+            .collect(),
+    );
+    let operation_prices = crate::pickle!({"upgrade": (bounty_prices)});
+
     crate::pickle!({
         "rev": SHOP_REVISION,
         "battlePassLevelCost": {"gold": 250},
@@ -100,7 +115,7 @@ fn shop(prices: &ItemPrices) -> Value {
             9: {"credits": 100000}, 10: {"credits": 150000}, 11: {"credits": 200000},
         },
         "dailyXPFactor": 2,
-        "defaults": {"exchangeRate": GOLD_EXCHANGE_RATE, "goodies": {"prices": {}}, "items": {}, "premiumCost": (premium_prices.clone())},
+        "defaults": {"exchangeRate": GOLD_EXCHANGE_RATE, "goodies": {"prices": {}}, "items": {"operationPrices": (operation_prices.clone())}, "premiumCost": (premium_prices.clone())},
         "dropSkillsCost": {
             0: {"credits": 0, "gold": 0, "recertificationForm": 0, "xpReuseFraction": 0.8},
             1: {"credits": 20000, "gold": 0, "recertificationForm": 0, "xpReuseFraction": 0.9},
@@ -124,7 +139,7 @@ fn shop(prices: &ItemPrices) -> Value {
             "notInShopItems": not_in_shop,
             "notInShopPlayerEmblemGroups": (empty_set()),
             "notInShopProgressionLvlItems": {},
-            "operationPrices": {},
+            "operationPrices": (operation_prices),
             "playerEmblemGroupPriceFactors": {},
             "progressionLvlPrices": {},
             "vehicleCamouflagePriceFactors": {},

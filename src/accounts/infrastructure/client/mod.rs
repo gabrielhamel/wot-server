@@ -197,7 +197,7 @@ impl GarageCatalog {
             })
             .map(|(name, _)| name.clone())
             .collect();
-        let shop = Arc::new(shop::Shop::new(&prices)?.data);
+        let shop = Arc::new(shop::Shop::new(&prices, &equipment)?.data);
         let shell_prices: BTreeMap<_, _> = prices
             .prices
             .iter()
@@ -329,6 +329,13 @@ impl GarageCatalog {
             .write()
             .map_err(|_| anyhow::anyhow!("Vehicle catalog lock poisoned"))?;
         Ok(cache.entry(key.to_owned()).or_insert(vehicle).clone())
+    }
+
+    pub fn bounty_upgrades_enabled(&self) -> bool {
+        self.equipment
+            .items
+            .values()
+            .any(|device| device.bounty_upgrade.is_some())
     }
 
     pub fn shop_revision(&self) -> i32 {

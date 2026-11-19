@@ -131,7 +131,7 @@ pub fn assert_training_room_bootstrap(visible: bool) {
     );
 }
 
-pub fn assert_disassembly_traces(account: i64) {
+pub fn assert_equipment_traces(account: i64) {
     use opentelemetry_sdk::trace::SpanData;
 
     let spans = exporter().get_finished_spans().unwrap();
@@ -150,34 +150,67 @@ pub fn assert_disassembly_traces(account: i64) {
             })
             .unwrap_or_else(|| panic!("Missing {name} under {}", parent.name))
     };
-    for (request, command, operation, payout) in [
-        ("863", "310", "sell_items", None),
+    let cases = [
+        (
+            "863",
+            "310",
+            "sell_items",
+            "accounts.depot.sell_depot_stock",
+            None,
+        ),
         (
             "865",
             "305",
             "sell_items",
+            "accounts.depot.sell_depot_stock",
             Some(("9", "1600", "14400", "14400")),
         ),
         (
             "867",
             "310",
             "sell_items",
+            "accounts.depot.sell_depot_stock",
             Some(("1", "400", "400", "14900")),
         ),
-        ("870", "10115", "disassemble_equipment", None),
+        (
+            "870",
+            "10115",
+            "disassemble_equipment",
+            "accounts.equipment.apply",
+            None,
+        ),
         (
             "871",
             "10115",
             "disassemble_equipment",
+            "accounts.equipment.apply",
             Some(("1", "1600", "1600", "16500")),
         ),
         (
             "874",
             "102",
             "change_equipment",
+            "accounts.equipment.apply",
             Some(("1", "100", "100", "16600")),
         ),
-    ] {
+    ];
+    let upgrades = [
+        (
+            "888",
+            "accounts.equipment.upgrade_depot",
+            Some(("29689", "29945")),
+        ),
+        ("889", "accounts.equipment.upgrade_depot", None),
+        (
+            "891",
+            "accounts.equipment.upgrade_mounted",
+            Some(("13049", "13305")),
+        ),
+        ("892", "accounts.equipment.upgrade_mounted", None),
+    ];
+    let upgrade_cases = upgrades
+        .map(|(request, span, _)| (request, "10050", "upgrade_bounty_equipment", span, None));
+    for (request, command, operation, use_case, payout) in cases.into_iter().chain(upgrade_cases) {
         let root = spans
             .iter()
             .find(|span| {
@@ -203,15 +236,21 @@ pub fn assert_disassembly_traces(account: i64) {
             .unwrap();
         assert!(has(response, "output.delivery", "sent"));
 
+        let use_case = child(plan, use_case);
+        let upgrade_result = upgrades
+            .iter()
+            .find(|(id, _, _)| *id == request)
+            .and_then(|(_, _, result)| *result);
+        if let Some((item, target)) = upgrade_result {
+            assert!(has(use_case, "input.item", item));
+            assert!(has(use_case, "input.price.credits", "3000000"));
+            assert!(has(use_case, "output.item", target));
+            if request == "891" {
+                assert!(has(use_case, "input.inventory_id", "3"));
+                assert!(has(use_case, "input.slot", "1"));
+            }
+        }
         if let Some((count, unit_value, received, balance)) = payout {
-            let use_case = child(
-                plan,
-                if operation == "sell_items" {
-                    "accounts.depot.sell_depot_stock"
-                } else {
-                    "accounts.equipment.apply"
-                },
-            );
             assert!(spans.iter().any(|span| {
                 span.name == "accounts.equipment.credit_disassembly"
                     && span.parent_span_id == use_case.span_context.span_id()
@@ -220,6 +259,8 @@ pub fn assert_disassembly_traces(account: i64) {
                     && has(span, "output.components.received", received)
                     && has(span, "output.components.balance", balance)
             }));
+        }
+        if payout.is_some() || upgrade_result.is_some() {
             let commit = child(gateway, "player_sessions.commit_progression");
             let save = child(commit, "accounts.save_progression");
             let repository = child(save, "accounts.postgres.save_progression");

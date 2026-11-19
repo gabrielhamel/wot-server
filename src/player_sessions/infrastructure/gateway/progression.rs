@@ -1,8 +1,8 @@
 use super::{Account, ClientKey, EntityKey, FAILURE, Gateway, Pickle, PreparedAccount, SUCCESS};
 use crate::{
     accounts::{
-        DepotSaleRequest, EquipmentChange, MAX_DEPOT_SALE_LINES, MAX_EQUIPMENT_SLOTS,
-        ProgressionCommand, ProgressionError, VehicleSaleRequest,
+        BountyUpgradeSource, DepotSaleRequest, EquipmentChange, MAX_DEPOT_SALE_LINES,
+        MAX_EQUIPMENT_SLOTS, ProgressionCommand, ProgressionError, VehicleSaleRequest,
     },
     platform::client_formats::pickle::Value,
 };
@@ -19,6 +19,7 @@ pub(super) const SELL_VEHICLE: i16 = 304;
 pub(super) const EQUIP_DEVICE: i16 = 102;
 pub(super) const EQUIP_DEVICE_SEQUENCE: i16 = 10060;
 pub(super) const DISASSEMBLE_DEVICE: i16 = 10115;
+pub(super) const UPGRADE_DEVICE: i16 = 10050;
 pub(super) const BUY_AND_EQUIP: i16 = 308;
 
 pub(super) struct Completion {
@@ -312,6 +313,20 @@ pub(super) fn equip(args: &[i32]) -> Option<ProgressionCommand> {
         gun,
         buy: true,
     })
+}
+
+pub(super) fn upgrade_device(args: &[i32]) -> Option<ProgressionCommand> {
+    let source = match *args {
+        [_, item, 0, 0, 0] if item > 0 => BountyUpgradeSource::Depot { item },
+        [_, 0, inventory_id, 0, slot] if inventory_id > 0 => BountyUpgradeSource::Mounted {
+            inventory_id: i64::from(inventory_id),
+            slot: usize::try_from(slot)
+                .ok()
+                .filter(|&slot| slot < MAX_EQUIPMENT_SLOTS)?,
+        },
+        _ => return None,
+    };
+    Some(ProgressionCommand::UpgradeBountyEquipment(source))
 }
 
 pub(super) fn equip_devices(command: i16, args: &[i32]) -> Option<ProgressionCommand> {

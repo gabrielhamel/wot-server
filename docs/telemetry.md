@@ -81,6 +81,13 @@ proposed Components balance. The same game command trace includes the
 revision-checked database write and the Mercury cache update and reply.
 Rejected requests report the failure and leave the account revision unchanged.
 
+Bounty upgrades record whether the native feature flag was advertised on
+`player_sessions.enable`. Upgrade decisions record the source descriptor,
+catalog price, and upgraded descriptor. Mounted decisions also record the
+owned vehicle ID and slot. Successful decisions and rejections retain the
+game command parent through the SQL transaction when applicable and the
+Mercury response.
+
 An online XMPP private message follows this hierarchy. Repository operations
 can contain several query and transaction spans.
 

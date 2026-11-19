@@ -10,7 +10,7 @@ fn pickle_dict(entries: impl IntoIterator<Item = (&'static str, PickleValue)>) -
     )
 }
 
-fn server_settings(store_url: &str, training_room_visible: bool) -> Pickle {
+fn server_settings(store_url: &str, training_room_visible: bool, bounty_upgrades: bool) -> Pickle {
     let shop = if store_url.is_empty() {
         crate::pickle!({"isStorageEnabled": true})
     } else {
@@ -20,6 +20,7 @@ fn server_settings(store_url: &str, training_room_visible: bool) -> Pickle {
         "file_server": {},
         "shop": (shop),
         "isTrainingBattleEnabled": (training_room_visible),
+        "isTrophyDevicesEnabled": (bounty_upgrades),
         "isCrewBooksPurchaseEnabled": true,
         "isCrewBooksSaleEnabled": true,
         "isJunkCrewConversionEnabled": true,
@@ -135,8 +136,13 @@ pub fn server_settings_with_chat(
     address: std::net::SocketAddrV4,
     store: Option<(&str, &str)>,
     training_room_visible: bool,
+    bounty_upgrades: bool,
 ) -> Pickle {
-    let mut settings = server_settings(store.map_or("", |(url, _)| url), training_room_visible);
+    let mut settings = server_settings(
+        store.map_or("", |(url, _)| url),
+        training_room_visible,
+        bounty_upgrades,
+    );
     if let PickleValue::Dict(ref mut dict) = settings.0 {
         let values = crate::pickle!({"xmpp_enabled": true, "xmpp_host": (super::xmpp::DOMAIN), "xmpp_port": (i32::from(address.port())), "xmpp_resource": (super::xmpp::RESOURCE), "xmpp_connections": [((address.ip().to_string().as_str()), (i32::from(address.port())))], "xmpp_muc_services": []});
         if let PickleValue::Dict(values) = values {

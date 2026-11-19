@@ -17,6 +17,18 @@ pub enum EquipmentChange {
     },
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum BountyUpgradeSource {
+    Depot { item: i32 },
+    Mounted { inventory_id: i64, slot: usize },
+}
+
+#[derive(Clone, Copy)]
+pub struct BountyUpgrade {
+    pub target: i32,
+    pub credits: i64,
+}
+
 #[derive(Default)]
 pub struct EquipmentRules {
     pub items: BTreeMap<i32, EquipmentDefinition>,
@@ -27,6 +39,7 @@ pub struct EquipmentDefinition {
     pub removable: bool,
     pub demount_cost: EquipmentPrice,
     pub disassembly_value: Option<i64>,
+    pub bounty_upgrade: Option<BountyUpgrade>,
     pub tags: BTreeSet<String>,
     pub incompatible: BTreeSet<String>,
     pub include: Vec<EquipmentVehicleFilter>,
@@ -239,6 +252,67 @@ impl EquipmentRules {
             snapshot.progression.equipment.insert(inventory_id, target);
         }
         Ok(true)
+    }
+
+    #[tracing::instrument(name = "accounts.equipment.upgrade_depot", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.item = item, input.price.credits = tracing::field::Empty, output.item = tracing::field::Empty), err)]
+    pub(crate) fn upgrade_depot(
+        &self,
+        snapshot: &mut AccountSnapshot,
+        item: i32,
+    ) -> Result<(), ProgressionError> {
+        let upgrade = self.bounty_upgrade(item)?;
+        let stock = &mut snapshot.progression.depot;
+        let remaining = stock
+            .get(&item)
+            .and_then(|&count| count.checked_sub(1))
+            .ok_or(ProgressionError::EquipmentNotInDepot)?;
+        let upgraded_count = stock
+            .get(&upgrade.target)
+            .copied()
+            .unwrap_or_default()
+            .checked_add(1)
+            .ok_or(ProgressionError::InvalidEquipment)?;
+        EquipmentPrice::Credits(upgrade.credits).charge(&mut snapshot.balances, 1)?;
+        if remaining == 0 {
+            stock.remove(&item);
+        } else {
+            stock.insert(item, remaining);
+        }
+        stock.insert(upgrade.target, upgraded_count);
+        tracing::Span::current().record("output.item", upgrade.target);
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "accounts.equipment.upgrade_mounted", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id, input.slot = slot, input.item = tracing::field::Empty, input.price.credits = tracing::field::Empty, output.item = tracing::field::Empty), err)]
+    pub(crate) fn upgrade_mounted(
+        &self,
+        snapshot: &mut AccountSnapshot,
+        inventory_id: i64,
+        vehicle: &EquipmentVehicle,
+        slot: usize,
+    ) -> Result<(), ProgressionError> {
+        let mut layout = snapshot.progression.equipment_layout(inventory_id);
+        let mounted = layout
+            .get_mut(slot)
+            .filter(|_| slot < vehicle.slots)
+            .ok_or(ProgressionError::InvalidEquipment)?;
+        tracing::Span::current().record("input.item", *mounted);
+        let upgrade = self.bounty_upgrade(*mounted)?;
+        *mounted = upgrade.target;
+        self.validate(vehicle, &layout)?;
+        EquipmentPrice::Credits(upgrade.credits).charge(&mut snapshot.balances, 1)?;
+        snapshot.progression.equipment.insert(inventory_id, layout);
+        tracing::Span::current().record("output.item", upgrade.target);
+        Ok(())
+    }
+
+    fn bounty_upgrade(&self, item: i32) -> Result<BountyUpgrade, ProgressionError> {
+        let upgrade = self
+            .definition(item)?
+            .bounty_upgrade
+            .ok_or(ProgressionError::InvalidEquipment)?;
+        tracing::Span::current().record("input.price.credits", upgrade.credits);
+        Ok(upgrade)
     }
 
     fn validate(

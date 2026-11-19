@@ -492,8 +492,10 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             vehicle_sales_flow::exercise(&mut equipment_peer, &script, &consumable_cache);
         let special_cache =
             equipment_flow::exercise_special_equipment(&mut equipment_peer, &script, &sold_cache);
-        let final_cache =
+        let disassembled =
             equipment_flow::exercise_disassembly(&mut equipment_peer, &script, &special_cache);
+        let final_cache =
+            equipment_flow::exercise_bounty_upgrade(&mut equipment_peer, &script, &disassembled);
         equipment_peer.disconnect();
         std::thread::sleep(std::time::Duration::from_millis(250));
         let mut equipment_reconnect = Peer::new(public_key);
@@ -513,7 +515,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         telemetry_capture::assert_training_room_bootstrap(training_room_visible);
         training_room_flow::assert_traces(a.id, training_room_available);
         telemetry_capture::assert_operation_traces(a.id, b.id);
-        telemetry_capture::assert_disassembly_traces(equipment_account);
+        telemetry_capture::assert_equipment_traces(equipment_account);
         if has_camouflage {
             camouflage_flow::assert_traces(a.id, cosmetic_fixtures);
         }
@@ -525,6 +527,10 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             .connection_pool(),
     ));
     if result.is_ok() {
+        equipment_flow::verify_unaffordable_upgrade(
+            &catalog,
+            repository.snapshot(equipment_account).await.unwrap(),
+        );
         vehicle_sales_flow::verify_storage(&repository, &catalog, equipment_account).await;
         let stored = repository.snapshot(a.id).await.unwrap();
         assert_eq!(
