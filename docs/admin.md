@@ -12,6 +12,10 @@ excludes collector vehicles. The initial settings are a client-compatible
 baseline recorded with the EU 2.4.1.5514 resources. See the
 [starter settings](../src/accounts/infrastructure/client/starter_settings.json).
 
+Players and administrators share the **My garage** and **Store** views when
+the server enables the [Store](store.md#player-dashboard). Administrators can
+open player management and grants from the **Admin** tab.
+
 ## Enable the dashboard
 
 From the repository root, build the SPA with Node.js 22.12 or later.
@@ -42,7 +46,7 @@ for admin API-only mode. The shared listener defaults to `127.0.0.1:8080`.
 Legacy `admin.bind` and `admin.dashboard_dir` still supply the listener
 settings when there is no `web` object.
 
-Restart the server and open <http://127.0.0.1:8080/admin/>. If the database has
+Restart the server and open <http://127.0.0.1:8080/dashboard/>. If the database has
 no players, the dashboard opens the first administrator form. Enter an email,
 a display name and a password, then sign in with those credentials. Limit
 access to the listener until setup is complete.
@@ -70,7 +74,8 @@ with its current permissions.
 
 ### Administration
 
-Administrators sign in with their game credentials and see **Player accounts**.
+Administrators sign in with their game credentials and open **Admin** to see
+**Player accounts**.
 
 In **Player accounts**, use **Create** to add a player. Use the role action in
 another player's row to promote them to **Administrator** or demote them to
@@ -90,8 +95,9 @@ stat tracker** to select a compatible owned tank and add a vehicle-bound copy
 to its depot stock.
 
 For remote administration, serve the dashboard through an HTTPS reverse
-proxy and use `"admin": {}` in `server.json`. Secure cookies are enabled by
-default. Use `"secure_cookies": false` only when accessing the listener over
+proxy and use `"admin": {}` in `server.json`. Route `/dashboard/`,
+`/assets/*` and `/api/admin/*` to the web listener. Secure cookies are enabled
+by default. Use `"secure_cookies": false` only when accessing the listener over
 local HTTP, including an SSH tunnel to the loopback listener.
 
 ### Upgrade an existing database
@@ -108,14 +114,15 @@ UPDATE accounts SET role = 'admin' WHERE username = 'operator@example.com';
 
 ### Frontend development
 
-From the repository root, run `npm ci` and `npm run dev`. Open `/admin/`
+From the repository root, run `npm ci` and `npm run dev`. Open `/dashboard/`
 or `/shop/` on the URL Vite prints. Vite development uses MSW by default.
 Both pages open with demo data without Rust, PostgreSQL, or a connected game
 client. The Store replaces old garage session fragments with its demo session.
-The dashboard starts signed in, even when a saved URL points to the login page.
-After signing out, use `admin@example.test` and `demo-admin`, or reload.
-Player registration, account creation, role changes, garage grants and Store
-purchases update the demo data in memory. Reload the page to reset it.
+The first visit starts with the demo administrator. The browser remembers the
+demo sign-in choice across refreshes, including sign-out. Sign in again with
+`admin@example.test` and `demo-admin`. Player registration, account creation,
+role changes, garage grants and Store purchases update the demo data in memory.
+Reload the page to reset those changes.
 
 Use `npm run dev:server` to proxy API requests to a running server at
 `http://127.0.0.1:8080`.
@@ -135,12 +142,13 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 
 | Method and path | Response |
 | --- | --- |
-| `GET /api/admin/session` | `200 OK` with `status` set to `setup_required`, `signed_out`, or `authenticated`. A signed-out response includes `registration_open`. An authenticated response includes the current `player` record and role. |
+| `GET /api/admin/session` | `200 OK` with `status` set to `setup_required`, `signed_out`, or `authenticated`. A signed-out response includes `registration_open`. An authenticated response includes the current `player` record and role, plus the `store_enabled` flag. |
 | `POST /api/admin/setup` | Creates the first administrator with the player creation fields below. Returns `201 Created` without signing in, or `409 Conflict` when the database already has players. |
 | `POST /api/admin/session` | Accepts `{ "email": "...", "password": "..." }`. Returns `204 No Content` and sets the session cookie on success, or `401 Unauthorized` for invalid credentials. |
 | `POST /api/admin/logout` | Revokes the current browser session and clears its cookie. Returns `204 No Content`. |
 | `POST /api/admin/registration/username` | Accepts `{ "username": "NewPlayer" }` and returns `{ "available": true }` or `{ "available": false }` in a `200 OK` response. Returns `409 Conflict` while registration is closed. |
 | `POST /api/admin/registration` | Accepts `email`, `username`, `password` and `confirm_password`. Returns `201 Created` with the new Player record. Returns `409 Conflict` for a duplicate email or username or when registration is closed, and `422 Unprocessable Entity` for invalid fields. |
+| `GET /api/admin/me/shop/catalog`, `POST /api/admin/me/shop/orders` | Browse or buy from the [Store](store.md#player-dashboard) as the signed-in account when enabled. |
 | `GET /api/admin/me/garage` | `200 OK` with the signed-in player's balances, garage slot count and owned tank names and tiers. Balances are decimal strings. |
 | `GET /api/admin/players?page=1&per_page=25` | `200 OK` with `{ "data": [player records], "total": 2 }`. Pages start at 1. Page size is 1–100. Defaults are page 1 and 25 records. |
 | `POST /api/admin/players` | `201 Created` with the new player record. The new account has the `player` role. |

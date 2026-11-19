@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import type { Garage } from "../../../src/player_administration/application/admin-contracts";
 import type {
   StoreCatalog,
   StoreOffer,
@@ -28,12 +29,14 @@ const demoOffers: (Omit<StoreOffer, "availability" | "in_depot"> & { locked?: bo
   { item: 128, name: "Optical Calibration", category: "equipment_directives", price: { currency: "bonds", amount: 8 } },
 ];
 
-export function storeHandlers() {
+function demoStore(playerGarage?: Garage) {
   let revision = 1;
   let premiumExpiry = 0;
   const balances = { credits: 900_000, gold: 5000, bonds: 10_000 } satisfies Record<StorePrice["currency"], number>;
   const stock = new Map([[122, 1]]);
-  const garage = new Set<number>();
+  const purchasedVehicles = new Set<number>();
+  const balance = (currency: StorePrice["currency"]) =>
+    playerGarage ? Number(playerGarage[currency]) : balances[currency];
 
   function catalog(): StoreCatalog {
     return {
@@ -41,23 +44,15 @@ export function storeHandlers() {
       premium_expires_at: premiumExpiry > Date.now() / 1_000 ? premiumExpiry : null,
       offers: demoOffers.map(({ locked, ...offer }) => {
         let availability: StoreOffer["availability"] = "available";
-        if (garage.has(offer.item)) availability = "in_garage";
+        if (purchasedVehicles.has(offer.item)) availability = "in_garage";
         else if (locked) availability = "research_required";
-        else if (balances[offer.price.currency] < offer.price.amount) availability = "insufficient_funds";
+        else if (balance(offer.price.currency) < offer.price.amount) availability = "insufficient_funds";
         return { ...offer, availability, in_depot: stock.get(offer.item) ?? 0 };
       }),
     };
   }
 
-  return [
-    http.all("/api/shop/*", ({ request }) => {
-      if (request.headers.get("Authorization") !== `Bearer ${demoStoreToken}`) {
-        return HttpResponse.text("Open the Store from a connected garage.", { status: 401 });
-      }
-    }),
-    http.get("/api/shop/catalog", () => HttpResponse.json(catalog())),
-    http.post("/api/shop/orders", async ({ request }) => {
-      const order = (await request.json()) as StoreOrder;
+  function purchase(order: StoreOrder) {
       const offers = catalog().offers.filter(({ item }) => item === order.item);
       if (offers.length === 0) return HttpResponse.text("This offer is unavailable.", { status: 404 });
       const offer = offers.find(({ price }) => price.currency === order.price?.currency);
@@ -68,16 +63,61 @@ export function storeHandlers() {
         return HttpResponse.text("This offer could not be purchased.", { status: 422 });
       }
       const { currency, amount } = offer.price;
-      balances[currency] -= amount;
+      if (playerGarage) {
+        playerGarage[currency] = String(balance(currency) - amount);
+      } else {
+        balances[currency] -= amount;
+      }
       if (offer.category === "premium_account") {
         premiumExpiry = Math.max(premiumExpiry, Math.floor(Date.now() / 1000)) - offer.item * 86_400;
       } else if (offer.tier !== undefined) {
-        garage.add(offer.item);
+        purchasedVehicles.add(offer.item);
+        playerGarage?.vehicles.push({
+          key: String(offer.item),
+          name: offer.name,
+          tier: offer.tier,
+          inventory_id: offer.item,
+          stat_trackers: {},
+        });
       } else {
         stock.set(offer.item, offer.in_depot + 1);
       }
       revision += 1;
       return HttpResponse.json(catalog());
+  }
+
+  return { catalog, purchase };
+}
+
+export function storeHandlers(dashboardGarage?: () => Garage | undefined) {
+  const path = dashboardGarage ? "/api/admin/me/shop" : "/api/shop";
+  const nativeStore = demoStore();
+  const dashboardStores = new WeakMap<Garage, ReturnType<typeof demoStore>>();
+
+  function authorize(request: Request) {
+    if (!dashboardGarage) {
+      return request.headers.get("Authorization") === `Bearer ${demoStoreToken}`
+        ? nativeStore
+        : HttpResponse.text("Open the Store from a connected garage.", { status: 401 });
+    }
+    if (request.method === "POST" && request.headers.get("X-Wot-Admin") !== "1") {
+      return HttpResponse.text("The admin request header is required.", { status: 403 });
+    }
+    const garage = dashboardGarage();
+    if (!garage) return HttpResponse.text("Sign in to open the Store.", { status: 401 });
+    const store = dashboardStores.get(garage) ?? demoStore(garage);
+    dashboardStores.set(garage, store);
+    return store;
+  }
+
+  return [
+    http.get(`${path}/catalog`, ({ request }) => {
+      const store = authorize(request);
+      return store instanceof Response ? store : HttpResponse.json(store.catalog());
+    }),
+    http.post(`${path}/orders`, async ({ request }) => {
+      const store = authorize(request);
+      return store instanceof Response ? store : store.purchase((await request.json()) as StoreOrder);
     }),
   ];
 }

@@ -3,8 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vite-plus/test";
 import { httpServer } from "../../../../tools/web/test/setup";
+import { adminHandlers } from "../../../../tools/web/mocks/admin";
 import { captureTraces } from "../../../../tools/web/test/traces";
 import type { AdminSession, Garage, Grant, PlayerRecord } from "../../application/admin-contracts";
+import type { StoreOffer } from "../../../player_sessions/application/store-contracts";
 import Admin from "./admin-page";
 
 const origin = "http://localhost:8080/api/admin";
@@ -21,7 +23,11 @@ const player: PlayerRecord = {
   display_name: "Commander",
   role: "player",
 };
-const authenticated: AdminSession = { status: "authenticated", player: admin };
+const authenticated: AdminSession = {
+  status: "authenticated",
+  player: admin,
+  store_enabled: false,
+};
 const garage: Garage = {
   display_name: player.display_name,
   credits: "100",
@@ -42,9 +48,12 @@ const garage: Garage = {
 };
 
 function openAdmin(signedIn = false) {
-  window.history.replaceState(null, "", "/admin/");
+  window.history.replaceState(null, "", "/dashboard/");
   if (signedIn)
-    httpServer.use(http.get(`${origin}/session`, () => HttpResponse.json(authenticated)));
+    httpServer.use(
+      http.get(`${origin}/session`, () => HttpResponse.json(authenticated)),
+      http.get(`${origin}/me/garage`, () => HttpResponse.json(garage)),
+    );
   return { user: userEvent.setup(), ...render(<Admin />) };
 }
 
@@ -57,13 +66,145 @@ function players(records = [player]) {
 const passwordInput = () => screen.getByLabelText("Password", { selector: "input", exact: false });
 
 describe("Server Administration", () => {
+  it("gives the demo administrator player tabs and keeps sign-out across a reload", async () => {
+    localStorage.clear();
+    httpServer.use(...adminHandlers());
+    try {
+      const first = openAdmin();
+      const tabs = await screen.findByRole("tablist", { name: "Player dashboard" });
+      expect(within(tabs).getByRole("tab", { name: "My garage" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await first.user.click(within(tabs).getByRole("tab", { name: "Store" }));
+      expect(await screen.findByRole("heading", { name: "WoT Premium Account" })).toBeVisible();
+      expect(screen.getByRole("tablist", { name: "Store sections" })).toBeVisible();
+      await first.user.click(within(tabs).getByRole("tab", { name: "Admin" }));
+      expect(await screen.findByRole("heading", { name: "Player accounts" })).toBeVisible();
+      expect(within(tabs).getByRole("tab", { name: "Store" })).toBeVisible();
+      await first.user.click(screen.getByRole("button", { name: "Sign out" }));
+      expect(await screen.findByRole("button", { name: "Sign in" })).toBeVisible();
+
+      first.unmount();
+      httpServer.resetHandlers();
+      httpServer.use(...adminHandlers());
+      openAdmin();
+      expect(await screen.findByRole("button", { name: "Sign in" })).toBeVisible();
+      expect(screen.queryByRole("tablist", { name: "Player dashboard" })).not.toBeInTheDocument();
+    } finally {
+      localStorage.clear();
+    }
+  });
+
+  it("buys from the dashboard Store and refreshes the player's garage balances", async () => {
+    const telemetry = captureTraces();
+    const offer: StoreOffer = {
+      item: -1,
+      name: "1 day",
+      category: "premium_account",
+      price: { currency: "gold", amount: 250 },
+      in_depot: 0,
+      availability: "available",
+    };
+    let revision = "9";
+    let gold = "500";
+    let catalogTrace: string | null = null;
+    let orderTrace: string | null = null;
+    let order: unknown;
+    httpServer.use(
+      http.get(`${origin}/session`, () =>
+        HttpResponse.json({ status: "authenticated", player, store_enabled: true }),
+      ),
+      http.get(`${origin}/me/garage`, () => HttpResponse.json({ ...garage, gold })),
+      http.get(`${origin}/me/shop/catalog`, ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        catalogTrace = request.headers.get("traceparent");
+        return HttpResponse.json({ revision, premium_expires_at: null, offers: [offer] });
+      }),
+      http.post(`${origin}/me/shop/orders`, async ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        expect(request.headers.get("x-wot-admin")).toBe("1");
+        orderTrace = request.headers.get("traceparent");
+        order = await request.json();
+        revision = "10";
+        gold = "250";
+        return HttpResponse.json({
+          revision,
+          premium_expires_at: Math.floor(Date.now() / 1000) + 86400,
+          offers: [offer],
+        });
+      }),
+    );
+    try {
+      const { user } = openAdmin();
+      expect(await screen.findByText("500")).toBeVisible();
+      await user.click(screen.getByRole("tab", { name: "Store" }));
+      await user.click(await screen.findByRole("button", { name: "Buy 1 day for 250 gold" }));
+      expect(await screen.findByText("Purchased 1 day.")).toBeVisible();
+      expect(screen.getByText(/active until/i)).toBeVisible();
+      expect(order).toEqual({ item: offer.item, revision: "9", price: offer.price });
+      await user.click(screen.getByRole("tab", { name: "My garage" }));
+      expect(await screen.findByText("250")).toBeVisible();
+      telemetry.expectRequest(
+        catalogTrace,
+        "web.store.load_catalog",
+        "/api/admin/me/shop/catalog",
+        200,
+      );
+      const { parent } = telemetry.expectRequest(
+        orderTrace,
+        "web.store.purchase",
+        "/api/admin/me/shop/orders",
+        200,
+      );
+      expect(parent?.attributes).toMatchObject({
+        "input.item": -1,
+        "input.revision": "9",
+        "input.price.currency": "gold",
+        "input.price.amount": 250,
+        "output.offer_count": 1,
+      });
+    } finally {
+      await telemetry.stop();
+    }
+  });
+
+  it("returns to sign-in when the dashboard session expires while opening the Store", async () => {
+    const telemetry = captureTraces();
+    let session: AdminSession = { status: "authenticated", player, store_enabled: true };
+    let catalogTrace: string | null = null;
+    httpServer.use(
+      http.get(`${origin}/session`, () => HttpResponse.json(session)),
+      http.get(`${origin}/me/garage`, () => HttpResponse.json(garage)),
+      http.get(`${origin}/me/shop/catalog`, ({ request }) => {
+        catalogTrace = request.headers.get("traceparent");
+        session = { status: "signed_out", registration_open: true };
+        return HttpResponse.text("Sign in to open the Store.", { status: 401 });
+      }),
+    );
+    try {
+      const { user } = openAdmin();
+      await user.click(await screen.findByRole("tab", { name: "Store" }));
+      expect(await screen.findByRole("button", { name: "Sign in" })).toBeVisible();
+      const denied = telemetry.expectRequest(
+        catalogTrace,
+        "web.store.load_catalog",
+        "/api/admin/me/shop/catalog",
+        401,
+      );
+      expect(denied.http?.attributes["output.outcome"]).toBe("rejected");
+    } finally {
+      await telemetry.stop();
+    }
+  });
+
   it("rejects incorrect credentials, then signs in and signs out", async () => {
     const telemetry = captureTraces();
     const attempts: Array<{ body: unknown; trace: string | null }> = [];
     let session: AdminSession = { status: "signed_out", registration_open: true };
     let signOutTrace: string | null = null;
     httpServer.use(
-      players(),
+      http.get(`${origin}/me/garage`, () => HttpResponse.json(garage)),
       http.get(`${origin}/session`, () => HttpResponse.json(session)),
       http.post(`${origin}/logout`, ({ request }) => {
         signOutTrace = request.headers.get("traceparent");
@@ -91,7 +232,7 @@ describe("Server Administration", () => {
       await user.clear(passwordInput());
       await user.type(passwordInput(), password);
       await user.click(screen.getByRole("button", { name: "Sign in" }));
-      expect(await screen.findByText(player.display_name)).toBeVisible();
+      expect(await screen.findByText(admin.display_name)).toBeVisible();
       expect(attempts.map((item) => item.body)).toEqual([
         { email: admin.username, password: "bad-password" },
         { email: admin.username, password },
@@ -104,8 +245,7 @@ describe("Server Administration", () => {
       );
       expect(denied.http?.attributes["output.outcome"]).toBe("rejected");
       telemetry.expectRequest(attempts[1].trace, "web.admin.sign_in", "/api/admin/session", 204);
-      await user.click(screen.getByRole("button", { name: "Profile" }));
-      await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
+      await user.click(screen.getByRole("button", { name: "Sign out" }));
       expect(await screen.findByRole("button", { name: "Sign in" })).toBeVisible();
       telemetry.expectRequest(signOutTrace, "web.admin.sign_out", "/api/admin/logout", 204);
       expect(telemetry.serializedSpanData()).not.toContain(password);
@@ -195,7 +335,7 @@ describe("Server Administration", () => {
       }),
       http.post(`${origin}/session`, async ({ request }) => {
         expect(await request.json()).toEqual({ email: registered.username, password: passphrase });
-        session = { status: "authenticated", player: registered };
+        session = { status: "authenticated", player: registered, store_enabled: false };
         return new HttpResponse(null, { status: 204 });
       }),
       http.get(`${origin}/me/garage`, ({ request }) => {
@@ -278,6 +418,8 @@ describe("Server Administration", () => {
       expect(screen.getByText("Bonds")).toBeVisible();
       expect(screen.getByRole("rowheader", { name: "T1 Cunningham" })).toBeVisible();
       expect(screen.queryByText("Player accounts")).not.toBeInTheDocument();
+      expect(screen.queryByRole("tab", { name: "Store" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("tab", { name: "Admin" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Grant/ })).not.toBeInTheDocument();
 
       const unavailable = telemetry.expectRequest(
@@ -338,6 +480,7 @@ describe("Server Administration", () => {
     );
     try {
       const { user } = openAdmin(true);
+      await user.click(await screen.findByRole("tab", { name: "Admin" }));
       await user.click(
         await screen.findByRole("button", { name: "Promote to administrator · Commander" }),
       );
@@ -397,6 +540,7 @@ describe("Server Administration", () => {
     );
     try {
       const { user } = openAdmin(true);
+      await user.click(await screen.findByRole("tab", { name: "Admin" }));
       await user.click(await screen.findByRole("link", { name: "Create" }));
       await user.type(await screen.findByRole("textbox", { name: /login/i }), newPlayer.username);
       await user.type(
@@ -456,6 +600,7 @@ describe("Server Administration", () => {
     );
     try {
       const { user } = openAdmin(true);
+      await user.click(await screen.findByRole("tab", { name: "Admin" }));
       await user.click(await screen.findByText(player.display_name));
       expect(await screen.findByRole("heading", { name: "Current balances" })).toBeVisible();
       await user.type(screen.getByRole("textbox", { name: /amount to add/i }), "50");

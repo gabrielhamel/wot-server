@@ -16,7 +16,7 @@ use tracing::{Span, field::Empty};
 
 pub(super) fn pages(
     directory: &Path,
-    admin: bool,
+    dashboard: bool,
     shop: bool,
     trusted_proxies: Vec<IpAddr>,
 ) -> Result<Router> {
@@ -32,11 +32,11 @@ pub(super) fn pages(
         "/assets",
         ServeDir::new(assets).append_index_html_on_directories(false),
     );
-    if admin {
+    if dashboard {
         router = router
-            .route("/", get(|| async { Redirect::temporary("/admin/") }))
-            .route_service("/admin", ServeFile::new(&index))
-            .route_service("/admin/", ServeFile::new(&index));
+            .route("/", get(|| async { Redirect::temporary("/dashboard/") }))
+            .route_service("/dashboard", ServeFile::new(&index))
+            .route_service("/dashboard/", ServeFile::new(&index));
     }
     if shop {
         router = router
@@ -62,7 +62,7 @@ pub(super) fn pages(
     )
 )]
 async fn serve_page(State(proxies): State<Vec<IpAddr>>, request: Request, next: Next) -> Response {
-    let admin = request.uri().path().starts_with("/admin");
+    let dashboard = matches!(request.uri().path(), "/dashboard" | "/dashboard/");
     let span = Span::current();
     if let Some(peer) = request.extensions().get::<SocketAddr>().copied() {
         super::http::record_client_address(peer, request.headers(), &proxies);
@@ -73,10 +73,10 @@ async fn serve_page(State(proxies): State<Vec<IpAddr>>, request: Request, next: 
         (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
         (header::REFERRER_POLICY, HeaderValue::from_static("no-referrer")),
         (header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
-        (header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(if admin {
+        (header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(if dashboard {
             "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         } else {
-            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
         })),
     ]);
     response

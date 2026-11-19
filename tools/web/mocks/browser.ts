@@ -12,13 +12,11 @@ export async function startMockApi(route: string) {
   );
   await worker.start();
 
-  const url = new URL(window.location.href);
   if (route === "/shop") {
+    const url = new URL(window.location.href);
     url.hash = demoStoreToken;
-  } else if (route === "/admin" && /^#\/login\/?(?:\?|$)/.test(url.hash)) {
-    url.hash = "";
-  }
-  if (url.hash !== window.location.hash) {
-    window.history.replaceState(window.history.state, "", url);
+    if (url.hash !== window.location.hash) {
+      window.history.replaceState(window.history.state, "", url);
+    }
   }
 }

@@ -64,9 +64,14 @@ pub(crate) enum StoreError {
 
 pub(crate) type StoreReply = oneshot::Sender<Result<StoreCatalog, StoreError>>;
 
+pub(crate) enum StoreCustomer {
+    Garage(StoreToken),
+    Dashboard(i64),
+}
+
 pub(crate) struct StoreRequest {
     pub parent: tracing::Span,
-    pub token: StoreToken,
+    pub customer: StoreCustomer,
     pub order: Option<StoreOrder>,
     pub reply: StoreReply,
 }
@@ -82,14 +87,14 @@ impl StoreRequests {
 
     pub async fn request(
         &self,
-        token: StoreToken,
+        customer: StoreCustomer,
         order: Option<StoreOrder>,
     ) -> Result<StoreCatalog, StoreError> {
         let (reply, result) = oneshot::channel();
         self.0
             .try_send(StoreRequest {
                 parent: tracing::Span::current(),
-                token,
+                customer,
                 order,
                 reply,
             })

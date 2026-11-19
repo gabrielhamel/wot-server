@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -12,7 +12,7 @@ import {
 } from "@mui/material";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { serverTheme } from "../../../../platform/presentation/web/theme";
-import type { StoreCategory } from "../../../application/store-contracts";
+import type { StoreAccess, StoreCategory } from "../../../application/store-contracts";
 import { OfferCard } from "./offer-card";
 import { useStoreCatalog } from "./use-store-catalog";
 import { VehicleFilters } from "./vehicle-filters";
@@ -89,8 +89,21 @@ function PremiumStatus({ expiresAt }: { expiresAt: number | null }) {
   );
 }
 
-function Store({ token }: { token?: string }) {
-  const { catalog, loading, buyingOffer, error, reload, buy } = useStoreCatalog(token);
+function Store({
+  access,
+  onUnauthorized,
+  onPurchased,
+}: {
+  access: StoreAccess;
+  onUnauthorized?: () => void;
+  onPurchased?: () => void;
+}) {
+  const { catalog, loading, buyingOffer, purchasedOffer, error, reload, buy } = useStoreCatalog(
+    access,
+    onUnauthorized,
+    onPurchased,
+  );
+  const dashboard = access.kind === "dashboard";
   const [section, setSection] = useState(sections[0]);
   const [category, setCategory] = useState(sections[0].categories[0]);
   const [nation, setNation] = useState("all");
@@ -115,134 +128,165 @@ function Store({ token }: { token?: string }) {
   }
 
   return (
-    <Container component="main" maxWidth="lg" sx={{ py: { xs: 2.5, md: 4 } }}>
-      {!token && <Alert severity="info">Open the Store from a connected garage.</Alert>}
-      {token && (
-        <Tabs
-          value={section.title}
-          aria-label="Store sections"
-          variant="scrollable"
-          scrollButtons="auto"
-          onChange={(_, title: string) => {
-            const next = sections.find((candidate) => candidate.title === title);
-            if (next) {
-              setSection(next);
-              selectCategory(next.categories[0]);
-            }
-          }}
-          sx={{ borderBottom: 1, borderColor: "divider", mb: 2.5 }}
-        >
-          {sections.map(({ title }, index) => (
-            <Tab
-              key={title}
-              id={`store-section-${index}`}
-              aria-controls="store-section-panel"
-              label={title}
-              value={title}
-            />
-          ))}
-        </Tabs>
+    <Container
+      component={dashboard ? "section" : "main"}
+      maxWidth="lg"
+      disableGutters={dashboard}
+      sx={dashboard ? undefined : { py: { xs: 2.5, md: 4 } }}
+    >
+      <Tabs
+        value={section.title}
+        aria-label="Store sections"
+        variant="scrollable"
+        scrollButtons="auto"
+        onChange={(_, title: string) => {
+          const next = sections.find((candidate) => candidate.title === title);
+          if (next) {
+            setSection(next);
+            selectCategory(next.categories[0]);
+          }
+        }}
+        sx={{ borderBottom: 1, borderColor: "divider", mb: 2.5 }}
+      >
+        {sections.map(({ title }, index) => (
+          <Tab
+            key={title}
+            id={`store-section-${index}`}
+            aria-controls="store-section-panel"
+            label={title}
+            value={title}
+          />
+        ))}
+      </Tabs>
+      {dashboard && purchasedOffer && (
+        <Alert role="status" severity="success" sx={{ mb: 2.5 }}>
+          Purchased {purchasedOffer.name}.
+        </Alert>
       )}
-      {token && (
-        <Box
-          id="store-section-panel"
-          role="tabpanel"
-          aria-labelledby={`store-section-${sectionIndex}`}
-        >
-          {hasCategories && (
-            <Tabs
-              value={category.id}
-              aria-label={`${section.title} categories`}
-              variant="scrollable"
-              onChange={(_, id: StoreCategory) => {
-                const next = section.categories.find((candidate) => candidate.id === id);
-                if (next) selectCategory(next);
-              }}
-              sx={{ mb: 2.5 }}
-            >
-              {section.categories.map(({ id, title }) => (
-                <Tab
-                  key={id}
-                  id={`store-category-${id}`}
-                  aria-controls="store-category-panel"
-                  label={title}
-                  value={id}
-                />
-              ))}
-            </Tabs>
-          )}
-          <Box
-            id="store-category-panel"
-            role={hasCategories ? "tabpanel" : undefined}
-            aria-labelledby={hasCategories ? `store-category-${category.id}` : undefined}
+      <Box
+        id="store-section-panel"
+        role="tabpanel"
+        aria-labelledby={`store-section-${sectionIndex}`}
+      >
+        {hasCategories && (
+          <Tabs
+            value={category.id}
+            aria-label={`${section.title} categories`}
+            variant="scrollable"
+            onChange={(_, id: StoreCategory) => {
+              const next = section.categories.find((candidate) => candidate.id === id);
+              if (next) selectCategory(next);
+            }}
+            sx={{ mb: 2.5 }}
           >
-            {error !== null && (
-              <Alert
-                severity="error"
-                sx={{ mb: 2.5 }}
-                action={
-                  <Button color="inherit" size="small" onClick={reload}>
-                    Reload offers
-                  </Button>
-                }
+            {section.categories.map(({ id, title }) => (
+              <Tab
+                key={id}
+                id={`store-category-${id}`}
+                aria-controls="store-category-panel"
+                label={title}
+                value={id}
+              />
+            ))}
+          </Tabs>
+        )}
+        <Box
+          id="store-category-panel"
+          role={hasCategories ? "tabpanel" : undefined}
+          aria-labelledby={hasCategories ? `store-category-${category.id}` : undefined}
+        >
+          {error !== null && (
+            <Alert
+              severity="error"
+              sx={{ mb: 2.5 }}
+              action={
+                <Button color="inherit" size="small" onClick={reload}>
+                  Reload offers
+                </Button>
+              }
+            >
+              {error}
+            </Alert>
+          )}
+          {loading && (
+            <Box role="status" aria-label="Loading offers" sx={catalogGrid}>
+              {[0, 1, 2].map((item) => (
+                <Skeleton key={item} variant="rounded" height={152} />
+              ))}
+            </Box>
+          )}
+          {!loading && catalog && (
+            <Box component="section" aria-labelledby="store-category-title">
+              <Typography
+                id="store-category-title"
+                component={dashboard ? "h2" : "h1"}
+                variant="h5"
+                sx={{ mb: 1.5 }}
               >
-                {error}
-              </Alert>
-            )}
-            {loading && (
-              <Box role="status" aria-label="Loading offers" sx={catalogGrid}>
-                {[0, 1, 2].map((item) => (
-                  <Skeleton key={item} variant="rounded" height={152} />
-                ))}
-              </Box>
-            )}
-            {!loading && catalog && (
-              <Box component="section" aria-labelledby="store-category-title">
-                <Typography id="store-category-title" component="h1" variant="h5" sx={{ mb: 1.5 }}>
-                  {category.title}
-                </Typography>
-                {category.id === "premium_account" && (
-                  <PremiumStatus expiresAt={catalog.premium_expires_at} />
-                )}
-                {vehicles && offers.length > 0 && (
-                  <VehicleFilters
-                    offers={offers}
-                    nation={nation}
-                    tier={tier}
-                    setNation={setNation}
-                    setTier={setTier}
-                  />
-                )}
-                {visible.length === 0 ? (
-                  <Alert severity="info">No offers match this selection.</Alert>
-                ) : (
-                  <Box sx={catalogGrid}>
-                    {visible.map((offer) => (
-                      <OfferCard
-                        key={`${offer.item}:${offer.price.currency}`}
-                        offer={offer}
-                        buying={buyingOffer === offer}
-                        disabled={buyingOffer !== null || error !== null}
-                        onBuy={buy}
-                      />
-                    ))}
-                  </Box>
-                )}
-              </Box>
-            )}
-          </Box>
+                {category.title}
+              </Typography>
+              {category.id === "premium_account" && (
+                <PremiumStatus expiresAt={catalog.premium_expires_at} />
+              )}
+              {vehicles && offers.length > 0 && (
+                <VehicleFilters
+                  offers={offers}
+                  nation={nation}
+                  tier={tier}
+                  setNation={setNation}
+                  setTier={setTier}
+                />
+              )}
+              {visible.length === 0 ? (
+                <Alert severity="info">No offers match this selection.</Alert>
+              ) : (
+                <Box sx={catalogGrid}>
+                  {visible.map((offer) => (
+                    <OfferCard
+                      key={`${offer.item}:${offer.price.currency}`}
+                      offer={offer}
+                      buying={buyingOffer === offer}
+                      disabled={buyingOffer !== null || error !== null}
+                      onBuy={buy}
+                    />
+                  ))}
+                </Box>
+              )}
+            </Box>
+          )}
         </Box>
-      )}
+      </Box>
     </Container>
+  );
+}
+
+const dashboardAccess: StoreAccess = { kind: "dashboard" };
+
+export function DashboardStore({
+  onUnauthorized,
+  onPurchased,
+}: {
+  onUnauthorized: () => void;
+  onPurchased: () => void;
+}) {
+  return (
+    <Store access={dashboardAccess} onUnauthorized={onUnauthorized} onPurchased={onPurchased} />
   );
 }
 
 export default function Shop() {
   const token = /^#([A-Za-z0-9_-]{43})(?=$|[/?&])/.exec(window.location.hash)?.[1];
+  const access = useMemo(() => (token ? { kind: "garage" as const, token } : null), [token]);
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Store token={token} />
+      {access ? (
+        <Store access={access} />
+      ) : (
+        <Container component="main" maxWidth="lg" sx={{ py: { xs: 2.5, md: 4 } }}>
+          <Alert severity="info">Open the Store from a connected garage.</Alert>
+        </Container>
+      )}
     </ThemeProvider>
   );
 }

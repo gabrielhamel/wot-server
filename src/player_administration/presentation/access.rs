@@ -5,6 +5,7 @@ use super::{
 use crate::{
     accounts::{PlayerAccount, PlayerRole, RoleChange},
     player_administration::application::{self, SESSION_SECONDS, SessionSecret},
+    player_sessions::DashboardStorePlayer,
     shared_kernel::AccountId,
 };
 use axum::{
@@ -23,8 +24,13 @@ const COOKIE_NAME: &str = "wot_admin_session";
 #[serde(tag = "status", rename_all = "snake_case")]
 pub(super) enum Session {
     SetupRequired,
-    SignedOut { registration_open: bool },
-    Authenticated { player: PlayerRecord },
+    SignedOut {
+        registration_open: bool,
+    },
+    Authenticated {
+        player: PlayerRecord,
+        store_enabled: bool,
+    },
 }
 
 #[derive(Deserialize)]
@@ -78,6 +84,23 @@ pub(super) async fn authenticate(
     }
 }
 
+pub(super) async fn authenticate_store_player(
+    State(state): State<AdminState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    match lookup_session(&state, request.headers()).await {
+        Ok(Some(player)) => {
+            request
+                .extensions_mut()
+                .insert(DashboardStorePlayer(player.id));
+            next.run(request).await
+        }
+        Ok(None) => (StatusCode::UNAUTHORIZED, "Sign in to open the Store.").into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
 #[tracing::instrument(name = "admin.authenticate", skip_all, fields(ddd.bounded_context.name = "player_administration", input.session.present = tracing::field::Empty, output.outcome = tracing::field::Empty, user.id = tracing::field::Empty), err)]
 pub(super) async fn lookup_session(
     state: &AdminState,
@@ -116,6 +139,7 @@ pub(super) async fn session(
     let session = if let Some(player) = lookup_session(&state, &headers).await? {
         Session::Authenticated {
             player: player.into(),
+            store_enabled: state.store_enabled,
         }
     } else if state
         .accounts

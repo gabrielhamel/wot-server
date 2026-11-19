@@ -31,7 +31,7 @@ establish compatibility with the current client.
 | Researching, buying and selling tanks, and buying garage slots | [Tank progression](vehicles.md) |
 | Researching, buying and installing tank modules | [Module progression](modules.md) |
 | Loading, unloading and buying tank shells | [Garage ammunition](ammunition.md) |
-| Opening the in-game Store, browsing categories, and buying Premium Account time | [Store](store.md) |
+| Shopping from the player dashboard or in-game garage | [Store](store.md) |
 | Official EU Store categories and regular prices | [Store catalog](store-eu-catalog.md) |
 | Unimplemented Store offers and account products | [Missing Store features](store-missing-features.md) |
 | Buying, mounting and demounting equipment | [Garage equipment](equipment.md) |

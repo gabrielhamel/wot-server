@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import { storeHandlers } from "./store";
 import type {
   AdminSession,
   CatalogVehicle,
@@ -13,6 +14,7 @@ import type {
 } from "../../../src/player_administration/application/admin-contracts";
 
 const endpoint = "/api/admin";
+const sessionKey = "wot-server.demo-session";
 const vehicles: CatalogVehicle[] = [
   { id: 101, key: "usa:A01_T1_Cunningham", name: "T1 Cunningham", tier: 1 },
   { id: 813, key: "germany:G01_Pz_IV", name: "Panzer IV", tier: 5 },
@@ -84,7 +86,7 @@ function applyGrant(garage: Garage, grant: Grant) {
   return HttpResponse.json<GrantResult>({ garage, delivery: "on_next_sync" });
 }
 
-export function adminHandlers() {
+export function adminHandlers(storage: Storage = window.localStorage) {
   const admin: PlayerRecord = {
     id: "1",
     username: "admin@example.test",
@@ -97,20 +99,22 @@ export function adminHandlers() {
   ];
   const garages = new Map(players.map((player) => [player.id, demoGarage(player.display_name)]));
   const passwords = new Map([[admin.username, "demo-admin"], [players[1].username, "demo-player"]]);
-  let signedIn: PlayerRecord | undefined = admin;
+  const savedPlayer = storage.getItem(sessionKey);
+  let signedIn = savedPlayer === null ? admin : players.find(({ id }) => id === savedPlayer);
   const nameTaken = (name: string) =>
     players.some((player) => player.display_name.toLowerCase() === name.toLowerCase());
 
   return [
     http.get(`${endpoint}/session`, () =>
       HttpResponse.json<AdminSession>(
-        signedIn ? { status: "authenticated", player: signedIn } : { status: "signed_out", registration_open: true },
+        signedIn ? { status: "authenticated", player: signedIn, store_enabled: true } : { status: "signed_out", registration_open: true },
       ),
     ),
     http.post(`${endpoint}/session`, async ({ request }) => {
       const { email, password } = (await request.json()) as { email: string; password: string };
       if (passwords.get(email) !== password) return problem(401, "Invalid email or password.");
       signedIn = players.find((player) => player.username === email);
+      storage.setItem(sessionKey, signedIn?.id ?? "");
       return new HttpResponse(null, { status: 204 });
     }),
     http.post(`${endpoint}/setup`, () => problem(409, "An administrator already exists.")),
@@ -147,8 +151,10 @@ export function adminHandlers() {
     }),
     http.post(`${endpoint}/logout`, () => {
       signedIn = undefined;
+      storage.setItem(sessionKey, "");
       return new HttpResponse(null, { status: 204 });
     }),
+    ...storeHandlers(() => (signedIn ? garages.get(signedIn.id) : undefined)),
     http.all(`${endpoint}/*`, () => {
       if (signedIn?.role !== "admin") return problem(401, "Sign in as an administrator.");
     }),

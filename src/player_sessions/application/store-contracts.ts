@@ -45,3 +45,5 @@ export interface StoreOrder {
   revision: string;
   price: StorePrice;
 }
+
+export type StoreAccess = { kind: "garage"; token: string } | { kind: "dashboard" };

@@ -124,6 +124,7 @@ export const authProvider: AuthProvider = {
       id: session.player.id,
       fullName: session.player.display_name,
       role: session.player.role,
+      storeEnabled: session.store_enabled,
     };
   },
   async checkError(error: unknown) {

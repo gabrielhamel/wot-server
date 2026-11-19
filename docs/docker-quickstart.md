@@ -78,7 +78,7 @@ docker run -d --name wot-server --restart unless-stopped \
 ```
 
 The server applies database migrations and generates its login key on first
-start. Open [the dashboard](http://127.0.0.1:8080/admin/), create the first
+start. Open [the dashboard](http://127.0.0.1:8080/dashboard/), create the first
 administrator, then sign in with the administrator email and password. Use
 **Player accounts → Create** to add another account. Use an email-shaped login
 such as `player@example.com` for the game client. New accounts receive tier I

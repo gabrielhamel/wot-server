@@ -1,9 +1,9 @@
 use crate::{
     accounts::{ProgressionError, StoreOrder, StoreOrderError, StorePrice},
-    player_sessions::application::store::{StoreError, StoreRequests, StoreToken},
+    player_sessions::application::store::{StoreCustomer, StoreError, StoreRequests, StoreToken},
 };
 use axum::{
-    Json, Router,
+    Extension, Json, Router,
     extract::{DefaultBodyLimit, MatchedPath, Request, State, rejection::JsonRejection},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     middleware::{Next, from_fn},
@@ -13,13 +13,24 @@ use axum::{
 use std::net::SocketAddr;
 use tracing::Instrument;
 
+#[derive(Clone, Copy)]
+pub(crate) struct DashboardStorePlayer(pub(crate) i64);
+
 pub(crate) fn router(requests: StoreRequests) -> Router {
-    Router::new()
-        .route("/api/shop/catalog", get(catalog))
-        .route("/api/shop/orders", post(purchase))
-        .layer(DefaultBodyLimit::max(1024))
+    endpoints("/api/shop/catalog", "/api/shop/orders")
         .layer(from_fn(serve_request))
         .with_state(requests)
+}
+
+pub(crate) fn dashboard_router<S>(requests: StoreRequests) -> Router<S> {
+    endpoints("/me/shop/catalog", "/me/shop/orders").with_state(requests)
+}
+
+fn endpoints(catalog_path: &str, order_path: &str) -> Router<StoreRequests> {
+    Router::new()
+        .route(catalog_path, get(catalog))
+        .route(order_path, post(purchase))
+        .layer(DefaultBodyLimit::max(1024))
 }
 
 async fn serve_request(request: Request, next: Next) -> Response {
@@ -63,9 +74,14 @@ async fn serve_request(request: Request, next: Next) -> Response {
     .await
 }
 
-#[tracing::instrument(name = "player_sessions.store.catalog_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = "/api/shop/catalog", user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
-async fn catalog(State(store): State<StoreRequests>, headers: HeaderMap) -> Response {
-    respond(&store, &headers, None).await
+#[tracing::instrument(name = "player_sessions.store.catalog_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = route.as_str(), input.channel = channel(player.as_ref()), user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
+async fn catalog(
+    State(store): State<StoreRequests>,
+    route: MatchedPath,
+    player: Option<Extension<DashboardStorePlayer>>,
+    headers: HeaderMap,
+) -> Response {
+    respond(&store, player, &headers, None).await
 }
 
 #[derive(serde::Deserialize)]
@@ -86,9 +102,11 @@ impl OrderPayload {
     }
 }
 
-#[tracing::instrument(name = "player_sessions.store.purchase_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = "/api/shop/orders", input.item = tracing::field::Empty, user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
+#[tracing::instrument(name = "player_sessions.store.purchase_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = route.as_str(), input.channel = channel(player.as_ref()), input.item = tracing::field::Empty, user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
 async fn purchase(
     State(store): State<StoreRequests>,
+    route: MatchedPath,
+    player: Option<Extension<DashboardStorePlayer>>,
     headers: HeaderMap,
     order: Result<Json<OrderPayload>, JsonRejection>,
 ) -> Response {
@@ -97,21 +115,35 @@ async fn purchase(
         return (StatusCode::BAD_REQUEST, "Invalid order.").into_response();
     };
     tracing::Span::current().record("input.item", order.item);
-    respond(&store, &headers, Some(order)).await
+    respond(&store, player, &headers, Some(order)).await
+}
+
+fn channel(player: Option<&Extension<DashboardStorePlayer>>) -> &'static str {
+    if player.is_some() {
+        "dashboard"
+    } else {
+        "garage"
+    }
 }
 
 async fn respond(
     store: &StoreRequests,
+    player: Option<Extension<DashboardStorePlayer>>,
     headers: &HeaderMap,
     order: Option<StoreOrder>,
 ) -> Response {
-    let token = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|header| header.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .and_then(StoreToken::parse);
-    let result = match token {
-        Some(token) => store.request(token, order).await,
+    let customer = if let Some(Extension(player)) = player {
+        Some(StoreCustomer::Dashboard(player.0))
+    } else {
+        headers
+            .get(header::AUTHORIZATION)
+            .and_then(|header| header.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .and_then(StoreToken::parse)
+            .map(StoreCustomer::Garage)
+    };
+    let result = match customer {
+        Some(customer) => store.request(customer, order).await,
         None => Err(StoreError::Unauthorized),
     };
 

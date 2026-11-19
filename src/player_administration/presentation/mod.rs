@@ -9,7 +9,7 @@ mod request_traces;
 
 use crate::{
     accounts::{Accounts, GarageCatalog, PlayerAccounts, PostgresAccounts, PostgresPlayers},
-    player_sessions::PlayerGrants,
+    player_sessions::{PlayerGrants, StoreRequests, dashboard_store_router},
 };
 use axum::{
     Router,
@@ -30,6 +30,7 @@ use tracing::Instrument;
 struct AdminState {
     accounts: PlayerAccounts<PostgresPlayers>,
     secure_cookies: bool,
+    store_enabled: bool,
     sign_in_slots: Arc<Semaphore>,
     garage_accounts: Accounts<PostgresAccounts>,
     catalog: Arc<GarageCatalog>,
@@ -46,12 +47,14 @@ pub(crate) fn router(
     garage_accounts: Accounts<PostgresAccounts>,
     catalog: Arc<GarageCatalog>,
     grants: PlayerGrants,
+    store: Option<StoreRequests>,
     secure_cookies: bool,
     trusted_proxies: Vec<IpAddr>,
 ) -> Router {
     let state = AdminState {
         accounts: PlayerAccounts::new(players),
         secure_cookies,
+        store_enabled: store.is_some(),
         garage_accounts,
         catalog,
         grants,
@@ -71,7 +74,14 @@ pub(crate) fn router(
             state.clone(),
             access::authenticate,
         ));
+    let dashboard_store = store.map_or_else(Router::new, |store| {
+        dashboard_store_router(store).route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            access::authenticate_store_player,
+        ))
+    });
     let api = protected
+        .merge(dashboard_store)
         .route("/session", get(access::session).post(access::sign_in))
         .route("/logout", post(access::sign_out))
         .route("/setup", post(players::bootstrap))
