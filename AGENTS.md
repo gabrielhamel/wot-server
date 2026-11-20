@@ -218,6 +218,11 @@ units, emission conditions, and supporting source locations.
   expected rejections, conflicts and successful no-op outcomes distinctly.
   Correlate logs with their current span. Console severity must not suppress
   operational traces sent to the collector.
+- Treat unimplemented client operations as telemetry errors across all
+  protocols, including game commands and chat. Set the operation span status
+  to `Error`, record `output.outcome=unimplemented`, and emit an error-level
+  diagnostic event with the available operation identifiers. Apply this rule
+  to fire-and-forget requests and to requests that receive a protocol reply.
 - Add regression coverage inspecting exported parent IDs and attributes through
   the affected entry point, including relevant failures. Verify a complete
   request-to-response trace for changed workflows and record evidence in the PR.

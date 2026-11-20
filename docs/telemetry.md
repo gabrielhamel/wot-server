@@ -123,10 +123,12 @@ actually ran. For example, command 501 returns the current in-memory count.
         player_sessions.server_stats              [online count]
           mercury.response                        [receiveServerStats, sent]
 
-Unimplemented account commands, exposed Mercury base methods, Mercury chat
-actions, and XMPP IQ operations or stanza types set their operation span status to `Error` and record
-`output.outcome=unimplemented` and a diagnostic event. Failure replies remain
-in the originating trace. Fire-and-forget commands emit the same error telemetry.
+Across client protocols, unimplemented operations set their operation span
+status to `Error`, record `output.outcome=unimplemented`, and emit an
+error-level diagnostic event. This applies to account commands, exposed
+Mercury base methods, Mercury chat actions, and XMPP IQ operations or stanza
+types. Failure replies remain in the originating trace. Fire-and-forget
+requests emit the same error telemetry.
 
 Use `{ resource.service.name = "wot-server" && status = error && span.output.outcome = "unimplemented" }`
 in Tempo to find these operations. Mercury decode and dispatch failures set
