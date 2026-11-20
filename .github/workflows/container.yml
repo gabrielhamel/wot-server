@@ -126,16 +126,18 @@ jobs:
             exit 1
           fi
 
-      - name: Start the packaged server with a fresh database
+      - name: Check startup and run garage E2E against packaged resources
         env:
           IMAGE: ${{ steps.image.outputs.commit }}
           POSTGRES_IMAGE: docker.io/library/postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
         run: |
           smoke="wot-smoke-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          test_image="wot-garage-e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           config_dir=$(mktemp -d "$RUNNER_TEMP/wot-smoke.XXXXXX")
           cleanup() {
-            docker rm -fv "$smoke-server" "$smoke-db" >/dev/null 2>&1 || true
+            docker rm -fv "$smoke-server" "$smoke-db" "$smoke-e2e" >/dev/null 2>&1 || true
             docker network rm "$smoke" >/dev/null 2>&1 || true
+            docker image rm "$test_image" >/dev/null 2>&1 || true
             rm -rf "$config_dir"
           }
           trap cleanup EXIT
@@ -162,17 +164,32 @@ jobs:
           docker create --name "$smoke-server" --network "$smoke" "$IMAGE" --log-level info
           docker cp "$config_dir/server.json" "$smoke-server:/opt/wot-server/server.json"
           docker start "$smoke-server"
+          ready=false
           for attempt in {1..60}; do
             if [[ $(docker inspect --format '{{.State.Running}}' "$smoke-server") != true ]]; then
               break
             fi
             if docker logs "$smoke-server" 2>&1 | grep -F 'Web HTTP listener started' >/dev/null; then
-              exit 0
+              ready=true
+              break
             fi
             sleep 1
           done
-          docker logs "$smoke-server"
-          exit 1
+          if [[ "$ready" != true ]]; then
+            docker logs "$smoke-server"
+            exit 1
+          fi
+          docker stop "$smoke-server"
+
+          docker build --target garage-e2e --tag "$test_image" .
+          docker exec "$smoke-db" createdb -U wot_smoke wot_e2e
+          docker create --name "$smoke-e2e" --network "$smoke" \
+            -e WG_TEST_DATABASE_URL=postgresql://wot_smoke:ci-only@postgres:5432/wot_e2e \
+            -e WG_RESOURCE_DIR=/opt/wot-server/resources \
+            "$test_image" --ignored
+          docker cp "$smoke-server:/opt/wot-server/resources" - | docker cp - "$smoke-e2e:/opt/wot-server"
+          timeout 10m docker start --attach "$smoke-e2e"
+          [[ $(docker inspect --format '{{.State.ExitCode}}' "$smoke-e2e") == 0 ]]
 
       - name: Publish to GitHub Container Registry
         env:
