@@ -118,10 +118,9 @@ lost. On SIGINT or SIGTERM, the server shuts down and flushes pending exports.
 Telemetry resources include `service.version`, set to the exact Git tag by
 the release image workflow. Local Cargo builds use the package version unless
 `WOT_SERVER_VERSION` is supplied at build time. Release images also include
-`wot.game.build_version` from the launcher version used during extraction
-(for example `2.4.1.5514`). `wot.game.version` comes from the loaded bundle's
-`game_version`, copied from the source client's `version.xml` (for example
-`v.2.4.1.1 #993`). Older bundles without that field omit this attribute.
+`wot.game.build_version` from the launcher version used during extraction.
+`wot.game.version` comes from the loaded bundle's `game_version`, copied from
+the source client's `version.xml`. Bundles without that field omit this attribute.
 These resource attributes accompany logs, traces and metrics.
 
 Authentication spans include `outcome`, `network.protocol.name`,
@@ -149,9 +148,9 @@ what the peer sent, and the account ID identifies the authenticated player.
 The decompiled reference at
 `docs/references/wot-src/sources/res/scripts/client/connection_mgr.py:192`
 constructs a context with `lang_id` and `publication`. Its applicability to
-other client versions remains a research question. The selected local fixture
-reports `v.2.4.1.1 #993`, executable SHA-256
-`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
+the latest client remains a research question. The
+[client validation record](client-validation.md) identifies the executable
+used for earlier observations.
 
 ## Protocol implementation
 
@@ -207,9 +206,7 @@ account replacement notice before removing its UDP peer. This uses
 `scripts/entity_defs/Account.def` in the resource bundle. In the pinned
 decompiled client, `Account.py` forwards the notice to
 `connection_mgr.py`, which disconnects the client and reports the reason.
-`constants.ACCOUNT_KICK_REASONS.LOGIN_TO_OTHER_GAME` is 1. The tested
-resource ABI is EU 2.4.1.5514, and the installed game reported
-`v.2.4.1.1 #993` with executable identities in the [Store guide](store.md).
+`constants.ACCOUNT_KICK_REASONS.LOGIN_TO_OTHER_GAME` is 1 in that reference.
 
 ## Runtime contract
 
@@ -244,12 +241,11 @@ Migrations are embedded and tracked by SQLx; no separate migration CLI is requir
 
 ## Evidence and limits
 
-The original research target was EU `2.4.1.5498`; the installed client has since
-updated to `2.4.1.5514` (`v.2.4.1.1 #993`). Confirmed locally: resource loading,
-Account schema binding, PostgreSQL migrations, encrypted UDP tests, and actual
-login and garage rendering with both test vehicles in the carousel. See the
-[live validation record](client-validation.md) for evidence, fixes and remaining
-ancillary UI errors.
+The [live validation record](client-validation.md) documents earlier client
+walkthroughs, including login and garage rendering. The
+[client breaking changes](client-breaking-changes.md) record ABI changes
+observed across client updates. See the [testing guide](testing.md) for the
+current automated checks.
 
 Supporting sources:
 

@@ -64,14 +64,14 @@ exported server span continues that remote parent into downstream work.
 
 ## E2E Tests
 
-The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL 18
-service and runs the garage suite against pinned EU SD English 2.4.1 and 2.4.2
-resource bundles. It copies the bundles from public server images by digest
-and runs the checked-out Rust code. The 2.4.2 bundle comes from the image that
-failed on startup after the Account version field changed. The suite checks
-the version property and value in the decoded Account creation packet and
-the property name on the trace that delivers `showGUI`. The bundles also
-include cosmetic and arena definitions for garage and Training Room coverage.
+The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL
+service and runs the checked-out Rust code against the EU client resources
+from the latest published server image. The job logs the bundle version used
+for the run. Publishing separately updates the client from the EU production
+channel and verifies startup with the newly extracted bundle before pushing
+any tags. The garage suite checks the version property and value in the
+decoded Account creation packet and the property name on the trace that
+delivers `showGUI`.
 
 The database-dependent tests are opt-in when running Cargo locally.
 
@@ -183,9 +183,9 @@ Start `./target/release/wot-server` to validate the actual configuration, databa
 resources, schema binding and sockets; stop with Ctrl-C after the ready log.
 Settings are read exclusively from the generated file described in the
 [server guide](server.md). Environment variables above belong to the integration
-test harness, not the server. Live garage rendering passed with client `2.4.1.5514`;
-see [evidence and limits](client-validation.md). The protocol test also checks
-revision acknowledgement after a full cache and required startup settings.
+test harness. The [client validation record](client-validation.md) documents
+earlier native garage walkthroughs. The protocol test also checks revision
+acknowledgement after a full cache and required startup settings.
 
 Unit tests cover default configuration creation, preservation of edits, relative
 path resolution, rejection of invalid settings, key reuse, and cumulative filtering

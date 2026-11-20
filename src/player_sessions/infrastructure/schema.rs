@@ -77,12 +77,10 @@ impl AccountBootstrap {
             .iter()
             .find(|interface| &*interface.name == "AccountVersion")
             .context("Missing AccountVersion interface")?;
-        let mut versions = interface.properties.iter().filter(|property| {
-            matches!(
-                &*property.name,
-                "requiredVersion_2410" | "requiredVersion_2420"
-            )
-        });
+        let mut versions = interface
+            .properties
+            .iter()
+            .filter(|property| property.name.starts_with("requiredVersion_"));
         let property = versions
             .next()
             .context("Unsupported AccountVersion property")?;

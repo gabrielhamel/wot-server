@@ -1,7 +1,7 @@
 # World of Tanks EU Store catalog
 
 Observed in the official EU in-game Store on 18 November 2026, on client
-`v.2.4.1.1 #993`. This is a reference for the live game. The
+`v.2.4.1.1 #993`. This is a historical catalog snapshot. The
 [server's Store implementation](store.md) has its own catalog.
 
 The catalog covers the Store opened from the garage. It excludes Event Rewards,

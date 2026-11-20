@@ -1,13 +1,12 @@
 # wot-server
 
-A **work-in-progress server implementation for World of Tanks EU 2.4.1.5514
-and later versions**. Newer client versions may require compatibility updates.
+A **work-in-progress server implementation for the latest World of Tanks EU
+client**. Game updates can require a new server release.
 
 ## Play on the public server
 
 **WoT Server** is online at `82.66.254.119:20016` and automatically follows
-the project's latest published server release. The current release uses
-the World of Tanks EU client build **2.4.1.5514**.
+the project's latest published server release.
 
 1. Go to [wot.gabrielhamel.fr](https://wot.gabrielhamel.fr/) and choose
    **Create a player account**.
@@ -21,7 +20,7 @@ the World of Tanks EU client build **2.4.1.5514**.
    and password you registered with. If Game Center signs you in automatically,
    choose **Switch Account** first.
 
-The supplied server list keeps the five official EU entries for this build.
+The supplied server list includes the official EU entries.
 To undo the change, restore your backup. Game Center updates and repairs can
 replace the server list.
 
