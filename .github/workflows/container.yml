@@ -61,6 +61,7 @@ jobs:
           docker start --attach "$container"
           [[ $(docker inspect --format '{{.State.ExitCode}}' "$container") == 0 ]]
           docker cp "$container:/tmp/resources" ./resources
+          jq -r '"Extracted client version: \(.game_version)"' resources/manifest.json
 
       - name: Compute image tags
         id: image
@@ -110,6 +111,54 @@ jobs:
             printf "%s\n" "$libraries"
             case "$libraries" in *"not found"*) exit 1;; esac
           '
+
+      - name: Start the packaged server with a fresh database
+        env:
+          IMAGE: ${{ steps.image.outputs.commit }}
+          POSTGRES_IMAGE: docker.io/library/postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+        run: |
+          smoke="wot-smoke-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          config_dir=$(mktemp -d "$RUNNER_TEMP/wot-smoke.XXXXXX")
+          cleanup() {
+            docker rm -fv "$smoke-server" "$smoke-db" >/dev/null 2>&1 || true
+            docker network rm "$smoke" >/dev/null 2>&1 || true
+            rm -rf "$config_dir"
+          }
+          trap cleanup EXIT
+          cat > "$config_dir/server.json" <<'JSON'
+          {
+            "database_url": "postgresql://wot_smoke:ci-only@postgres:5432/wot_smoke",
+            "web": { "bind": "127.0.0.1:8080", "ui_dir": "web" }
+          }
+          JSON
+          chmod 644 "$config_dir/server.json"
+          docker network create --internal "$smoke"
+          docker run -d --name "$smoke-db" --network "$smoke" --network-alias postgres \
+            -e POSTGRES_USER=wot_smoke -e POSTGRES_PASSWORD=ci-only "$POSTGRES_IMAGE"
+          for attempt in {1..60}; do
+            if docker exec "$smoke-db" pg_isready -h 127.0.0.1 -U wot_smoke -d wot_smoke; then
+              break
+            fi
+            if [[ $attempt == 60 ]]; then
+              docker logs "$smoke-db"
+              exit 1
+            fi
+            sleep 1
+          done
+          docker create --name "$smoke-server" --network "$smoke" "$IMAGE" --log-level info
+          docker cp "$config_dir/server.json" "$smoke-server:/opt/wot-server/server.json"
+          docker start "$smoke-server"
+          for attempt in {1..60}; do
+            if [[ $(docker inspect --format '{{.State.Running}}' "$smoke-server") != true ]]; then
+              break
+            fi
+            if docker logs "$smoke-server" 2>&1 | grep -F 'Web HTTP listener started' >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs "$smoke-server"
+          exit 1
 
       - name: Publish to GitHub Container Registry
         env:

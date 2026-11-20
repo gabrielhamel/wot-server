@@ -64,15 +64,14 @@ exported server span continues that remote parent into downstream work.
 
 ## E2E Tests
 
-The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL 18 service
-and copies the EU SD English `2.4.1.5514` resource bundle from the public
-`2.4.1.5514-0.9.0` server image. It pins the image by digest so later releases
-do not change the fixture. The job builds and tests the checked-out Rust code
-and uses the image only to read the resource files. It needs no registry
-credentials, so it also works for fork pull requests. Update the image digest
-and fixture build together when refreshing the CI resource bundle. The pinned
-bundle includes camouflage and style definitions for garage customization and
-Store purchases, as well as arena definitions for Training Room coverage.
+The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL 18
+service and runs the garage suite against pinned EU SD English 2.4.1 and 2.4.2
+resource bundles. It copies the bundles from public server images by digest
+and runs the checked-out Rust code. The 2.4.2 bundle comes from the image that
+failed on startup after the Account version field changed. The suite checks
+the version property and value in the decoded Account creation packet and
+the property name on the trace that delivers `showGUI`. The bundles also
+include cosmetic and arena definitions for garage and Training Room coverage.
 
 The database-dependent tests are opt-in when running Cargo locally.
 

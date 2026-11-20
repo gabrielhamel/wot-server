@@ -17,11 +17,19 @@ use the launcher's in-place update and download only the needed patches. The
 launcher requires the complete package set to install. The workflow reads the
 image's game version from the installed state after the update succeeds. The
 extractor and server build come from the same checkout. The full client stays
-on the runner.
+on the runner. The extraction step logs the version from the bundle manifest.
+The launcher state and extracted version come from different sources and may
+disagree.
 
 The extractor and server builds share BuildKit caches for the Cargo registry
 and compiled dependencies. They reuse these caches while the runner's Docker
 storage is available and rebuild the workspace crates when source layers change.
+
+Before pushing any tags, the workflow starts the final image alongside a
+fresh PostgreSQL instance on an isolated Docker network. The release stops if
+the packaged server fails to initialize its database, load the client catalog,
+bind the Account protocol schema or start its web listener. The workflow
+prints the startup error and removes the smoke test containers and network.
 
 ## Run an image
 

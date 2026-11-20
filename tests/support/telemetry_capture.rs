@@ -322,7 +322,7 @@ pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
     );
 }
 
-pub fn assert_training_room_bootstrap(visible: bool) {
+pub fn assert_garage_bootstrap(visible: bool, version_property: &str) {
     let spans = exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key, expected: &str| {
         span.attributes.iter().any(|attribute| {
@@ -332,6 +332,11 @@ pub fn assert_training_room_bootstrap(visible: bool) {
     assert!(
         spans.iter().any(|bootstrap| {
             bootstrap.name == "player_sessions.enable"
+                && has(
+                    bootstrap,
+                    "output.account.version_property",
+                    version_property,
+                )
                 && has(
                     bootstrap,
                     "output.training_room.visible",
@@ -350,7 +355,7 @@ pub fn assert_training_room_bootstrap(visible: bool) {
                         && has(response, "output.delivery", "sent")
                 })
         }),
-        "Missing Training Room visibility or description setting on a delivered garage bootstrap trace"
+        "Missing Account version property or Training Room settings on a delivered garage bootstrap trace"
     );
 }
 

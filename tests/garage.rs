@@ -64,6 +64,20 @@ fn dict(value: &Pickle, name: &str) -> Pickle {
     dict[&Pickle::Bytes(name.as_bytes().to_vec())].clone()
 }
 
+fn account_version(script: &ScriptDispatch) -> (&str, &str) {
+    let property = script
+        .script
+        .interfaces
+        .iter()
+        .find(|interface| &*interface.name == "AccountVersion")
+        .unwrap()
+        .properties
+        .iter()
+        .find(|property| property.name.starts_with("requiredVersion_"))
+        .unwrap();
+    (&property.name, property.default.as_deref().unwrap())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR; uses temporary accounts in that database"]
 async fn postgres_to_encrypted_garage_with_isolated_clients() {
@@ -255,6 +269,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     let script = ScriptDispatch::new(
         wot_server::player_sessions::test_support::mercury::script::load(&resources).unwrap(),
     );
+    let account_version_property = account_version(&script).0.to_owned();
     let private_key = encrypted_login
         .then(|| Arc::new(rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).unwrap()));
     let public_key = private_key
@@ -559,7 +574,10 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
         telemetry_capture::assert_unimplemented_command_traces(a.id);
         telemetry_capture::assert_unimplemented_chat_traces(a.id);
-        telemetry_capture::assert_training_room_bootstrap(training_room_visible);
+        telemetry_capture::assert_garage_bootstrap(
+            training_room_visible,
+            &account_version_property,
+        );
         training_room_flow::assert_traces(a.id, b.id, training_room_available);
         telemetry_capture::assert_operation_traces(a.id, b.id, garage_capacity);
         telemetry_capture::assert_equipment_traces(equipment_account);
