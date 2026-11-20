@@ -204,7 +204,7 @@ pub fn assert_unimplemented_chat_traces(account: i64) {
     }
 }
 
-pub fn assert_xmpp_disconnect(peer: SocketAddr, account: i64) {
+pub fn assert_xmpp_disconnect(peer: SocketAddr, account: i64, reason: &str) {
     let (connection, spans) = xmpp_connection_span(peer);
     assert_eq!(connection.status, Status::Unset);
     assert!(
@@ -217,7 +217,7 @@ pub fn assert_xmpp_disconnect(peer: SocketAddr, account: i64) {
     assert!(has_attribute(
         &connection,
         "output.disconnect.reason",
-        "session_revoked"
+        reason
     ));
     assert!(spans.iter().any(|span| {
         span.name == "player_sessions.presence"
@@ -228,12 +228,9 @@ pub fn assert_xmpp_disconnect(peer: SocketAddr, account: i64) {
     }));
 }
 
-pub fn assert_xmpp_connection_failure(peer: SocketAddr) {
+pub fn assert_xmpp_connection_failure(peer: SocketAddr, reason: &str) {
     let (connection, _) = xmpp_connection_span(peer);
-    assert_eq!(
-        connection.status,
-        Status::error("Unexpected XMPP closing element")
-    );
+    assert_eq!(connection.status, Status::error(reason.to_owned()));
     assert!(
         connection
             .events

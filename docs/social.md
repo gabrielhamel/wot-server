@@ -173,7 +173,9 @@ bind the account to its game-session source IP and admit a chat connection for
 60 seconds after issuance. SASL cannot authenticate a different account with
 another player's token. Active chat authorization is revoked on game disconnect;
 issuing a replacement token invalidates the old chat credential. Only one XMPP
-resource per account is admitted. XMPP shutdown follows the game gateway.
+resource per account is admitted. When the server closes an XMPP stream, it
+finishes connection cleanup and releases the admission slot before closing the
+socket. XMPP shutdown follows the game gateway.
 
 The local endpoint currently advertises PLAIN **without STARTTLS**. It carries a
 short-lived game-issued credential, not the account password, but the TCP leg is

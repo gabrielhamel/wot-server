@@ -55,13 +55,21 @@ impl Chat {
     fn write(&mut self, xml: &str) {
         self.stream.write_all(xml.as_bytes()).unwrap();
     }
+    fn close(mut self) {
+        self.write("</stream:stream>");
+        std::io::copy(&mut self.stream, &mut std::io::sink())
+            .expect("XMPP stream should close after the closing tag");
+    }
+    #[track_caller]
     fn until(&mut self, marker: &str) -> String {
         loop {
             if let Some(end) = self.buffer.find(marker) {
                 return self.buffer.drain(..end + marker.len()).collect();
             }
             let mut bytes = [0; 8192];
-            let length = self.stream.read(&mut bytes).unwrap();
+            let length = self.stream.read(&mut bytes).unwrap_or_else(|error| {
+                panic!("XMPP read failed while waiting for {marker}: {error}")
+            });
             assert_ne!(
                 length, 0,
                 "XMPP disconnected while waiting for {marker}; received {}",
@@ -162,7 +170,7 @@ pub fn exercise_game_disconnect(
     let chat_peer = chat.stream.local_addr().unwrap();
     game.disconnect();
     chat.stream.read_to_end(&mut Vec::new()).unwrap();
-    crate::telemetry_capture::assert_xmpp_disconnect(chat_peer, account);
+    crate::telemetry_capture::assert_xmpp_disconnect(chat_peer, account, "session_revoked");
 
     let mut malformed = TcpStream::connect(address).unwrap();
     malformed
@@ -171,7 +179,10 @@ pub fn exercise_game_disconnect(
     let malformed_peer = malformed.local_addr().unwrap();
     malformed.write_all(b"</unexpected>").unwrap();
     malformed.read_to_end(&mut Vec::new()).unwrap();
-    crate::telemetry_capture::assert_xmpp_connection_failure(malformed_peer);
+    crate::telemetry_capture::assert_xmpp_connection_failure(
+        malformed_peer,
+        "Unexpected XMPP closing element",
+    );
 }
 
 pub fn exercise(
@@ -199,7 +210,7 @@ pub fn exercise(
         STANDARD.encode(format!("\0{a_id}\0{b_token}"))
     ));
     assert!(rejected.until("</failure>").contains("not-authorized"));
-    drop(rejected);
+    rejected.close();
     let mut first = Chat::connect(address, a_id, &a_token);
     first.write("<unknown id='unsupported-stanza'/>");
     first.write("<iq type='set' id='unsupported-storage'><query xmlns='http://wargaming.net/xmpp#storage'/></iq>");
@@ -284,11 +295,12 @@ pub fn exercise(
     assert!(restored.contains(&format!("from='{a_id}@wot-server.local'")));
 
     // Reopening a sent-only conversation still introduces the peer.
-    first.write("</stream:stream>");
-    drop(first);
+    let first_address = first.stream.local_addr().unwrap();
+    first.close();
     let offline = second.until("type='unavailable'");
     assert!(offline.contains(&format!("from='{a_id}@wot-server.local/wot'")));
     let mut first = Chat::connect(address, a_id, &a_token);
+    crate::telemetry_capture::assert_xmpp_disconnect(first_address, a_id, "peer_closed");
     let replay = first.before_ping();
     assert_peer_replay(&replay, b_id, "TestPlayerB");
     assert!(!replay.contains("<body"), "{replay}");
@@ -300,8 +312,7 @@ pub fn exercise(
 
     second.message(a_id, "Online reply");
     assert!(first.until("</message>").contains("Online reply"));
-    first.write("</stream:stream>");
-    drop(first);
+    first.close();
     let offline = second.until("type='unavailable'");
     assert!(offline.contains(&format!("from='{a_id}@wot-server.local/wot'")));
     std::thread::sleep(Duration::from_millis(500));
@@ -367,12 +378,13 @@ pub fn exercise(
     second.write(&format!("<iq type='set' id='re-add'><query xmlns='jabber:iq:roster'><item jid='{a_id}@wot-server.local'/></query></iq>"));
     assert!(second.until("</iq>").contains("type='result'"));
     assert!(second.until("</iq>").contains("name='TestPlayerA'"));
-    drop(first);
-    drop(second);
+    first.close();
+    second.close();
     let mut malformed = TcpStream::connect(address).unwrap();
     malformed
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
+    let malformed_peer = malformed.local_addr().unwrap();
     malformed
         .write_all(b"<!DOCTYPE a [<!ENTITY b 'bad'>]><a/>")
         .unwrap();
@@ -383,8 +395,11 @@ pub fn exercise(
         other => panic!("Malformed XML connection was not rejected: {other:?}"),
     }
     // A malformed client must not prevent a new authenticated connection.
-    std::thread::sleep(Duration::from_millis(100));
     let mut final_peer = Chat::connect(address, a_id, &a_token);
+    crate::telemetry_capture::assert_xmpp_connection_failure(
+        malformed_peer,
+        "XMPP DTD is prohibited",
+    );
     assert!(
         final_peer
             .history(b_id, "after-malformed")
@@ -393,4 +408,5 @@ pub fn exercise(
     final_peer.write(&format!("<iq type='set' id='remove'><query xmlns='jabber:iq:roster'><item jid='{b_id}@wot-server.local' subscription='remove'/></query></iq>"));
     final_peer.until("</iq>");
     assert!(final_peer.until("</iq>").contains("subscription='remove'"));
+    final_peer.close();
 }
