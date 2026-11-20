@@ -7,6 +7,9 @@ image names:
 
 - Each release publishes `<game-version>-<full-commit>` and
   `<game-version>-<git-tag>`, and updates `latest`.
+  The game version comes from the extracted bundle manifest. The tag keeps the
+  dotted version and any build number, removes the leading `v.` and replaces
+  the separator before the build number with a hyphen.
   If the Git tag needs sanitizing or truncating, or looks like a full commit
   SHA, the image tag includes a hash of the original Git tag.
 
@@ -14,12 +17,10 @@ The dedicated self-hosted runner installs the latest EU production SD English
 client with [wg-launcher](references/wg-launcher/README.md). Its
 installed game tree persists at `/cache/wot/eu-sd-en`, and subsequent jobs
 use the launcher's in-place update and download only the needed patches. The
-launcher requires the complete package set to install. The workflow reads the
-image's game version from the installed state after the update succeeds. The
-extractor and server build come from the same checkout. The full client stays
-on the runner. The extraction step logs the version from the bundle manifest.
-The launcher state and extracted version come from different sources and may
-disagree.
+launcher requires the complete package set to install. The extractor and
+server build come from the same checkout. The full client stays on the runner.
+The workflow logs the extracted version and verifies that the final image
+contains the same manifest version before publishing.
 
 The extractor and server builds share BuildKit caches for the Cargo registry
 and compiled dependencies. They reuse these caches while the runner's Docker

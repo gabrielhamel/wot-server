@@ -118,7 +118,7 @@ lost. On SIGINT or SIGTERM, the server shuts down and flushes pending exports.
 Telemetry resources include `service.version`, set to the exact Git tag by
 the release image workflow. Local Cargo builds use the package version unless
 `WOT_SERVER_VERSION` is supplied at build time. Release images also include
-`wot.game.build_version` from the launcher version used during extraction.
+`wot.game.build_version` from the bundled version as formatted for the image tag.
 `wot.game.version` comes from the loaded bundle's `game_version`, copied from
 the source client's `version.xml`. Bundles without that field omit this attribute.
 These resource attributes accompany logs, traces and metrics.

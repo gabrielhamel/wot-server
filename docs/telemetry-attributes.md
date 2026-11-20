@@ -339,7 +339,7 @@ same resource accompanies logs and metrics. Source:
 | --- | --- |
 | `service.name` | Nonempty `OTEL_SERVICE_NAME`, otherwise the Cargo package name (`wot-server`). |
 | `service.version` | Nonempty build-time `WOT_SERVER_VERSION`, otherwise the Cargo package version; release builds supply the release tag. |
-| `wot.game.build_version` | Nonempty build-time `WOT_GAME_VERSION` (launcher build used to extract resources); omitted when not supplied. |
+| `wot.game.build_version` | Nonempty build-time `WOT_GAME_VERSION`. Release images use the bundled client version as formatted for the image tag. Omitted when not supplied. |
 | `wot.game.version` | Game version read from the loaded resource bundle manifest; omitted if the bundle cannot be opened or lacks that value. |
 | `telemetry.sdk.name` | SDK name supplied by the OpenTelemetry resource detector. |
 | `telemetry.sdk.language` | SDK language supplied by the resource detector (`rust`). |
