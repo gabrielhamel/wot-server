@@ -118,7 +118,10 @@ Training text channel and exchange messages. The test verifies that leaving
 or deleting the room closes the channel and that a former member cannot
 send or receive room messages. A third peer verifies that a batched invitation
 reaches both recipients, that an invited player can join a closed room, and that
-decline and room deletion invalidate invitations. The test also checks trace parent links for successful and rejected requests. Older bundles
+decline and room deletion invalidate invitations. The host can exclude a
+guest from an assigned team, updating the player count and closing the
+guest's chat. Guests cannot exclude other players and hosts cannot exclude
+themselves. The test also checks trace parent links for successful and rejected requests. Older bundles
 exercise the unavailable response.
 The same peers exercise [garage ammunition](ammunition.md): rejected requests
 followed by valid unload/reload/purchase, depot conservation/deletions, balances,

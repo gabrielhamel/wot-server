@@ -175,6 +175,10 @@ trace. The decoded command span carries the numeric input or the comment's byte 
 `player_sessions.change_training_setting` span links the room update and
 acknowledgement and records the result. Room comment text stays out of traces.
 
+Excluding a guest records the target Account entity ID and room. The
+exclusion trace includes roster removal for the remaining players, the
+guest's kick notice and chat close, and the host's command acknowledgement.
+
 Training Room invitations record recipient counts and the optional message's
 byte length. Each queued invite and its delivery retain the original command
 trace. Accept, decline and room cleanup trace the resulting invitation

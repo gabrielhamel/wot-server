@@ -190,6 +190,13 @@ impl Gateway {
             }
             AccountBase::DoCmdInt3 {
                 request_id,
+                cmd: training::KICK,
+                arg0,
+                arg1,
+                arg2,
+            } => self.kick_training_player(client, entity, request_id, [arg0, arg1, arg2])?,
+            AccountBase::DoCmdInt3 {
+                request_id,
                 cmd: training::READY,
                 arg0: vehicle_id,
                 ..

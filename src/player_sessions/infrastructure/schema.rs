@@ -12,6 +12,7 @@ entity_schema! {
             fn onPrebattleJoined(room_id: EntityId);
             fn onPrebattleJoinFailure(reason: u8);
             fn onPrebattleLeft();
+            fn onKickedFromPrebattle(reason: u8);
             fn updatePrebattle(update_type: u8, data: Pickle);
             fn onCmdResponse(request_id: i16, result_id: i16, error: String);
             fn onCmdResponseExt(request_id: i16, result_id: i16, error: String, ext: Pickle);

@@ -215,6 +215,15 @@ the directory, clears the guest memberships and sends `onPrebattleLeft` to
 everyone. A guest leaving only removes that guest and refreshes the room's
 roster. The same cleanup runs when a session disconnects or is replaced.
 
+**Exclude from tactical unit** sends
+[`CMD_PRB_KICK`](../references/wot-src/sources/res/scripts/client/Account.py#L878)
+(`414`) with the guest's Account entity ID and two zeros. The server verifies
+that the caller hosts the room and that the target is another member. It
+removes the guest from the roster, updates the remaining players, and sends
+the guest `onKickedFromPrebattle(10)` and the Training chat close action.
+The client uses reason `10` (`PLAYERKICK`) to return to the lobby. The room's
+usual join rules apply after removal.
+
 The host moves players between Team 1, Team 2 and the unassigned list through
 [`CMD_PRB_ASSIGN`](../references/wot-src/sources/res/scripts/client/Account.py#L809)
 (`404`). The arguments are the target player's Account entity ID, the destination roster

@@ -618,6 +618,65 @@ pub fn exercise_shared(
     training_command(guest, script, 202, 400, room_id);
     chat::assert_open(guest, script, guest_before);
 
+    training_command(guest, script, 3331, 414, host_entity);
+    guest.until(script, |peer| peer.responses.contains(&(3331, -1)));
+    training_command(host, script, 3332, 414, host_entity);
+    training_command(host, script, 3333, 414, i64::MAX);
+    host.until(script, |peer| peer.responses.contains(&(3333, -1)));
+    assert!(host.responses.contains(&(3332, -1)));
+
+    let guest_before = guest.methods.len();
+    host.command(
+        script,
+        "doCmdInt3",
+        vec![
+            Value::Int16(3334),
+            Value::Int16(404),
+            Value::Int64(guest_entity),
+            Value::Int64(2),
+            Value::Int64(0),
+        ],
+    );
+    host.until(script, |peer| peer.responses.contains(&(3334, 0)));
+    guest.until(script, |peer| peer.methods.len() > guest_before);
+    assert!(
+        roster(guest, guest_before)
+            .iter()
+            .any(|entry| matches!(entry, Pickle::Tuple(fields)
+        if fields[0] == Pickle::I64(guest_entity) && fields[4] == Pickle::I64(2)))
+    );
+
+    let host_before = host.methods.len();
+    let guest_before = guest.methods.len();
+    training_command(host, script, 3335, 414, guest_entity);
+    host.until(script, |peer| peer.responses.contains(&(3335, 0)));
+    let (method, args) = &host.methods[host_before];
+    assert_eq!(method, "updatePrebattle");
+    assert_eq!(args[0], Value::UInt8(3));
+    assert_eq!(
+        pickle_value(&args[1]),
+        wot_server::pickle!(((guest_entity), 2))
+    );
+    chat::assert_closed(guest, script, guest_before);
+    assert_eq!(
+        guest.methods[guest_before],
+        ("onKickedFromPrebattle".into(), vec![Value::UInt8(10)])
+    );
+    chat::assert_outside_room(guest, script, 4808);
+    let (total, entries) = training_list(guest, script, 0, 50);
+    assert_eq!(total, 1);
+    let [Pickle::Tuple(entry)] = entries.as_slice() else {
+        panic!("Expected the room to remain available");
+    };
+    let Pickle::Dict(info) = &entry[2] else {
+        panic!("Missing room info");
+    };
+    assert_eq!(info[&Pickle::I64(5)], Pickle::I64(1));
+
+    let guest_before = guest.methods.len();
+    training_command(guest, script, 202, 400, room_id);
+    chat::assert_open(guest, script, guest_before);
+
     let host_before = host.methods.len();
     let guest_before = guest.methods.len();
     training_command(host, script, 3314, 401, 0);
@@ -1027,6 +1086,53 @@ pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
                     && traces.iter().any(|child| child.name == "mercury.response"
                         && child_of(child, span)
                         && has(child, "output.delivery", "sent")))
+        );
+        let kicked = assert_delivery(
+            "player_sessions.kick_training_player",
+            "kicked",
+            "onKickedFromPrebattle",
+        );
+        assert!(has(kicked, "input.request_id", "3335"));
+        assert!(traces.iter().any(|span| span.name == "mercury.response"
+            && child_of(span, kicked)
+            && has(span, "rpc.method", "onCmdResponse")
+            && has(span, "output.response_code", "0")
+            && has(span, "output.delivery", "sent")));
+        let removal = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.remove_training_member"
+                    && child_of(span, kicked)
+                    && has(span, "output.players.count", "1")
+            })
+            .unwrap();
+        assert!(traces.iter().any(|span| span.name == "mercury.response"
+            && child_of(span, removal)
+            && has(span, "rpc.method", "updatePrebattle")
+            && has(span, "output.delivery", "sent")));
+        let chat_closed = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.training_chat_membership"
+                    && child_of(span, kicked)
+                    && has(span, "input.chat.joining", "false")
+            })
+            .unwrap();
+        assert!(
+            traces
+                .iter()
+                .any(|span| child_of(span, chat_closed) && is_chat_delivery(span))
+        );
+        assert_player_delivery(
+            guest_account_id,
+            "player_sessions.kick_training_player",
+            "host_required",
+            "onCmdResponse",
+        );
+        assert_delivery(
+            "player_sessions.kick_training_player",
+            "invalid_target",
+            "onCmdResponse",
         );
         let deleted = traces
             .iter()

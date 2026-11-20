@@ -25,6 +25,7 @@ pub(super) const CHANGE_DURATION: i16 = 407;
 pub(super) const CHANGE_OPEN_STATUS: i16 = 408;
 pub(super) const CHANGE_COMMENT: i16 = 409;
 pub(super) const CHANGE_VOICE_CHAT: i16 = 410;
+pub(super) const KICK: i16 = 414;
 
 pub(super) const TRAINING: i32 = 2;
 pub(super) const LIST_PAGE_LIMIT: usize = 50;
@@ -41,6 +42,7 @@ const ROOM_FULL: u8 = 5;
 const PRIVACY: u8 = 10;
 const WRONG_ARGS: u8 = 6;
 const EVENT_DISABLED: u8 = 14;
+const PLAYER_KICK: u8 = 10;
 const ROSTER: u8 = 1;
 const PLAYER_ADDED: u8 = 2;
 const PLAYER_REMOVED: u8 = 3;
@@ -580,6 +582,65 @@ impl Gateway {
             .entity(entity)?
             .onCmdResponse(request_id, SUCCESS, String::new())?;
         span.record("output.outcome", outcome);
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "player_sessions.kick_training_player", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.player_entity_id = args[0], output.room.id = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
+    pub(super) fn kick_training_player(
+        &mut self,
+        client: ClientKey,
+        entity: EntityKey<Account>,
+        request_id: i16,
+        args: [i64; 3],
+    ) -> Result<()> {
+        let span = tracing::Span::current();
+        let room = self
+            .sessions
+            .get(&client)
+            .and_then(|session| session.training_room)
+            .and_then(|id| self.training_rooms.get(&id));
+        if let Some(room) = room {
+            span.record("output.room.id", room.id);
+        }
+        let target = match (room, args) {
+            (None, _) => Err(("room_unavailable", "Training Room is unavailable")),
+            (Some(room), _) if room.host != client => Err((
+                "host_required",
+                "Only the Training Room host can remove players",
+            )),
+            (Some(room), [player_id, 0, 0]) => room
+                .members
+                .iter()
+                .find(|(key, member)| {
+                    **key != client && i64::from(member.entity.id().0) == player_id
+                })
+                .map(|(&key, member)| (key, member.entity))
+                .ok_or((
+                    "invalid_target",
+                    "Select another player in this Training Room",
+                )),
+            _ => Err(("invalid_request", "Invalid Training Room removal")),
+        };
+        let result = target.and_then(|(guest, guest_entity)| {
+            self.remove_training_member(guest)
+                .map(|(room_id, _)| (guest, guest_entity, room_id))
+                .ok_or(("invalid_target", "The player has already left"))
+        });
+        let (outcome, code, message) = match result {
+            Ok((guest, guest_entity, room_id)) => {
+                deliver_training_update(&mut self.base, guest, room_id, |base| {
+                    base.entity(guest_entity)?
+                        .onKickedFromPrebattle(PLAYER_KICK)?;
+                    chat::update_membership(base, guest_entity, room_id, false)
+                });
+                ("kicked", SUCCESS, "")
+            }
+            Err((outcome, message)) => (outcome, FAILURE, message),
+        };
+        span.record("output.outcome", outcome);
+        self.base
+            .entity(entity)?
+            .onCmdResponse(request_id, code, message.into())?;
         Ok(())
     }
 
