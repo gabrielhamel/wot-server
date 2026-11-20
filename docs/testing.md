@@ -73,6 +73,13 @@ copied from that image before pushing any tags. The E2E suite checks the
 version property and value in the decoded Account creation packet and the
 property name on the trace that delivers `showGUI`.
 
+The [Latest client E2E workflow](../.github/workflows/latest-client-e2e.yml) runs
+daily at 08:00 Europe/Paris. It updates the cached EU production client on
+the dedicated runner, extracts a fresh resource bundle, and runs E2E against
+the latest default-branch server code and a fresh PostgreSQL database.
+The run summary records the extracted version. The workflow can also run from
+the Actions tab and has read-only repository permissions.
+
 The database-dependent tests are opt-in when running Cargo locally.
 
 The default suite does not require PostgreSQL or proprietary resources. To exercise

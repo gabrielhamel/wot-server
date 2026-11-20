@@ -24,39 +24,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install wg-launcher
-        env:
-          LAUNCHER_VERSION: '1.4.0'
-          LAUNCHER_SHA256: 8e2c39741c435c38302474ad18ea067401edb1732ec1b673c66892085fd72ee0
-        run: |
-          archive=wg-launcher-cli-x86_64-unknown-linux-gnu
-          cd "$RUNNER_TEMP"
-          curl --fail --silent --show-error --location --retry 3 \
-            --output "$archive.tar.gz" \
-            "https://github.com/gabrielhamel/wg-launcher/releases/download/$LAUNCHER_VERSION/$archive.tar.gz"
-          echo "$LAUNCHER_SHA256  $archive.tar.gz" | sha256sum --check
-          tar -xzf "$archive.tar.gz" "$archive/wg-launcher"
-          echo "$RUNNER_TEMP/$archive" >> "$GITHUB_PATH"
-
-      - name: Install or update the cached EU SD client
-        run: |
-          mkdir -p "$GAME_DIR"
-          if [[ ! -f "$GAME_DIR/.wg-launcher/state.json" ]]; then
-            wg-launcher install --game wot --region eu --client-type sd \
-              --language EN --output "$GAME_DIR"
-          fi
-          wg-launcher update --path "$GAME_DIR"
-
-      - name: Extract the server bundle
-        run: |
-          extractor="wot-extract-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          docker build --target extractor --tag "$extractor" .
-          container=$(docker create --mount "type=bind,source=$GAME_DIR,target=/game,readonly" \
-            "$extractor" /game --output /tmp/resources)
-          trap 'docker rm -f "$container"; docker image rm "$extractor"' EXIT
-          docker start --attach "$container"
-          [[ $(docker inspect --format '{{.State.ExitCode}}' "$container") == 0 ]]
-          docker cp "$container:/tmp/resources" ./resources
+      - uses: ./.github/actions/extract-game-resources
 
       - name: Compute image tags
         id: image
@@ -126,18 +94,17 @@ jobs:
             exit 1
           fi
 
-      - name: Check startup and run E2E tests against packaged resources
+      - name: Check startup and copy packaged resources
+        id: startup
         env:
           IMAGE: ${{ steps.image.outputs.commit }}
           POSTGRES_IMAGE: docker.io/library/postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
         run: |
           smoke="wot-smoke-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          test_image="wot-e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           config_dir=$(mktemp -d "$RUNNER_TEMP/wot-smoke.XXXXXX")
           cleanup() {
-            docker rm -fv "$smoke-server" "$smoke-db" "$smoke-e2e" >/dev/null 2>&1 || true
+            docker rm -fv "$smoke-server" "$smoke-db" >/dev/null 2>&1 || true
             docker network rm "$smoke" >/dev/null 2>&1 || true
-            docker image rm "$test_image" >/dev/null 2>&1 || true
             rm -rf "$config_dir"
           }
           trap cleanup EXIT
@@ -180,16 +147,14 @@ jobs:
             exit 1
           fi
           docker stop "$smoke-server"
+          resource_dir=$(mktemp -d "$RUNNER_TEMP/wot-release-resources.XXXXXX")
+          docker cp "$smoke-server:/opt/wot-server/resources" "$resource_dir"
+          echo "resources=$resource_dir/resources" >> "$GITHUB_OUTPUT"
 
-          docker build --target e2e --tag "$test_image" .
-          docker exec "$smoke-db" createdb -U wot_smoke wot_e2e
-          docker create --name "$smoke-e2e" --network "$smoke" \
-            -e WG_TEST_DATABASE_URL=postgresql://wot_smoke:ci-only@postgres:5432/wot_e2e \
-            -e WG_RESOURCE_DIR=/opt/wot-server/resources \
-            "$test_image" --ignored
-          docker cp "$smoke-server:/opt/wot-server/resources" - | docker cp - "$smoke-e2e:/opt/wot-server"
-          timeout 10m docker start --attach "$smoke-e2e"
-          [[ $(docker inspect --format '{{.State.ExitCode}}' "$smoke-e2e") == 0 ]]
+      - name: Run E2E tests against packaged resources
+        uses: ./.github/actions/run-e2e
+        with:
+          resources: ${{ steps.startup.outputs.resources }}
 
       - name: Publish to GitHub Container Registry
         env:

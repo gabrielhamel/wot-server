@@ -1,0 +1,45 @@
+name: Extract current EU game resources
+description: Update the cached production client and extract its server resource bundle.
+
+runs:
+  using: composite
+  steps:
+    - name: Install wg-launcher
+      shell: bash
+      env:
+        LAUNCHER_VERSION: '1.4.0'
+        LAUNCHER_SHA256: 8e2c39741c435c38302474ad18ea067401edb1732ec1b673c66892085fd72ee0
+      run: |
+        archive=wg-launcher-cli-x86_64-unknown-linux-gnu
+        launcher_dir=$(mktemp -d "$RUNNER_TEMP/wg-launcher.XXXXXX")
+        cd "$launcher_dir"
+        curl --fail --silent --show-error --location --retry 3 \
+          --output "$archive.tar.gz" \
+          "https://github.com/gabrielhamel/wg-launcher/releases/download/$LAUNCHER_VERSION/$archive.tar.gz"
+        echo "$LAUNCHER_SHA256  $archive.tar.gz" | sha256sum --check
+        tar -xzf "$archive.tar.gz" "$archive/wg-launcher"
+        echo "$launcher_dir/$archive" >> "$GITHUB_PATH"
+
+    - name: Install or update the cached EU SD client
+      shell: bash
+      run: |
+        mkdir -p "$GAME_DIR"
+        if [[ ! -f "$GAME_DIR/.wg-launcher/state.json" ]]; then
+          wg-launcher install --game wot --region eu --client-type sd \
+            --language EN --output "$GAME_DIR"
+        fi
+        wg-launcher update --path "$GAME_DIR"
+
+    - name: Extract the server bundle
+      shell: bash
+      run: |
+        extractor="wot-extract-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+        docker build --target extractor --tag "$extractor" .
+        container=$(docker create --mount "type=bind,source=$GAME_DIR,target=/game,readonly" \
+          "$extractor" /game --output /tmp/resources)
+        trap 'docker rm -f "$container"; docker image rm "$extractor"' EXIT
+        docker start --attach "$container"
+        [[ $(docker inspect --format '{{.State.ExitCode}}' "$container") == 0 ]]
+        docker cp "$container:/tmp/resources" ./resources
+        version=$(jq -er '.game_version | strings | select(length > 0)' resources/manifest.json)
+        printf 'Extracted EU client version %s\n' "$version" >> "$GITHUB_STEP_SUMMARY"
