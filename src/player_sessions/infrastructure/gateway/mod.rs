@@ -31,7 +31,6 @@ use admission::{DeferredLogin, LoginAttempt};
 use crate::platform::client_formats::pickle::{self, Value};
 use crate::player_sessions::mercury::app::{
     base::{self, ClientKey},
-    dispatch::MethodCall,
     entity::{EntityKey, Pickle},
     login::{self, element::LoginError},
 };

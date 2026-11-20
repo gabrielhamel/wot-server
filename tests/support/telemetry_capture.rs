@@ -56,6 +56,154 @@ fn has_attribute(span: &SpanData, key: &str, expected: &str) -> bool {
         .any(|attribute| attribute.key.as_str() == key && attribute.value.to_string() == expected)
 }
 
+pub fn assert_unimplemented_command_traces(account: i64) {
+    let spans = exporter().get_finished_spans().unwrap();
+    let method = spans
+        .iter()
+        .find(|span| {
+            span.name == "game.command"
+                && has_attribute(span, "user.id", &account.to_string())
+                && has_attribute(span, "rpc.method", "doCmdNoArgs")
+        })
+        .expect("missing unimplemented base method trace");
+    assert!(matches!(method.status, Status::Error { .. }));
+    assert!(has_attribute(method, "output.outcome", "unimplemented"));
+    assert!(
+        method
+            .events
+            .iter()
+            .any(|event| { event.name == "Account base method is not implemented" })
+    );
+
+    for (request, expects_response) in [("202", false), ("227", true)] {
+        let root = spans
+            .iter()
+            .find(|span| {
+                span.name == "game.command"
+                    && has_attribute(span, "user.id", &account.to_string())
+                    && has_attribute(span, "rpc.method", "doCmdInt3")
+                    && has_attribute(span, "input.request_id", request)
+                    && has_attribute(span, "input.command_id", "12345")
+            })
+            .expect("missing game command trace");
+        let command = spans
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.commands.command"
+                    && span.span_context.trace_id() == root.span_context.trace_id()
+                    && span.parent_span_id == root.span_context.span_id()
+            })
+            .expect("missing decoded command span");
+        assert!(matches!(command.status, Status::Error { .. }));
+        assert!(has_attribute(command, "input.request_id", request));
+        assert!(has_attribute(command, "input.command_id", "12345"));
+        assert!(has_attribute(command, "output.outcome", "unimplemented"));
+        assert!(command.events.iter().any(|event| {
+            event.name == "Account command is not implemented"
+                && event.attributes.iter().any(|attribute| {
+                    attribute.key.as_str() == "level" && attribute.value.to_string() == "ERROR"
+                })
+        }));
+
+        let response = spans.iter().find(|span| {
+            span.name == "mercury.response"
+                && span.span_context.trace_id() == command.span_context.trace_id()
+                && span.parent_span_id == command.span_context.span_id()
+        });
+        if expects_response {
+            let response = response.expect("missing unimplemented command response");
+            assert!(has_attribute(response, "input.request_id", request));
+            assert!(has_attribute(response, "output.response_code", "-1"));
+            assert!(has_attribute(response, "output.delivery", "sent"));
+        } else {
+            assert!(
+                response.is_none(),
+                "unexpected response to request {request}"
+            );
+        }
+    }
+}
+
+pub fn assert_unimplemented_chat_traces(account: i64) {
+    let spans = exporter().get_finished_spans().unwrap();
+    let account = account.to_string();
+    let assert_error = |span: &SpanData, message| {
+        assert!(matches!(span.status, Status::Error { .. }));
+        assert!(has_attribute(span, "output.outcome", "unimplemented"));
+        assert!(span.events.iter().any(|event| event.name == message));
+    };
+    let child_of = |span: &SpanData, parent: &SpanData| {
+        span.span_context.trace_id() == parent.span_context.trace_id()
+            && span.parent_span_id == parent.span_context.span_id()
+    };
+
+    for (request, action, response) in [
+        ("1901", "32767", "messenger_onActionByServer_chat2"),
+        ("1902", "255", "onChatAction"),
+    ] {
+        let root = spans
+            .iter()
+            .find(|span| {
+                span.name == "game.command"
+                    && has_attribute(span, "user.id", &account)
+                    && has_attribute(span, "input.request_id", request)
+            })
+            .expect("missing Mercury chat request");
+        let command = spans
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.social.social_command"
+                    && span.span_context.trace_id() == root.span_context.trace_id()
+                    && has_attribute(span, "input.action", action)
+                    && has_attribute(span, "input.request_id", request)
+            })
+            .expect("missing Mercury chat action");
+        assert_error(command, "Chat action is not implemented");
+        assert!(spans.iter().any(|span| {
+            span.name == "mercury.response"
+                && span.span_context.trace_id() == root.span_context.trace_id()
+                && has_attribute(span, "rpc.method", response)
+                && has_attribute(span, "output.delivery", "sent")
+        }));
+    }
+
+    for (id, query) in [
+        ("unsupported-stanza", None),
+        ("unsupported-storage", Some("storage")),
+        ("unsupported-query", Some("unknown")),
+    ] {
+        let handling = spans
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.xmpp.handle"
+                    && has_attribute(span, "xmpp.stanza.id", id)
+                    && has_attribute(span, "user.id", &account)
+            })
+            .expect("missing XMPP request handling span");
+        let root = spans
+            .iter()
+            .find(|span| span.name == "xmpp.request" && child_of(handling, span))
+            .expect("missing XMPP request root");
+        if let Some(query) = query {
+            let iq = spans
+                .iter()
+                .find(|span| span.name == "player_sessions.xmpp.iq" && child_of(span, handling))
+                .expect("missing XMPP IQ span");
+            assert!(has_attribute(iq, "input.xmpp.query", query));
+            assert_error(iq, "XMPP IQ operation is not implemented");
+            assert!(
+                spans
+                    .iter()
+                    .any(|span| { span.name == "xmpp.response" && child_of(span, root) })
+            );
+        } else {
+            assert!(has_attribute(handling, "xmpp.stanza.name", "unknown"));
+            assert_error(handling, "XMPP stanza is not implemented");
+            assert!(has_attribute(root, "output.stanza_count", "0"));
+        }
+    }
+}
+
 pub fn assert_xmpp_disconnect(peer: SocketAddr, account: i64) {
     let (connection, spans) = xmpp_connection_span(peer);
     assert_eq!(connection.status, Status::Unset);

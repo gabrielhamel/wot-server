@@ -1,4 +1,5 @@
 use super::*;
+use crate::player_sessions::mercury::app::entity::MethodDecodeError;
 
 const REQUEST_PREBATTLES: i16 = 520;
 const PREBATTLES_STREAM: i16 = 200;
@@ -18,19 +19,24 @@ impl Gateway {
                 span.record("output.outcome", "entity_unavailable");
                 return;
             }
-            let Some((entity, request)) =
-                self.base.decode::<AccountBase>(event.entity, &event.call)
-            else {
-                span.record(
-                    "output.outcome",
-                    if matches!(event.call, MethodCall::Known { .. }) {
-                        "decode_failed"
+            let (entity, request) = match self.base.decode::<AccountBase>(event.entity, &event.call)
+            {
+                Ok(command) => command,
+                Err(error) => {
+                    let outcome = match error {
+                        MethodDecodeError::UnknownMethod => "unknown_method",
+                        MethodDecodeError::Unimplemented => "unimplemented",
+                        MethodDecodeError::Invalid => "decode_failed",
+                    };
+                    span.record("output.outcome", outcome);
+                    span.record("otel.status_code", "ERROR");
+                    if matches!(error, MethodDecodeError::Unimplemented) {
+                        tracing::error!("Account base method is not implemented");
                     } else {
-                        "unknown_method"
-                    },
-                );
-                tracing::error!("Cannot decode account base method");
-                return;
+                        tracing::error!("Cannot decode account base method");
+                    }
+                    return;
+                }
             };
             if let Some((request_id, cmd)) = command_ids(&request) {
                 span.record("input.request_id", request_id);
@@ -52,6 +58,7 @@ impl Gateway {
             }
             if let Err(error) = self.command(event.client, entity, request) {
                 span.record("output.outcome", "dispatch_failed");
+                span.record("otel.status_code", "ERROR");
                 error!(%error, "Account command failed");
             } else {
                 span.record("output.outcome", "dispatched");
@@ -80,7 +87,7 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "player_sessions.commands.command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = tracing::field::Empty, input.command_id = tracing::field::Empty, input.arg0 = tracing::field::Empty, input.arg1 = tracing::field::Empty, input.arg2 = tracing::field::Empty, input.arg3 = tracing::field::Empty, input.args.count = tracing::field::Empty, input.outfits.count = tracing::field::Empty, input.string.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.commands.command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = tracing::field::Empty, input.command_id = tracing::field::Empty, input.arg0 = tracing::field::Empty, input.arg1 = tracing::field::Empty, input.arg2 = tracing::field::Empty, input.arg3 = tracing::field::Empty, input.args.count = tracing::field::Empty, input.outfits.count = tracing::field::Empty, input.string.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     pub(super) fn command(
         &mut self,
         client: ClientKey,
@@ -318,8 +325,12 @@ impl Gateway {
                 request_id,
                 cmd: REQUEST_PREBATTLES,
                 args,
-            } if request_id != REQUEST_NO_RESPONSE => {
-                self.list_training_rooms(client, entity, request_id, &args)?;
+            } => {
+                if request_id == REQUEST_NO_RESPONSE {
+                    span.record("output.outcome", "ignored");
+                } else {
+                    self.list_training_rooms(client, entity, request_id, &args)?;
+                }
             }
             AccountBase::RequestToken {
                 request_id,
@@ -544,24 +555,21 @@ impl Gateway {
                     .entity(entity)?
                     .onCmdResponse(request_id, SUCCESS, String::new())?;
             }
-            AccountBase::DoCmdInt3 { request_id, .. }
-            | AccountBase::DoCmdInt4 { request_id, .. }
-            | AccountBase::DoCmdInt2 { request_id, .. }
-            | AccountBase::DoCmdInt { request_id, .. }
-            | AccountBase::DoCmdStr { request_id, .. }
-            | AccountBase::DoCmdIntArr { request_id, .. }
-            | AccountBase::DoCmdIntArrStrArr { request_id, .. }
-                if request_id != REQUEST_NO_RESPONSE =>
-            {
-                span.record("output.outcome", "unimplemented");
-                self.base.entity(entity)?.onCmdResponse(
-                    request_id,
-                    FAILURE,
-                    "Command not implemented in garage milestone".into(),
-                )?;
-            }
-            _ => {
-                span.record("output.outcome", "ignored");
+            request => {
+                if let Some((request_id, command_id)) = command_ids(&request) {
+                    span.record("output.outcome", "unimplemented");
+                    span.record("otel.status_code", "ERROR");
+                    error!(request_id, command_id, "Account command is not implemented");
+                    if request_id != REQUEST_NO_RESPONSE {
+                        self.base.entity(entity)?.onCmdResponse(
+                            request_id,
+                            FAILURE,
+                            "Command not implemented in garage milestone".into(),
+                        )?;
+                    }
+                } else {
+                    span.record("output.outcome", "ignored");
+                }
             }
         }
         Ok(())
