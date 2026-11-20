@@ -74,6 +74,7 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
         &wot_server::server::test_support::composition(),
         GatewayConfig {
             training_room_visible: true,
+            periphery_id: 250,
             login_bind: "127.0.0.1:0".parse().unwrap(),
             base_bind: "127.0.0.1:0".parse().unwrap(),
             advertised_base: None,

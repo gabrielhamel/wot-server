@@ -616,6 +616,7 @@ async fn exports_admin_http_access_lifecycle() {
         &composition(),
         crate::player_sessions::GatewayConfig {
             training_room_visible: false,
+            periphery_id: 250,
             login_bind: "127.0.0.1:0".parse().unwrap(),
             base_bind: "127.0.0.1:0".parse().unwrap(),
             advertised_base: None,

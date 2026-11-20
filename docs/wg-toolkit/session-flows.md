@@ -204,8 +204,8 @@ with command `400`, using the selected room and cluster IDs (cluster `0` on
 this server). A successful request gets the same initial state as the host,
 with the guest role and the shared roster. Existing players receive the
 player-added roster update. Guests can change their own readiness and observer selection.
-The host controls team assignments, swaps and room settings. Invitation
-delivery and battle launch remain pending.
+The host controls team assignments, swaps and room settings. Battle launch
+remains pending.
 
 Both **Delete Room** and **Exit** go through
 [the client's leave action](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/TrainingRoomBase.py#L131)
@@ -245,6 +245,29 @@ General. The server stores the selected mode in the room, publishes
 `arenaVoipChannels` through setting update `8`, and acknowledges the request.
 The room snapshot includes the selected mode. Voice audio transport remains
 outside the lobby implementation.
+
+## Training Room invitations
+
+**Invite** sends [`accountPrebattle_sendPrebattleInvites`](../references/wot-src/sources/res/scripts/entity_defs/interfaces/AccountPrebattle.def#L54)
+with a batch of account IDs and one optional UTF-8 message. The room host can
+target up to 100 accounts per request with a message of up to 400 characters.
+The server deduplicates targets and delivers to players who have synchronized
+their garage on this server. Each room keeps a pending invitation per recipient
+session. The server applies the client's eight-second cooldown to valid batches.
+
+Delivery uses the client's legacy [`prebattleInvites` update](../references/wot-src/sources/res/scripts/client/Account.py#L1185),
+keyed by `(room_id, periphery_id)`. The update includes the host's name and
+account ID, message, room type and invitation state. It carries the recipient's
+current garage revision as both `prevRev` and `rev`. The client formats the
+notification and applies its invitation and ignore preferences. The configured
+[`periphery_id`](../server.md#running) must match the server-list entry used by
+the recipient. The installed EU build's custom server entry uses `250`.
+
+Accept (`417`) joins the room, including a **By invitation** room, after
+checking the recipient has an active invitation. Decline (`418`) consumes the
+invitation and updates the notification. Deleting the room or losing the
+host expires outstanding invitations. Disconnecting invalidates invitations
+for the old recipient session.
 
 ## Training Room text chat
 

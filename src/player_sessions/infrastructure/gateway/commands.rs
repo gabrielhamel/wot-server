@@ -156,13 +156,31 @@ impl Gateway {
                     &comment.0,
                 )?;
             }
+            AccountBase::AccountPrebattleSendPrebattleInvites {
+                recipients,
+                comment,
+            } => {
+                self.send_training_invites(client, &recipients, &comment.0);
+            }
             AccountBase::DoCmdInt3 {
-                cmd: training::JOIN,
+                cmd: command @ (training::JOIN | training::ACCEPT_INVITE),
                 arg0,
                 arg1,
                 arg2,
                 ..
-            } => self.join_training_room(client, entity, [arg0, arg1, arg2])?,
+            } => self.join_training_room(
+                client,
+                entity,
+                [arg0, arg1, arg2],
+                command == training::ACCEPT_INVITE,
+            )?,
+            AccountBase::DoCmdInt3 {
+                cmd: training::DECLINE_INVITE,
+                arg0,
+                arg1,
+                arg2,
+                ..
+            } => self.decline_training_invite(client, entity, [arg0, arg1, arg2]),
             AccountBase::DoCmdInt3 {
                 request_id,
                 cmd: training::LEAVE,

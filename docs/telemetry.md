@@ -175,6 +175,19 @@ trace. The decoded command span carries the numeric input or the comment's byte 
 `player_sessions.change_training_setting` span links the room update and
 acknowledgement and records the result. Room comment text stays out of traces.
 
+Training Room invitations record recipient counts and the optional message's
+byte length. Each queued invite and its delivery retain the original command
+trace. Accept, decline and room cleanup trace the resulting invitation
+state. The invitation message and recipient list stay out of spans.
+
+    game.command                                  [accountPrebattle_sendPrebattleInvites]
+      player_sessions.commands.command
+        player_sessions.send_training_invites      [sent, 2 recipients]
+          player_sessions.publish_training_invite  [active]
+            mercury.response                      [update, sent]
+          player_sessions.publish_training_invite  [active]
+            mercury.response                      [update, sent]
+
 Training text chat opens and closes under the room membership trace.
 Each broadcast records the message size, the room and the number of queued
 recipients. The client request acknowledgement and each outgoing message

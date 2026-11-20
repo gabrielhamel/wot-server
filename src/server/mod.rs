@@ -107,6 +107,7 @@ async fn serve(config: Configuration) -> Result<()> {
             max_clients: config.max_clients,
             max_pending: config.max_pending,
             training_room_visible: config.training_room_visible,
+            periphery_id: config.periphery_id,
         },
         &resources,
         GatewayAccounts {

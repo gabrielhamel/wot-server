@@ -77,6 +77,7 @@ pub struct GatewayConfig {
     pub max_clients: usize,
     pub max_pending: usize,
     pub training_room_visible: bool,
+    pub periphery_id: u32,
 }
 
 struct Ticket {
@@ -91,6 +92,7 @@ struct Session {
     account: PreparedAccount,
     entity: Option<EntityKey<Account>>,
     training_room: Option<u32>,
+    training_invite_next: Instant,
     garage_synced: bool,
     reported_premium_expiry: Option<u32>,
     store_token: Option<StoreToken>,
@@ -491,6 +493,7 @@ impl Gateway {
                     account: ticket.account,
                     entity: None,
                     training_room: None,
+                    training_invite_next: Instant::now(),
                     garage_synced: false,
                     reported_premium_expiry: None,
                     store_token: None,

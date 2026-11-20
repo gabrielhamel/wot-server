@@ -44,6 +44,7 @@ The generated JSON contains the following settings:
 | `max_clients` | `256`, admitted/pending handoff capacity, allowed range 1–256 |
 | `max_pending` | `32`, authentication worker capacity, allowed range 1–256 |
 | `training_room_visible` | `true`. Advertises the Training Room card at login and allows room creation when the resource bundle contains arena definitions. Set to `false` and restart the server to disable creation and hide the card for new logins. |
+| `periphery_id` | `250`. Local server ID used for Training Room invitations. Match the `periphery_id` on the clients' server-list entry so the game accepts the invitation on the current server. |
 | `log_level` | `"warn"`; also accepts `"error"`, `"info"`, `"debug"`, `"trace"` |
 | `web` | `null`; shared HTTP bind and compiled UI directory for `/dashboard/` and `/shop/` |
 | `admin` | `null`; set to `{}` to enable the [admin API](admin.md) with secure session cookies by default |

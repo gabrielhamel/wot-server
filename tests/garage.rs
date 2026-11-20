@@ -260,6 +260,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     let public_key = private_key
         .as_ref()
         .map(|key| Arc::new(rsa::RsaPublicKey::from(&**key)));
+    let garage_capacity = if training_room_available { 3 } else { 2 };
     let gateway = Gateway::bind(
         &wot_server::server::test_support::composition(),
         GatewayConfig {
@@ -267,9 +268,10 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             base_bind: "0.0.0.0:0".parse().unwrap(),
             advertised_base: encrypted_login.then(|| "198.51.100.1:30017".parse().unwrap()),
             private_key,
-            max_clients: 2,
+            max_clients: garage_capacity,
             max_pending: 4,
             training_room_visible,
+            periphery_id: 250,
         },
         &resources,
         player_fixture::gateway_accounts(&repository, &catalog),
@@ -325,15 +327,23 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         let mut second_peer = Peer::new(public_key.clone());
         second_peer.connect(login, &second, "password-b");
         second_peer.until(&script, |p| p.created && p.shown);
-        if training_room_available {
+        let mut invite_peer = if training_room_available {
+            let mut peer = Peer::new(public_key.clone());
+            peer.connect(login, &equipment_player, "password-equipment");
+            peer.until(&script, |p| p.created && p.shown);
             training_room_flow::exercise_shared(
                 &mut first_peer,
                 &mut second_peer,
                 &script,
                 a.id,
                 b.id,
+                &mut peer,
+                equipment_account,
             );
-        }
+            Some(peer)
+        } else {
+            None
+        };
         social_flow::exercise(&mut first_peer, &mut second_peer, &script, a.id, b.id);
         xmpp_flow::exercise(
             &mut first_peer,
@@ -370,6 +380,9 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         replacement.connect(login, &first_peer_name, "password-a");
         replacement.until(&script, |p| p.created && p.shown);
         pending_peer.assert_handoff_rejected(&superseded);
+        if let Some(peer) = &mut invite_peer {
+            peer.disconnect();
+        }
         let mut first_peer = replacement;
         if training_room_available {
             training_room_flow::assert_room_gone(&mut first_peer, &script, training_vehicle_id);
@@ -540,7 +553,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
         telemetry_capture::assert_training_room_bootstrap(training_room_visible);
         training_room_flow::assert_traces(a.id, b.id, training_room_available);
-        telemetry_capture::assert_operation_traces(a.id, b.id);
+        telemetry_capture::assert_operation_traces(a.id, b.id, garage_capacity);
         telemetry_capture::assert_equipment_traces(equipment_account);
         if has_camouflage {
             camouflage_flow::assert_traces(a.id, cosmetic_fixtures);

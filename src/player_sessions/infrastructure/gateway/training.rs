@@ -10,7 +10,9 @@ use std::{
 };
 
 mod chat;
+mod invites;
 pub(super) use chat::CHAT_BROADCAST;
+pub(super) use invites::{ACCEPT_INVITE, DECLINE_INVITE};
 
 pub(super) const JOIN: i16 = 400;
 pub(super) const LEAVE: i16 = 401;
@@ -93,6 +95,7 @@ pub(super) struct HostedRoom {
     created_at: f64,
     host: ClientKey,
     members: HashMap<ClientKey, RoomPlayer>,
+    invites: HashSet<ClientKey>,
 }
 
 struct RoomPlayer {
@@ -196,6 +199,10 @@ fn apply_setting(
 }
 
 impl HostedRoom {
+    pub(super) fn remove_invite(&mut self, client: ClientKey) {
+        self.invites.remove(&client);
+    }
+
     pub(super) fn player_count(&self) -> usize {
         self.members.len()
     }
@@ -428,6 +435,7 @@ impl Gateway {
                     settings,
                     created_at,
                     host: client,
+                    invites: HashSet::new(),
                     members: HashMap::from([(
                         client,
                         RoomPlayer::new(entity, session, created_at, HOST_ROLE),
@@ -443,55 +451,81 @@ impl Gateway {
         Ok(())
     }
 
-    #[tracing::instrument(name = "player_sessions.join_training_room", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.room.id = args[0], input.cluster.id = args[1], output.players.count = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.join_training_room", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.room.id = args[0], input.cluster.id = args[1], input.invitation = invitation, output.players.count = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
     pub(super) fn join_training_room(
         &mut self,
         client: ClientKey,
         entity: EntityKey<Account>,
         args: [i64; 3],
+        invitation: bool,
     ) -> Result<()> {
         let span = tracing::Span::current();
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
         };
+        let cluster = if invitation {
+            i64::from(self.config.periphery_id)
+        } else {
+            LOCAL_CLUSTER
+        };
         let outcome = match args {
-            [id, LOCAL_CLUSTER, 0] if id > 0 => match u32::try_from(id)
-                .ok()
-                .and_then(|id| self.training_rooms.get_mut(&id))
-            {
-                Some(room) if session.training_room == Some(room.id) => {
-                    let room_id = room.id;
-                    span.record("output.players.count", room.player_count());
-                    self.send_training_room_state(client, entity, room_id, false)?;
-                    span.record("output.outcome", "already_joined");
-                    return Ok(());
-                }
-                Some(_) if session.training_room.is_some() => (ACCOUNT_LOCK, "already_in_room"),
-                Some(room) if !room.settings.open => (PRIVACY, "invitation_only"),
-                Some(room) if room.player_count() >= MAX_ROOM_PLAYERS => (ROOM_FULL, "room_full"),
-                Some(room) => {
-                    let id = room.id;
-                    room.members
-                        .insert(client, RoomPlayer::new(entity, session, now(), GUEST_ROLE));
-                    session.training_room = Some(id);
-                    let count = room.player_count();
-                    self.send_training_room_state(client, entity, id, true)?;
-                    if let Some(room) = self.training_rooms.get(&id)
-                        && let Some(member) = room.members.get(&client)
-                    {
-                        room.broadcast(
-                            &mut self.base,
-                            PLAYER_ADDED,
-                            Pickle(member.roster_entry()),
-                            Some(client),
-                        );
+            [id, requested_cluster, 0] if id > 0 && requested_cluster == cluster => {
+                match u32::try_from(id)
+                    .ok()
+                    .and_then(|id| self.training_rooms.get_mut(&id))
+                {
+                    Some(room) if session.training_room == Some(room.id) => {
+                        let room_id = room.id;
+                        span.record("output.players.count", room.player_count());
+                        self.send_training_room_state(client, entity, room_id, false)?;
+                        span.record("output.outcome", "already_joined");
+                        return Ok(());
                     }
-                    span.record("output.players.count", count);
-                    span.record("output.outcome", "joined");
-                    return Ok(());
+                    Some(_) if session.training_room.is_some() => (ACCOUNT_LOCK, "already_in_room"),
+                    Some(room) if invitation && !room.invites.contains(&client) => {
+                        (PRIVACY, "invitation_unavailable")
+                    }
+                    Some(room) if !invitation && !room.settings.open => {
+                        (PRIVACY, "invitation_only")
+                    }
+                    Some(room) if room.player_count() >= MAX_ROOM_PLAYERS => {
+                        (ROOM_FULL, "room_full")
+                    }
+                    Some(room) => {
+                        let id = room.id;
+                        room.members
+                            .insert(client, RoomPlayer::new(entity, session, now(), GUEST_ROLE));
+                        session.training_room = Some(id);
+                        let count = room.player_count();
+                        let invited = room.invites.remove(&client);
+                        if invited {
+                            invites::settle(
+                                &mut self.base,
+                                session,
+                                entity,
+                                id,
+                                self.config.periphery_id,
+                                invites::State::Accepted,
+                            );
+                        }
+                        self.send_training_room_state(client, entity, id, true)?;
+                        if let Some(room) = self.training_rooms.get(&id)
+                            && let Some(member) = room.members.get(&client)
+                        {
+                            room.broadcast(
+                                &mut self.base,
+                                PLAYER_ADDED,
+                                Pickle(member.roster_entry()),
+                                Some(client),
+                            );
+                        }
+                        span.record("output.players.count", count);
+                        span.record("output.outcome", "joined");
+                        return Ok(());
+                    }
+                    None => (NOT_FOUND, "room_unavailable"),
                 }
-                None => (NOT_FOUND, "room_unavailable"),
-            },
+            }
             _ => (WRONG_ARGS, "invalid_request"),
         };
         span.record("output.outcome", outcome.1);
@@ -574,6 +608,20 @@ impl Gateway {
         };
         let outcome = if room.host == client {
             if let Some(room) = self.training_rooms.remove(&room_id) {
+                for guest in room.invites {
+                    if let Some(session) = self.sessions.get(&guest)
+                        && let Some(entity) = session.entity
+                    {
+                        invites::settle(
+                            &mut self.base,
+                            session,
+                            entity,
+                            room_id,
+                            self.config.periphery_id,
+                            invites::State::Expired,
+                        );
+                    }
+                }
                 for (guest, member) in room.members {
                     if let Some(session) = self.sessions.get_mut(&guest) {
                         session.training_room = None;

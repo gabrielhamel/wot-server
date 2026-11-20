@@ -6,6 +6,8 @@ use wot_server::player_sessions::test_support::mercury::script::StringValue;
 
 #[path = "training_chat_flow.rs"]
 mod chat;
+#[path = "training_invite_flow.rs"]
+mod invite;
 
 const ROOM_DESCRIPTION: &str = "Studzianki practice";
 const EDITED_DESCRIPTION: &str = "Entraînement en équipe";
@@ -404,7 +406,12 @@ pub fn exercise_shared(
     script: &ScriptDispatch,
     host_account: i64,
     guest_account: i64,
+    other_guest: &mut Peer,
+    other_account: i64,
 ) {
+    invite::sync(host, script);
+    invite::sync(guest, script);
+    invite::sync(other_guest, script);
     let (total, entries) = training_list(guest, script, 0, 50);
     assert_eq!(total, 1);
     let [Pickle::Tuple(entry)] = entries.as_slice() else {
@@ -431,14 +438,42 @@ pub fn exercise_shared(
 
     chat::assert_outside_room(guest, script, 4801);
 
-    training_command(host, script, 3310, 408, 1);
-    host.until(script, |peer| peer.responses.contains(&(3310, 0)));
+    invite::assert_accept_rejected(guest, script, room_id, 10);
+    let guest_before = guest.methods.len();
+    let other_before = other_guest.methods.len();
+    invite::send(host, script, &[guest_account], &"x".repeat(401));
+    invite::send(
+        host,
+        script,
+        &[guest_account, other_account, guest_account],
+        invite::MESSAGE,
+    );
+    invite::assert_received(
+        guest,
+        script,
+        guest_before,
+        room_id,
+        host_account,
+        invite::MESSAGE,
+    );
+    invite::assert_received(
+        other_guest,
+        script,
+        other_before,
+        room_id,
+        host_account,
+        invite::MESSAGE,
+    );
+    invite::decline(other_guest, script, room_id);
+    invite::assert_accept_rejected(other_guest, script, room_id, 10);
+
     let before = host.methods.len();
     let guest_before = guest.methods.len();
-    training_command(guest, script, 202, 400, room_id);
+    invite::accept(guest, script, room_id);
     chat::assert_open(guest, script, guest_before);
-    assert_eq!(guest.methods[guest_before].0, "onPrebattleJoined");
-    assert_eq!(guest.methods[guest_before].1[0].as_i64(), Some(room_id));
+    let joined = guest_before + 1;
+    assert_eq!(guest.methods[joined].0, "onPrebattleJoined");
+    assert_eq!(guest.methods[joined].1[0].as_i64(), Some(room_id));
     host.until(script, |peer| peer.methods.len() > before);
     let roster = |peer: &Peer, index| {
         let (method, args): &(String, Vec<Value>) = &peer.methods[index];
@@ -449,7 +484,7 @@ pub fn exercise_shared(
         };
         entries
     };
-    let shared = roster(guest, guest_before + 3);
+    let shared = roster(guest, joined + 3);
     let (method, args) = &host.methods[before];
     assert_eq!(method, "updatePrebattle");
     assert_eq!(args[0], Value::UInt8(2));
@@ -461,6 +496,10 @@ pub fn exercise_shared(
             .any(|entry| matches!(entry, Pickle::Tuple(fields)
         if fields[2] == Pickle::I64(guest_account) && fields[13] == Pickle::I64(0x60)))
     );
+    let guest_before = guest.methods.len();
+    training_command(host, script, 3310, 408, 1);
+    host.until(script, |peer| peer.responses.contains(&(3310, 0)));
+    guest.until(script, |peer| peer.methods.len() > guest_before);
     let player_entity = |account: i64| {
         shared
             .iter()
@@ -616,6 +655,27 @@ pub fn exercise_shared(
     let guest_before = guest.methods.len();
     training_command(guest, script, 202, 400, id);
     chat::assert_open(guest, script, guest_before);
+    let other_before = other_guest.methods.len();
+    other_guest.command(
+        script,
+        "accountPrebattle_createTraining",
+        vec![
+            Value::Int32(83),
+            Value::Int32(900),
+            Value::UInt8(0),
+            Value::String(StringValue::String(String::new())),
+        ],
+    );
+    chat::assert_open(other_guest, script, other_before);
+    let other_room = other_guest.methods[other_before].1[0].as_i64().unwrap();
+    let guest_before = guest.methods.len();
+    invite::send(other_guest, script, &[guest_account], "");
+    invite::assert_received(guest, script, guest_before, other_room, other_account, "");
+    let guest_before = guest.methods.len();
+    training_command(other_guest, script, 3315, 401, 0);
+    other_guest.until(script, |peer| peer.responses.contains(&(3315, 0)));
+    invite::assert_expired(guest, script, guest_before, other_room);
+    invite::assert_accept_rejected(guest, script, other_room, 2);
 }
 
 fn training_command(peer: &mut Peer, script: &ScriptDispatch, id: i16, command: i16, value: i64) {
@@ -748,6 +808,67 @@ pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
             "player_sessions.create_training_room",
             "created",
             "onPrebattleJoined",
+        );
+        let sent = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.send_training_invites"
+                    && has(span, "output.outcome", "sent")
+                    && has(span, "output.recipients.count", "2")
+            })
+            .unwrap();
+        assert!(has(sent, "input.recipients.count", "3"));
+        assert!(has(
+            sent,
+            "input.string.bytes",
+            &invite::MESSAGE.len().to_string()
+        ));
+        assert!(
+            traces
+                .iter()
+                .any(|command| command.name == "player_sessions.commands.command"
+                    && child_of(sent, command)
+                    && traces.iter().any(|root| root.name == "game.command"
+                        && child_of(command, root)
+                        && has(root, "user.id", &account_id.to_string())))
+        );
+        assert_eq!(
+            traces
+                .iter()
+                .filter(
+                    |span| span.name == "player_sessions.publish_training_invite"
+                        && child_of(span, sent)
+                        && has(span, "input.invite.state", "1")
+                        && traces
+                            .iter()
+                            .any(|response| response.name == "mercury.response"
+                                && child_of(response, span)
+                                && has(response, "rpc.method", "update")
+                                && has(response, "output.delivery", "sent"))
+                )
+                .count(),
+            2
+        );
+        assert!(
+            !traces
+                .iter()
+                .filter(|span| span.span_context.trace_id() == sent.span_context.trace_id())
+                .flat_map(|span| &span.attributes)
+                .any(|attr| attr.value.to_string().contains(invite::MESSAGE))
+        );
+        assert!(
+            traces
+                .iter()
+                .any(|span| span.name == "player_sessions.send_training_invites"
+                    && has(span, "output.outcome", "invalid_request")
+                    && has(span, "input.string.bytes", "401")
+                    && !traces.iter().any(|response| child_of(response, span)))
+        );
+        assert_player_delivery(
+            guest_account_id,
+            "player_sessions.join_training_room",
+            "invitation_unavailable",
+            "onPrebattleJoinFailure",
         );
         let is_chat_delivery = |span: &SpanData| {
             span.name == "mercury.response"

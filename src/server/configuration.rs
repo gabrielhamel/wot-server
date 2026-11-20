@@ -97,6 +97,7 @@ pub(super) struct Configuration {
     pub max_clients: usize,
     pub max_pending: usize,
     pub training_room_visible: bool,
+    pub periphery_id: u32,
     pub log_level: LogLevel,
     pub web: Option<WebConfiguration>,
     pub admin: Option<AdminConfiguration>,
@@ -117,6 +118,7 @@ impl Default for Configuration {
             max_clients: 256,
             max_pending: 32,
             training_room_visible: true,
+            periphery_id: 250,
             log_level: LogLevel::default(),
             web: None,
             admin: None,
@@ -161,6 +163,10 @@ impl Configuration {
         ensure!(
             (1..=256).contains(&config.max_clients) && (1..=256).contains(&config.max_pending),
             "max_clients and max_pending must be between 1 and 256"
+        );
+        ensure!(
+            i32::try_from(config.periphery_id).is_ok(),
+            "periphery_id must fit the client's signed 32-bit server-list field"
         );
         for value in [&config.resource_dir, &config.private_key] {
             ensure!(
@@ -277,6 +283,7 @@ mod tests {
         assert_eq!(defaults.resource_dir, directory.join("resources"));
         assert_eq!(defaults.private_key, directory.join("login.pem"));
         assert!(defaults.training_room_visible);
+        assert_eq!(defaults.periphery_id, 250);
         assert_eq!(
             defaults.log_level.filter(),
             tracing::level_filters::LevelFilter::WARN
@@ -286,10 +293,12 @@ mod tests {
         assert!(settings.get("log_file").is_none());
         settings["log_level"] = "trace".into();
         settings["max_clients"] = 7.into();
+        settings["periphery_id"] = 251.into();
         settings["training_room_visible"] = false.into();
         let edited = serde_json::to_vec_pretty(&settings).unwrap();
         std::fs::write(&path, &edited).unwrap();
         assert_eq!(Configuration::load(&path).unwrap().max_clients, 7);
+        assert_eq!(Configuration::load(&path).unwrap().periphery_id, 251);
         assert!(!Configuration::load(&path).unwrap().training_room_visible);
         assert_eq!(std::fs::read(&path).unwrap(), edited);
         settings

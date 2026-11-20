@@ -134,7 +134,9 @@ cp -n "$WOT_GAME_DIR/res/scripts_config.xml" "$WOT_GAME_DIR/res/scripts_config.x
 ```
 
 Inspect the existing entries and choose an unused `periphery_id`. The example
-uses `250`, which was free in the validated EU installation; check your own file.
+uses `250`, which was free in the validated EU installation. If you choose a
+different ID, set the same `periphery_id` in `server.json` for Training Room
+invitations.
 
 ```sh
 ./docs/references/wg-toolkit-rs/target/release/wgtk pxml \
