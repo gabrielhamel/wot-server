@@ -88,6 +88,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         &wot_server::server::test_support::composition(),
         GatewayConfig {
             training_room_visible: true,
+            periphery_id: 250,
             login_bind: "127.0.0.1:0".parse().unwrap(),
             base_bind: "127.0.0.1:0".parse().unwrap(),
             advertised_base: None,

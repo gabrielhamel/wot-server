@@ -12,6 +12,7 @@ entity_schema! {
             fn onPrebattleJoined(room_id: EntityId);
             fn onPrebattleJoinFailure(reason: u8);
             fn onPrebattleLeft();
+            fn onKickedFromPrebattle(reason: u8);
             fn updatePrebattle(update_type: u8, data: Pickle);
             fn onCmdResponse(request_id: i16, result_id: i16, error: String);
             fn onCmdResponseExt(request_id: i16, result_id: i16, error: String, ext: Pickle);
@@ -29,6 +30,7 @@ entity_schema! {
             fn doCmdInt3(request_id: i16, cmd: i16, arg0: i64, arg1: i64, arg2: i64);
             fn doCmdInt4(request_id: i16, cmd: i16, arg0: i64, arg1: i64, arg2: i64, arg3: i64);
             fn doCmdIntArr(request_id: i16, cmd: i16, args: Vec<i32>);
+            fn accountPrebattle_sendPrebattleInvites(recipients: Vec<i64>, comment: Bytes);
             fn accountPrebattle_createTraining(arena_type_id: i32, round_length: i32, is_opened: u8, comment: Bytes);
             fn doCmdIntArrStrArr(request_id: i16, cmd: i16, ints: Vec<i64>, strings: Vec<Bytes>);
             fn requestToken(request_id: u16, token_type: u8);

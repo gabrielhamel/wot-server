@@ -4,6 +4,14 @@ use super::{
 use opentelemetry_sdk::trace::SpanData;
 use wot_server::player_sessions::test_support::mercury::script::StringValue;
 
+#[path = "training_chat_flow.rs"]
+mod chat;
+#[path = "training_invite_flow.rs"]
+mod invite;
+
+const ROOM_DESCRIPTION: &str = "Studzianki practice";
+const EDITED_DESCRIPTION: &str = "Entraînement en équipe";
+
 pub fn exercise(
     peer: &mut Peer,
     script: &ScriptDispatch,
@@ -36,7 +44,7 @@ pub fn exercise(
 
     let before = peer.methods.len();
     create(peer, 83, "training-fixture-comment");
-    peer.until(script, |peer| peer.methods.len() >= before + 4);
+    chat::assert_open(peer, script, before);
     let messages = &peer.methods[before..before + 4];
     assert_eq!(messages[0].0, "onPrebattleJoined");
     let room_id = messages[0].1[0].as_i64().unwrap();
@@ -48,7 +56,13 @@ pub fn exercise(
     let mut settings = pickle_value(&messages[1].1[1]);
     for (key, value) in [
         ("type", Pickle::I64(2)),
+        ("destroyIfCreatorOut", Pickle::Bool(true)),
         ("arenaGuiType", Pickle::I64(2)),
+        ("bonusType", Pickle::I64(2)),
+        (
+            "limits",
+            wot_server::pickle!({0: {"maxCount": (20, 30), "maxCountTotal": 30}}),
+        ),
         ("arenaTypeID", Pickle::I64(83)),
         ("roundLength", Pickle::I64(900)),
         ("arenaVoipChannels", Pickle::I64(0)),
@@ -271,8 +285,8 @@ pub fn exercise(
     request(peer, 3253, 402, vehicle_id);
     peer.until(script, |peer| peer.responses.contains(&(3253, -1)));
     let before = peer.methods.len();
-    create(peer, 83, "");
-    peer.until(script, |peer| peer.methods.len() >= before + 4);
+    create(peer, 83, ROOM_DESCRIPTION);
+    chat::assert_open(peer, script, before);
     assert_eq!(peer.methods[before].0, "onPrebattleJoined");
     assert!(peer.methods[before].1[0].as_i64().unwrap() > room_id);
 }
@@ -386,7 +400,394 @@ fn exercise_settings(peer: &mut Peer, script: &ScriptDispatch, settings: &mut Pi
     settings.insert(Pickle::from("arenaVoipChannels"), Pickle::I64(1));
 }
 
+pub fn exercise_shared(
+    host: &mut Peer,
+    guest: &mut Peer,
+    script: &ScriptDispatch,
+    host_account: i64,
+    guest_account: i64,
+    other_guest: &mut Peer,
+    other_account: i64,
+) {
+    invite::sync(host, script);
+    invite::sync(guest, script);
+    invite::sync(other_guest, script);
+    let (total, entries) = training_list(guest, script, 0, 50);
+    assert_eq!(total, 1);
+    let [Pickle::Tuple(entry)] = entries.as_slice() else {
+        panic!("Expected the host's invitation-only room");
+    };
+    let [Pickle::F64(_), Pickle::I64(room_id), Pickle::Dict(info)] = entry.as_slice() else {
+        panic!("Invalid room list entry: {entry:?}");
+    };
+    let room_id = *room_id;
+    assert_eq!(info[&Pickle::I64(2)], Pickle::Bool(false));
+    assert_eq!(info[&Pickle::I64(5)], Pickle::I64(1));
+    assert_eq!(info[&Pickle::I64(9)], Pickle::from(ROOM_DESCRIPTION));
+    assert_eq!(info[&Pickle::I64(11)], Pickle::I64(83));
+    assert_eq!(info[&Pickle::I64(18)], Pickle::I64(host_account));
+    assert_eq!(info[&Pickle::I64(20)], Pickle::I64(0));
+    assert_eq!(training_list(guest, script, 1, 50), (1, vec![]));
+
+    training_command(guest, script, 202, 400, room_id);
+    guest.until(script, |peer| {
+        peer.methods
+            .iter()
+            .any(|(name, args)| name == "onPrebattleJoinFailure" && args == &[Value::UInt8(10)])
+    });
+
+    chat::assert_outside_room(guest, script, 4801);
+
+    invite::assert_accept_rejected(guest, script, room_id, 10);
+    let guest_before = guest.methods.len();
+    let other_before = other_guest.methods.len();
+    invite::send(host, script, &[guest_account], &"x".repeat(401));
+    invite::send(
+        host,
+        script,
+        &[guest_account, other_account, guest_account],
+        invite::MESSAGE,
+    );
+    invite::assert_received(
+        guest,
+        script,
+        guest_before,
+        room_id,
+        host_account,
+        invite::MESSAGE,
+    );
+    invite::assert_received(
+        other_guest,
+        script,
+        other_before,
+        room_id,
+        host_account,
+        invite::MESSAGE,
+    );
+    invite::decline(other_guest, script, room_id);
+    invite::assert_accept_rejected(other_guest, script, room_id, 10);
+
+    let before = host.methods.len();
+    let guest_before = guest.methods.len();
+    invite::accept(guest, script, room_id);
+    chat::assert_open(guest, script, guest_before);
+    let joined = guest_before + 1;
+    assert_eq!(guest.methods[joined].0, "onPrebattleJoined");
+    assert_eq!(guest.methods[joined].1[0].as_i64(), Some(room_id));
+    host.until(script, |peer| peer.methods.len() > before);
+    let roster = |peer: &Peer, index| {
+        let (method, args): &(String, Vec<Value>) = &peer.methods[index];
+        assert_eq!(method, "updatePrebattle");
+        assert_eq!(args[0], Value::UInt8(1));
+        let Pickle::List(entries) = pickle_value(&args[1]) else {
+            panic!("Expected full roster");
+        };
+        entries
+    };
+    let shared = roster(guest, joined + 3);
+    let (method, args) = &host.methods[before];
+    assert_eq!(method, "updatePrebattle");
+    assert_eq!(args[0], Value::UInt8(2));
+    assert!(shared.contains(&pickle_value(&args[1])));
+    assert_eq!(shared.len(), 2);
+    assert!(
+        shared
+            .iter()
+            .any(|entry| matches!(entry, Pickle::Tuple(fields)
+        if fields[2] == Pickle::I64(guest_account) && fields[13] == Pickle::I64(0x60)))
+    );
+    let guest_before = guest.methods.len();
+    training_command(host, script, 3310, 408, 1);
+    host.until(script, |peer| peer.responses.contains(&(3310, 0)));
+    guest.until(script, |peer| peer.methods.len() > guest_before);
+    let player_entity = |account: i64| {
+        shared
+            .iter()
+            .find_map(|entry| match entry {
+                Pickle::Tuple(fields) if fields[2] == Pickle::I64(account) => match fields[0] {
+                    Pickle::I64(id) => Some(id),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .unwrap()
+    };
+    let host_entity = player_entity(host_account);
+    let guest_entity = player_entity(guest_account);
+    for (request_id, entity, destination, host_slot, guest_slot) in [
+        (3320, guest_entity, 1, 17, 1),
+        (3321, host_entity, 2, 2, 1),
+        (3322, host_entity, 1, 1, 1),
+        (3323, guest_entity, 2, 1, 2),
+        (3324, guest_entity, 18, 1, 18),
+    ] {
+        let host_before = host.methods.len();
+        let guest_before = guest.methods.len();
+        host.command(
+            script,
+            "doCmdInt3",
+            vec![
+                Value::Int16(request_id),
+                Value::Int16(404),
+                Value::Int64(entity),
+                Value::Int64(destination),
+                Value::Int64(0),
+            ],
+        );
+        host.until(script, |peer| peer.responses.contains(&(request_id, 0)));
+        guest.until(script, |peer| peer.methods.len() > guest_before);
+        let updated = roster(host, host_before);
+        assert_eq!(updated, roster(guest, guest_before));
+        assert_eq!(updated.len(), 2);
+        for (entity, slot) in [(host_entity, host_slot), (guest_entity, guest_slot)] {
+            assert!(
+                updated
+                    .iter()
+                    .any(|entry| matches!(entry, Pickle::Tuple(fields)
+                if fields[0] == Pickle::I64(entity) && fields[4] == Pickle::I64(slot)))
+            );
+        }
+    }
+    let (total, entries) = training_list(guest, script, 0, 50);
+    assert_eq!(total, 1);
+    let [Pickle::Tuple(entry)] = entries.as_slice() else {
+        panic!("Expected the public room");
+    };
+    let Pickle::Dict(info) = &entry[2] else {
+        panic!("Missing room info");
+    };
+    assert_eq!(info[&Pickle::I64(2)], Pickle::Bool(true));
+    assert_eq!(info[&Pickle::I64(5)], Pickle::I64(2));
+
+    let guest_before = guest.methods.len();
+    host.command(
+        script,
+        "doCmdStr",
+        vec![
+            Value::Int16(3330),
+            Value::Int16(409),
+            Value::String(StringValue::String(EDITED_DESCRIPTION.into())),
+        ],
+    );
+    host.until(script, |peer| peer.responses.contains(&(3330, 0)));
+    guest.until(script, |peer| peer.methods.len() > guest_before);
+    let (method, args) = &guest.methods[guest_before];
+    assert_eq!(method, "updatePrebattle");
+    assert_eq!(args[0], Value::UInt8(8));
+    assert_eq!(
+        pickle_value(&args[1]),
+        wot_server::pickle!(("comment", (EDITED_DESCRIPTION)))
+    );
+    let (total, entries) = training_list(guest, script, 0, 50);
+    assert_eq!(total, 1);
+    let [Pickle::Tuple(entry)] = entries.as_slice() else {
+        panic!("Expected the updated room");
+    };
+    let Pickle::Dict(info) = &entry[2] else {
+        panic!("Missing updated room info");
+    };
+    assert_eq!(info[&Pickle::I64(9)], Pickle::from(EDITED_DESCRIPTION));
+
+    training_command(guest, script, 3311, 408, 0);
+    guest.until(script, |peer| peer.responses.contains(&(3311, -1)));
+    let before = host.methods.len();
+    training_command(guest, script, 3312, 402, -5000);
+    guest.until(script, |peer| peer.responses.contains(&(3312, 0)));
+    host.until(script, |peer| peer.methods.len() > before);
+    assert_eq!(host.methods[before].1[0], Value::UInt8(4));
+    chat::exchange(host, guest, script, host_account, guest_account);
+
+    let before = host.methods.len();
+    let guest_before = guest.methods.len();
+    training_command(guest, script, 3313, 401, 0);
+    guest.until(script, |peer| peer.responses.contains(&(3313, 0)));
+    host.until(script, |peer| peer.methods.len() > before);
+    let (method, args) = &host.methods[before];
+    assert_eq!(method, "updatePrebattle");
+    assert_eq!(args[0], Value::UInt8(3));
+    assert_eq!(
+        pickle_value(&args[1]),
+        wot_server::pickle!(((guest_entity), 18))
+    );
+    chat::assert_closed(guest, script, guest_before);
+    let guest_before = guest.methods.len();
+    chat::send_after_guest_leaves(host, script);
+    chat::assert_outside_room(guest, script, 4806);
+    chat::assert_no_broadcast(guest, guest_before);
+    let guest_before = guest.methods.len();
+    training_command(guest, script, 202, 400, room_id);
+    chat::assert_open(guest, script, guest_before);
+
+    training_command(guest, script, 3331, 414, host_entity);
+    guest.until(script, |peer| peer.responses.contains(&(3331, -1)));
+    training_command(host, script, 3332, 414, host_entity);
+    training_command(host, script, 3333, 414, i64::MAX);
+    host.until(script, |peer| peer.responses.contains(&(3333, -1)));
+    assert!(host.responses.contains(&(3332, -1)));
+
+    let guest_before = guest.methods.len();
+    host.command(
+        script,
+        "doCmdInt3",
+        vec![
+            Value::Int16(3334),
+            Value::Int16(404),
+            Value::Int64(guest_entity),
+            Value::Int64(2),
+            Value::Int64(0),
+        ],
+    );
+    host.until(script, |peer| peer.responses.contains(&(3334, 0)));
+    guest.until(script, |peer| peer.methods.len() > guest_before);
+    assert!(
+        roster(guest, guest_before)
+            .iter()
+            .any(|entry| matches!(entry, Pickle::Tuple(fields)
+        if fields[0] == Pickle::I64(guest_entity) && fields[4] == Pickle::I64(2)))
+    );
+
+    let host_before = host.methods.len();
+    let guest_before = guest.methods.len();
+    training_command(host, script, 3335, 414, guest_entity);
+    host.until(script, |peer| peer.responses.contains(&(3335, 0)));
+    let (method, args) = &host.methods[host_before];
+    assert_eq!(method, "updatePrebattle");
+    assert_eq!(args[0], Value::UInt8(3));
+    assert_eq!(
+        pickle_value(&args[1]),
+        wot_server::pickle!(((guest_entity), 2))
+    );
+    chat::assert_closed(guest, script, guest_before);
+    assert_eq!(
+        guest.methods[guest_before],
+        ("onKickedFromPrebattle".into(), vec![Value::UInt8(10)])
+    );
+    chat::assert_outside_room(guest, script, 4808);
+    let (total, entries) = training_list(guest, script, 0, 50);
+    assert_eq!(total, 1);
+    let [Pickle::Tuple(entry)] = entries.as_slice() else {
+        panic!("Expected the room to remain available");
+    };
+    let Pickle::Dict(info) = &entry[2] else {
+        panic!("Missing room info");
+    };
+    assert_eq!(info[&Pickle::I64(5)], Pickle::I64(1));
+
+    let guest_before = guest.methods.len();
+    training_command(guest, script, 202, 400, room_id);
+    chat::assert_open(guest, script, guest_before);
+
+    let host_before = host.methods.len();
+    let guest_before = guest.methods.len();
+    training_command(host, script, 3314, 401, 0);
+    host.until(script, |peer| peer.responses.contains(&(3314, 0)));
+    guest.until(script, |peer| {
+        peer.methods[guest_before..]
+            .iter()
+            .any(|(name, _)| name == "onPrebattleLeft")
+    });
+    chat::assert_closed(host, script, host_before);
+    chat::assert_closed(guest, script, guest_before);
+    assert_empty_list(guest, script);
+    let guest_before = guest.methods.len();
+    training_command(guest, script, 202, 400, room_id);
+    guest.until(script, |peer| peer.methods.len() > guest_before);
+    assert_eq!(
+        guest.methods[guest_before],
+        ("onPrebattleJoinFailure".into(), vec![Value::UInt8(2)])
+    );
+
+    // Leave a shared room active so the garage test can verify host session replacement.
+    let before = host.methods.len();
+    host.command(
+        script,
+        "accountPrebattle_createTraining",
+        vec![
+            Value::Int32(83),
+            Value::Int32(900),
+            Value::UInt8(1),
+            Value::String(StringValue::String(String::new())),
+        ],
+    );
+    chat::assert_open(host, script, before);
+    let id = host.methods[before].1[0].as_i64().unwrap();
+    let guest_before = guest.methods.len();
+    training_command(guest, script, 202, 400, id);
+    chat::assert_open(guest, script, guest_before);
+    let other_before = other_guest.methods.len();
+    other_guest.command(
+        script,
+        "accountPrebattle_createTraining",
+        vec![
+            Value::Int32(83),
+            Value::Int32(900),
+            Value::UInt8(0),
+            Value::String(StringValue::String(String::new())),
+        ],
+    );
+    chat::assert_open(other_guest, script, other_before);
+    let other_room = other_guest.methods[other_before].1[0].as_i64().unwrap();
+    let guest_before = guest.methods.len();
+    invite::send(other_guest, script, &[guest_account], "");
+    invite::assert_received(guest, script, guest_before, other_room, other_account, "");
+    let guest_before = guest.methods.len();
+    training_command(other_guest, script, 3315, 401, 0);
+    other_guest.until(script, |peer| peer.responses.contains(&(3315, 0)));
+    invite::assert_expired(guest, script, guest_before, other_room);
+    invite::assert_accept_rejected(guest, script, other_room, 2);
+}
+
+fn training_command(peer: &mut Peer, script: &ScriptDispatch, id: i16, command: i16, value: i64) {
+    peer.command(
+        script,
+        "doCmdInt3",
+        vec![
+            Value::Int16(id),
+            Value::Int16(command),
+            Value::Int64(value),
+            Value::Int64(0),
+            Value::Int64(0),
+        ],
+    );
+}
+
+fn training_list(
+    peer: &mut Peer,
+    script: &ScriptDispatch,
+    start: i32,
+    end: i32,
+) -> (i64, Vec<Pickle>) {
+    peer.clear_resource(200);
+    peer.command(
+        script,
+        "doCmdIntArr",
+        vec![
+            Value::Int16(200),
+            Value::Int16(520),
+            Value::Seq(
+                [2, 7, 0, start, end]
+                    .into_iter()
+                    .map(Value::Int32)
+                    .collect(),
+            ),
+        ],
+    );
+    peer.until(script, |peer| peer.has_resource(200));
+    let Pickle::Tuple(result) = peer.resource(200) else {
+        panic!("Expected a Training Rooms list");
+    };
+    let [Pickle::I64(2), Pickle::I64(total), Pickle::List(entries)] = result.as_slice() else {
+        panic!("Invalid Training Rooms list: {result:?}");
+    };
+    (*total, entries.clone())
+}
+
+pub fn assert_empty_list(peer: &mut Peer, script: &ScriptDispatch) {
+    assert_eq!(training_list(peer, script, 0, 50), (0, vec![]));
+}
+
 pub fn assert_room_gone(peer: &mut Peer, script: &ScriptDispatch, vehicle_id: i64) {
+    let before = peer.methods.len();
     peer.command(
         script,
         "doCmdInt3",
@@ -400,14 +801,13 @@ pub fn assert_room_gone(peer: &mut Peer, script: &ScriptDispatch, vehicle_id: i6
     );
     peer.until(script, |peer| peer.responses.contains(&(3255, -1)));
     assert!(
-        !peer
-            .methods
+        !peer.methods[before..]
             .iter()
             .any(|(name, _)| name == "onPrebattleJoined")
     );
 }
 
-pub fn assert_traces(account_id: i64, available: bool) {
+pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
     let traces = telemetry_capture::exporter().get_finished_spans().unwrap();
     let has = |span: &SpanData, key, value: &str| {
         span.attributes
@@ -418,7 +818,7 @@ pub fn assert_traces(account_id: i64, available: bool) {
         child.parent_span_id == parent.span_context.span_id()
             && child.span_context.trace_id() == parent.span_context.trace_id()
     };
-    let assert_delivery = |operation, outcome, response| {
+    let assert_player_delivery = |player_id: i64, operation, outcome, response| {
         let span = traces
             .iter()
             .find(|span| {
@@ -430,19 +830,27 @@ pub fn assert_traces(account_id: i64, available: bool) {
                             && traces.iter().any(|root| {
                                 root.name == "game.command"
                                     && child_of(command, root)
-                                    && has(root, "user.id", &account_id.to_string())
+                                    && has(root, "user.id", &player_id.to_string())
                             })
                     })
             })
             .unwrap_or_else(|| panic!("Missing trace for {operation} {outcome}"));
         assert!(
             traces.iter().any(|child| child.name == "mercury.response"
-                && child_of(child, span)
+                && (child_of(child, span)
+                    || traces
+                        .iter()
+                        .any(|resource| resource.name == "mercury.response.resource"
+                            && child_of(resource, span)
+                            && child_of(child, resource)))
                 && has(child, "rpc.method", response)
                 && has(child, "output.delivery", "sent")),
             "Missing delivery of {response} for {outcome}"
         );
         span
+    };
+    let assert_delivery = |operation, outcome, response| {
+        assert_player_delivery(account_id, operation, outcome, response)
     };
     let rejection = if available {
         "invalid_request"
@@ -460,6 +868,137 @@ pub fn assert_traces(account_id: i64, available: bool) {
             "created",
             "onPrebattleJoined",
         );
+        let sent = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.send_training_invites"
+                    && has(span, "output.outcome", "sent")
+                    && has(span, "output.recipients.count", "2")
+            })
+            .unwrap();
+        assert!(has(sent, "input.recipients.count", "3"));
+        assert!(has(
+            sent,
+            "input.string.bytes",
+            &invite::MESSAGE.len().to_string()
+        ));
+        assert!(
+            traces
+                .iter()
+                .any(|command| command.name == "player_sessions.commands.command"
+                    && child_of(sent, command)
+                    && traces.iter().any(|root| root.name == "game.command"
+                        && child_of(command, root)
+                        && has(root, "user.id", &account_id.to_string())))
+        );
+        assert_eq!(
+            traces
+                .iter()
+                .filter(
+                    |span| span.name == "player_sessions.publish_training_invite"
+                        && child_of(span, sent)
+                        && has(span, "input.invite.state", "1")
+                        && traces
+                            .iter()
+                            .any(|response| response.name == "mercury.response"
+                                && child_of(response, span)
+                                && has(response, "rpc.method", "update")
+                                && has(response, "output.delivery", "sent"))
+                )
+                .count(),
+            2
+        );
+        assert!(
+            !traces
+                .iter()
+                .filter(|span| span.span_context.trace_id() == sent.span_context.trace_id())
+                .flat_map(|span| &span.attributes)
+                .any(|attr| attr.value.to_string().contains(invite::MESSAGE))
+        );
+        assert!(
+            traces
+                .iter()
+                .any(|span| span.name == "player_sessions.send_training_invites"
+                    && has(span, "output.outcome", "invalid_request")
+                    && has(span, "input.string.bytes", "401")
+                    && !traces.iter().any(|response| child_of(response, span)))
+        );
+        assert_player_delivery(
+            guest_account_id,
+            "player_sessions.join_training_room",
+            "invitation_unavailable",
+            "onPrebattleJoinFailure",
+        );
+        let is_chat_delivery = |span: &SpanData| {
+            span.name == "mercury.response"
+                && has(span, "rpc.method", "messenger_onActionByServer_chat2")
+                && has(span, "output.delivery", "sent")
+        };
+        let opened = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.training_chat_membership"
+                    && child_of(span, create)
+                    && has(span, "input.chat.joining", "true")
+            })
+            .unwrap();
+        assert!(
+            traces
+                .iter()
+                .any(|response| child_of(response, opened) && is_chat_delivery(response))
+        );
+        for (request, outcome, sender, response_count) in [
+            ("4803", "broadcast", account_id, 3),
+            ("4801", "not_in_room", guest_account_id, 1),
+            ("4802", "invalid_message", guest_account_id, 1),
+        ] {
+            let broadcast = traces
+                .iter()
+                .find(|span| {
+                    span.name == "player_sessions.broadcast_training_chat"
+                        && has(span, "input.request_id", request)
+                        && has(span, "output.outcome", outcome)
+                })
+                .unwrap();
+            let social = traces
+                .iter()
+                .find(|span| {
+                    span.name == "player_sessions.social.social_command"
+                        && child_of(broadcast, span)
+                })
+                .unwrap();
+            let command = traces
+                .iter()
+                .find(|span| {
+                    span.name == "player_sessions.commands.command" && child_of(social, span)
+                })
+                .unwrap();
+            assert!(traces.iter().any(|span| span.name == "game.command"
+                && has(span, "user.id", &sender.to_string())
+                && child_of(command, span)));
+            assert_eq!(
+                traces
+                    .iter()
+                    .filter(|span| child_of(span, broadcast) && is_chat_delivery(span))
+                    .count(),
+                response_count
+            );
+            if outcome == "broadcast" {
+                assert!(has(broadcast, "output.recipients.count", "2"));
+                assert!(has(
+                    broadcast,
+                    "input.text.bytes",
+                    &chat::HOST_TEXT.len().to_string()
+                ));
+                assert!(
+                    !broadcast
+                        .attributes
+                        .iter()
+                        .chain(&social.attributes)
+                        .any(|attr| attr.value.to_string().contains(chat::HOST_TEXT))
+                );
+            }
+        }
         assert!(has(create, "input.arena_type_id", "83"));
         assert!(has(create, "input.round_length.seconds", "900"));
         assert!(
@@ -501,9 +1040,132 @@ pub fn assert_traces(account_id: i64, available: bool) {
         );
         assert_delivery(
             "player_sessions.leave_training_room",
+            "deleted",
+            "onPrebattleLeft",
+        );
+        let joined = assert_player_delivery(
+            guest_account_id,
+            "player_sessions.join_training_room",
+            "joined",
+            "onPrebattleJoined",
+        );
+        assert!(has(joined, "output.players.count", "2"));
+        for outcome in ["invitation_only", "room_unavailable"] {
+            assert_player_delivery(
+                guest_account_id,
+                "player_sessions.join_training_room",
+                outcome,
+                "onPrebattleJoinFailure",
+            );
+        }
+        assert_player_delivery(
+            guest_account_id,
+            "player_sessions.change_training_setting",
+            "host_required",
+            "onCmdResponse",
+        );
+        assert_player_delivery(
+            guest_account_id,
+            "player_sessions.leave_training_room",
             "left",
             "onPrebattleLeft",
         );
+        let listed = assert_player_delivery(
+            guest_account_id,
+            "player_sessions.list_training_rooms",
+            "listed",
+            "onCmdResponse",
+        );
+        assert!(has(listed, "output.rooms.count", "1"));
+        assert!(has(listed, "output.rooms.total", "1"));
+        assert!(
+            traces
+                .iter()
+                .any(|span| span.name == "mercury.response.resource"
+                    && child_of(span, listed)
+                    && traces.iter().any(|child| child.name == "mercury.response"
+                        && child_of(child, span)
+                        && has(child, "output.delivery", "sent")))
+        );
+        let kicked = assert_delivery(
+            "player_sessions.kick_training_player",
+            "kicked",
+            "onKickedFromPrebattle",
+        );
+        assert!(has(kicked, "input.request_id", "3335"));
+        assert!(traces.iter().any(|span| span.name == "mercury.response"
+            && child_of(span, kicked)
+            && has(span, "rpc.method", "onCmdResponse")
+            && has(span, "output.response_code", "0")
+            && has(span, "output.delivery", "sent")));
+        let removal = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.remove_training_member"
+                    && child_of(span, kicked)
+                    && has(span, "output.players.count", "1")
+            })
+            .unwrap();
+        assert!(traces.iter().any(|span| span.name == "mercury.response"
+            && child_of(span, removal)
+            && has(span, "rpc.method", "updatePrebattle")
+            && has(span, "output.delivery", "sent")));
+        let chat_closed = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.training_chat_membership"
+                    && child_of(span, kicked)
+                    && has(span, "input.chat.joining", "false")
+            })
+            .unwrap();
+        assert!(
+            traces
+                .iter()
+                .any(|span| child_of(span, chat_closed) && is_chat_delivery(span))
+        );
+        assert_player_delivery(
+            guest_account_id,
+            "player_sessions.kick_training_player",
+            "host_required",
+            "onCmdResponse",
+        );
+        assert_delivery(
+            "player_sessions.kick_training_player",
+            "invalid_target",
+            "onCmdResponse",
+        );
+        let deleted = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.leave_training_room"
+                    && has(span, "input.request_id", "3314")
+            })
+            .unwrap();
+        let cleanup = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.remove_training_member" && child_of(span, deleted)
+            })
+            .unwrap();
+        assert!(has(cleanup, "output.outcome", "deleted"));
+        let closed = traces
+            .iter()
+            .find(|span| {
+                span.name == "player_sessions.training_chat_membership"
+                    && child_of(span, cleanup)
+                    && has(span, "input.chat.joining", "false")
+            })
+            .unwrap();
+        assert!(
+            traces
+                .iter()
+                .any(|response| child_of(response, closed) && is_chat_delivery(response))
+        );
+        assert!(has(cleanup, "output.players.count", "0"));
+        assert!(traces.iter().any(|span| span.name == "mercury.response"
+            && child_of(span, cleanup)
+            && has(span, "rpc.method", "onPrebattleLeft")
+            && has(span, "output.delivery", "sent")));
         let assigned = assert_delivery(
             "player_sessions.assign_training_roster",
             "assigned",
@@ -525,6 +1187,33 @@ pub fn assert_traces(account_id: i64, available: bool) {
             "unchanged",
             "updatePrebattle",
         );
+        for (request_id, operation, outcome) in [
+            ("3291", "player_sessions.set_training_ready", "ready"),
+            ("3322", "player_sessions.assign_training_roster", "assigned"),
+            ("3330", "player_sessions.change_training_setting", "changed"),
+        ] {
+            let operation = traces
+                .iter()
+                .find(|span| {
+                    span.name == operation
+                        && has(span, "input.request_id", request_id)
+                        && has(span, "output.outcome", outcome)
+                        && traces.iter().any(|command| {
+                            command.name == "player_sessions.commands.command"
+                                && child_of(span, command)
+                                && traces.iter().any(|root| {
+                                    root.name == "game.command"
+                                        && child_of(command, root)
+                                        && has(root, "user.id", &account_id.to_string())
+                                })
+                        })
+                })
+                .unwrap();
+            assert!(traces.iter().any(|span| span.name == "mercury.response"
+                && child_of(span, operation)
+                && has(span, "rpc.method", "updatePrebattle")
+                && has(span, "output.delivery", "sent")));
+        }
         let swapped = assert_delivery(
             "player_sessions.swap_training_teams",
             "swapped",

@@ -24,6 +24,7 @@ fn server_settings(
         "file_server": {},
         "shop": (shop),
         "isTrainingBattleEnabled": (training_room_visible),
+        "pre_moderation_config": {"prebattleDescriptionEnabled": (training_room_visible)},
         "isTrophyDevicesEnabled": (equipment_upgrades),
         "isCrewBooksPurchaseEnabled": true,
         "isCrewBooksSaleEnabled": true,

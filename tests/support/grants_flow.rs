@@ -137,6 +137,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         &wot_server::server::test_support::composition(),
         GatewayConfig {
             training_room_visible: true,
+            periphery_id: 250,
             login_bind: "127.0.0.1:0".parse().unwrap(),
             base_bind: "127.0.0.1:0".parse().unwrap(),
             advertised_base: None,

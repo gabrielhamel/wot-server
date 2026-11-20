@@ -36,7 +36,7 @@ ContextMap Server {
     implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch plus arena definitions for Training Room map validation"
   }
   GameClient [U] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage and host-only Training Room RPCs; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
+    implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage, shared Training Room RPCs, invitations and BW_CHAT2 room messages; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections"
@@ -67,7 +67,7 @@ BoundedContext Accounts {
   domainVisionStatement = "Own durable identity, password hashes, player roles, dashboard sessions, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, cosmetic ownership and seasonal and common outfits, crew rosters and training, Premium Account expiry, and revisions in PostgreSQL; project snapshots into versioned garage caches."
 }
 BoundedContext PlayerSessions {
-  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle, host-only Training Rooms, Store browser access and delivery of committed garage and chat updates and Premium Account expiry notifications."
+  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle, Training Room membership, invitations and room text chat, Store browser access and delivery of committed garage and chat updates and Premium Account expiry notifications."
 }
 
 BoundedContext Social {

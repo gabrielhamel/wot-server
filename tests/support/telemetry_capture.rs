@@ -189,6 +189,11 @@ pub fn assert_training_room_bootstrap(visible: bool) {
                     "output.training_room.visible",
                     &visible.to_string(),
                 )
+                && has(
+                    bootstrap,
+                    "output.training_room.description_enabled",
+                    &visible.to_string(),
+                )
                 && spans.iter().any(|response| {
                     response.name == "mercury.response"
                         && response.span_context.trace_id() == bootstrap.span_context.trace_id()
@@ -197,7 +202,7 @@ pub fn assert_training_room_bootstrap(visible: bool) {
                         && has(response, "output.delivery", "sent")
                 })
         }),
-        "Missing Training Room visibility on a delivered garage bootstrap trace"
+        "Missing Training Room visibility or description setting on a delivered garage bootstrap trace"
     );
 }
 
@@ -374,7 +379,7 @@ pub fn assert_equipment_traces(account: i64) {
     }
 }
 
-pub fn assert_operation_traces(account: i64, research_account: i64) {
+pub fn assert_operation_traces(account: i64, research_account: i64, online_players: usize) {
     let spans = exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
         span.attributes.iter().any(|attribute| {
@@ -511,12 +516,13 @@ pub fn assert_operation_traces(account: i64, research_account: i64) {
             .unwrap_or_else(|| panic!("missing command {id} request {request}"))
     };
     let stats = command_root("2000", "501");
+    let online_players = online_players.to_string();
     let read = spans
         .iter()
         .find(|span| {
             span.name == "player_sessions.server_stats"
                 && descendant(span, stats)
-                && has(span, "output.players.online", "2")
+                && has(span, "output.players.online", &online_players)
         })
         .expect("online count operation");
     assert!(spans.iter().any(|span| span.name == "mercury.response"

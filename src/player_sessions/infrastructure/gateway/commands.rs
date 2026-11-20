@@ -2,7 +2,6 @@ use super::*;
 
 const REQUEST_PREBATTLES: i16 = 520;
 const PREBATTLES_STREAM: i16 = 200;
-const TRAINING_PREBATTLE: i32 = 2;
 
 impl Gateway {
     pub(super) fn handle_base_method(&mut self, event: base::BaseMethodEvent) {
@@ -157,6 +156,31 @@ impl Gateway {
                     &comment.0,
                 )?;
             }
+            AccountBase::AccountPrebattleSendPrebattleInvites {
+                recipients,
+                comment,
+            } => {
+                self.send_training_invites(client, &recipients, &comment.0);
+            }
+            AccountBase::DoCmdInt3 {
+                cmd: command @ (training::JOIN | training::ACCEPT_INVITE),
+                arg0,
+                arg1,
+                arg2,
+                ..
+            } => self.join_training_room(
+                client,
+                entity,
+                [arg0, arg1, arg2],
+                command == training::ACCEPT_INVITE,
+            )?,
+            AccountBase::DoCmdInt3 {
+                cmd: training::DECLINE_INVITE,
+                arg0,
+                arg1,
+                arg2,
+                ..
+            } => self.decline_training_invite(client, entity, [arg0, arg1, arg2]),
             AccountBase::DoCmdInt3 {
                 request_id,
                 cmd: training::LEAVE,
@@ -164,6 +188,13 @@ impl Gateway {
             } => {
                 self.leave_training_room(client, entity, request_id)?;
             }
+            AccountBase::DoCmdInt3 {
+                request_id,
+                cmd: training::KICK,
+                arg0,
+                arg1,
+                arg2,
+            } => self.kick_training_player(client, entity, request_id, [arg0, arg1, arg2])?,
             AccountBase::DoCmdInt3 {
                 request_id,
                 cmd: training::READY,
@@ -605,7 +636,7 @@ impl Gateway {
         self.stream_pickle(client, entity, request_id, &crate::pickle!((1, [])))
     }
 
-    #[tracing::instrument(name = "player_sessions.list_training_rooms", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.args.count = args.len(), output.rooms.count = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.list_training_rooms", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.args.count = args.len(), output.rooms.count = tracing::field::Empty, output.rooms.total = tracing::field::Empty, output.players.count = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
     fn list_training_rooms(
         &mut self,
         client: ClientKey,
@@ -614,9 +645,15 @@ impl Gateway {
         args: &[i32],
     ) -> Result<()> {
         let span = tracing::Span::current();
-        if request_id != PREBATTLES_STREAM
-            || !matches!(args, [TRAINING_PREBATTLE, _, 0 | 1, start, end] if *start >= 0 && end >= start)
-        {
+        let page = match args {
+            [training::TRAINING, _, 0 | 1, start, end]
+                if request_id == PREBATTLES_STREAM && *start >= 0 && end >= start =>
+            {
+                Some((*start as usize, (*end - *start) as usize))
+            }
+            _ => None,
+        };
+        let Some((start, length)) = page else {
             span.record("output.outcome", "invalid_request");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,
@@ -624,16 +661,36 @@ impl Gateway {
                 "Invalid or unsupported Training Rooms list request".into(),
             )?;
             return Ok(());
-        }
+        };
 
+        let rooms = self
+            .training_rooms
+            .values()
+            .rev()
+            .skip(start)
+            .take(length.min(training::LIST_PAGE_LIMIT));
+        let mut players = 0;
+        let entries: Vec<_> = rooms
+            .map(|room| {
+                players += room.player_count();
+                room.list_entry()
+            })
+            .collect();
+        let count = entries.len();
+        let total = self.training_rooms.len();
         self.stream_pickle(
             client,
             entity,
             request_id,
-            &crate::pickle!(((TRAINING_PREBATTLE), 0, [])),
+            &crate::pickle!(((training::TRAINING), (total as i64), (Value::List(entries)))),
         )?;
-        span.record("output.rooms.count", 0);
-        span.record("output.outcome", "empty");
+        span.record("output.rooms.count", count);
+        span.record("output.rooms.total", total);
+        span.record("output.players.count", players);
+        span.record(
+            "output.outcome",
+            if count == 0 { "empty" } else { "listed" },
+        );
         Ok(())
     }
 

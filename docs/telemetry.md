@@ -41,7 +41,7 @@ of automatic port retries after TCP collisions. A fixed port collision fails
 startup.
 
 When the client enables entities, `player_sessions.enable` records the
-Training Room visibility sent in the queued Account creation. Its
+Training Room visibility and Description field availability sent in the queued Account creation. Its
 `mercury.response` child records delivery of `showGUI`.
 
 The shared web listener composes the admin and Store APIs. Page shells and
@@ -123,13 +123,15 @@ actually ran. For example, command 501 returns the current in-memory count.
         player_sessions.server_stats              [online count]
           mercury.response                        [receiveServerStats, sent]
 
-Training Room discovery records `empty` for a successful zero-room list and
-`invalid_request` for a malformed or unsupported request. A valid request
-uses the garage resource stream. A rejected request sends a command error.
+Training Room discovery records the total room count, rooms returned and
+players in those rooms. It records `listed` when the page contains rooms,
+`empty` when it contains zero, and `invalid_request` for a malformed or
+unsupported request. A valid request uses the garage resource stream. A
+rejected request sends a command error.
 
     game.command                                  [command 520]
       player_sessions.commands.command
-        player_sessions.list_training_rooms       [empty, 0 rooms]
+        player_sessions.list_training_rooms       [listed, 1 room, 2 players]
           mercury.response.resource
             mercury.response                      [onCmdResponse, sent]
 
@@ -147,16 +149,61 @@ cached catalog descriptor. Returning to Player traces the owned-vehicle lookup a
           mercury.response                        [onPrebattleJoined, sent]
           mercury.response                        [updatePrebattle, sent]
 
+A public join records the requested room and cluster and the resulting
+membership count. A rejected join sends `onPrebattleJoinFailure`. A guest
+leaving records `left` and sends the updated roster to the remaining players.
+Host leave records `deleted` and links the room removal, guest notifications,
+host notification and command acknowledgement under the same command.
+
+    game.command                                  [command 401]
+      player_sessions.commands.command
+        player_sessions.leave_training_room       [deleted, room ID]
+          player_sessions.remove_training_member  [deleted, 0 players]
+            mercury.response                      [guest onPrebattleLeft, sent]
+          mercury.response                        [host onPrebattleLeft, sent]
+          mercury.response                        [onCmdResponse, sent]
+
 Training Room roster assignment records the requested player entity, slot and
 group. A team swap records the previous and resulting slots. A valid request,
 including an unchanged assignment or swap, sends a full roster and a command
-acknowledgement under the originating trace. Invalid requests send a failed
-acknowledgement without a roster update.
+acknowledgement under the originating trace. Invalid requests and full
+destination rosters send a failed acknowledgement. Assignment records
+`roster_full` when the destination is at capacity.
 
 Each Modify Room command and voice-chat mode change retains its own `game.command`
 trace. The decoded command span carries the numeric input or the comment's byte length. The
 `player_sessions.change_training_setting` span links the room update and
 acknowledgement and records the result. Room comment text stays out of traces.
+
+Excluding a guest records the target Account entity ID and room. The
+exclusion trace includes roster removal for the remaining players, the
+guest's kick notice and chat close, and the host's command acknowledgement.
+
+Training Room invitations record recipient counts and the optional message's
+byte length. Each queued invite and its delivery retain the original command
+trace. Accept, decline and room cleanup trace the resulting invitation
+state. The invitation message and recipient list stay out of spans.
+
+    game.command                                  [accountPrebattle_sendPrebattleInvites]
+      player_sessions.commands.command
+        player_sessions.send_training_invites      [sent, 2 recipients]
+          player_sessions.publish_training_invite  [active]
+            mercury.response                      [update, sent]
+          player_sessions.publish_training_invite  [active]
+            mercury.response                      [update, sent]
+
+Training text chat opens and closes under the room membership trace.
+Each broadcast records the message size, the room and the number of queued
+recipients. The client request acknowledgement and each outgoing message
+retain the original Mercury command trace. Chat text stays out of spans.
+
+    game.command                                  [messenger_onActionByClient_chat2]
+      player_sessions.commands.command
+        player_sessions.social.social_command
+          player_sessions.broadcast_training_chat [broadcast, 2 recipients]
+            mercury.response                      [chat message to sender, sent]
+            mercury.response                      [chat message to guest, sent]
+            mercury.response                      [request acknowledgement, sent]
 
 A committed research command follows this path. Intermediate Accounts and
 Player Sessions spans retain their own bounded context.

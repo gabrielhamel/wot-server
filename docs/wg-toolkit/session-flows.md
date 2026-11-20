@@ -116,16 +116,27 @@ decodes a zlib-compressed pickle of `(prebattle_type, total_count, rooms)`.
 The [Training list requester](../references/wot-src/sources/res/scripts/client/gui/prb_control/entities/training/legacy/requester.py#L43)
 only accepts type `2`. The [list view](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/trainings_list_base.py#L49)
 then closes its waiting overlay, including for an empty list. A generic command
-error alone leaves the overlay waiting. The server streams `(2, 0, [])` for a
-valid request and rejects malformed or unsupported requests. Host-only rooms
-are entered directly by their creators and the shared room list stays empty.
+error alone leaves the overlay waiting. Each room row is
+`(create_time, room_id, info)`, where the [client list item](../references/wot-src/sources/res/scripts/client/gui/prb_control/items/prb_seqs.py#L29)
+reads the numeric `PREBATTLE_CACHE_KEY` fields for the host, map, comment, open
+flag, player count and cluster. Rooms are ordered newest first. The list view
+counts returned rows and sums their membership. The
+[mode selector](../references/wot-src/sources/res/scripts/client/gui/impl/lobby/mode_selector/items/trainings_mode_selector_item.py#L19)
+counts returned rows as well. Both views request up to 50 rooms every five
+seconds. The server includes the full room count in the stream header tuple.
+
+Rooms marked **By invitation** remain visible with joining disabled. The
+[list view](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/trainings_list_base.py#L75)
+passes the inverse of `isOpened` to its renderer's `disabled` field. The server
+sends the matching flag, and direct join requests for closed rooms receive
+`PRIVACY` (10).
 
 This is a source-level diagnosis using the pinned decompiled client revision
 `447437a25a2222a0d10dde96f65a20254d3a7d0d`. The registered executable reported
 EU `v.2.4.1.1 #993` with SHA-256
 `fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
-The garage integration test verifies the streamed payload and trace using the
-UDP test peer. Live behavior was not tested with that executable.
+The garage integration test exercises the protocol with two UDP test peers and
+a resource bundle from that build.
 
 ## Creating a Training Room
 
@@ -140,6 +151,16 @@ eligible arenas. A creation attempt then returns `EVENT_DISABLED` (14), which
 the client displays as “This event is currently unavailable.” Earlier builds
 sent `CANNOT_CREATE` (9), which the EU client translated as “wrong team number.”
 
+The client labels the room comment **Description** in Create Room and
+Modify Room. Both dialogs show the field when
+`initialServerSettings.pre_moderation_config.prebattleDescriptionEnabled` is
+true. The [account bootstrap](../../src/player_sessions/infrastructure/bootstrap.rs#L13)
+sets it alongside Training Room visibility. The [settings window](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/TrainingSettingsWindow.py#L133)
+also checks the host's comment permission when editing. The key and field
+names are present in the installed EU build's compiled client scripts. The
+description in the room list tracks the current settings, including edits
+sent to room members.
+
 The server sends `onPrebattleJoined`, then `updatePrebattle` with settings (7),
 properties (10) and the one-host roster (1). The client creates its prebattle
 object on the join event and waits for both settings and roster before switching
@@ -147,6 +168,21 @@ to the room. The client automatically sends ready command `402` for the selected
 vehicle before opening the view. The server projects an owned vehicle's current
 descriptor from the account snapshot, emits player-state update (4), and acknowledges
 the command. Not-ready command `403` clears the roster's ready vehicle.
+The initial settings include `bonusType = 2` (Training) and shared
+`limits[0].maxCount = (20, 30)` for assigned and unassigned roster slots.
+The client inherits these limits for both teams. For the Observer toggle it
+subtracts five observer slots from the assigned limit, yielding 15 regular
+players per team. The server caps the room at 30 members overall and checks
+the destination roster's advertised limit on assignment.
+
+On EU `v.2.4.1.1 #993`, the native client log showed that changing back from
+Observer raised `KeyError: 'bonusType'` while calculating the regular-player
+limit. It also logged `Max count limit` when dropping a player onto a team
+that already had a member. Both checks are client-side, before it sends a
+command. The [Training Room view](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/TrainingRoomBase.py#L209)
+and [TeamLimits defaults](../references/wot-src/sources/res/scripts/common/prebattle_shared.py#L169)
+explain these checks and the zero assigned-slot fallback.
+
 The [Observer toggle](../references/wot-src/sources/res/scripts/client/gui/prb_control/entities/training/legacy/ctx.py#L73)
 uses ready command `402` with the reserved inventory value `-5000`. The server
 sends the stock `ussr:Observer` descriptor from the resource bundle in the same
@@ -159,19 +195,42 @@ and [training entry](../references/wot-src/sources/res/scripts/client/gui/prb_co
 show these boundaries.
 
 Invalid creation sends `onPrebattleJoinFailure`, which dismisses the creation
-overlay. Repeat requests replay the existing room snapshot. Leaving via command
-`401` removes the room and emits `onPrebattleLeft`. Disconnect or replacement
-also reclaims the room. The session owns the room and its ready state in memory.
-Inviting other players, joining another host and launching a battle are pending.
+overlay. Repeat requests replay the existing room snapshot. The gateway owns
+the room and the roster in memory. Each connected session belongs to at most
+one training room, with up to 30 players per room.
 
-The host moves between Team 1, Team 2 and the unassigned list through
+The [client joins](../references/wot-src/sources/res/scripts/client/Account.py#L789)
+with command `400`, using the selected room and cluster IDs (cluster `0` on
+this server). A successful request gets the same initial state as the host,
+with the guest role and the shared roster. Existing players receive the
+player-added roster update. Guests can change their own readiness and observer selection.
+The host controls team assignments, swaps and room settings. Battle launch
+remains pending.
+
+Both **Delete Room** and **Exit** go through
+[the client's leave action](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/TrainingRoomBase.py#L131)
+and send command `401`. The room advertises `destroyIfCreatorOut`, which the
+client uses to label the host's button. A host's leave removes the room from
+the directory, clears the guest memberships and sends `onPrebattleLeft` to
+everyone. A guest leaving only removes that guest and refreshes the room's
+roster. The same cleanup runs when a session disconnects or is replaced.
+
+**Exclude from tactical unit** sends
+[`CMD_PRB_KICK`](../references/wot-src/sources/res/scripts/client/Account.py#L878)
+(`414`) with the guest's Account entity ID and two zeros. The server verifies
+that the caller hosts the room and that the target is another member. It
+removes the guest from the roster, updates the remaining players, and sends
+the guest `onKickedFromPrebattle(10)` and the Training chat close action.
+The client uses reason `10` (`PLAYERKICK`) to return to the lobby. The room's
+usual join rules apply after removal.
+
+The host moves players between Team 1, Team 2 and the unassigned list through
 [`CMD_PRB_ASSIGN`](../references/wot-src/sources/res/scripts/client/Account.py#L809)
-(`404`). The arguments are the host's Account entity ID, the destination roster
+(`404`). The arguments are the target player's Account entity ID, the destination roster
 slot and group `0`. Assigned slots are `1` and `2`. Unassigned slots retain the
 previous team in `17` or `18`. The center button sends
 [`CMD_PRB_SWAP_TEAM`](../references/wot-src/sources/res/scripts/client/Account.py#L819)
-(`405`) with three zeros. It moves an assigned host to the opposite team and
-leaves an unassigned host in the unassigned list.
+(`405`) with three zeros. It switches both teams and leaves unassigned players in their current slots.
 
 Both commands send a full roster update (`1`) before acknowledging success.
 The [client replaces its roster cache](../references/wot-src/sources/res/scripts/client_common/ClientPrebattle.py#L69)
@@ -183,7 +242,7 @@ the room ID, readiness and the selected tank or observer descriptor.
 **Modify Room** sends one [account command](../references/wot-src/sources/res/scripts/client/Account.py#L834)
 per changed field. The map (`406`), duration (`407`) and open flag (`408`) use
 `doCmdInt3`. The comment (`409`) uses `doCmdStr`. Each command validates and
-applies its field independently to the host's active room. A changed field
+applies its field independently to the host's active room and publishes it to the roster. A changed field
 sends `updatePrebattle(8, pickle((setting_name, value)))` before the command
 acknowledgement. The client tracks all acknowledgements before dismissing
 “Changing settings…”. Same-value retries succeed without another update.
@@ -194,7 +253,55 @@ sends command `410` with index `0` for General or `1` for Team. New rooms use
 General. The server stores the selected mode in the room, publishes
 `arenaVoipChannels` through setting update `8`, and acknowledges the request.
 The room snapshot includes the selected mode. Voice audio transport remains
-outside the host-only lobby implementation.
+outside the lobby implementation.
+
+## Training Room invitations
+
+**Invite** sends [`accountPrebattle_sendPrebattleInvites`](../references/wot-src/sources/res/scripts/entity_defs/interfaces/AccountPrebattle.def#L54)
+with a batch of account IDs and one optional UTF-8 message. The room host can
+target up to 100 accounts per request with a message of up to 400 characters.
+The server deduplicates targets and delivers to players who have synchronized
+their garage on this server. Each room keeps a pending invitation per recipient
+session. The server applies the client's eight-second cooldown to valid batches.
+
+Delivery uses the client's legacy [`prebattleInvites` update](../references/wot-src/sources/res/scripts/client/Account.py#L1185),
+keyed by `(room_id, periphery_id)`. The update includes the host's name and
+account ID, message, room type and invitation state. It carries the recipient's
+current garage revision as both `prevRev` and `rev`. The client formats the
+notification and applies its invitation and ignore preferences. The configured
+[`periphery_id`](../server.md#running) must match the server-list entry used by
+the recipient. The installed EU build's custom server entry uses `250`.
+
+Accept (`417`) joins the room, including a **By invitation** room, after
+checking the recipient has an active invitation. Decline (`418`) consumes the
+invitation and updates the notification. Deleting the room or losing the
+host expires outstanding invitations. Disconnecting invalidates invitations
+for the old recipient session.
+
+## Training Room text chat
+
+After the room settings and roster, the server sends BW_CHAT2
+`INIT_UNIT_CHAT` (127) with prebattle type `2` and a zlib-compressed pickle of
+an empty message list. The [client's unit chat handler](../references/wot-src/sources/res/scripts/client/messenger/proto/bw_chat2/chat_handlers.py#L243)
+opens the built-in **Training** channel through the
+[localized channel entity](../references/wot-src/sources/res/scripts/client/messenger/proto/bw_chat2/entities.py#L39).
+Joining an open room follows the same path as creating one. Leaving closes
+the channel with `DEINIT_UNIT_CHAT` (128). When the host leaves or disconnects,
+the server closes it for each remaining player. Existing members receive
+player-added and player-removed roster updates so the native channel can
+refresh its member list. The action IDs were checked in the installed
+EU build's compiled `messenger_common_chat2.pyc`. Its English `chat.mo`
+renders the channel name as **Training**.
+
+Clients send `BROADCAST_UNIT_MESSAGE` (129) with UTF-8 text in `strArg1`.
+The server derives the room and sender from the authenticated session.
+It sends `ON_UNIT_MESSAGE_BROADCAST` (130) to current members, including the
+sender, and acknowledges the request separately. The
+[message wrapper](../references/wot-src/sources/res/scripts/client/messenger/proto/bw_chat2/wrappers.py#L35)
+reads the server timestamp, player ID, text and display name from the
+fixed argument dictionary. All roster slots share the channel, including
+unassigned players and observers. Messages are limited to 512 characters
+and one send per 500 milliseconds.
 
 ## Battle entry and return
 

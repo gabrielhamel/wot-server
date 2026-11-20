@@ -265,6 +265,10 @@ impl Gateway {
         if let Some(session) = self.sessions.get(&client) {
             self.xmpp.revoke(session.account.snapshot.id());
             self.social_disconnect(client);
+            self.remove_training_member(client);
+            for room in self.training_rooms.values_mut() {
+                room.remove_invite(client);
+            }
             self.sessions.remove(&client);
         }
     }

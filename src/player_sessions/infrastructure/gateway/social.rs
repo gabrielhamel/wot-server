@@ -132,6 +132,10 @@ impl Gateway {
             } => {
                 span.record("input.request_id", request);
                 span.record("input.action", command);
+                if command == training::CHAT_BROADCAST {
+                    span.record("input.text.bytes", args.strArg1.0.len());
+                    return self.broadcast_training_chat(client, entity, request, args.strArg1.0);
+                }
                 span.record("input.prefix.bytes", args.strArg1.0.len());
                 if command != 2 {
                     span.record("output.outcome", "unsupported_action");

@@ -307,6 +307,18 @@ impl Peer {
                                 Some(pickle::Value::Bool(visible)) => Some(*visible),
                                 _ => None,
                             };
+                            let pickle::Value::Dict(moderation) =
+                                &settings[&pickle::Value::from("pre_moderation_config")]
+                            else {
+                                panic!("Prebattle description settings");
+                            };
+                            assert_eq!(
+                                moderation[&pickle::Value::from("prebattleDescriptionEnabled")],
+                                pickle::Value::Bool(
+                                    self.training_room_visible
+                                        .expect("Training Room visibility")
+                                ),
+                            );
                             self.equipment_upgrades_enabled = matches!(
                                 settings.get(&pickle::Value::from("isTrophyDevicesEnabled")),
                                 Some(pickle::Value::Bool(true))
@@ -436,6 +448,11 @@ impl Peer {
             self.socket.send_bundle(&ack, self.base).unwrap();
         }
     }
+    pub fn clear_resource(&mut self, id: u16) {
+        self.resources.remove(&id);
+        self.completed.remove(&id);
+    }
+
     pub fn has_resource(&self, id: u16) -> bool {
         self.completed.contains_key(&id)
     }
