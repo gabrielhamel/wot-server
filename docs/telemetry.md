@@ -123,6 +123,17 @@ actually ran. For example, command 501 returns the current in-memory count.
         player_sessions.server_stats              [online count]
           mercury.response                        [receiveServerStats, sent]
 
+Across client protocols, unimplemented operations set their operation span
+status to `Error`, record `output.outcome=unimplemented`, and emit an
+error-level diagnostic event. This applies to account commands, exposed
+Mercury base methods, Mercury chat actions, and XMPP IQ operations or stanza
+types. Failure replies remain in the originating trace. Fire-and-forget
+requests emit the same error telemetry.
+
+Use `{ resource.service.name = "wot-server" && status = error && span.output.outcome = "unimplemented" }`
+in Tempo to find these operations. Mercury decode and dispatch failures set
+the `game.command` root to `Error` with their own outcome.
+
 Training Room discovery records the total room count, rooms returned and
 players in those rooms. It records `listed` when the page contains rooms,
 `empty` when it contains zero, and `invalid_request` for a malformed or

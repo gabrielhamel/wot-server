@@ -108,7 +108,7 @@ pub fn exercise(a: &mut Peer, b: &mut Peer, script: &ScriptDispatch, a_id: i64, 
         wait_event(peer, script, request, 13);
     }
     pause();
-    let args = Value::Dict(
+    let search_args = Value::Dict(
         [
             ("int32Arg1".into(), Value::Int32(50)),
             ("int64Arg1".into(), Value::Int64(0)),
@@ -122,7 +122,7 @@ pub fn exercise(a: &mut Peer, b: &mut Peer, script: &ScriptDispatch, a_id: i64, 
     a.command(
         script,
         "messenger_onActionByClient_chat2",
-        vec![Value::Int16(2), Value::UInt16(1003), args],
+        vec![Value::Int16(2), Value::UInt16(1003), search_args.clone()],
     );
     a.until(script, |p| {
         p.methods.iter().any(|(n, args)| {
@@ -144,6 +144,25 @@ pub fn exercise(a: &mut Peer, b: &mut Peer, script: &ScriptDispatch, a_id: i64, 
         panic!()
     };
     assert!(results.iter().any(|v| matches!(v,pickle::Value::Tuple(t) if t[0]==pickle::Value::Bytes(b"TestPlayerB".to_vec()) && t[1]==pickle::Value::I64(b_id))));
+    a.command(
+        script,
+        "messenger_onActionByClient_chat2",
+        vec![Value::Int16(32767), Value::UInt16(1901), search_args],
+    );
+    a.until(script, |p| {
+        p.methods.iter().any(|(name, args)| {
+            name.ends_with("messenger_onActionByServer_chat2")
+                && args[0].as_i64() == Some(1)
+                && args[1].as_i64() == Some(1901)
+                && matches!(&args[2], Value::Dict(data) if data["int32Arg1"].as_i64() == Some(7))
+        })
+    });
+    chat(a, script, 1902, 255, 0, 0, "");
+    a.until(script, |p| event(p, 1902, 20).is_some());
+    assert_eq!(
+        event(a, 1902, 20).unwrap()["actionResponse"].as_i64(),
+        Some(32)
+    );
     pause();
     chat(a, script, 1004, 3, 0, b_id, "ForgedName");
     wait_event(a, script, 1004, 15);

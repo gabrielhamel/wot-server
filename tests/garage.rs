@@ -459,6 +459,12 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             wot_server::pickle!((12, [("credits", 250000)]))
         );
         assert_eq!(first_peer.resource(223), wot_server::pickle!((1, [])));
+        first_peer.command(
+            &script,
+            "doCmdNoArgs",
+            vec![Value::Int16(228), Value::Int16(12345)],
+        );
+        first_peer.command(&script, "doCmdInt3", sync(202, 12345));
         first_peer.command(&script, "doCmdInt3", sync(227, 12345));
         first_peer.until(&script, |p| p.responses.contains(&(227, -1)));
         let module_cache = modules_flow::exercise(&mut second_peer, &script);
@@ -551,6 +557,8 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     worker.await.unwrap().unwrap();
     if result.is_ok() {
         telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
+        telemetry_capture::assert_unimplemented_command_traces(a.id);
+        telemetry_capture::assert_unimplemented_chat_traces(a.id);
         telemetry_capture::assert_training_room_bootstrap(training_room_visible);
         training_room_flow::assert_traces(a.id, b.id, training_room_available);
         telemetry_capture::assert_operation_traces(a.id, b.id, garage_capacity);

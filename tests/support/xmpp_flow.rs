@@ -201,6 +201,11 @@ pub fn exercise(
     assert!(rejected.until("</failure>").contains("not-authorized"));
     drop(rejected);
     let mut first = Chat::connect(address, a_id, &a_token);
+    first.write("<unknown id='unsupported-stanza'/>");
+    first.write("<iq type='set' id='unsupported-storage'><query xmlns='http://wargaming.net/xmpp#storage'/></iq>");
+    assert!(first.until("</iq>").contains("feature-not-implemented"));
+    first.write("<iq type='get' id='unsupported-query'><query xmlns='urn:wot:test:unknown'/></iq>");
+    assert!(first.until("</iq>").contains("feature-not-implemented"));
     first.write("<iq type='get' id='search'><nickname-prefix-search xmlns='http://wargaming.net/xmpp#spa-resolver' prefix='TestPlayerB' limit='50'/></iq>");
     let search = first.until("</iq>");
     assert!(search.contains(&format!("id='{b_id}' nickname='TestPlayerB'")));

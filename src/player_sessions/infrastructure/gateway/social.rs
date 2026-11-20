@@ -109,7 +109,7 @@ impl Gateway {
             })
     }
 
-    #[tracing::instrument(name = "player_sessions.social.social_command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, input.request_id = tracing::field::Empty, input.action = tracing::field::Empty, input.channel = tracing::field::Empty, input.text.bytes = tracing::field::Empty, input.prefix.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.social.social_command", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, input.request_id = tracing::field::Empty, input.action = tracing::field::Empty, input.channel = tracing::field::Empty, input.text.bytes = tracing::field::Empty, input.prefix.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     pub(super) fn social_command(
         &mut self,
         client: ClientKey,
@@ -138,19 +138,14 @@ impl Gateway {
                 }
                 span.record("input.prefix.bytes", args.strArg1.0.len());
                 if command != 2 {
-                    span.record("output.outcome", "unsupported_action");
-                    return self
-                        .base
-                        .entity(entity)?
-                        .messenger_onActionByServer_chat2(
-                            1,
-                            request,
-                            MessengerArgs {
-                                int32Arg1: 7,
-                                ..Default::default()
-                            },
-                        )
-                        .map_err(Into::into);
+                    span.record("output.outcome", "unimplemented");
+                    span.record("otel.status_code", "ERROR");
+                    error!(
+                        request_id = request,
+                        action = command,
+                        "Chat action is not implemented"
+                    );
+                    return self.search_error(entity, request, 7);
                 }
                 let Ok(prefix) = String::from_utf8(args.strArg1.0) else {
                     span.record("output.outcome", "invalid_search_prefix");
@@ -307,6 +302,13 @@ impl Gateway {
                         self.send_chat(entity, action(-1, 6, 0, Value::List(Vec::new())))?
                     }
                     _ => {
+                        span.record("output.outcome", "unimplemented");
+                        span.record("otel.status_code", "ERROR");
+                        error!(
+                            request_id,
+                            action = command,
+                            "Chat action is not implemented"
+                        );
                         self.social_error(entity, request_id, event_for(command), channel.0, 32)?
                     }
                 }

@@ -361,27 +361,36 @@ pub struct Bound {
     base_methods: Vec<Option<u16>>,
 }
 
+pub enum MethodDecodeError {
+    UnknownMethod,
+    Unimplemented,
+    Invalid,
+}
+
 impl Bound {
     /// Whether this is the given schema's binding.
     pub fn is<S: Schema>(&self) -> bool {
         self.schema == TypeId::of::<S>()
     }
 
-    /// Decode a call of one of the entity's base methods, if it is one the
-    /// given calls declare.
-    pub fn decode<M: Methods>(&self, call: &MethodCall) -> Option<M> {
+    /// Decode a base method call using the server's entity binding.
+    pub fn decode<M: Methods>(&self, call: &MethodCall) -> Result<M, MethodDecodeError> {
         if !self.is::<M::Schema>() {
-            return None;
+            return Err(MethodDecodeError::Invalid);
         }
         let MethodCall::Known {
             exposed_id, args, ..
         } = call
         else {
-            return None;
+            return Err(MethodDecodeError::UnknownMethod);
         };
 
-        let index = (*self.base_methods.get(*exposed_id as usize)?)?;
-        M::decode(index.into(), args.clone())
+        let index = self
+            .base_methods
+            .get(*exposed_id as usize)
+            .ok_or(MethodDecodeError::UnknownMethod)?
+            .ok_or(MethodDecodeError::Unimplemented)?;
+        M::decode(index.into(), args.clone()).ok_or(MethodDecodeError::Invalid)
     }
 }
 

@@ -282,6 +282,7 @@ async fn serve(
                                 "user.id" = connection.identity.as_ref().map(|(id, _)| id.to_string()),
                                 "output.stanza_count" = tracing::field::Empty,
                                 "output.outcome" = tracing::field::Empty,
+                                "otel.status_code" = tracing::field::Empty,
                             );
                             tracing::Instrument::instrument(async {
                                 if !connection.budget.admit(Instant::now()) {
@@ -299,6 +300,7 @@ async fn serve(
                                 let span = tracing::Span::current();
                                 if let Err(error) = &result {
                                     span.record("output.outcome", "failed");
+                                    span.record("otel.status_code", "ERROR");
                                     tracing::error!(%error, "XMPP request failed");
                                 } else {
                                     span.record("output.outcome", "handled");

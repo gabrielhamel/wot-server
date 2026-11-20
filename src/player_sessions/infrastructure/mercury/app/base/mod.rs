@@ -30,8 +30,8 @@ use super::{
     client,
     dispatch::{MethodCall, ScriptDispatch},
     entity::{
-        AnyEntity, BindError, EntityKey, EntitySchema, EntityView, Methods, RawEntity, Registry,
-        ScriptType,
+        AnyEntity, BindError, EntityKey, EntitySchema, EntityView, MethodDecodeError, Methods,
+        RawEntity, Registry, ScriptType,
     },
     io_invalid_data,
     outbox::{ClientOutbox, Outbox},
@@ -385,6 +385,7 @@ impl App {
             "input.command_id" = tracing::field::Empty,
             "input.request_id" = tracing::field::Empty,
             "output.outcome" = tracing::field::Empty,
+            "otel.status_code" = tracing::field::Empty,
             "client.address" = %addr.ip(),
             "client.port" = addr.port(),
             "network.peer.address" = %addr.ip(),
@@ -397,6 +398,7 @@ impl App {
                 .read::<element::BaseEntityMethod, _>(&dispatch.base_methods)
                 .map_err(|error| {
                     span.record("output.outcome", "wire_decode_failed");
+                    span.record("otel.status_code", "ERROR");
                     tracing::error!(%error, "Could not decode Mercury base method");
                     error
                 })?
@@ -727,10 +729,16 @@ impl App {
         &self,
         entity: EntityKey<AnyEntity>,
         call: &MethodCall,
-    ) -> Option<(EntityKey<M::Schema>, M)> {
-        let state = self.entities.get(entity.slot)?;
-        let call = self.entity_schemas.bound(state.type_id)?.decode(call)?;
-        Some((entity.cast(), call))
+    ) -> Result<(EntityKey<M::Schema>, M), MethodDecodeError> {
+        let state = self
+            .entities
+            .get(entity.slot)
+            .ok_or(MethodDecodeError::Invalid)?;
+        let binding = self
+            .entity_schemas
+            .bound(state.type_id)
+            .ok_or(MethodDecodeError::Invalid)?;
+        Ok((entity.cast(), binding.decode(call)?))
     }
 
     /// Create a new base-player entity of the given schema for a client. This becomes

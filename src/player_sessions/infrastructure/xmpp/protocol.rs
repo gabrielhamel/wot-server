@@ -211,7 +211,7 @@ impl Connection {
     pub fn bound(&self) -> bool {
         self.bound
     }
-    #[tracing::instrument(name = "player_sessions.xmpp.handle", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.stanza.bytes = stanza.len(), xmpp.stanza.name = tracing::field::Empty, xmpp.stanza.id = tracing::field::Empty, user.id = tracing::field::Empty, messaging.message.body.size = tracing::field::Empty, messaging.destination.id = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.xmpp.handle", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.stanza.bytes = stanza.len(), xmpp.stanza.name = tracing::field::Empty, xmpp.stanza.id = tracing::field::Empty, user.id = tracing::field::Empty, messaging.message.body.size = tracing::field::Empty, messaging.destination.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     pub async fn handle(&mut self, stanza: &str) -> Result<Vec<String>> {
         let wrapped = format!(
             "<root xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>{stanza}</root>"
@@ -404,7 +404,12 @@ impl Connection {
                     }
                 }
             }
-            _ => Ok(Vec::new()),
+            _ => {
+                span.record("output.outcome", "unimplemented");
+                span.record("otel.status_code", "ERROR");
+                tracing::error!("XMPP stanza is not implemented");
+                Ok(Vec::new())
+            }
         }
     }
 
@@ -496,7 +501,7 @@ impl Connection {
         }
     }
 
-    #[tracing::instrument(name = "player_sessions.xmpp.iq", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.owner = owner), err)]
+    #[tracing::instrument(name = "player_sessions.xmpp.iq", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.owner = owner, input.xmpp.query = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     async fn iq(&mut self, owner: i64, node: roxmltree::Node<'_, '_>) -> Result<Vec<String>> {
         let id = node.attribute("id").unwrap_or_default();
         let kind = node.attribute("type").unwrap_or_default();
@@ -550,7 +555,7 @@ impl Connection {
         let namespace = query.tag_name().namespace().unwrap_or_default();
         match namespace {
             "urn:ietf:params:xml:ns:xmpp-session" | "urn:xmpp:ping" => Ok(vec![result(id, "")]),
-            FILTER_ROSTER if kind != "get" => Ok(vec![error(id, "feature-not-implemented")]),
+            FILTER_ROSTER if kind != "get" => Ok(unimplemented_iq(id, "filter_roster")),
             "jabber:iq:roster" | FILTER_ROSTER => {
                 if kind == "set" {
                     let item = query.first_element_child().context("Missing roster item")?;
@@ -609,7 +614,7 @@ impl Connection {
             "urn:xmpp:blocking" => {
                 let tag = query.tag_name().name();
                 if kind == "set" && !matches!(tag, "block" | "unblock") {
-                    return Ok(vec![error(id, "feature-not-implemented")]);
+                    return Ok(unimplemented_iq(id, "blocking"));
                 }
                 if kind == "set" {
                     let items: Vec<_> = query
@@ -745,7 +750,7 @@ impl Connection {
                 Ok(replies)
             }
             "http://wargaming.net/xmpp#storage" if kind != "get" => {
-                Ok(vec![error(id, "feature-not-implemented")])
+                Ok(unimplemented_iq(id, "storage"))
             }
             "http://wargaming.net/xmpp#storage" => Ok(vec![result(
                 id,
@@ -761,7 +766,16 @@ impl Connection {
                     "<query xmlns='{namespace}'><identity category='server' type='im' name='wot-server'/><feature var='jabber:iq:roster'/><feature var='urn:xmpp:blocking'/><feature var='{RESOLVER}'/><feature var='{HISTORY}'/></query>"
                 ),
             )]),
-            _ => Ok(vec![error(id, "feature-not-implemented")]),
+            _ => Ok(unimplemented_iq(id, "unknown")),
         }
     }
+}
+
+fn unimplemented_iq(id: &str, query: &'static str) -> Vec<String> {
+    let span = tracing::Span::current();
+    span.record("input.xmpp.query", query);
+    span.record("output.outcome", "unimplemented");
+    span.record("otel.status_code", "ERROR");
+    tracing::error!("XMPP IQ operation is not implemented");
+    vec![error(id, "feature-not-implemented")]
 }
