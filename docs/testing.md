@@ -68,8 +68,8 @@ The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL
 service and runs the checked-out Rust code against the EU client resources
 from the latest published server image. The job logs the bundle version used
 for the run. Publishing separately updates the client from the EU production
-channel, boots the final image and runs the garage suite with the resources
-copied from that image before pushing any tags. The garage suite checks the
+channel, boots the final image and runs the E2E suite with the resources
+copied from that image before pushing any tags. The E2E suite checks the
 version property and value in the decoded Account creation packet and the
 property name on the trace that delivers `showGUI`.
 

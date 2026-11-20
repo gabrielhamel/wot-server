@@ -126,13 +126,13 @@ jobs:
             exit 1
           fi
 
-      - name: Check startup and run garage E2E against packaged resources
+      - name: Check startup and run E2E tests against packaged resources
         env:
           IMAGE: ${{ steps.image.outputs.commit }}
           POSTGRES_IMAGE: docker.io/library/postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
         run: |
           smoke="wot-smoke-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          test_image="wot-garage-e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          test_image="wot-e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           config_dir=$(mktemp -d "$RUNNER_TEMP/wot-smoke.XXXXXX")
           cleanup() {
             docker rm -fv "$smoke-server" "$smoke-db" "$smoke-e2e" >/dev/null 2>&1 || true
@@ -181,7 +181,7 @@ jobs:
           fi
           docker stop "$smoke-server"
 
-          docker build --target garage-e2e --tag "$test_image" .
+          docker build --target e2e --tag "$test_image" .
           docker exec "$smoke-db" createdb -U wot_smoke wot_e2e
           docker create --name "$smoke-e2e" --network "$smoke" \
             -e WG_TEST_DATABASE_URL=postgresql://wot_smoke:ci-only@postgres:5432/wot_e2e \

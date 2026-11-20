@@ -28,7 +28,7 @@ RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sh
     cargo build --locked --release --bin wot-server && \
     cp target/release/wot-server /build/wot-server
 
-FROM rust-source AS garage-e2e-build
+FROM rust-source AS e2e-build
 COPY tests/support/ tests/support/
 RUN apt-get update && apt-get install -y --no-install-recommends jq \
     && rm -rf /var/lib/apt/lists/*
@@ -37,17 +37,17 @@ RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sh
     --mount=type=cache,id=wot-e2e-target,target=/build/target,sharing=locked \
     cargo clean -p wot-server -p wot-resources && \
     cargo test --locked -p wot-server --features integration-test-support --test garage \
-        --no-run --message-format=json-render-diagnostics > /tmp/garage-build.json && \
-    garage=$(jq -er 'select(.reason == "compiler-artifact" and .target.name == "garage" and .profile.test) | .executable | strings' /tmp/garage-build.json) && \
-    cp "$garage" /build/garage-e2e && \
+        --no-run --message-format=json-render-diagnostics > /tmp/e2e-build.json && \
+    test_executable=$(jq -er 'select(.reason == "compiler-artifact" and .target.name == "garage" and .profile.test) | .executable | strings' /tmp/e2e-build.json) && \
+    cp "$test_executable" /build/wot-e2e && \
     cp target/debug/wot-server /build/wot-server
 
-FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS garage-e2e
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS e2e
 WORKDIR /opt/wot-server
-COPY --from=garage-e2e-build /build/garage-e2e /usr/local/bin/garage-e2e
+COPY --from=e2e-build /build/wot-e2e /usr/local/bin/wot-e2e
 # The web test launches the server using Cargo's compile-time executable path.
-COPY --from=garage-e2e-build /build/wot-server /build/target/debug/wot-server
-ENTRYPOINT ["/usr/local/bin/garage-e2e"]
+COPY --from=e2e-build /build/wot-server /build/target/debug/wot-server
+ENTRYPOINT ["/usr/local/bin/wot-e2e"]
 
 FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS web-build
 WORKDIR /build

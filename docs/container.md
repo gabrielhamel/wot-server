@@ -25,14 +25,14 @@ contains the same manifest version before publishing.
 The extractor and server builds share BuildKit caches for the Cargo registry
 and compiled dependencies. They reuse these caches while the runner's Docker
 storage is available and rebuild the workspace crates when source layers change.
-The garage test build shares the Cargo registry cache and uses a separate
+The E2E test build shares the Cargo registry cache and uses a separate
 cache for compiled test dependencies.
 
 Before pushing any tags, the workflow starts the final image alongside a
 fresh PostgreSQL instance on an isolated Docker network. It then copies the
-resources out of that image and runs the existing garage E2E suite from the
+resources out of that image and runs the existing E2E suite from the
 release checkout against a separate test database. Both startup and the
-garage suite must pass before publication. The workflow removes the test
+E2E suite must pass before publication. The workflow removes the test
 containers, network and local test image after the run.
 
 ## Run an image
