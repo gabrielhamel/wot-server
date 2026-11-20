@@ -7,8 +7,8 @@ runs:
     - name: Install wg-launcher
       shell: bash
       env:
-        LAUNCHER_VERSION: '1.4.0'
-        LAUNCHER_SHA256: 8e2c39741c435c38302474ad18ea067401edb1732ec1b673c66892085fd72ee0
+        LAUNCHER_VERSION: '1.5.1'
+        LAUNCHER_SHA256: 5dbbb90755ac013a157ae657af18110a6d78dc563d45b500452303b9e09418cc
       run: |
         archive=wg-launcher-cli-x86_64-unknown-linux-gnu
         launcher_dir=$(mktemp -d "$RUNNER_TEMP/wg-launcher.XXXXXX")
