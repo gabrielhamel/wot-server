@@ -14,7 +14,7 @@ use std::{
 use tokio::{
     io::AsyncWriteExt,
     net::{TcpListener, TcpStream},
-    sync::{Semaphore, mpsc, watch},
+    sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch},
     task::JoinHandle,
 };
 
@@ -79,8 +79,7 @@ impl XmppServer {
                         let Ok(permit)=permits.clone().try_acquire_owned() else {continue;};
                         let state=state.clone(); let stop=stop.clone();
                         tokio::spawn(async move {
-                            let _permit=permit;
-                            if let Err(error)=serve(socket,address,state,stop).await {tracing::debug!(%address,%error,"XMPP connection ended");}
+                            if let Err(error)=serve(socket,address,state,stop,permit).await {tracing::debug!(%address,%error,"XMPP connection ended");}
                         });
                     }
                 }
@@ -234,6 +233,7 @@ async fn serve(
     address: SocketAddr,
     state: Arc<Shared>,
     mut shutdown: watch::Receiver<bool>,
+    permit: OwnedSemaphorePermit,
 ) -> Result<()> {
     tracing::debug!(%address, "Accepted XMPP connection");
     let (mut read, mut write) = socket.into_split();
@@ -326,6 +326,9 @@ async fn serve(
             let _ = tokio::time::timeout(Duration::from_secs(10), state.presence(*id, false)).await;
         }
     }
+    // Release admission before dropping the socket halves, so a peer that
+    // observes EOF can reconnect after its session cleanup has finished.
+    drop(permit);
     let span = tracing::Span::current();
     match result {
         Ok(reason) => {
