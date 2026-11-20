@@ -11,6 +11,18 @@ requested.
 Build a complete, functional server for World of Tanks. This repository,
 `wot-server`, is the home of the server implementation and its binary.
 
+## Game client compatibility
+
+Target only the latest EU production World of Tanks client. Do not maintain
+backward compatibility, version-specific branches, or lists of supported game
+builds. Load protocol definitions from the current bundle and validate the
+expected wire structure. CI and publishing must use rolling resources without
+pinning a game build or a resource image digest. Keep setup and support
+documentation version-neutral. Record exact versions in historical research,
+validation evidence and notes about breaking client changes.
+
+## Research workspace
+
 The workspace uses the server project, four reference submodules, and a supplied
 game client. Paths below are relative to the repository root unless absolute:
 

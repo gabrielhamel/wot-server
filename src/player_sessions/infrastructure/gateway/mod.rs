@@ -1,6 +1,6 @@
 use super::{
     bootstrap,
-    schema::{Account, AccountBase, AccountData, ServerStats},
+    schema::{Account, AccountBase, AccountBootstrap, ServerStats},
 };
 use crate::{
     accounts::contract::{GameAccounts, GarageCommands, GarageQueries, PreparedAccount},
@@ -159,6 +159,7 @@ pub struct Gateway {
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
     training_arenas: HashSet<i32>,
+    account_bootstrap: AccountBootstrap,
     training_rooms: BTreeMap<u32, training::HostedRoom>,
     last_training_room_id: u32,
     pending_writes: HashSet<i64>,
@@ -206,6 +207,8 @@ impl Gateway {
         let mut base = base::App::from_socket(base_socket, script);
         base.register::<Account>()
             .context("Bind garage Account schema")?;
+        let account_bootstrap =
+            AccountBootstrap::bind(base.dispatch()).context("Bind garage Account creation data")?;
         let training_arenas =
             training::load_arenas(resources).context("Load Training Room maps")?;
         if config.training_room_visible && training_arenas.is_empty() {
@@ -239,6 +242,7 @@ impl Gateway {
             tickets: HashMap::new(),
             sessions: HashMap::new(),
             training_arenas,
+            account_bootstrap,
             training_rooms: BTreeMap::new(),
             last_training_room_id: 0,
             pending_writes: HashSet::new(),
@@ -511,7 +515,7 @@ impl Gateway {
         }
     }
 
-    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty, output.training_room.description_enabled = tracing::field::Empty, output.equipment_upgrades.enabled = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.account.version_property = tracing::field::Empty, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty, output.training_room.description_enabled = tracing::field::Empty, output.equipment_upgrades.enabled = tracing::field::Empty), err)]
     fn enable(&mut self, client: ClientKey) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
@@ -531,11 +535,9 @@ impl Gateway {
         let equipment_upgrades = self.catalog.equipment_upgrades_enabled();
         let entity = self.base.create_base_player::<Account>(
             client,
-            AccountData {
-                name: snapshot.display_name().to_owned(),
-                incarnationID: 1000,
-                requiredVersion_2410: self.catalog.required_version().to_owned(),
-                initialServerSettings: bootstrap::server_settings_with_chat(
+            self.account_bootstrap.encode(
+                snapshot.display_name(),
+                bootstrap::server_settings_with_chat(
                     super::endpoint::advertised_base(
                         self.config.advertised_base,
                         self.base.addr()?,
@@ -547,8 +549,12 @@ impl Gateway {
                     self.config.training_room_visible,
                     equipment_upgrades,
                 ),
-            },
+            ),
         )?;
+        tracing::Span::current().record(
+            "output.account.version_property",
+            self.account_bootstrap.version_property(),
+        );
         tracing::Span::current().record(
             "output.training_room.visible",
             self.config.training_room_visible,

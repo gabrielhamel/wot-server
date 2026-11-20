@@ -58,6 +58,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`network.protocol.name`](../src/player_sessions/infrastructure/gateway/mod.rs) | `mercury` for game authentication/commands, `xmpp` for incoming XMPP requests. |
 | [`output.store.host`](../src/player_sessions/infrastructure/gateway/mod.rs) | Exact Store hostname or IP included in the client browser allowlist when the Account entity is created. Omitted when the Store is disabled. |
 | [`output.training_room.visible`](../src/player_sessions/infrastructure/gateway/mod.rs) | Boolean Training Room visibility flag on `player_sessions.enable` after the Account creation is queued. |
+| [`output.account.version_property`](../src/player_sessions/infrastructure/gateway/mod.rs) | Account version field name from the bundle on `player_sessions.enable` after Account creation is queued. |
 | [`output.training_room.description_enabled`](../src/player_sessions/infrastructure/gateway/mod.rs) | Boolean Description field enable flag for Create Room and Modify Room on `player_sessions.enable` after the Account creation is queued. |
 | [`rpc.method`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Known incoming entity method on `game.command` or outbound entity method on `mercury.response`. |
 | [`wot.client.protocol_version`](../src/player_sessions/infrastructure/gateway/mod.rs) | Protocol number supplied by the game login request; not a confirmed game release version. |
@@ -338,7 +339,7 @@ same resource accompanies logs and metrics. Source:
 | --- | --- |
 | `service.name` | Nonempty `OTEL_SERVICE_NAME`, otherwise the Cargo package name (`wot-server`). |
 | `service.version` | Nonempty build-time `WOT_SERVER_VERSION`, otherwise the Cargo package version; release builds supply the release tag. |
-| `wot.game.build_version` | Nonempty build-time `WOT_GAME_VERSION` (launcher build used to extract resources); omitted when not supplied. |
+| `wot.game.build_version` | Nonempty build-time `WOT_GAME_VERSION`. Release images use the bundled client version as formatted for the image tag. Omitted when not supplied. |
 | `wot.game.version` | Game version read from the loaded resource bundle manifest; omitted if the bundle cannot be opened or lacks that value. |
 | `telemetry.sdk.name` | SDK name supplied by the OpenTelemetry resource detector. |
 | `telemetry.sdk.language` | SDK language supplied by the resource detector (`rust`). |

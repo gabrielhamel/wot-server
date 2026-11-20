@@ -35,10 +35,6 @@ impl GarageQueries {
         self.0.shop_revision()
     }
 
-    pub fn required_version(&self) -> &str {
-        &self.0.required_version
-    }
-
     pub fn shop_data(&self) -> Arc<Vec<u8>> {
         self.0.shop.clone()
     }

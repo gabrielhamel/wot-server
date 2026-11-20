@@ -1,6 +1,13 @@
-use crate::player_sessions::mercury::app::entity::entity_schema;
-use crate::player_sessions::mercury::app::entity::{Bytes, EntityId, Pickle};
+use crate::player_sessions::mercury::{
+    app::{
+        dispatch::ScriptDispatch,
+        entity::{Bytes, EntityId, Pickle, ScriptType, dict_check, dict_field_ty, entity_schema},
+    },
+    script::{PropertyFlags, StringValue, Ty, Value},
+};
 use crate::script_dict;
+use anyhow::{Context, Result, ensure};
+use std::sync::Arc;
 entity_schema! {
     pub Account {
         client {
@@ -56,18 +63,89 @@ script_dict! {
     }
 }
 
-script_dict! {
-    /// The `Account`'s base data, which its client gets as it is created: its player,
-    /// the client version it requires and the server's settings.
-    #[derive(Debug, Clone)]
-    pub struct AccountData {
-        pub name: String,
-        /// How many sessions the player had, the client telling new players by it.
-        pub incarnationID: u64,
-        /// The client version the server requires, refusing others.
-        pub requiredVersion_2410: String,
-        /// A dict of the server's settings, of every feature the client reads at login.
-        pub initialServerSettings: Pickle,
+pub(super) struct AccountBootstrap {
+    version_property: Arc<str>,
+    required_version: String,
+    settings_type: Ty,
+}
+
+impl AccountBootstrap {
+    pub(super) fn bind(dispatch: &ScriptDispatch) -> Result<Self> {
+        let interface = dispatch
+            .script
+            .interfaces
+            .iter()
+            .find(|interface| &*interface.name == "AccountVersion")
+            .context("Missing AccountVersion interface")?;
+        let mut versions = interface
+            .properties
+            .iter()
+            .filter(|property| property.name.starts_with("requiredVersion_"));
+        let property = versions
+            .next()
+            .context("Unsupported AccountVersion property")?;
+        ensure!(
+            versions.next().is_none(),
+            "Ambiguous AccountVersion properties"
+        );
+        ensure!(
+            property.flags == PropertyFlags::BaseAndClient && String::check(&property.ty),
+            "AccountVersion property must be a BASE_AND_CLIENT STRING"
+        );
+        let required_version = property
+            .default
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .context("Missing AccountVersion property default")?
+            .clone();
+        let (_, account) = dispatch
+            .entity_from_name("Account")
+            .context("Missing Account entity")?;
+        ensure!(
+            dict_check(
+                &account.data_ty,
+                &[
+                    ("name", String::check),
+                    ("incarnationID", u64::check),
+                    (&property.name, String::check),
+                    ("initialServerSettings", Pickle::check),
+                ],
+            ),
+            "Account creation data does not match the server bootstrap schema"
+        );
+        let settings_type = dict_field_ty(&account.data_ty, "initialServerSettings")
+            .context("Missing Account initialServerSettings type")?
+            .clone();
+        Ok(Self {
+            version_property: property.name.clone(),
+            required_version,
+            settings_type,
+        })
+    }
+
+    pub(super) fn version_property(&self) -> &str {
+        &self.version_property
+    }
+
+    pub(super) fn encode(&self, name: &str, settings: Pickle) -> Value {
+        Value::Dict(
+            [
+                (
+                    "name".into(),
+                    Value::String(StringValue::String(name.to_owned())),
+                ),
+                ("incarnationID".into(), Value::UInt64(1000)),
+                (
+                    self.version_property.clone(),
+                    Value::String(StringValue::String(self.required_version.clone())),
+                ),
+                (
+                    "initialServerSettings".into(),
+                    settings.into_value(&self.settings_type),
+                ),
+            ]
+            .into(),
+        )
     }
 }
 

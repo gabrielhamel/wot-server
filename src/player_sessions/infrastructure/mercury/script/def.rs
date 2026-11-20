@@ -129,7 +129,7 @@ pub struct Property {
     pub indexed: bool,
     #[allow(unused)] // Not used for generation
     pub database_len: Option<u32>,
-    #[allow(unused)] // Not used for generation
+    /// The default when declared as a string.
     pub default: Option<String>,
     pub flags: PropertyFlags,
     /// Whether the def lists it under `<Volatile>`: a dynamic component's volatile

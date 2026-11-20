@@ -66,14 +66,16 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           cache-bin: false
-      - name: Copy the EU 2.4.1.5514 resource fixture
+      - name: Copy the latest published EU client resources
         env:
-          RESOURCE_IMAGE: ghcr.io/gabrielhamel/wot-server@sha256:2eaca561245af32e92b97c8f819d84d754d87c32f27dbcf5538b574c15e6b912
+          RESOURCE_IMAGE: ghcr.io/gabrielhamel/wot-server:latest
+          WG_RESOURCE_DIR: ${{ runner.temp }}/wot-e2e-resources
         run: |
           docker pull "$RESOURCE_IMAGE"
           container=$(docker create "$RESOURCE_IMAGE")
           trap 'docker rm "$container"' EXIT
-          docker cp "$container:/opt/wot-server/resources" "$RUNNER_TEMP/wot-e2e-resources"
+          docker cp "$container:/opt/wot-server/resources" "$WG_RESOURCE_DIR"
+          jq -r '"Test resource version: \(.game_version)"' "$WG_RESOURCE_DIR/manifest.json"
       - name: Run PostgreSQL and protocol E2E tests
         env:
           WG_RESOURCE_DIR: ${{ runner.temp }}/wot-e2e-resources

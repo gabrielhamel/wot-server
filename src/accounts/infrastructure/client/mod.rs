@@ -37,7 +37,6 @@ use crate::accounts::{
     contract::{AccountView, PreparedAccount},
 };
 use crate::platform::client_formats::pickle::Value;
-use crate::platform::client_formats::pxml;
 use anyhow::{Context, Result};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -65,7 +64,6 @@ pub struct GarageCatalog {
     supply_slots: supply_slots::SupplySlots,
     observer_descriptor: Option<Vec<u8>>,
     elite_progression_trees: BTreeSet<String>,
-    pub(in crate::accounts) required_version: String,
     pub(in crate::accounts) shop: Arc<Vec<u8>>,
 }
 
@@ -161,12 +159,6 @@ impl GarageCatalog {
     }
 
     pub fn load(fs: ResourceBundle, keys: &[String]) -> Result<Self> {
-        let def = item_defs::read_xml(&fs, "scripts/entity_defs/interfaces/AccountVersion.def")?;
-        let required_version = def
-            .get_child_value_at(&["Properties", "requiredVersion_2410", "Default"])
-            .and_then(pxml::Value::as_string)
-            .context("Unsupported resources: missing requiredVersion_2410")?
-            .to_owned();
         let passports = (0..item_defs::NATIONS.len())
             .map(|nation| crew::Passports::load(&fs, nation as u8))
             .collect::<std::io::Result<Vec<_>>>()?;
@@ -257,7 +249,6 @@ impl GarageCatalog {
             supply_slots,
             observer_descriptor,
             elite_progression_trees,
-            required_version,
             shop,
         };
         for key in keys {

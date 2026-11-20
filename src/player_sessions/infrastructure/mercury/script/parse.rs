@@ -150,7 +150,10 @@ pub fn parse_property(elt: &Element, tys: &mut TySystem, name: String) -> Proper
             .get_child("DatabaseLength")
             .and_then(Value::as_integer)
             .and_then(|v| u32::try_from(v).ok()),
-        default: None, // TODO:
+        default: elt
+            .get_child("Default")
+            .and_then(Value::as_string)
+            .map(str::to_owned),
         flags: match flags {
             "" => PropertyFlags::None,
             "BASE" => PropertyFlags::Base,

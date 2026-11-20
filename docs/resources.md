@@ -45,8 +45,7 @@ server. Older manifests without the field remain supported.
 
 The extractor copies selected definition files as complete files and preserves
 their resource paths. It omits executables, packages, artwork, map assets and
-audio. With installed EU `2.4.1.5514` the selected files total about 88 MB
-before compression. Both bundles and game files should stay outside Git.
+audio. Both bundles and game files should stay outside Git.
 
 Package files take precedence over loose files. The extractor uses package
 order from `paths.xml` where present and considers remaining installed packages

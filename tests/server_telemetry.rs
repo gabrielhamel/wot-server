@@ -38,7 +38,7 @@ impl ServerHome {
         fs::create_dir(home.0.join("resources")).unwrap();
         fs::write(
             home.0.join("resources/manifest.json"),
-            r#"{"format_version":1,"component_client_classes":[],"game_version":"v.2.4.1.1 #993"}"#,
+            r#"{"format_version":1,"component_client_classes":[],"game_version":"synthetic-client-build"}"#,
         )
         .unwrap();
         home
@@ -164,7 +164,7 @@ fn resource_bundle_preserves_source_version_and_reads_legacy_manifests() {
         wot_resources::ResourceBundle::open(&root)
             .unwrap()
             .game_version(),
-        Some("v.2.4.1.1 #993")
+        Some("synthetic-client-build")
     );
     fs::write(
         root.join("manifest.json"),
@@ -212,7 +212,7 @@ fn assert_resource(resource: Option<Resource>) {
                 .filter(|version| !version.is_empty())
                 .unwrap_or(env!("CARGO_PKG_VERSION")),
         ),
-        ("wot.game.version", "v.2.4.1.1 #993"),
+        ("wot.game.version", "synthetic-client-build"),
     ] {
         assert!(
             attributes.iter().any(|attribute| {

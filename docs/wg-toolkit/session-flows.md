@@ -23,9 +23,11 @@ before deciding what validation and abuse controls to retain or strengthen.
 ## Hangar bootstrap
 
 `enter_account` creates `AccountData` for the entity with `name`, `incarnationID`,
-`requiredVersion_2410`, and `initialServerSettings`; `showGUI` supplies further
-context. `requiredVersion_2410` is loaded from the client's `AccountVersion.def`.
-The field name itself is version-specific even though most dispatch is dynamic.
+the required version property, and `initialServerSettings`. The `showGUI` call
+supplies further context. Player Sessions reads the version property's name
+and default from the bundled `AccountVersion.def` and validates the Account
+creation layout at startup. See the [client breaking changes](../client-breaking-changes.md)
+for the observed version field rename.
 
 The client then requests account/shop information. The hangar scene itself is
 client-local according to the existing [hangar research](../references/wg-toolkit-rs/doc/HANGAR_LOADING.md):

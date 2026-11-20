@@ -42,8 +42,8 @@ schema includes the social tables alongside accounts and inventory.
 
 Source paths below are relative to
 `docs/references/wot-src/sources/res/scripts/`. The decompiled tree
-reports EU `v.2.4.1.1 #993`; original executable reference is `2.4.1.5498`, and
-installed resources used in integration tests are `2.4.1.5514`.
+used for this research reports EU `v.2.4.1.1 #993`. The original executable
+reference was `2.4.1.5498`.
 
 Confirmed from supplied client sources:
 

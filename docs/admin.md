@@ -8,8 +8,7 @@ modules, basic crew and default ammunition. Players can use their new
 credentials in the game client's basic login flow immediately after creation.
 
 The catalog selects the tier I starters from regular nation tech trees and
-excludes collector vehicles. The initial settings are a client-compatible
-baseline recorded with the EU 2.4.1.5514 resources. See the
+excludes collector vehicles. The initial settings use the
 [starter settings](../src/accounts/infrastructure/client/starter_settings.json).
 
 Players and administrators share the **My garage** and **Store** views when

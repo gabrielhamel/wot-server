@@ -19,7 +19,7 @@ use wot_server::player_sessions::test_support::mercury::net::{
     proto::Protocol,
     socket::PacketSocket,
 };
-use wot_server::player_sessions::test_support::mercury::script::Value;
+use wot_server::player_sessions::test_support::mercury::script::{StringValue, Value};
 
 struct Method<'a> {
     methods: &'a [MethodDef],
@@ -293,6 +293,12 @@ impl Peer {
                             let Value::Dict(properties) = creation.entity_data.as_ref() else {
                                 panic!("Account creation properties")
                             };
+                            let (version_property, required_version) =
+                                super::account_version(dispatch);
+                            assert_eq!(
+                                properties[version_property],
+                                Value::String(StringValue::String(required_version.to_owned()))
+                            );
                             let Value::Python(
                                 wot_server::player_sessions::test_support::mercury::script::PythonValue::Decoded(
                                     pickle::Value::Dict(settings),

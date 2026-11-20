@@ -83,7 +83,8 @@ both full syncs and equipment updates.
 
 ## Compatibility evidence
 
-The installed client reports `v.2.4.1.1 #993` in `version.xml`. Packed XML
+The client examined for this research reported `v.2.4.1.1 #993` in
+`version.xml`. Packed XML
 under `scripts/item_defs/vehicles` supplies `common/optional_devices.xml`,
 `common/supply_slot_types.xml`, nation `list.xml` tier and tags, and each tank's
 `supplySlots`. The installed optional-device rules use tier, nation and
@@ -119,8 +120,9 @@ partial changes. Upgrade coverage checks the bootstrap flag, live and default
 shop prices, Depot conversion, in-place upgrades, and invalid requests for
 both Bounty and Experimental Equipment.
 Reconnection verifies the persisted balance and loadout.
-The test uses resources from the installed EU `v.2.4.1.1 #993` executable
-with SHA-256 `fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
+The test uses the configured resource bundle. The original verification used
+resources from EU `v.2.4.1.1 #993` with executable SHA-256
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
 
 Garage support covers one setup. The admin Components grant adds the
 `equipCoin` balance used by Experimental Equipment upgrades and demounting.

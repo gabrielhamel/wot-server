@@ -36,7 +36,7 @@ Player Sessions owns the Training text channel through live room membership.
 | `infrastructure/gateway/social.rs` | Messenger wire translation, bounded async Social requests, presence and private delivery. |
 | `infrastructure/xmpp/` | Bounded TCP/XML handling, game-issued token admission, native roster, presence, offline/history and WG extension translation. |
 | `infrastructure/credentials.rs` | Translate the basic-login JSON envelope into an account identity; reject official token methods. |
-| `infrastructure/schema.rs` | Version-bound Account wire schema; separate from account domain models. |
+| `infrastructure/schema.rs` | Bind the Account wire schema and select its version property and default from the resource bundle at startup. |
 | `infrastructure/bootstrap.rs` | Client bootstrap settings, the Store hostname allowlist, account-specific GUI context and placeholder web-service token responses. |
 | `infrastructure/endpoint.rs` | Resolve the BaseApp handoff: loopback for local peers when bound, then the configured destination or route to each client. |
 

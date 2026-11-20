@@ -8,8 +8,8 @@ The original toolkit audit predates the runtime implementation. wot-server now h
 Accounts and Player Sessions contexts and a PostgreSQL-backed login/garage slice alongside
 offline Binary Mapping. See [current server behavior](../server.md) and the
 [implemented context map](../../CONTEXT_MAP.md). The broader plan below remains
-a roadmap; real-client login and garage rendering now pass for the installed `2.4.1.5514`
-client; remaining lobby compatibility issues are recorded separately.
+a roadmap. Earlier login and garage walkthroughs and remaining lobby issues
+are recorded in the [client validation record](../client-validation.md).
 
 The compatibility target is the observable client-facing contract. We need
 account/session behavior, spatial replication and authoritative battles; we do
