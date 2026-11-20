@@ -10,6 +10,8 @@
 !src/**
 !tests/
 !tests/*.rs
+!tests/support/
+!tests/support/**/*.rs
 !package.json
 !package-lock.json
 tools/web/node_modules/

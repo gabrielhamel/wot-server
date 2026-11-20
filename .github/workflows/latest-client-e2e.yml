@@ -1,0 +1,26 @@
+name: Latest client E2E
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+      timezone: Europe/Paris
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: [self-hosted, linux, x64, wot-server-image]
+    timeout-minutes: 180
+    env:
+      GAME_DIR: /cache/wot/eu-sd-en
+      DOCKER_BUILDKIT: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/extract-game-resources
+      - uses: ./.github/actions/run-e2e
+        with:
+          resources: resources

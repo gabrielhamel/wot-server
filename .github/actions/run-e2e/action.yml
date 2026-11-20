@@ -1,0 +1,45 @@
+name: Run E2E tests
+description: Test the checked-out server against a resource bundle and a fresh PostgreSQL database.
+
+inputs:
+  resources:
+    description: Path to the resource bundle on the Actions runner.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build and run E2E tests
+      shell: bash
+      env:
+        RESOURCE_DIR: ${{ inputs.resources }}
+        POSTGRES_IMAGE: docker.io/library/postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+      run: |
+        test_name="wot-e2e-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+        cleanup() {
+          docker rm -fv "$test_name-tests" "$test_name-db" >/dev/null 2>&1 || true
+          docker network rm "$test_name" >/dev/null 2>&1 || true
+          docker image rm "$test_name" >/dev/null 2>&1 || true
+        }
+        trap cleanup EXIT
+        docker build --target e2e --tag "$test_name" .
+        docker network create --internal "$test_name"
+        docker run -d --name "$test_name-db" --network "$test_name" --network-alias postgres \
+          -e POSTGRES_USER=wot_e2e -e POSTGRES_PASSWORD=ci-only "$POSTGRES_IMAGE"
+        for attempt in {1..60}; do
+          if docker exec "$test_name-db" pg_isready -h 127.0.0.1 -U wot_e2e -d wot_e2e; then
+            break
+          fi
+          if [[ $attempt == 60 ]]; then
+            docker logs "$test_name-db"
+            exit 1
+          fi
+          sleep 1
+        done
+        docker create --name "$test_name-tests" --network "$test_name" \
+          -e WG_TEST_DATABASE_URL=postgresql://wot_e2e:ci-only@postgres:5432/wot_e2e \
+          -e WG_RESOURCE_DIR=/opt/wot-server/resources \
+          "$test_name" --ignored
+        docker cp "$RESOURCE_DIR" "$test_name-tests:/opt/wot-server/resources"
+        timeout 10m docker start --attach "$test_name-tests"
+        [[ $(docker inspect --format '{{.State.ExitCode}}' "$test_name-tests") == 0 ]]
