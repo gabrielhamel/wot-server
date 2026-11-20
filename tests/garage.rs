@@ -325,6 +325,15 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         let mut second_peer = Peer::new(public_key.clone());
         second_peer.connect(login, &second, "password-b");
         second_peer.until(&script, |p| p.created && p.shown);
+        if training_room_available {
+            training_room_flow::exercise_shared(
+                &mut first_peer,
+                &mut second_peer,
+                &script,
+                a.id,
+                b.id,
+            );
+        }
         social_flow::exercise(&mut first_peer, &mut second_peer, &script, a.id, b.id);
         xmpp_flow::exercise(
             &mut first_peer,
@@ -364,6 +373,8 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         let mut first_peer = replacement;
         if training_room_available {
             training_room_flow::assert_room_gone(&mut first_peer, &script, training_vehicle_id);
+            training_room_flow::assert_room_gone(&mut second_peer, &script, training_vehicle_id);
+            training_room_flow::assert_empty_list(&mut second_peer, &script);
         }
         let sync = |id, cmd| {
             vec![
@@ -528,7 +539,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     if result.is_ok() {
         telemetry_capture::assert_player_spans(a.id, &first, "TestPlayerA");
         telemetry_capture::assert_training_room_bootstrap(training_room_visible);
-        training_room_flow::assert_traces(a.id, training_room_available);
+        training_room_flow::assert_traces(a.id, b.id, training_room_available);
         telemetry_capture::assert_operation_traces(a.id, b.id);
         telemetry_capture::assert_equipment_traces(equipment_account);
         if has_camouflage {

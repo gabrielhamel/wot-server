@@ -90,7 +90,7 @@ struct Session {
     generation: u64,
     account: PreparedAccount,
     entity: Option<EntityKey<Account>>,
-    training_room: Option<training::HostedRoom>,
+    training_room: Option<u32>,
     garage_synced: bool,
     reported_premium_expiry: Option<u32>,
     store_token: Option<StoreToken>,
@@ -158,6 +158,7 @@ pub struct Gateway {
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
     training_arenas: HashSet<i32>,
+    training_rooms: BTreeMap<u32, training::HostedRoom>,
     last_training_room_id: u32,
     pending_writes: HashSet<i64>,
     account_change_epoch: u64,
@@ -237,6 +238,7 @@ impl Gateway {
             tickets: HashMap::new(),
             sessions: HashMap::new(),
             training_arenas,
+            training_rooms: BTreeMap::new(),
             last_training_room_id: 0,
             pending_writes: HashSet::new(),
             account_change_epoch: 0,
@@ -507,7 +509,7 @@ impl Gateway {
         }
     }
 
-    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty, output.equipment_upgrades.enabled = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty, output.training_room.description_enabled = tracing::field::Empty, output.equipment_upgrades.enabled = tracing::field::Empty), err)]
     fn enable(&mut self, client: ClientKey) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
@@ -547,6 +549,10 @@ impl Gateway {
         )?;
         tracing::Span::current().record(
             "output.training_room.visible",
+            self.config.training_room_visible,
+        );
+        tracing::Span::current().record(
+            "output.training_room.description_enabled",
             self.config.training_room_visible,
         );
         tracing::Span::current().record("output.equipment_upgrades.enabled", equipment_upgrades);

@@ -6,6 +6,9 @@ use this path. No client mod or online-status spoofing is required. The previous
 BW/BW_CHAT2 adapter remains bound for protocol tools and older sessions; its rooms
 are ephemeral and do not share the native messenger's window state.
 
+Player Sessions also uses BW_CHAT2 for live messages between members of a
+[Training Room](wg-toolkit/session-flows.md#training-room-text-chat).
+
 ## Behavior and persistence
 
 Players can find another nickname in Contacts and request friendship. The other

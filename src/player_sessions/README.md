@@ -8,6 +8,7 @@ that the garage adapter translates into the versioned BigWorld protocol.
 Social owns contacts, private conversations and retained messages. The gateway
 adapts those operations for native XMPP and legacy BW/BW_CHAT2 clients, tracks
 presence, authenticates chat tokens through game sessions and routes delivery.
+Player Sessions owns the Training text channel through live room membership.
 
 | Layer | Responsibilities |
 | --- | --- |
@@ -17,7 +18,8 @@ presence, authenticates chat tokens through game sessions and routes delivery.
 | `infrastructure/mercury/` | Mercury UDP framing, reliability, RSA and Blowfish, LoginApp/BaseApp wire sessions, and Account RPC binding from the [resource bundle](../../docs/resources.md). |
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
-| `infrastructure/gateway/training.rs` | Validate bundled map IDs and deliver the host-only room settings, roster, readiness and leave events. |
+| `infrastructure/gateway/training.rs` | Validate bundled map IDs and manage shared room settings, membership, roster, readiness and deletion. |
+| `infrastructure/gateway/training/chat.rs` | Open and close the native Training channel and relay messages to the active room roster. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
 | `infrastructure/gateway/progression.rs` | Equipment, directive, module, tank and depot request validation, bounded progression jobs and committed cache delivery. |
 | `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes using the Accounts command contract. |
@@ -56,7 +58,8 @@ with Accounts.
 | Store session token | Random credential issued in the Store URL fragment and scoped to the synchronized garage session. |
 | Account entity | Client protocol representation created after the client enables entities. |
 | Resource stream | CRC-described, fragmented transfer correlated with an account command request ID. |
-| Training Room | A host-only lobby owned by one live session. It ends when the host leaves or the session is removed. |
+| Training Room | A discoverable lobby with one host and optional guests. It ends when the host leaves or the host session is removed. |
+| Training channel | Live text conversation shared by the members of one Training Room. |
 
 A successful login replaces the previous session or pending handoff for that
 account, including a session whose client crashed. The gateway waits for

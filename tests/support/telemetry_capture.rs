@@ -189,6 +189,11 @@ pub fn assert_training_room_bootstrap(visible: bool) {
                     "output.training_room.visible",
                     &visible.to_string(),
                 )
+                && has(
+                    bootstrap,
+                    "output.training_room.description_enabled",
+                    &visible.to_string(),
+                )
                 && spans.iter().any(|response| {
                     response.name == "mercury.response"
                         && response.span_context.trace_id() == bootstrap.span_context.trace_id()
@@ -197,7 +202,7 @@ pub fn assert_training_room_bootstrap(visible: bool) {
                         && has(response, "output.delivery", "sent")
                 })
         }),
-        "Missing Training Room visibility on a delivered garage bootstrap trace"
+        "Missing Training Room visibility or description setting on a delivered garage bootstrap trace"
     );
 }
 
