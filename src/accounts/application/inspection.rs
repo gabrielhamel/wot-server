@@ -101,6 +101,7 @@ impl GarageInspection {
             depot: catalog
                 .grantable_crew_books()
                 .chain(catalog.grantable_bounty_equipment())
+                .chain(catalog.grantable_improved_equipment())
                 .chain(catalog.grantable_experimental_equipment())
                 .filter_map(|(id, _)| Some((id, *snapshot.progression.depot.get(&id)?)))
                 .collect(),

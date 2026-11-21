@@ -1,4 +1,5 @@
 mod account;
+mod battle_performance;
 mod cosmetic_catalog;
 mod cosmetic_inventory;
 mod outfit;
@@ -185,6 +186,12 @@ impl GarageCatalog {
             tracing::error!("Training vehicle has no health definition");
             return Ok(None);
         };
+        let Some(performance) = catalog.modules.battle_performance(&loadout) else {
+            span.record("output.outcome", "performance_unavailable");
+            span.record("otel.status_code", "ERROR");
+            tracing::error!("Missing equipped vehicle performance");
+            return Ok(None);
+        };
         let projected = catalog.project(owned, snapshot)?;
         let descriptor = projected.descr.encode();
         let ammunition = projected
@@ -200,6 +207,7 @@ impl GarageCatalog {
             descriptor,
             health,
             crew_size,
+            performance,
             ammunition,
         }))
     }

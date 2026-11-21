@@ -171,6 +171,7 @@ impl Gateway {
                         health: 1,
                         crew_size: 0,
                         ammunition: Vec::new(),
+                        performance: None,
                     })
             } else {
                 self.catalog
@@ -180,6 +181,7 @@ impl Gateway {
                         health: vehicle.health,
                         crew_size: vehicle.crew_size,
                         ammunition: vehicle.ammunition,
+                        performance: Some(vehicle.performance),
                     })
             };
             let Some(vehicle) = vehicle else {

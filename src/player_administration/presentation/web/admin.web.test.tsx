@@ -720,6 +720,7 @@ describe("Server Administration", () => {
       http.get(`${origin}/crew-books`, () => HttpResponse.json([])),
       http.get(`${origin}/experimental-equipment`, () => HttpResponse.json([])),
       http.get(`${origin}/bounty-equipment`, () => HttpResponse.json([])),
+      http.get(`${origin}/improved-equipment`, () => HttpResponse.json([])),
       http.get(`${origin}/stat-trackers`, () =>
         HttpResponse.json([
           { id: 37, name: "Victories", max_owned: 1 },
@@ -816,6 +817,7 @@ describe("Server Administration", () => {
     const grants: Array<{ body: Grant; trace: string | null }> = [];
     const book = { id: 286, name: "Training Booklet (U.S.S.R.)" };
     const equipment = { id: 39161, name: "Fire-Control System T3" };
+    const improved = { id: 28921, name: "Improved Compressor" };
     const basic = { id: 13049, name: "Bounty Gun Laying Drive · Basic" };
     const upgraded = { id: 13305, name: "Bounty Gun Laying Drive · Upgraded" };
     httpServer.use(
@@ -827,6 +829,7 @@ describe("Server Administration", () => {
       http.get(`${origin}/crew-books`, () => HttpResponse.json([book])),
       http.get(`${origin}/experimental-equipment`, () => HttpResponse.json([equipment])),
       http.get(`${origin}/bounty-equipment`, () => HttpResponse.json([basic, upgraded])),
+      http.get(`${origin}/improved-equipment`, () => HttpResponse.json([improved])),
       http.post(`${origin}/players/123/grants`, async ({ request }) => {
         const body = (await request.json()) as Grant;
         grants.push({ body, trace: request.headers.get("traceparent") });
@@ -840,7 +843,8 @@ describe("Server Administration", () => {
         if (
           body.kind === "crew_book" ||
           body.kind === "experimental_equipment" ||
-          body.kind === "bounty_equipment"
+          body.kind === "bounty_equipment" ||
+          body.kind === "improved_equipment"
         ) {
           snapshot = {
             ...snapshot,
@@ -920,12 +924,20 @@ describe("Server Administration", () => {
       await user.click(bounty.getByRole("button", { name: "Grant Bounty Equipment" }));
       expect(await bounty.findByText("1 in depot · Up to 100 per grant")).toBeVisible();
 
+      const improvedForm = within(screen.getByRole("form", { name: "Grant Improved Equipment" }));
+      const improvedPicker = improvedForm.getByRole("combobox", { name: "Improved Equipment" });
+      await user.type(improvedPicker, "Compressor");
+      await user.click(await screen.findByRole("option", { name: /^Improved Compressor/ }));
+      await user.click(improvedForm.getByRole("button", { name: "Grant Improved Equipment" }));
+      expect(await improvedForm.findByText("1 in depot · Up to 100 per grant")).toBeVisible();
+
       expect(grants.map(({ body }) => body)).toEqual([
         { kind: "currency", currency: "equipment_components", amount: 2147483647 },
         { kind: "currency", currency: "equipment_components", amount: 125 },
         { kind: "crew_book", id: book.id, count: 3 },
         { kind: "experimental_equipment", id: equipment.id, count: 2 },
         { kind: "bounty_equipment", id: upgraded.id, count: 1 },
+        { kind: "improved_equipment", id: improved.id, count: 1 },
       ]);
       for (const [grant, status, expected] of [
         [
@@ -944,6 +956,7 @@ describe("Server Administration", () => {
         [grants[2], 200, { "input.item": book.id, "input.count": 3 }],
         [grants[3], 200, { "input.item": equipment.id, "input.count": 2 }],
         [grants[4], 200, { "input.item": upgraded.id, "input.count": 1 }],
+        [grants[5], 200, { "input.item": improved.id, "input.count": 1 }],
       ] as const) {
         const trace = telemetry.expectRequest(
           grant.trace,

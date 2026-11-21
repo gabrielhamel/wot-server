@@ -24,6 +24,7 @@ const EXPERIMENTAL_TAGS: [&str; 3] = ["modernized_1", "modernized_2", "modernize
 
 #[derive(Default)]
 pub(super) struct EquipmentGrantCatalog {
+    pub(super) improved: BTreeMap<i32, String>,
     pub(super) bounty: BTreeMap<i32, String>,
     pub(super) experimental: BTreeMap<i32, String>,
 }
@@ -78,6 +79,17 @@ pub(super) fn load(
                 .and_then(|key| names.get(key))
                 .map(|name| name.replace('\u{a0}', " "))
         };
+        if tags.contains("deluxe") {
+            grants.improved.insert(
+                item,
+                localized_name().unwrap_or_else(|| {
+                    let family = name
+                        .trim_start_matches("deluxe")
+                        .trim_start_matches("delux");
+                    format!("Improved Equipment · {}", humanize_item_name(family))
+                }),
+            );
+        }
         if let Some((prefix, level)) = [("trophyBasic", "Basic"), ("trophyUpgraded", "Upgraded")]
             .into_iter()
             .find(|(tag, _)| tags.contains(*tag))

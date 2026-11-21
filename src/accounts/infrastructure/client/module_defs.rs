@@ -1,4 +1,5 @@
 use super::{
+    battle_performance,
     item_defs::{self, VehicleDef},
     item_prices::ItemPrices,
     items::{IntCompactDescr, VehicleDescr},
@@ -10,6 +11,7 @@ use crate::{
         VehicleCosmeticSlots, VehicleSurface,
     },
     platform::client_formats::pxml::Element,
+    shared_kernel::{GunPerformance, VehiclePerformance},
 };
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,6 +22,9 @@ pub(super) struct VehicleModules {
     pub ammunition: BTreeMap<(i32, i32), AmmunitionRules>,
     exterior_slots: BTreeMap<(i32, i32), VehicleCosmeticSlots>,
     chassis_exteriors: BTreeMap<i32, ChassisExterior>,
+    speed_limits: Option<[f32; 2]>,
+    hull_traverse: BTreeMap<i32, f32>,
+    gun_performance: BTreeMap<(i32, i32), GunPerformance>,
     pub(super) training_health: BTreeMap<i32, i16>,
 }
 
@@ -32,6 +37,24 @@ struct ChassisExterior {
 }
 
 impl VehicleModules {
+    pub(super) fn battle_performance(&self, modules: &ModuleLoadout) -> Option<VehiclePerformance> {
+        let [forward_speed, reverse_speed] = self.speed_limits?;
+        let hull_traverse = *self.hull_traverse.get(modules.get(&ModuleKind::Chassis)?)?;
+        let gun = self
+            .gun_performance
+            .get(&(
+                *modules.get(&ModuleKind::Turret)?,
+                *modules.get(&ModuleKind::Gun)?,
+            ))?
+            .clone();
+        Some(VehiclePerformance {
+            forward_speed,
+            reverse_speed,
+            hull_traverse,
+            gun,
+        })
+    }
+
     pub(super) fn exterior_slots(&self, modules: &ModuleLoadout) -> Option<VehicleCosmeticSlots> {
         let mut exterior = self
             .exterior_slots
@@ -157,6 +180,9 @@ impl VehicleModules {
         let hull_health = vehicle
             .get_child_element("hull")
             .and_then(|hull| hull.get_child_integer("maxHealth"));
+        let speed_limits = battle_performance::speed_limits(&vehicle);
+        let mut hull_traverse = BTreeMap::new();
+        let mut gun_performance = BTreeMap::new();
         let mut training_health = BTreeMap::new();
         let shells = item_defs::read_xml(fs, &format!("{dir}/components/shells.xml"))?;
         for (kind, section) in [
@@ -201,6 +227,9 @@ impl VehicleModules {
                     },
                 );
                 if kind == 2 {
+                    if let Some(traverse) = battle_performance::hull_traverse(local, base) {
+                        hull_traverse.insert(id, traverse);
+                    }
                     chassis_exteriors.insert(
                         id,
                         ChassisExterior {
@@ -236,6 +265,13 @@ impl VehicleModules {
                             .and_then(|xml| xml.get_child_element(name));
                         let gun_base =
                             gun_shared.or(gun_local).context("Missing gun definition")?;
+                        if let Some(performance) = battle_performance::traverse(local, base)
+                            .and_then(|traverse| {
+                                battle_performance::gun(gun_local, gun_base, traverse)
+                            })
+                        {
+                            gun_performance.insert((id, gun), performance);
+                        }
                         let surfaces = [
                             (VehicleSurface::Hull, hull_camouflage),
                             (
@@ -425,6 +461,9 @@ impl VehicleModules {
             exterior_slots,
             chassis_exteriors,
             training_health,
+            speed_limits,
+            hull_traverse,
+            gun_performance,
         })
     }
 

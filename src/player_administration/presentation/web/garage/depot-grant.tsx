@@ -33,6 +33,12 @@ const labels = {
     action: "Grant Bounty Equipment",
     unnamed: "Unnamed Bounty Equipment",
   },
+  improved_equipment: {
+    heading: "Grant Improved Equipment",
+    picker: "Improved Equipment",
+    action: "Grant Improved Equipment",
+    unnamed: "Unnamed Improved Equipment",
+  },
   experimental_equipment: {
     heading: "Grant Experimental Equipment",
     picker: "Experimental Equipment",

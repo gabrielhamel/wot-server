@@ -52,6 +52,7 @@ pub(super) enum GrantBody {
     Currency { currency: Currency, amount: i64 },
     Vehicle { vehicle: i32 },
     CrewBook { id: i32, count: u32 },
+    ImprovedEquipment { id: i32, count: u32 },
     BountyEquipment { id: i32, count: u32 },
     ExperimentalEquipment { id: i32, count: u32 },
     Attachment { id: u16, count: u32 },
@@ -186,6 +187,17 @@ pub(super) async fn bounty_equipment_catalog(
     depot_grant_catalog(state.catalog.grantable_bounty_equipment())
 }
 
+#[tracing::instrument(
+    name = "admin.garage.catalog",
+    skip_all,
+    fields(ddd.bounded_context.name = "player_administration", input.collection = "improved_equipment", output.items.count = tracing::field::Empty)
+)]
+pub(super) async fn improved_equipment_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<DepotGrantRecord>> {
+    depot_grant_catalog(state.catalog.grantable_improved_equipment())
+}
+
 fn depot_grant_catalog<'a>(
     entries: impl Iterator<Item = (i32, &'a str)>,
 ) -> Json<Vec<DepotGrantRecord>> {
@@ -261,6 +273,12 @@ pub(super) async fn grant(
             request_span.record("input.item", id);
             request_span.record("input.count", count);
             PlayerGrant::BountyEquipment { id, count }
+        }
+        GrantBody::ImprovedEquipment { id, count } => {
+            request_span.record("input.grant.kind", "improved_equipment");
+            request_span.record("input.item", id);
+            request_span.record("input.count", count);
+            PlayerGrant::ImprovedEquipment { id, count }
         }
         GrantBody::ExperimentalEquipment { id, count } => {
             request_span.record("input.grant.kind", "experimental_equipment");

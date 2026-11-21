@@ -30,4 +30,4 @@ allocated independently of the Training Room ID.
 | Arena | The shared space where the battle runs, identified by its geometry and gameplay variant. |
 | Participant | A connected player assigned to a team with a combat or observer vehicle. |
 | Round | The progression through loading, countdown, active battle and results. |
-| Loadout | The equipped vehicle descriptor, health, crew size and ammunition at launch. |
+| Loadout | The equipped vehicle descriptor, health, crew size, ammunition and base performance at launch. |

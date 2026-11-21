@@ -210,12 +210,15 @@ game.command                                      [doCmdInt3, 411]
 Avatar commands record the player's account and entity ID. The readiness
 command that starts the countdown also parents the period broadcast.
 Arena cell commands trace the wire element and target entity IDs, the method,
-and the argument byte count. A movement or aim command retains its span
-through the first changed position or angle published on the simulation tick.
+and the argument byte count. A movement command parents the first changed
+position snapshot. Aim commands retain their spans through the turret traverse
+to the requested aim, with a child span for each resulting angle update.
 Position replication records the tick and counts the recipients and successful
 socket writes of the shared timestamped snapshot.
 Shots retain their parent through target selection, damage, and the muzzle,
-tracer, reload and health deliveries. Unsupported methods emit an error span.
+tracer, reload, victim-only direction and health deliveries. The reload
+initiator parents the simulation tick deliveries as the gun cooldown and
+magazine refill complete. Unsupported methods emit an error span.
 Target ownership, invalid input, inactive rounds, and reloading are distinct
 outcomes.
 
@@ -337,7 +340,7 @@ The root `admin.http.request` span carries route-specific inputs so a trace
 can be filtered without opening child spans. The player list exports supplied
 numeric pagination parameters. Garage routes export the parsed account ID,
 and grants export their kind with the currency and amount, vehicle type, or
-item and quantity. The root records crew book, Bounty Equipment and Experimental Equipment
+item and quantity. The root records crew book, Improved Equipment, Bounty Equipment and Experimental Equipment
 descriptors in `input.item` and copies in `input.count`. Accounts records the
 resulting depot stock or balance after validation. The grant handler records
 the committed revision and delivery result.

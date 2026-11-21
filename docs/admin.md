@@ -169,7 +169,7 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | `POST /api/admin/players/{id}/role` | Accepts `{ "role": "admin" }` or `{ "role": "player" }` and returns `204 No Content`. Self-role changes return `403 Forbidden`. |
 | `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks, an `attachments` map from item ID to total owned copies, and a `depot` map from grantable crew book, Bounty Equipment and Experimental Equipment IDs to depot counts. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |
-| `GET /api/admin/crew-books`, `GET /api/admin/bounty-equipment`, `GET /api/admin/experimental-equipment` | `200 OK` with grantable depot items containing `id` and `name`. |
+| `GET /api/admin/crew-books`, `GET /api/admin/improved-equipment`, `GET /api/admin/bounty-equipment`, `GET /api/admin/experimental-equipment` | `200 OK` with grantable depot items containing `id` and `name`. |
 | `GET /api/admin/attachments` | `200 OK` with grantable 3D attachments containing `id`, `name`, and `max_owned` (null if the catalog sets no limit). |
 | `GET /api/admin/stat-trackers` | `200 OK` with grantable trackers containing `id`, `name`, and `max_owned`. |
 | `POST /api/admin/players/{id}/grants` | `200 OK` with `garage` and `delivery` after commit. |
@@ -251,11 +251,15 @@ of 2,147,483,647.
 { "kind": "bounty_equipment", "id": 13305, "count": 1 }
 ```
 
+```json
+{ "kind": "improved_equipment", "id": 28665, "count": 1 }
+```
+
 Depot grants add 1–100 copies at a time. Use the compact descriptor returned
 by the appropriate catalog endpoint. The crew book catalog comes from
 `scripts/item_defs/crewBooks/crewBooks.xml`. Experimental Equipment is
 identified by `modernized_1`, `modernized_2`, or `modernized_3`. Bounty
-Equipment is identified by `trophyBasic` or `trophyUpgraded`. Both use
+Equipment is identified by `trophyBasic` or `trophyUpgraded`. Improved Equipment is identified by `deluxe`. All three use
 `scripts/item_defs/vehicles/common/optional_devices.xml`. The Bounty picker
 appends the level since both versions can share a name. Catalog names use
 the bundle's localized strings when available. The catalog and garage sync

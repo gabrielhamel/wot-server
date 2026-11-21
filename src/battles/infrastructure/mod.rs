@@ -57,6 +57,20 @@ struct Entrant {
 }
 
 impl Entrant {
+    fn tank(&self) -> Tank {
+        Tank::new(
+            self.position,
+            self.direction.z,
+            self.vehicle.health,
+            self.vehicle.ammunition.clone(),
+            self.vehicle.performance.clone(),
+        )
+    }
+
+    fn initial_gun_angles(&self) -> u16 {
+        self.tank().packed_gun_angles()
+    }
+
     fn sample() -> Self {
         Self {
             account_id: 1,
@@ -69,6 +83,7 @@ impl Entrant {
                 health: 100,
                 crew_size: 3,
                 ammunition: vec![(10, 5)],
+                performance: None,
             },
             avatar_id: 1,
             vehicle_id: 2,
@@ -106,6 +121,7 @@ struct Participant {
     last_gun_angles: u16,
     pending_drive: Option<tracing::Span>,
     pending_aim: Option<tracing::Span>,
+    pending_reload: Option<tracing::Span>,
 }
 
 impl Battle {
@@ -379,16 +395,12 @@ impl BattleRuntime {
                         )?,
                         avatar: None,
                         ready: false,
-                        tank: Tank::new(
-                            player.position,
-                            player.direction.z,
-                            player.vehicle.health,
-                            player.vehicle.ammunition.clone(),
-                        ),
+                        tank: player.tank(),
                         observer: player.observer,
-                        last_gun_angles: 0x8020,
+                        last_gun_angles: player.initial_gun_angles(),
                         pending_drive: None,
                         pending_aim: None,
+                        pending_reload: None,
                     },
                 ))
             })
@@ -575,7 +587,7 @@ impl BattleRuntime {
             if matches!(battle.round.phase, RoundPhase::Battle)
                 && let Some(wire) = &self.wire
             {
-                movement = battle.advance_vehicles(base, wire);
+                movement = battle.advance_vehicles(base, wire, now);
             }
             let movement: Vec<_> = movement
                 .into_iter()

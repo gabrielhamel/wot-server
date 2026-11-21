@@ -1,5 +1,6 @@
 use super::*;
-use crate::battles::domain::vehicle::{RELOAD, Tank};
+use crate::battles::domain::vehicle::Tank;
+use std::time::Instant;
 
 const OWN_ENTITY_NODE: u16 = 1024;
 type Fields = BTreeMap<&'static str, WireValue>;
@@ -51,13 +52,9 @@ impl ArenaWire {
         let component = dispatch
             .entity_from_id(self.own_vehicle_type)
             .context("Missing OwnVehicle")?;
-        let tank = Tank::new(
-            player.position,
-            player.direction.z,
-            player.vehicle.health,
-            player.vehicle.ammunition.clone(),
-        );
-        let mut fields = own_state(component, player.vehicle_id, &tank, 0.0, 0.0)?;
+        let tank = player.tank();
+        let gun = tank.performance.as_ref().map(|profile| &profile.gun);
+        let mut fields = own_state(component, player.vehicle_id, &tank, Instant::now(), 0.0)?;
         let ty = property_type(component, "syncVehicleAttrs")?;
         fields.insert(
             "syncVehicleAttrs",
@@ -75,10 +72,19 @@ impl ArenaWire {
             dict(
                 property_type(component, "targetingInfo")?,
                 [
-                    ("maxTurretRotationSpeed", WireValue::Float32(1.4)),
-                    ("maxGunRotationSpeed", WireValue::Float32(0.7)),
+                    (
+                        "maxTurretRotationSpeed",
+                        WireValue::Float32(gun.map_or(0.0, |gun| gun.turret_traverse)),
+                    ),
+                    (
+                        "maxGunRotationSpeed",
+                        WireValue::Float32(gun.map_or(0.0, |gun| gun.gun_traverse)),
+                    ),
                     ("shotDispMultiplierFactor", WireValue::Float32(1.0)),
-                    ("aimingTime", WireValue::Float32(1.5)),
+                    (
+                        "aimingTime",
+                        WireValue::Float32(gun.map_or(0.0, |gun| gun.aiming_time)),
+                    ),
                 ],
             )?,
         );
@@ -97,14 +103,14 @@ impl ArenaWire {
         client: ClientKey,
         vehicle_id: u32,
         tank: &Tank,
-        reload: f32,
+        now: Instant,
         time: f32,
     ) -> Result<()> {
         let component = base
             .dispatch()
             .entity_from_id(self.own_vehicle_type)
             .context("Missing OwnVehicle")?;
-        let mut values = own_state(component, vehicle_id, tank, reload, time)?;
+        let mut values = own_state(component, vehicle_id, tank, now, time)?;
         let mut records = Vec::new();
         for (index, property) in component.properties.iter().enumerate() {
             let Some(value) = values.remove(&*property.name) else {
@@ -169,49 +175,80 @@ fn own_state(
     component: &EntityDispatch,
     vehicle_id: u32,
     tank: &Tank,
-    reload: f32,
+    now: Instant,
     time: f32,
 ) -> Result<Fields> {
     let ammunition = rows(property_type(component, "vehicleAmmoList")?)?;
+    let gun = tank
+        .performance
+        .as_ref()
+        .map(|profile| &profile.gun.loading);
+    let has_magazine = gun.is_some_and(|gun| gun.capacity > 1);
     let ammo = tank
-        .ammo
-        .iter()
-        .map(|&(shell, count)| {
+        .rounds()
+        .map(|(shell, count, loaded)| {
             dict(
                 ammunition,
                 [
                     ("compactDescr", WireValue::Int32(shell)),
                     ("quantity", WireValue::UInt16(count)),
-                    ("quantityInClip", WireValue::UInt16(u16::from(count > 0))),
+                    (
+                        "quantityInClip",
+                        WireValue::UInt16(if has_magazine { loaded } else { 0 }),
+                    ),
                 ],
             )
         })
         .collect::<Result<Vec<_>>>()?;
     let setting = rows(property_type(component, "vehicleSettings")?)?;
-    let loaded = tank
-        .ammo
-        .get(tank.loaded_shell)
-        .map_or(0, |&(shell, _)| shell);
     let settings = [0, 1]
         .into_iter()
-        .map(|code| {
+        .zip(tank.shell_settings())
+        .map(|(code, shell)| {
             dict(
                 setting,
                 [
                     ("code", WireValue::UInt8(code)),
-                    ("value", WireValue::Int32(loaded)),
+                    ("value", WireValue::Int32(shell)),
                     ("vehicleID", id(setting, "vehicleID", vehicle_id)?),
                 ],
             )
         })
         .collect::<Result<Vec<_>>>()?;
+    let [gun_reload, clip_reload] = tank.reload_timers();
     let reload_ty = property_type(component, "vehicleGunReloadTime")?;
+    let clip_reload_ty = property_type(component, "vehicleClipReloadTime")?;
+    let clip_time = gun.map_or(0.0, |gun| gun.intra_clip_time);
+    let reload_left = gun_reload.map_or(0.0, |timer| timer.remaining(now));
+    let base_time = gun_reload.map_or_else(
+        || gun.map_or(0.0, |gun| gun.reload_time),
+        |timer| timer.seconds,
+    );
     let reload_time = dict(
         reload_ty,
         [
-            ("baseTime", WireValue::Float32(RELOAD.as_secs_f32())),
-            ("timeLeft", WireValue::Float32(reload)),
-            ("endTime", WireValue::Float32(time + reload)),
+            ("baseTime", WireValue::Float32(base_time)),
+            ("timeLeft", WireValue::Float32(reload_left)),
+            ("endTime", WireValue::Float32(time + reload_left)),
+            ("clipTime", WireValue::Float32(clip_time)),
+        ],
+    )?;
+    let refill_left = clip_reload.map_or(0.0, |timer| timer.remaining(now));
+    let first_round_time = gun
+        .and_then(|gun| gun.autoreload_times.last())
+        .copied()
+        .unwrap_or(0.0);
+    let clip_time_value = dict(
+        clip_reload_ty,
+        [
+            (
+                "baseTime",
+                WireValue::Float32(clip_reload.map_or(0.0, |timer| timer.seconds)),
+            ),
+            ("timeLeft", WireValue::Float32(refill_left)),
+            ("endTime", WireValue::Float32(time + refill_left)),
+            ("firstTime", WireValue::Float32(first_round_time)),
+            ("clipTime", WireValue::Float32(clip_time)),
         ],
     )?;
     let health_ty = property_type(component, "vehicleHealthInfo")?;
@@ -232,6 +269,7 @@ fn own_state(
         ("vehicleAmmoList", WireValue::Seq(ammo)),
         ("vehicleSettings", WireValue::Seq(settings)),
         ("vehicleGunReloadTime", reload_time),
+        ("vehicleClipReloadTime", clip_time_value),
         ("vehicleHealthInfo", health),
     ]))
 }

@@ -40,7 +40,10 @@ bond offer. Checkout identifies the offer by item and currency, and buying
 either offer updates both cards to show that the vehicle is in the garage.
 
 The server also uses client prices for standard and improved equipment,
-consumables and directives.
+consumables and directives. The Improved Equipment section includes eligible
+`deluxe` items with positive bond prices even when their bundle entry is hidden
+by `notInShop`. Checkout adds one copy to the depot and debits bonds in the
+same account revision.
 It uses the mapped web Store prices for crew skins and the mapped Bond Shop
 prices for styles. The extractor brings over `artefacts.mo`,
 `crew_skins.mo` and the British `gb_vehicles.mo` for localized display names.

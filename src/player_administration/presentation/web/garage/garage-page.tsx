@@ -107,6 +107,13 @@ function GaragePage({ id }: { id: Identifier }) {
             <DepotGrant
               api={api}
               busy={busy}
+              kind="improved_equipment"
+              depot={garage.depot}
+              onGrant={submit}
+            />
+            <DepotGrant
+              api={api}
+              busy={busy}
               kind="crew_book"
               depot={garage.depot}
               onGrant={submit}

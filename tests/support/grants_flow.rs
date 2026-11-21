@@ -115,6 +115,12 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         assert!(name.starts_with("Bounty ") && name.ends_with(level));
         assert!(!catalog.store_offers().iter().any(|offer| offer.item == id));
     }
+    let improved_item = (111 << 8) | 0xf9;
+    assert!(
+        catalog
+            .grantable_improved_equipment()
+            .any(|(id, name)| id == improved_item && !name.is_empty())
+    );
     let regular_equipment = catalog
         .store_offers()
         .iter()
@@ -218,6 +224,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             (PlayerGrant::ExperimentalEquipment { id: equipment, count: 1 }, 9, equipment, 1),
             (PlayerGrant::BountyEquipment { id: bounty_basic, count: 2 }, 9, bounty_basic, 2),
             (PlayerGrant::BountyEquipment { id: bounty_upgraded, count: 1 }, 9, bounty_upgraded, 1),
+            (PlayerGrant::ImprovedEquipment { id: improved_item, count: 1 }, 9, improved_item, 1),
         ] {
             let (after, delivery) = grant(request).unwrap();
             let after = wot_server::accounts::test_support::account_snapshot(&after);

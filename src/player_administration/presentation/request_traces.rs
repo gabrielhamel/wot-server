@@ -983,6 +983,7 @@ async fn exports_admin_http_access_lifecycle() {
         ("/crew-books", "Universal Guide"),
         ("/experimental-equipment", "Fire-Control System T3"),
         ("/bounty-equipment", " · Upgraded"),
+        ("/improved-equipment", "Improved Compressor"),
     ] {
         assert_eq!(send("GET", path, "", "").await.unwrap().status(), 401);
         assert_eq!(
@@ -1007,7 +1008,7 @@ async fn exports_admin_http_access_lifecycle() {
             .unwrap();
         depot_ids.push(item["id"].as_i64().unwrap());
     }
-    let [book, equipment, bounty] = depot_ids[..] else {
+    let [book, equipment, bounty, improved] = depot_ids[..] else {
         panic!("Expected each depot catalog selection");
     };
     let grant_path = format!("/players/{player_id}/grants");
@@ -1039,6 +1040,16 @@ async fn exports_admin_http_access_lifecycle() {
             serde_json::json!({"kind": "bounty_equipment", "id": bounty, "count": 1}),
             200,
             serde_json::json!({"depot": {book.to_string(): 3, equipment.to_string(): 2, bounty.to_string(): 1}}),
+        ),
+        (
+            serde_json::json!({"kind": "improved_equipment", "id": improved, "count": 1}),
+            200,
+            serde_json::json!({"depot": {book.to_string(): 3, equipment.to_string(): 2, bounty.to_string(): 1, improved.to_string(): 1}}),
+        ),
+        (
+            serde_json::json!({"kind": "improved_equipment", "id": equipment, "count": 1}),
+            422,
+            serde_json::json!({"message": "Select Improved Equipment from the installed catalog."}),
         ),
         (
             serde_json::json!({"kind": "experimental_equipment", "id": book, "count": 1}),
@@ -1079,7 +1090,7 @@ async fn exports_admin_http_access_lifecycle() {
     assert_eq!(garage["equipment_components"], "71");
     assert_eq!(
         garage["depot"],
-        serde_json::json!({book.to_string(): 3, equipment.to_string(): 2, bounty.to_string(): 1})
+        serde_json::json!({book.to_string(): 3, equipment.to_string(): 2, bounty.to_string(): 1, improved.to_string(): 1})
     );
 
     let game_account = Accounts::new(repository.clone())
@@ -1390,6 +1401,8 @@ async fn exports_admin_http_access_lifecycle() {
         ("experimental_equipment", Some(book), "1", "422"),
         ("bounty_equipment", Some(bounty), "1", "200"),
         ("bounty_equipment", Some(equipment), "1", "422"),
+        ("improved_equipment", Some(improved), "1", "200"),
+        ("improved_equipment", Some(equipment), "1", "422"),
     ] {
         let root = spans
             .iter()

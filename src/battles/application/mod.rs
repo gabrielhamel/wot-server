@@ -27,6 +27,7 @@ pub(crate) struct VehicleLoadout {
     pub descriptor: Vec<u8>,
     pub health: i16,
     pub crew_size: usize,
+    pub performance: Option<crate::shared_kernel::VehiclePerformance>,
     pub ammunition: Vec<(i32, u16)>,
 }
 
@@ -35,10 +36,10 @@ impl BattleLaunch {
         !self.duration.is_zero()
             && Instant::now().checked_add(self.duration).is_some()
             && self.participants.len() <= 256
-            && self
-                .participants
-                .iter()
-                .all(|player| matches!(player.team, 1 | 2))
+            && self.participants.iter().all(|player| {
+                matches!(player.team, 1 | 2)
+                    && (player.observer || player.vehicle.performance.is_some())
+            })
             && [1, 2].into_iter().all(|team| {
                 self.participants
                     .iter()
