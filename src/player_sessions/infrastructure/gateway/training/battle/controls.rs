@@ -1,8 +1,9 @@
 use super::*;
 use crate::player_sessions::{
     domain::training_vehicle::{Aim, SHOT_RANGE, TrainingShot},
-    mercury::{app::client::element::arena::VehiclePosition, script::Value as WireValue},
+    mercury::script::Value as WireValue,
 };
+use glam::Vec3Swizzles;
 
 const ELIMINATION: u8 = 1;
 const SHELL_SPEED: f32 = 450.0;
@@ -139,37 +140,44 @@ impl TrainingBattle {
         }
     }
 
-    pub(super) fn advance_vehicles(&mut self, base: &mut base::App, wire: &ArenaWire) {
+    pub(super) fn advance_vehicles(
+        &mut self,
+        base: &mut base::App,
+        wire: &ArenaWire,
+    ) -> Vec<(u32, tracing::Span)> {
         let peers: Vec<_> = self
             .players
             .iter()
             .filter(|(_, p)| p.avatar.is_some())
             .map(|(&key, _)| key)
             .collect();
+        let mut movement = Vec::new();
         for player in self
             .players
             .values_mut()
             .filter(|player| player.ready && !player.observer && player.tank.health > 0)
         {
-            let changed = player.tank.step(TICK.as_secs_f32(), self.map.bounds);
+            let previous = player.tank.position;
+            let drive = player.pending_drive.take();
+            player.tank.step(TICK.as_secs_f32(), self.map.bounds);
+            if let Some((position, direction)) = self
+                .ground
+                .vehicle_pose(player.tank.position.xz(), player.tank.yaw)
+            {
+                player.tank.position = position;
+                if (position, direction) != (player.vehicle.position, player.vehicle.direction) {
+                    player.vehicle.position = position;
+                    player.vehicle.direction = direction;
+                    if let Some(parent) = drive {
+                        movement.push((player.vehicle.entity_id, parent));
+                    }
+                }
+            } else {
+                player.tank.position = previous;
+            }
             let gun = packed_gun_angles(&player.tank);
             let entity_id = player.vehicle.entity_id;
-            let movement = player.pending_drive.take();
             let aim = player.pending_aim.take();
-            if changed {
-                player.vehicle.position = player.tank.position;
-                player.vehicle.direction.z = player.tank.yaw;
-                let position = VehiclePosition {
-                    reference: 0,
-                    entity_id,
-                    position: player.vehicle.position,
-                    direction: player.vehicle.direction,
-                };
-                deliver_state(movement, "position", entity_id, &peers, |client| {
-                    base.send_arena_element(client, position.clone())
-                        .map_err(Into::into)
-                });
-            }
             if player.last_gun_angles != gun {
                 player.last_gun_angles = gun;
                 deliver_state(aim, "gun_angles", entity_id, &peers, |client| {
@@ -182,6 +190,7 @@ impl TrainingBattle {
                 });
             }
         }
+        movement
     }
 
     #[tracing::instrument(name = "player_sessions.training_shot", skip_all, fields(

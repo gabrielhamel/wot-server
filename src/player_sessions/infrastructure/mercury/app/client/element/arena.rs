@@ -226,3 +226,30 @@ impl SimpleElement for ApplyNrlUpdate {
     const ID: u8 = 0x25;
     const LEN: ElementLength = ElementLength::ZERO;
 }
+
+crate::__struct_simple_codec! {
+    #[derive(Debug, Clone)]
+    pub struct AvatarPosition {
+        pub reference: u8,
+        pub position: Vec3,
+        pub direction: Vec3,
+    }
+}
+
+impl SimpleElement for AvatarPosition {
+    const ID: u8 = 0x1e;
+    const LEN: ElementLength = ElementLength::Fixed(25);
+}
+
+crate::__struct_simple_codec! {
+    #[derive(Debug, Clone)]
+    pub struct ControlEntity {
+        pub entity_id: u32,
+        pub is_locally_controlled: bool,
+    }
+}
+
+impl SimpleElement for ControlEntity {
+    const ID: u8 = 0x41;
+    const LEN: ElementLength = ElementLength::Fixed(5);
+}

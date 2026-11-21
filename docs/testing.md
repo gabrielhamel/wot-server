@@ -129,12 +129,20 @@ guest from an assigned team, updating the player count and closing the
 guest's chat. Guests cannot exclude other players and hosts cannot exclude
 themselves. The test also checks trace parent links for successful and rejected requests. Older bundles
 exercise the unavailable response.
-Two encrypted peers then exercise the native Start Battle command sequence,
+With the current extracted terrain tiles, two encrypted peers then exercise the native Start Battle command sequence,
 including failed guest and unready-team attempts, team unlock, handoff on the
 same channels, a common space with distinct team vehicles, readiness and
-countdown, and return to the garage after leaving. The test checks that both
-clients' cell deliveries share the original host request trace. The same peers
-drive both vehicles and receive the movement in both directions. They exercise
+countdown, and return to the garage after leaving. It verifies elevated Studzianki spawns
+and movement, an immediate transport acknowledgement, stationary Avatar poses
+accepted after the control handoff, and the committed ready flag for both
+roster rows. Each peer requires the sequence footer on unreliable channel
+datagrams and ignores stale unreliable sequences. The test checks that both
+clients' cell creation and control handoff deliveries share the original host
+request trace. The same peers
+check that both initial Vehicle poses agree with their corresponding cell
+creation on both clients. They drive both vehicles and require their position
+messages to share a bundle with an advancing tick before and after combat starts.
+They exercise
 vehicle-targeted aiming, reject cross-player targeting, fire a shot, inspect
 tracer, muzzle and health updates on both connections, and check that an
 immediate second shot is rejected during reload.

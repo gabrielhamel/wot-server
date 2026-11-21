@@ -16,7 +16,9 @@ use wot_server::player_sessions::test_support::mercury::app::{
 use wot_server::player_sessions::test_support::mercury::net::{
     bundle::{Bundle, NextElementReader},
     element::{Element, ElementLength, SimpleElement},
+    packet::{PACKET_HEADER_LEN, PacketConfig},
     proto::Protocol,
+    seq::Seq,
     socket::PacketSocket,
 };
 use wot_server::player_sessions::test_support::mercury::script::{StringValue, Value};
@@ -77,6 +79,13 @@ pub struct Peer {
     pub arena_roster: Option<Vec<u8>>,
     pub resets: usize,
     pub positions: BTreeMap<u32, glam::Vec3>,
+    pub arena_tick: Option<u8>,
+    pub avatar_position_frames: usize,
+    avatar_locally_controlled: Option<bool>,
+    pub nrl_updates: Vec<Vec<u8>>,
+    pub last_sent_reliable: Seq,
+    pub ack_only_through: Option<Seq>,
+    last_unreliable_sequence: Option<Seq>,
     pub vehicle_methods: Vec<(u32, String, Vec<Value>)>,
     selected_entity: Option<u32>,
     player_type: Option<u16>,
@@ -118,6 +127,13 @@ impl Peer {
             arena_roster: None,
             resets: 0,
             positions: BTreeMap::new(),
+            arena_tick: None,
+            avatar_position_frames: 0,
+            avatar_locally_controlled: None,
+            nrl_updates: Vec::new(),
+            last_sent_reliable: Seq::ZERO,
+            ack_only_through: None,
+            last_unreliable_sequence: None,
             vehicle_methods: Vec::new(),
             selected_entity: None,
             player_type: None,
@@ -260,6 +276,14 @@ impl Peer {
         self.protocol
             .channel(self.base, None)
             .prepare(&mut bundle, true);
+        let mut config = PacketConfig::new();
+        bundle
+            .iter()
+            .last()
+            .unwrap()
+            .read_config(&mut config)
+            .unwrap();
+        self.last_sent_reliable = config.sequence_num();
         self.socket.send_bundle(&bundle, self.base).unwrap();
     }
     pub fn command(&mut self, dispatch: &ScriptDispatch, name: &str, args: Vec<Value>) {
@@ -328,11 +352,34 @@ impl Peer {
             let Ok((packet, addr)) = self.socket.recv() else {
                 continue;
             };
+            let mut config = PacketConfig::new();
+            if packet.read_config(&mut config).is_ok() {
+                if config.on_channel() && !config.reliable() {
+                    assert!(
+                        config.has_sequence_num(),
+                        "native client rejects unsequenced on-channel datagrams"
+                    );
+                    let sequence = config.sequence_num();
+                    if self
+                        .last_unreliable_sequence
+                        .is_some_and(|last| sequence.wrapping_cmp(last).is_lt())
+                    {
+                        continue;
+                    }
+                    self.last_unreliable_sequence = Some(sequence);
+                }
+                if config.footer_offset() == PACKET_HEADER_LEN
+                    && let Some(cumulative) = config.cumulative_ack()
+                {
+                    self.ack_only_through = Some(cumulative);
+                }
+            }
             let Ok(mut channel) = self.protocol.accept(packet, addr) else {
                 continue;
             };
             for bundle in channel.pop_bundles() {
                 let mut reader = bundle.element_reader();
+                let mut has_tick = false;
                 while let Some(next) = reader.next_element() {
                     let NextElementReader::Element(element) = next else {
                         panic!("Unexpected reply");
@@ -484,6 +531,10 @@ impl Peer {
                             self.shown = false;
                             self.entered_arena = None;
                             self.cell = None;
+                            self.positions.clear();
+                            self.arena_tick = None;
+                            self.avatar_locally_controlled = None;
+                            self.avatar_position_frames = 0;
                             self.geometry = None;
                             self.arena_entities.clear();
                             self.arena_roster = None;
@@ -496,6 +547,16 @@ impl Peer {
                                     .unwrap()
                                     .element,
                             );
+                            self.avatar_locally_controlled = Some(true);
+                        }
+                        client::arena::ControlEntity::ID => {
+                            let control = element
+                                .read_simple::<client::arena::ControlEntity>()
+                                .unwrap()
+                                .element;
+                            assert_eq!(control.entity_id, self.player_entity_id);
+                            assert!(self.cell.is_some());
+                            self.avatar_locally_controlled = Some(control.is_locally_controlled);
                         }
                         client::arena::GeometryMapping::ID => {
                             self.geometry = Some(
@@ -547,6 +608,7 @@ impl Peer {
                             );
                         }
                         client::arena::VehiclePosition::ID => {
+                            assert!(has_tick, "vehicle pose must share its bundle with TickSync");
                             let update = element
                                 .read_simple::<client::arena::VehiclePosition>()
                                 .unwrap()
@@ -554,7 +616,24 @@ impl Peer {
                             self.positions.insert(update.entity_id, update.position);
                         }
                         client::arena::NrlData::ID => {
-                            element.read_simple::<client::arena::NrlData>().unwrap();
+                            self.nrl_updates.push(
+                                element
+                                    .read_simple::<client::arena::NrlData>()
+                                    .unwrap()
+                                    .element
+                                    .0,
+                            );
+                        }
+                        client::arena::AvatarPosition::ID => {
+                            assert!(has_tick, "Avatar pose must share its bundle with TickSync");
+                            let frame = element
+                                .read_simple::<client::arena::AvatarPosition>()
+                                .unwrap()
+                                .element;
+                            assert_eq!(frame.position, glam::Vec3::ZERO);
+                            if self.avatar_locally_controlled == Some(false) {
+                                self.avatar_position_frames += 1;
+                            }
                         }
                         client::arena::ApplyNrlUpdate::ID => {
                             element
@@ -571,7 +650,16 @@ impl Peer {
                             self.selected_entity = None;
                         }
                         client::id::TICK_SYNC => {
-                            element.read_simple::<client::TickSync>().unwrap();
+                            let tick = element
+                                .read_simple::<client::TickSync>()
+                                .unwrap()
+                                .element
+                                .tick;
+                            if let Some(last) = self.arena_tick {
+                                assert!((1..=127).contains(&tick.wrapping_sub(last)));
+                            }
+                            self.arena_tick = Some(tick);
+                            has_tick = true;
                         }
                         client::id::RESOURCE_HEADER => {
                             element.read_simple::<client::ResourceHeader>().unwrap();

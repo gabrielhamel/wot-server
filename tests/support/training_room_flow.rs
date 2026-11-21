@@ -1396,6 +1396,14 @@ pub fn exercise_battle(
         host.entered_arena,
         Some((u64::from(host_cell.space_id), 83))
     );
+    assert!(
+        host_cell.position.y > 1.0 && guest_cell.position.y > 1.0,
+        "Studzianki spawns must be elevated above world zero: {:?} and {:?}",
+        host_cell.position,
+        guest_cell.position
+    );
+    let initial_host = host_cell.position;
+    let initial_guest = guest_cell.position;
     let geometry = host.geometry.as_ref().unwrap();
     assert_eq!(geometry.space_id, guest_cell.space_id);
     assert_eq!(geometry.path, guest.geometry.as_ref().unwrap().path);
@@ -1429,6 +1437,15 @@ pub fn exercise_battle(
                 .into_iter()
                 .collect()
         );
+        for cell in [host_cell, guest_cell] {
+            let vehicle = peer
+                .arena_entities
+                .iter()
+                .find(|entity| entity.entity_id == cell.vehicle_id)
+                .unwrap();
+            assert_eq!(vehicle.position, cell.position);
+            assert_eq!(vehicle.direction, cell.direction);
+        }
     }
 
     let period = |p: &Peer| {
@@ -1437,9 +1454,19 @@ pub fn exercise_battle(
             .any(|(name, args)| name == "updateArena" && args[0].as_i64() == Some(3))
     };
     host.command(script, "setClientReady", vec![]);
+    let host_ready_ack = host.last_sent_reliable + 1;
+    host.until(script, |p| {
+        p.ack_only_through
+            .is_some_and(|ack| ack.wrapping_cmp(host_ready_ack).is_ge())
+    });
+    host.until(script, |p| p.avatar_position_frames >= 2);
     guest.command(script, "setClientReady", vec![]);
     host.until(script, period);
     guest.until(script, period);
+    guest.until(script, |p| p.avatar_position_frames >= 2);
+    for peer in [&*host, &*guest] {
+        assert_roster_ready(script, &peer.nrl_updates);
+    }
     let (first, second) = (
         host.cell.as_ref().unwrap().vehicle_id,
         guest.cell.as_ref().unwrap().vehicle_id,
@@ -1456,28 +1483,26 @@ pub fn exercise_battle(
     };
     host.until(script, in_battle);
     guest.until(script, in_battle);
+    for peer in [&mut *host, &mut *guest] {
+        let first_tick = peer.arena_tick.unwrap();
+        peer.until(script, |p| {
+            p.arena_tick
+                .is_some_and(|tick| (3..=127).contains(&tick.wrapping_sub(first_tick)))
+        });
+        assert_eq!(peer.positions[&first], initial_host);
+        assert_eq!(peer.positions[&second], initial_guest);
+    }
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(0x80)]);
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     guest.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     for peer in [&mut *host, &mut *guest] {
         peer.until(script, |p| {
-            p.positions.contains_key(&first) && p.positions.contains_key(&second)
+            p.positions.get(&first).is_some_and(|p| *p != initial_host)
+                && p.positions
+                    .get(&second)
+                    .is_some_and(|p| *p != initial_guest)
         });
-        assert_ne!(
-            peer.positions[&first],
-            peer.cell
-                .as_ref()
-                .filter(|cell| cell.vehicle_id == first)
-                .map_or_else(
-                    || peer
-                        .arena_entities
-                        .iter()
-                        .find(|e| e.entity_id == first)
-                        .unwrap()
-                        .position,
-                    |cell| cell.position
-                )
-        );
+        assert!(peer.positions[&first].y > 1.0 && peer.positions[&second].y > 1.0);
     }
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(64)]);
     guest.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(64)]);
@@ -1520,6 +1545,65 @@ pub fn exercise_battle(
     host.until(script, |p| p.created && p.shown);
     guest.until(script, |p| p.created && p.shown);
     assert_empty_list(host, script);
+}
+
+fn assert_roster_ready(script: &ScriptDispatch, updates: &[Vec<u8>]) {
+    use wot_server::player_sessions::test_support::mercury::script::{Ty, TyKind};
+    fn unalias(ty: &Ty) -> &TyKind {
+        match ty.kind() {
+            TyKind::Alias(inner) => unalias(inner),
+            kind => kind,
+        }
+    }
+    let schema = script.entity_from_name("AvatarVehiclesInfo").unwrap().1;
+    let (property, roster) = schema
+        .properties
+        .iter()
+        .enumerate()
+        .find(|(_, p)| &*p.name == "vehiclesInfo")
+        .unwrap();
+    let TyKind::Array(rows) = unalias(&roster.ty) else {
+        panic!("roster array");
+    };
+    let TyKind::Dict(fields) = unalias(&rows.ty) else {
+        panic!("roster dictionary");
+    };
+    let bits = |count: usize| usize::BITS - count.saturating_sub(1).leading_zeros();
+    let mut ready = std::collections::BTreeSet::new();
+    let mut committed = std::collections::BTreeSet::new();
+    let node = (4 + property as u16).to_be_bytes();
+    for record in updates.iter().filter(|data| data.starts_with(&node)) {
+        assert_eq!(record[2], 2);
+        let path = &record[4..]; // This path and its value fit in a one-byte length.
+        let mut bit = 0usize;
+        let mut read = |width: u32| {
+            (0..width).fold(0usize, |value, _| {
+                let next = (path[bit / 8] >> (7 - bit % 8)) & 1;
+                bit += 1;
+                (value << 1) | usize::from(next)
+            })
+        };
+        assert_eq!(read(1), 1);
+        assert_eq!(read(bits(schema.properties.len())), property);
+        assert_eq!(read(1), 1);
+        let row = read(1);
+        assert_eq!(read(1), 0);
+        let field = read(bits(fields.properties.len()));
+        let leaf = &path[bit.div_ceil(8)..];
+        match &*fields.properties[field].name {
+            "isAvatarReady" => {
+                assert_eq!(leaf, [1]);
+                ready.insert(row);
+            }
+            "__generation" => {
+                assert_eq!(leaf, 1u32.to_le_bytes());
+                assert!(ready.contains(&row));
+                committed.insert(row);
+            }
+            name => panic!("Unexpected roster field {name}"),
+        }
+    }
+    assert_eq!(committed, [0, 1].into_iter().collect());
 }
 
 pub fn assert_battle_traces(host: i64, guest: i64) {
@@ -1578,6 +1662,11 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
                 && has(s, "input.replication.kind", "position")
         })
         .expect("movement replication");
+    assert!(has(movement, "output.delivered.count", "2"));
+    assert!(movement.attributes.iter().any(|attribute| {
+        attribute.key.as_str() == "input.arena.tick"
+            && matches!(attribute.value, opentelemetry::Value::I64(tick) if tick > 0)
+    }));
     assert!(
         traces
             .iter()
@@ -1591,6 +1680,40 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
                 .iter()
                 .any(|s| s.name == "game.cell_command" && has(s, "output.outcome", outcome)),
             "missing {outcome}"
+        );
+    }
+
+    assert!(
+        traces
+            .iter()
+            .any(|span| span.name == "mercury.acknowledge_arena_packet"
+                && has(span, "output.delivery", "sent")
+                && span.attributes.iter().any(|attribute| {
+                    attribute.key.as_str() == "output.packet.sequence"
+                        && matches!(attribute.value, opentelemetry::Value::I64(0..=0x0fff_ffff))
+                }))
+    );
+    let readiness: Vec<_> = traces
+        .iter()
+        .filter(|span| {
+            span.name == "player_sessions.training_roster_ready" && has(span, "input.ready", "true")
+        })
+        .collect();
+    assert_eq!(readiness.len(), 2);
+    for span in readiness {
+        assert!(has(span, "output.recipients.count", "2"));
+        assert!(traces.iter().any(|root| root.name == "game.command"
+            && child_of(span, root)
+            && has(root, "rpc.method", "setClientReady")));
+        assert_eq!(
+            traces
+                .iter()
+                .filter(|delivery| delivery.name == "mercury.arena_delivery"
+                    && child_of(delivery, span)
+                    && has(delivery, "input.element_id", "38")
+                    && has(delivery, "output.delivery", "sent"))
+                .count(),
+            4
         );
     }
 
@@ -1658,10 +1781,13 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
             assert_eq!(entries.len(), 2);
             for entry in entries {
                 assert!(has(entry, "output.outcome", "entered"));
-                assert!(traces.iter().any(|s| s.name == "mercury.arena_delivery"
-                    && child_of(s, entry)
-                    && has(s, "input.element_id", "6")
-                    && has(s, "output.delivery", "sent")));
+                assert!(has(entry, "output.avatar_control", "server"));
+                for element in ["6", "65"] {
+                    assert!(traces.iter().any(|s| s.name == "mercury.arena_delivery"
+                        && child_of(s, entry)
+                        && has(s, "input.element_id", element)
+                        && has(s, "output.delivery", "sent")));
+                }
             }
         }
     }

@@ -21,7 +21,13 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
         .collect();
     let mut files = Vec::new();
     let mut classes = BTreeSet::new();
+    let mut terrain = Vec::new();
     for path in client.paths() {
+        if crate::infrastructure::is_terrain(path) {
+            validate_resource_path(path)?;
+            terrain.push(path.to_owned());
+            continue;
+        }
         let Some((root, relative)) = selection::resource_root(path, &extensions) else {
             continue;
         };
@@ -51,10 +57,21 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
         for path in &files {
             bytes += client.copy(path, &output.join("res").join(path))?;
         }
+        let mut count = files.len();
+        let root = output.join("res");
+        for path in &terrain {
+            if let Some((files, size)) = client
+                .copy_terrain(path, &root)
+                .with_context(|| format!("Extract terrain {path}"))?
+            {
+                count += files;
+                bytes += size;
+            }
+        }
         ResourceBundle::write_manifest_with_version(output, classes, game_version)
             .context("Write bundle manifest")?;
         Ok(Summary {
-            files: files.len(),
+            files: count,
             bytes,
         })
     })();

@@ -10,7 +10,9 @@ use crate::{
         },
         infrastructure::schema::{Avatar, AvatarBase},
         mercury::app::{
-            client::element::arena::{CreateArenaEntity, LeaveArenaEntity},
+            client::element::arena::{
+                AvatarPosition, CreateArenaEntity, LeaveArenaEntity, VehiclePosition,
+            },
             entity::Bytes,
         },
     },
@@ -21,6 +23,7 @@ use wire::ArenaEntry;
 pub(in crate::player_sessions::infrastructure::gateway) use wire::ArenaWire;
 
 mod controls;
+mod terrain;
 mod wire;
 
 pub(in crate::player_sessions::infrastructure::gateway) const TEAM_READY: i16 = 411;
@@ -28,7 +31,8 @@ pub(in crate::player_sessions::infrastructure::gateway) const TEAM_NOT_READY: i1
 const TEAM_STATES: u8 = 6;
 const ARENA_PERIOD: u8 = 3;
 const TIME_LIMIT: u8 = 3;
-const TICK: Duration = Duration::from_millis(100);
+pub(in crate::player_sessions::infrastructure::gateway) const TICK: Duration =
+    Duration::from_millis(100);
 
 #[derive(Clone)]
 pub(in crate::player_sessions::infrastructure::gateway) struct ArenaMap {
@@ -107,18 +111,22 @@ impl Entrant {
 
 pub(in crate::player_sessions::infrastructure::gateway) struct TrainingBattle {
     map: ArenaMap,
+    ground: Arc<terrain::Terrain>,
     arena_type: i32,
     players: HashMap<ClientKey, Participant>,
     started_at: Instant,
+    last_snapshot_tick: Option<u32>,
     round: TrainingRound,
     launch: Option<tracing::Span>,
     shot_sequence: i32,
     result: Option<(i8, u8)>,
+    roster_count: usize,
 }
 
 struct Participant {
     vehicle: CreateArenaEntity,
     avatar_id: u32,
+    roster_row: usize,
     team: u8,
     entry: ArenaEntry,
     avatar: Option<EntityKey<Avatar>>,
@@ -131,6 +139,36 @@ struct Participant {
 }
 
 impl TrainingBattle {
+    #[tracing::instrument(name = "player_sessions.training_roster_ready", skip_all, fields(
+        ddd.bounded_context.name = "player_sessions", input.room.id = battle_id, input.roster.row = row,
+        input.ready = ready, output.recipients.count = tracing::field::Empty, otel.status_code = tracing::field::Empty,
+    ))]
+    fn publish_roster_ready(
+        &self,
+        base: &mut base::App,
+        wire: &ArenaWire,
+        battle_id: u32,
+        row: usize,
+        ready: bool,
+    ) {
+        let span = tracing::Span::current();
+        let mut delivered = 0;
+        for (&peer, player) in self
+            .players
+            .iter()
+            .filter(|(_, player)| player.avatar.is_some())
+        {
+            match wire.roster_ready(base, peer, self.roster_count, row, ready) {
+                Ok(()) => delivered += 1,
+                Err(error) => {
+                    span.record("otel.status_code", "ERROR");
+                    error!(%error, entity_id = player.avatar_id, "Training readiness delivery failed");
+                }
+            }
+        }
+        span.record("output.recipients.count", delivered);
+    }
+
     fn ticks(&self, now: Instant) -> u32 {
         (now.saturating_duration_since(self.started_at).as_millis() / TICK.as_millis()) as u32
     }
@@ -343,6 +381,18 @@ impl Gateway {
         let Some(Some(map)) = self.training_arenas.get(&arena_type) else {
             return Ok(None);
         };
+        let ground = if let Some(active) = self
+            .training_battles
+            .values()
+            .find(|active| active.map.geometry == map.geometry)
+        {
+            Arc::clone(&active.ground)
+        } else {
+            Arc::new(terrain::Terrain::load(
+                &self.training_resources,
+                &map.geometry,
+            )?)
+        };
         let mut members = room.members.iter().collect::<Vec<_>>();
         members.sort_by_key(|(_, player)| player.entity.id().0);
         let mut entrants = Vec::new();
@@ -386,7 +436,11 @@ impl Gateway {
             };
             let forward = (to - from).normalize_or_zero();
             let across = Vec2::new(forward.y, -forward.x);
-            let position = from + across * (counts[side] as f32 * 5.0);
+            let position =
+                (from + across * (counts[side] as f32 * 5.0)).clamp(map.bounds[0], map.bounds[1]);
+            let (position, direction) = ground
+                .vehicle_pose(position, forward.x.atan2(forward.y))
+                .context("Training spawn has no terrain height")?;
             counts[side] += 1;
             entrants.push((
                 client,
@@ -400,8 +454,8 @@ impl Gateway {
                     avatar_id: self.base.arena_entity_id(),
                     vehicle_id: self.base.arena_entity_id(),
                     info_id: self.base.arena_entity_id(),
-                    position: Vec3::new(position.x, 0.0, position.y),
-                    direction: Vec3::new(0.0, 0.0, forward.x.atan2(forward.y)),
+                    position,
+                    direction,
                 },
             ));
         }
@@ -419,12 +473,14 @@ impl Gateway {
             .context("Missing training arena schema")?;
         let players = entrants
             .iter()
-            .map(|(client, player)| {
+            .enumerate()
+            .map(|(roster_row, (client, player))| {
                 Ok((
                     *client,
                     Participant {
                         vehicle: wire.vehicle(dispatch, player)?,
                         avatar_id: player.avatar_id,
+                        roster_row,
                         team: player.team,
                         entry: wire.entry(dispatch, room_id, arena_type, player, &roster)?,
                         avatar: None,
@@ -447,9 +503,11 @@ impl Gateway {
         let now = Instant::now();
         Ok(Some(TrainingBattle {
             map: map.clone(),
+            ground,
             arena_type,
             players,
             started_at: now,
+            last_snapshot_tick: None,
             round: TrainingRound::new(
                 now,
                 Duration::from_secs(u64::try_from(room.settings.duration_seconds)?),
@@ -457,6 +515,7 @@ impl Gateway {
             launch: Some(tracing::Span::current()),
             shot_sequence: 0,
             result: None,
+            roster_count: roster.len(),
         }))
     }
 
@@ -540,6 +599,7 @@ impl Gateway {
             "input.team" = player.team,
             "input.entity_id" = player.avatar_id,
             "output.players.count" = battle.players.len(),
+            "output.avatar_control" = tracing::field::Empty,
             "output.outcome" = tracing::field::Empty,
             "otel.status_code" = tracing::field::Empty,
         );
@@ -556,6 +616,18 @@ impl Gateway {
                 battle.players.values().map(|other| other.vehicle.clone()),
                 battle.ticks(Instant::now()),
             )?;
+            span.record("output.avatar_control", "server");
+            if let Some(wire) = &self.training_wire {
+                for other in battle.players.values().filter(|player| player.ready) {
+                    wire.roster_ready(
+                        &mut self.base,
+                        client,
+                        battle.roster_count,
+                        other.roster_row,
+                        true,
+                    )?;
+                }
+            }
             battle.send_period(&mut self.base, avatar, Instant::now())?;
             self.base
                 .enable_arena_cell(client, player.vehicle.entity_id);
@@ -612,6 +684,10 @@ impl Gateway {
                 Ok((_, AvatarBase::SetClientReady {})) => {
                     let was_ready = player.ready;
                     player.ready = true;
+                    let row = player.roster_row;
+                    if !was_ready && let Some(wire) = &self.training_wire {
+                        battle.publish_roster_ready(&mut self.base, wire, battle_id, row, true);
+                    }
                     span.record(
                         "output.outcome",
                         if was_ready { "already_ready" } else { "ready" },
@@ -662,19 +738,62 @@ impl Gateway {
             if battle.round.advance(now, false) {
                 battle.publish_period(&mut self.base, battle_id, now);
             }
+            let tick = battle.ticks(now);
+            if battle.last_snapshot_tick == Some(tick) {
+                continue;
+            }
+            battle.last_snapshot_tick = Some(tick);
+            let mut movement = Vec::new();
             if matches!(battle.round.phase, RoundPhase::Battle)
                 && let Some(wire) = &self.training_wire
             {
-                battle.advance_vehicles(&mut self.base, wire);
+                movement = battle.advance_vehicles(&mut self.base, wire);
             }
+            let movement: Vec<_> = movement
+                .into_iter()
+                .map(|(entity_id, command)| {
+                    tracing::info_span!(parent: &command, "player_sessions.training_replication",
+                        "ddd.bounded_context.name" = "player_sessions", "input.entity_id" = entity_id,
+                        "input.replication.kind" = "position", "input.arena.tick" = i64::from(tick),
+                        "output.recipients.count" = tracing::field::Empty,
+                        "output.delivered.count" = tracing::field::Empty,
+                        "otel.status_code" = tracing::field::Empty)
+                })
+                .collect();
+            let mut recipients = 0_i64;
+            let mut delivered = 0_i64;
             for (&client, player) in &battle.players {
                 if player.avatar.is_some() {
-                    if let Err(error) = self.base.arena_tick(client, battle.ticks(now) as u8) {
-                        error!(%error, battle_id, "Could not send training battle tick");
-                        self.base.disconnect_client(client);
+                    let avatar = AvatarPosition {
+                        reference: 0,
+                        // The Avatar rides its Vehicle, so its own pose is relative to the hull.
+                        position: Vec3::ZERO,
+                        direction: Vec3::ZERO,
+                    };
+                    let vehicles = battle.players.values().map(|other| VehiclePosition {
+                        reference: 0,
+                        entity_id: other.vehicle.entity_id,
+                        position: other.vehicle.position,
+                        direction: other.vehicle.direction,
+                    });
+                    recipients += 1;
+                    match self.base.arena_tick(client, tick as u8, avatar, vehicles) {
+                        Ok(()) => delivered += 1,
+                        Err(error) => {
+                            error!(%error, battle_id, "Could not send training battle tick");
+                            self.base.disconnect_client(client);
+                        }
                     }
                 } else if now >= battle.started_at + LOAD_TIMEOUT {
                     self.base.disconnect_client(client);
+                }
+            }
+            for span in movement {
+                span.record("output.recipients.count", recipients);
+                span.record("output.delivered.count", delivered);
+                if delivered != recipients {
+                    span.record("otel.status_code", "ERROR");
+                    span.in_scope(|| error!("Training pose snapshot delivery failed"));
                 }
             }
         }
@@ -715,6 +834,11 @@ impl Gateway {
         if battle.players.is_empty() {
             self.training_battles.remove(&id);
         } else {
+            if removed.ready
+                && let Some(wire) = &self.training_wire
+            {
+                battle.publish_roster_ready(&mut self.base, wire, id, removed.roster_row, false);
+            }
             for (&peer, player) in &battle.players {
                 if player.avatar.is_some()
                     && let Err(error) = self.base.send_arena_element(

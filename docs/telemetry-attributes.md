@@ -123,11 +123,15 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.roster.slot`](../src/player_sessions/infrastructure/gateway/training.rs) | Requested roster slot on assignment. Team 1 and Team 2 use `1` and `2`. Their unassigned slots use `17` and `18`. |
 | [`input.roster.group`](../src/player_sessions/infrastructure/gateway/training.rs) | Requested player group on roster assignment. Training Rooms accept group `0`. |
 | [`input.team`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Team number from a Start Battle confirmation or the server-assigned team on arena entry. |
+| [`output.avatar_control`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | `server` once the Avatar control handoff is queued during arena entry. The child Mercury delivery span records the send outcome. |
 | [`input.force`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Native team-ready flag supplied with command `411`. Values `0` and `1` are accepted. |
-| [`input.ready`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | True for a team confirmation and false for a team unlock. |
+| [`input.ready`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | True for a team confirmation and false for a team unlock. On arena roster updates, true once the Avatar is ready and false on departure. |
 | [`input.element_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | One-byte Mercury element ID on arena delivery and incoming cell commands. |
 | [`input.drive.flags`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. |
 | [`input.replication.kind`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | `position` or `gun_angles` on an arena update caused by a sampled control. |
+| [`input.arena.tick`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Full arena tick count for the first position snapshot carrying a drive command's change. One unit is 100 ms. |
+| [`input.geometry`](../src/player_sessions/infrastructure/gateway/training/battle/terrain.rs) | Bundle geometry path when loading terrain for the selected training map. |
+| [`input.roster.row`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Zero-based row index when updating a player's ready state in the arena roster. |
 | [`input.players.count`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Count of arena participants when publishing a period transition. |
 | [`input.cache.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Cached shop length in bytes reported by the client. |
 | [`input.cache.crc`](../src/player_sessions/infrastructure/gateway/commands.rs) | Signed CRC32 of the shop cache reported by the client. |
@@ -234,7 +238,8 @@ meanings on different operations; those differences are listed explicitly.
 | Attribute | Meaning and emission |
 | --- | --- |
 | [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Byte length of an encoded outgoing XMPP stanza, compressed garage cache, Mercury resource response or available Training Room observer or combat vehicle descriptor. Excludes transport framing. |
-| [`output.recipients.count`](../src/player_sessions/infrastructure/gateway/training/chat.rs) | Number of queued Training channel messages, including the sender, or queued invitations after deduplication. Actual socket delivery is recorded by the Mercury response spans. |
+| [`output.recipients.count`](../src/player_sessions/infrastructure/gateway/training/chat.rs) | Number of queued Training channel messages, including the sender, or queued invitations after deduplication. In a training position snapshot, counts the clients targeted by the socket writes. |
+| [`output.delivered.count`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Number of successful socket writes for a training position snapshot. |
 | [`output.rooms.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of Training Rooms returned by a successful list request. Omitted on rejection or a failed send. |
 | [`output.rooms.total`](../src/player_sessions/infrastructure/gateway/commands.rs) | Total discoverable rooms in the list response before paging. Omitted on rejection or a failed send. |
 | [`output.players.count`](../src/player_sessions/infrastructure/gateway/training.rs) | Count of players in returned rooms on listing, or membership count on successful join or removal. A deleted room has zero players. |
@@ -249,6 +254,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.target.entity_id`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | Vehicle entity struck by a training shot, omitted on miss. |
 | [`output.damage`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | Hit points actually removed by a training shot, omitted on miss. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | Cell controls record `accepted`, `shell_selected`, `hit`, `miss`, `reloading`, `empty`, `invalid_flags`, `invalid_aim`, `shell_unavailable`, `round_inactive`, `vehicle_unavailable`, `unimplemented` or `delivery_failed`. Mercury records `entity_unavailable` for a target outside the session's control and `wire_decode_failed` for invalid framing or argument data. |
+| [`output.terrain.tiles`](../src/player_sessions/infrastructure/gateway/training/battle/terrain.rs) | Number of decoded outdoor height tiles for the selected training map. |
 | [`output.phase`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | New training period enum when publishing a transition. Values are `countdown`, `battle` and `finished`. |
 | [`output.crew.count`](../src/accounts/infrastructure/client/mod.rs) | Number of crew seats in the catalog vehicle prepared for the arena. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Team commands record `team_ready`, `team_unlocked`, `launched`, `invalid_arguments`, `room_unavailable`, `not_host`, `team_not_ready`, `roster_or_map_unavailable` or `preparation_failed`. Entry records `entered` or `delivery_failed`. Return records `garage_reset` or `handoff_aborted`. Avatar readiness records `ready` or `already_ready`. |
@@ -272,6 +278,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.session_count`](../src/accounts/infrastructure/player_access.rs) | Number of sessions removed by a sign-out request with a well-formed cookie. |
 | [`output.delivery`](../src/player_sessions/infrastructure/gateway/progression.rs) | Garage completion reports response enqueue (`queued`), absent session or entity (`unavailable`), or failure to enqueue (`failed`). XMPP enqueue reports `queued`, `offline` or `enqueue_failed`. |
 | [`output.delivery`](../src/player_sessions/infrastructure/mercury/app/outbox.rs) | Mercury transport records `sent` on a successful socket write, `send_failed` on write failure, `enqueue_failed` on method encoding or enqueue failure, or `discarded` on removal of an unsent bundle. Login responses record `sent` or `send_failed`. |
+| [`output.packet.sequence`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | 28-bit unreliable Mercury sequence number after an arena acknowledgement datagram is sent. |
 | [`output.response_code`](../src/player_sessions/infrastructure/mercury/app/entity.rs) | On-wire result from `onCmdResponse`, `onCmdResponseExt`, or the LoginApp reply. |
 | [`output.players.online`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of current gateway sessions returned as cluster and region CCU by command 501. |
 | [`output.revision`](../src/player_sessions/infrastructure/gateway/commands.rs) | Current in-memory garage revision returned by the sync check. Grant planning records the planned revision and the HTTP grant handler records the committed revision. |

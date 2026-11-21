@@ -15,6 +15,7 @@ use glam::{Vec2, Vec3, Vec4};
 use std::io;
 
 mod controls;
+mod roster;
 
 pub(in crate::player_sessions::infrastructure::gateway) struct ArenaWire {
     avatar_type: u16,
@@ -28,6 +29,7 @@ pub(in crate::player_sessions::infrastructure::gateway) struct ArenaWire {
 
 pub(super) struct ArenaEntry {
     pub(super) base_properties: WireValue,
+    avatar_entity_id: u32,
     cell: CreateCellPlayer,
     own_vehicle: ArenaEntityProperties,
     own_component: NrlCreateNode,
@@ -155,6 +157,7 @@ impl ArenaWire {
         };
         Ok(ArenaEntry {
             base_properties,
+            avatar_entity_id: player.avatar_id,
             cell,
             own_vehicle: ArenaEntityProperties(own),
             own_component: self.own_component(dispatch, player)?,
@@ -278,7 +281,7 @@ impl ArenaWire {
             component,
             self.roster_nrl_type,
             info_id,
-            2,
+            roster::ROSTER_ENTITY_NODE,
             BTreeMap::from([("vehiclesInfo", WireValue::Seq(roster))]),
         )
     }
@@ -383,6 +386,14 @@ impl ArenaEntry {
         publish_entity(base, client, self.info.clone())?;
         base.send_arena_element(client, self.roster.clone())?;
         base.send_arena_element(client, self.own_component.clone())?;
+        // CreateCellPlayer assumes local Avatar control and filters out server poses.
+        base.send_arena_element(
+            client,
+            ControlEntity {
+                entity_id: self.avatar_entity_id,
+                is_locally_controlled: false,
+            },
+        )?;
         Ok(())
     }
 }

@@ -210,10 +210,21 @@ command that starts the countdown also parents the period broadcast.
 Arena cell commands trace the wire element and target entity IDs, the method,
 and the argument byte count. A movement or aim command retains its span
 through the first changed position or angle published on the simulation tick.
+Position replication records the tick and counts the recipients and successful
+socket writes of the shared timestamped snapshot.
 Shots retain their parent through target selection, damage, and the muzzle,
 tracer, reload and health deliveries. Unsupported methods emit an error span.
 Target ownership, invalid input, inactive rounds, and reloading are distinct
 outcomes.
+
+Training arena preparation traces the map geometry and the number of height
+tiles loaded from the extracted resource bundle. A native `setClientReady`
+command parents the nested roster update and generation commit for both
+peers. Departure sends the corresponding disconnected state. Arena transport
+acknowledgements record socket delivery and the transport sequence number,
+with no game payload.
+Each arena entry records the Avatar control mode and parents delivery of the
+control handoff to the client.
 
 Training Room invitations record recipient counts and the optional message's
 byte length. Each queued invite and its delivery retain the original command

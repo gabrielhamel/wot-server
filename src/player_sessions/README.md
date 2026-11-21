@@ -21,6 +21,7 @@ Player Sessions owns the Training text channel through live room membership.
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
 | `infrastructure/gateway/training.rs` | Validate bundled map IDs and manage shared room settings, membership, roster, readiness and deletion. |
 | `infrastructure/gateway/training/battle.rs` and `training/battle/wire.rs` | Validate Start Battle, transition the roster to a shared arena and publish its client entities from the current resource schema. |
+| `infrastructure/gateway/training/battle/terrain.rs` | Decode map elevations and sample the ground under spawning and moving vehicles. |
 | `infrastructure/gateway/training/chat.rs` | Open and close the native Training channel and relay messages to the active room roster. |
 | `infrastructure/gateway/training/invites.rs` | Deliver native Training Room invitations and update their status. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |

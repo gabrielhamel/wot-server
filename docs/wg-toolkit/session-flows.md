@@ -341,10 +341,22 @@ The native UI handoff still requires a two-client walkthrough.
 
 The round waits for client readiness or a bounded loading timeout, runs a
 countdown, and uses the room's selected time limit. Maps need geometry,
-bounds and two spawn locations. The server accepts `vehicle_moveWith` on
+bounds, two spawn locations and extracted elevation tiles. The server accepts `vehicle_moveWith` on
 the player's Avatar and turret tracking on the player's Avatar or Vehicle.
 The target entity must belong to the sending session. The server advances
-tanks every 100 ms and sends full-ID position and turret updates to both teams.
+tanks at 10 Hz and sends one full-ID pose snapshot per tick to both teams.
+The snapshot starts with `TickSync` and uses the same channel sequencing
+throughout countdown and combat. Turret property changes use the reliable
+channel. Movement had also sent reliable copies without a tick timestamp,
+which could deliver pose changes at the wrong sample time.
+
+The server fits a hull pose to the terrain under a nominal track footprint
+at each spawn and again as the tank drives. Each Vehicle creation and the
+corresponding player's cell creation use the same terrain-supported world pose.
+The extractor keeps `terrain2/heights` from each outdoor chunk and the map's
+`space.settings`. The server interpolates the quantized PNG heights over the
+terrain triangles. A missing spawn tile rejects launch, and movement stops at
+the edge of available terrain.
 See [Avatar movement](../references/wot-src/sources/res/scripts/client/Avatar.py#L1783)
 and [client aim tracking](../references/wot-src/sources/res/scripts/client/VehicleGunRotator.py#L368)
 for the client inputs. The detailed position frame was checked against
@@ -356,9 +368,49 @@ the round. A shot consumes one round, applies a three-second reload, and
 casts a ray from the server-side gun position. The closest live opponent
 intersecting the ray takes up to 75 hit points. Both peers receive the muzzle
 event, tracer and health change. Eliminating the last opposing tank finishes
-the round. This uses a level driving plane, equal vehicle movement parameters,
-simple tank hit volumes and generic shot effects. Terrain adhesion, collision,
+the round. Track dimensions are shared by the training simulation. Vehicle collision,
 armour, gun-specific ballistics and spectator controls remain separate work.
+
+The native [battle debug controller](../references/wot-src/sources/res/scripts/client/gui/battle_control/controllers/debug_ctrl.py#L45)
+reads ping from `BigWorld.statPing()` and the red indicator from
+`BigWorld.statLagDetected()`. In the installed x64 client, the connection
+latency path at `0x14041be50` clamps the ping statistic to at least 1 ms
+before the stat binding at `0x140ab5500` reads it. The server immediately
+acknowledges accepted reliable arena packets so the client can measure
+round-trip time.
+
+The native client recorded the Avatar control handoff in the 21 November
+2026 training replay, but the replay lacked the periodic Avatar poses. The
+x64 packet receiver calls the unreliable sequence validator at
+`0x142d4cab4` for external channel traffic. The validator at `0x142d35ef0`
+requires a valid 28-bit sequence and rejects older datagrams. Without the
+footer, the packet retains the constructor's `0x10000000` sentinel
+(`0x142d45ea6`) and fails validation. The server now
+adds the sequence footer to all on-channel packets, including standalone
+acknowledgements and single-packet snapshots. Unreliable datagrams draw
+from a separate allocator so reliability can maintain its own contiguous
+sequence. This matches the external channel framing in the
+[BigWorld UDP bundle reference](../references/BigWorld-Engine-14.4.1/programming/bigworld/lib/network/udp_bundle.cpp#L432).
+
+The red dot is driven by the lag checks at `0x14041bfd0`. The
+[Avatar script](../references/wot-src/sources/res/scripts/client/Avatar.py#L315)
+registers its native AvatarFilter through `enableLagDetection(True)`.
+The compiled `createCellPlayer` handler at `0x142cf7c20` adds the Avatar
+to the locally controlled set. The detailed Avatar pose handler at
+`0x142cf7070` returns early for members of that set. Arena entry sends
+`controlEntity` (`0x41`) with the Avatar ID and control disabled, which
+removes it from that set at `0x142cf7a3c`. The server then supplies
+hull-relative Avatar poses and detailed Vehicle poses each tick, including
+while parked. Driving and shooting still use Avatar cell methods. The
+two-peer protocol test models the compiled client's pose gate. The red dot
+still needs verification in the native HUD.
+
+Each roster row starts as loading. `Avatar.setClientReady` publishes a
+nested `AvatarVehiclesInfo.vehiclesInfo` update of `isAvatarReady`, followed by
+the row's `__generation` commit. Both are required by the
+[native roster component](../references/wot-src/sources/res/scripts/client_common/AvatarVehiclesInfoBase.py#L22).
+Late arrivals receive current readiness after their roster is created.
+Departure clears the ready flag for remaining players.
 
 The bundle used for the two-peer protocol check was extracted from the installed
 EU client reporting `v.2.4.1.1 #993`. The launcher executable SHA-256 was

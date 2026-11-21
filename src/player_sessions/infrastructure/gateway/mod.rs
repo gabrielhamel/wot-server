@@ -161,6 +161,7 @@ pub struct Gateway {
     sessions: HashMap<ClientKey, Session>,
     training_arenas: HashMap<i32, Option<training::battle::ArenaMap>>,
     training_battles: BTreeMap<u32, training::battle::TrainingBattle>,
+    training_resources: ResourceBundle,
     training_wire: Option<training::battle::ArenaWire>,
     account_bootstrap: AccountBootstrap,
     training_rooms: BTreeMap<u32, training::HostedRoom>,
@@ -258,6 +259,7 @@ impl Gateway {
             training_rooms: BTreeMap::new(),
             training_battles: BTreeMap::new(),
             training_wire,
+            training_resources: resources.clone(),
             last_training_room_id: 0,
             pending_writes: HashSet::new(),
             account_change_epoch: 0,
@@ -280,7 +282,8 @@ impl Gateway {
     }
 
     pub fn run(mut self, stop: Arc<AtomicBool>) -> Result<()> {
-        let mut tick = Instant::now() + Duration::from_millis(100);
+        let interval = training::battle::TICK;
+        let mut tick = Instant::now() + interval;
         while !stop.load(Ordering::Relaxed) {
             while let Ok(completion) = self.completions.try_recv() {
                 let TracedCompletion { parent, value } = completion;
@@ -330,8 +333,12 @@ impl Gateway {
                 for client in self.base.take_disconnected_clients() {
                     self.remove_session(client);
                 }
-                self.tick_training_battles(Instant::now());
-                tick = Instant::now() + Duration::from_millis(100);
+                let now = Instant::now();
+                self.tick_training_battles(now);
+                tick += interval;
+                if tick <= now {
+                    tick = now + interval;
+                }
             }
         }
         info!("Garage gateway stopped");

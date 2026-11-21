@@ -33,7 +33,7 @@ ContextMap Server {
     implementationTechnology = "Versioned resource bundle containing garage definitions, camouflage price groups, regular tech trees and vehicle labels"
   }
   ResourceExtraction [U,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch plus arena definitions for Training Room map validation and shared arena entry"
+    implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch plus arena definitions and terrain heights for Training Room validation and training battles"
   }
   GameClient [U] -> [D,ACL] PlayerSessions {
     implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage, shared Training Room RPCs, invitations, BW_CHAT2 room messages and training arena handoff, vehicle controls and combat updates; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"

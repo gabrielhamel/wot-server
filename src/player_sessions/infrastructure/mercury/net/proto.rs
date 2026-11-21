@@ -34,7 +34,7 @@ pub struct Protocol {
 /// A structure referenced by any channel handle, containing shared states.
 #[derive(Debug)]
 struct ProtocolShared {
-    /// Sequence number allocator used for off-channel communications.
+    /// Sequence allocator for traffic outside the reliable channel stream.
     off_seq_alloc: SeqAlloc,
 }
 
@@ -471,11 +471,12 @@ impl Channel<'_> {
     /// Prepare a bundle to be sent, adding acks and other configuration required by this
     /// tracker into all packets. After this function, all packets are ready to be sent
     /// and the bundle should not be touched for this to remain true.
+    /// Returns the first packet's sequence number when one was allocated.
     ///
     /// NOTE: FIXME: It's said that external interfaces don't allow off-channel reliable
     /// communication (see packet_receiver.cpp, line 977).
     #[instrument(level = "trace", skip(self, bundle))]
-    pub fn prepare(&mut self, bundle: &mut Bundle, reliable: bool) {
+    pub fn prepare(&mut self, bundle: &mut Bundle, reliable: bool) -> Option<Seq> {
         let time = Instant::now();
         let bundle_len = bundle.len() as u32;
         trace!("Count: {bundle_len}");
@@ -486,7 +487,7 @@ impl Channel<'_> {
         packet_config.set_reliable(reliable);
 
         let mut sequence_num = None;
-        if bundle_len > 1 || reliable {
+        if self.is_on() || reliable || bundle_len > 1 {
             let first = self.inner.alloc_sequence_num(bundle_len, reliable);
             trace!(
                 "Allocated sequence numbers: {}..{}",
@@ -560,6 +561,7 @@ impl Channel<'_> {
                 self.inner.off.in_reliable_packets
             )
         }
+        sequence_num
     }
 }
 

@@ -34,8 +34,11 @@ server. Older manifests without the field remain supported.
 
 - **Player Sessions** uses Packed XML aliases, entity and component lists and definitions,
   interface definitions and extension descriptors for the protocol ABI. Training Room
-  creation validates the selected arena against `scripts/arena_defs/`. Re-extract older
-  bundles to enable creation. The server can start and serve the garage with an older bundle.
+  creation validates the selected arena against `scripts/arena_defs/`.
+  **Start Battle** also needs the map's outdoor height tiles. The extractor
+  keeps `space.settings` and `terrain2/heights` under the bundled `spaces/`
+  tree. Re-extract a bundle without terrain before launching training battles.
+  Bundles without arena definitions still serve the garage.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
   item definitions, customization price groups, style, camouflage, paint, decal, projected decal, effect, personal-number attachment and stat tracker definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle

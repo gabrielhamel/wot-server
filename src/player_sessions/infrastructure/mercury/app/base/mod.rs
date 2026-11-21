@@ -188,11 +188,29 @@ impl App {
                 Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
             };
 
+            let reliable = packet.read_flags()
+                & crate::player_sessions::mercury::net::packet::flags::IS_RELIABLE
+                != 0;
             let Ok(mut channel) = self.protocol.accept(packet, addr) else {
                 continue;
             };
 
-            let Some(bundle) = channel.next_bundle() else {
+            let acknowledge = reliable
+                && channel.is_on()
+                && channel.index().is_none()
+                && self
+                    .client_keys
+                    .get(&addr)
+                    .and_then(|key| self.clients.get(key.slot))
+                    .is_some_and(|state| state.arena_vehicle_id.is_some());
+            let bundle = channel.next_bundle();
+            if acknowledge && let Err(error) = self.acknowledge_arena_packet(addr) {
+                return Event::IoError(IoErrorEvent {
+                    error,
+                    addr: Some(addr),
+                });
+            }
+            let Some(bundle) = bundle else {
                 continue;
             };
 
@@ -859,16 +877,47 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn arena_tick(&mut self, client: ClientKey, tick: u8) -> io::Result<()> {
+    #[tracing::instrument(name = "mercury.acknowledge_arena_packet", skip_all, fields(
+        ddd.bounded_context.name = "player_sessions", network.peer.address = %addr.ip(),
+        network.peer.port = addr.port(), output.delivery = tracing::field::Empty,
+        output.packet.sequence = tracing::field::Empty,
+        otel.status_code = tracing::field::Empty,
+    ), err)]
+    fn acknowledge_arena_packet(&mut self, addr: SocketAddr) -> io::Result<()> {
+        self.bundle.clear();
+        self.bundle.push_empty();
+        self.send_unreliable_arena_bundle(addr)?;
+        tracing::Span::current().record("output.delivery", "sent");
+        Ok(())
+    }
+
+    pub(crate) fn arena_tick(
+        &mut self,
+        client: ClientKey,
+        tick: u8,
+        avatar: client::element::arena::AvatarPosition,
+        vehicles: impl Iterator<Item = client::element::arena::VehiclePosition>,
+    ) -> io::Result<()> {
         self.client(client)?;
         self.bundle.clear();
-        self.bundle
-            .element_writer()
-            .write_simple(client::element::TickSync { tick })?;
-        self.protocol
-            .channel(client.addr, None)
+        let mut writer = self.bundle.element_writer();
+        writer.write_simple(client::element::TickSync { tick })?;
+        writer.write_simple(avatar)?;
+        for position in vehicles {
+            writer.write_simple(position)?;
+        }
+        self.send_unreliable_arena_bundle(client.addr)
+    }
+
+    fn send_unreliable_arena_bundle(&mut self, addr: SocketAddr) -> io::Result<()> {
+        let sequence = self
+            .protocol
+            .channel(addr, None)
             .prepare(&mut self.bundle, false);
-        self.socket.send_bundle(&self.bundle, client.addr)?;
+        self.socket.send_bundle(&self.bundle, addr)?;
+        if let Some(sequence) = sequence {
+            tracing::Span::current().record("output.packet.sequence", i64::from(sequence.get()));
+        }
         Ok(())
     }
 
