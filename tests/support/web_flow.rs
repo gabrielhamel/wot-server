@@ -1,3 +1,8 @@
+use rsa::{
+    RsaPrivateKey,
+    pkcs8::{EncodePrivateKey, LineEnding},
+    rand_core::OsRng,
+};
 use std::{
     fs,
     io::{Read, Write},
@@ -48,10 +53,19 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
         .local_addr()
         .unwrap();
     let admin_cookie = "wot_admin_session=not-a-session";
-    let debug_log = fs::File::create(fixture.directory.join("server.log")).unwrap();
+    let key = RsaPrivateKey::new(&mut OsRng, 1024).unwrap();
+    let key_path = fixture.directory.join("web-test-login.pem");
+    let log_path = fixture.directory.join("server.log");
+    fs::write(
+        &key_path,
+        key.to_pkcs8_pem(LineEnding::LF).unwrap().as_bytes(),
+    )
+    .unwrap();
+    let debug_log = fs::File::create(&log_path).unwrap();
     let configuration = serde_json::json!({
         "resource_dir": resources,
         "database_url": database_url,
+        "private_key": key_path,
         "login_bind": "127.0.0.1:0",
         "base_bind": "127.0.0.1:0",
         "web": {"bind": address.to_string(), "ui_dir": "web"},
@@ -65,6 +79,7 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
     .unwrap();
     fixture.server = Some(
         Command::new(executable)
+            .args(["--log-level", "info"])
             .env_remove("OTEL_EXPORTER_OTLP_ENDPOINT")
             .stdout(Stdio::null())
             .stderr(debug_log)
@@ -72,21 +87,18 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
             .unwrap(),
     );
 
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while TcpStream::connect(address).is_err() {
-        if fixture
-            .server
-            .as_mut()
-            .unwrap()
-            .try_wait()
-            .unwrap()
-            .is_some()
-            || Instant::now() >= deadline
-        {
+    let started = Instant::now();
+    loop {
+        let status = fixture.server.as_mut().unwrap().try_wait().unwrap();
+        if status.is_some() || started.elapsed() >= Duration::from_secs(60) {
+            let log = fs::read_to_string(&log_path).unwrap();
             panic!(
-                "Web listener failed to start: {}",
-                fs::read_to_string(fixture.directory.join("server.log")).unwrap()
+                "Web listener at {address} failed to start after {:.1?} (process status {status:?})\n{log}",
+                started.elapsed()
             );
+        }
+        if TcpStream::connect(address).is_ok() {
+            break;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
