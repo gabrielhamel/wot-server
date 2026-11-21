@@ -3426,6 +3426,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "wot-replay"
+version = "0.13.0"
+dependencies = [
+ "anyhow",
+ "blowfish",
+ "clap",
+ "flate2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "wot-resources"
 version = "0.13.0"
 dependencies = [

@@ -1,3 +1,4 @@
 [alias]
 context-maps = "run --quiet --locked -p wot-context-maps --"
 game-client = "run --quiet --locked -p wot-game-client --"
+wot-replay = "run --quiet --locked -p wot-replay --"
