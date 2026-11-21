@@ -4,6 +4,7 @@ members = [
     "tools/wot-context-maps",
     "tools/wot-extract",
     "tools/wot-game-client",
+    "tools/wot-replay",
     "tools/wot-resources",
 ]
 resolver = "3"
