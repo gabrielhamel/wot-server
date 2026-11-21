@@ -568,14 +568,17 @@ impl Gateway {
         if session.entity.is_some() {
             return Ok(());
         }
-        let store_settings = if let Some(store) = &self.store {
-            let token = StoreToken::generate()?;
-            let url = format!("{}/shop/#{}", store.origin, token.encode());
-            session.store_token = Some(token);
-            Some((url, store.host.as_str()))
-        } else {
-            None
-        };
+        if self.store.is_some() && session.store_token.is_none() {
+            session.store_token = Some(StoreToken::generate()?);
+        }
+        let store_settings =
+            self.store
+                .as_ref()
+                .zip(session.store_token.as_ref())
+                .map(|(store, token)| {
+                    let url = format!("{}/shop/#{}", store.origin, token.encode());
+                    (url, store.host.as_str())
+                });
         let snapshot = &session.account.snapshot;
         let equipment_upgrades = self.catalog.equipment_upgrades_enabled();
         let entity = self.base.create_base_player::<Account>(

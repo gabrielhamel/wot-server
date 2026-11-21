@@ -1328,6 +1328,7 @@ pub fn exercise_battle(
     guest_vehicle: i64,
     script: &ScriptDispatch,
     shell_damage: u16,
+    check_store_in_battle: impl FnOnce(),
 ) {
     let command = |peer: &mut Peer, request, command, args: [i64; 3]| {
         let mut values = vec![Value::Int16(request), Value::Int16(command)];
@@ -1416,6 +1417,7 @@ pub fn exercise_battle(
     guest.enable_entities();
     host.until(script, |p| p.arena_roster.is_some());
     guest.until(script, |p| p.arena_roster.is_some());
+    check_store_in_battle();
 
     let host_cell = host.cell.as_ref().unwrap();
     let guest_cell = guest.cell.as_ref().unwrap();

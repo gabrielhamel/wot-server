@@ -59,7 +59,7 @@ with Accounts.
 | Generation | Identifies a lookup so a timed-out completion cannot approve a later attempt. |
 | Handoff ticket | Random, one-use key granting a same-IP client access to BaseApp for 30 seconds. |
 | Session | One admitted client and its account projection; one session per account. |
-| Store session token | Random credential issued in the Store URL fragment and scoped to the synchronized garage session. |
+| Store session token | Random credential issued in the Store URL fragment, kept for the game session and accepted while the garage is synchronized. |
 | Account entity | Client protocol representation created after the client enables entities. |
 | Resource stream | CRC-described, fragmented transfer correlated with an account command request ID. |
 | Training Room | A discoverable lobby with one host and optional guests. It ends when its battle starts or the host leaves. |
