@@ -5,7 +5,7 @@ use package::PackageReader;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
-    io::{self, BufReader, BufWriter, Write},
+    io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
 };
 use wot_resources::validate_resource_path;
@@ -85,6 +85,7 @@ impl ClientResources {
                 }
             }
         }
+        resources.index_loose(&root, "spaces")?;
         Ok(resources)
     }
 
@@ -116,6 +117,68 @@ impl ClientResources {
 
     pub fn contains(&self, path: &str) -> bool {
         self.files.contains_key(path)
+    }
+
+    pub fn copy_terrain(&mut self, path: &str, root: &Path) -> Result<Option<(usize, u64)>> {
+        let Some((space, chunk)) = path.rsplit_once('/') else {
+            return Ok(None);
+        };
+        let Some(stem) = chunk.strip_suffix("o.cdata_processed") else {
+            let bytes = self.copy(path, &root.join(path))?;
+            return Ok(Some((1, bytes)));
+        };
+        let mut archive = Vec::new();
+        match self
+            .files
+            .get(path)
+            .context("Missing terrain package entry")?
+        {
+            Source::Package {
+                package,
+                entry,
+                size,
+            } => {
+                ensure!(
+                    *size <= 16 * 1024 * 1024,
+                    "Terrain chunk exceeds size limit"
+                );
+                self.packages
+                    .get_mut(*package)
+                    .context("Missing map package")?
+                    .read_by_index(*entry)?
+                    .read_to_end(&mut archive)?;
+            }
+            Source::Loose(path) => {
+                let file = File::open(path)?;
+                ensure!(
+                    file.metadata()?.len() <= 16 * 1024 * 1024,
+                    "Terrain chunk exceeds size limit"
+                );
+                file.take(16 * 1024 * 1024 + 1).read_to_end(&mut archive)?;
+            }
+        }
+        let mut archive = PackageReader::new(io::Cursor::new(archive))?;
+        let height = archive
+            .infos()
+            .enumerate()
+            .find(|(_, item)| item.name == "terrain2/heights")
+            .map(|(index, item)| (index, item.size));
+        let Some((index, size)) = height else {
+            return Ok(None);
+        };
+        ensure!(size <= 512 * 1024, "Terrain height map exceeds size limit");
+        let directory = root.join(space).join("terrain");
+        fs::create_dir_all(&directory)?;
+        let mut output = BufWriter::new(
+            File::options()
+                .write(true)
+                .create_new(true)
+                .open(directory.join(format!("{stem}.hmp")))?,
+        );
+        let bytes = io::copy(&mut archive.read_by_index(index)?, &mut output)?;
+        ensure!(bytes == u64::from(size), "Truncated terrain height map");
+        output.flush()?;
+        Ok(Some((1, bytes)))
     }
 
     pub fn copy(&mut self, path: &str, target: &Path) -> Result<u64> {
@@ -151,7 +214,25 @@ impl ClientResources {
     }
 }
 
+pub fn is_terrain(path: &str) -> bool {
+    let Some((space, filename)) = path.strip_prefix("spaces/").and_then(|p| p.split_once('/'))
+    else {
+        return false;
+    };
+    !space.is_empty()
+        && (filename == "space.settings"
+            || filename
+                .strip_suffix("o.cdata_processed")
+                .is_some_and(|coordinates| {
+                    coordinates.len() == 8
+                        && coordinates.bytes().all(|digit| digit.is_ascii_hexdigit())
+                }))
+}
+
 fn is_candidate(path: &str) -> bool {
+    if is_terrain(path) {
+        return true;
+    }
     let Some((first, rest)) = path.split_once('/') else {
         return false;
     };

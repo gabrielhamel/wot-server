@@ -1,7 +1,7 @@
 //! Login application where clients ping and initiate connection in order to be routed
 //! to the base application afterward.
 
-use crate::player_sessions::mercury::net::limits;
+use crate::platform::mercury::net::limits;
 pub mod element;
 
 use std::collections::{HashMap, VecDeque};
@@ -14,9 +14,9 @@ use blowfish::Blowfish;
 use blowfish::cipher::KeyInit;
 use rsa::RsaPrivateKey;
 
-use crate::player_sessions::mercury::net::bundle::{Bundle, ElementReader, NextElementReader};
-use crate::player_sessions::mercury::net::proto::Protocol;
-use crate::player_sessions::mercury::net::socket::PacketSocket;
+use crate::platform::mercury::net::bundle::{Bundle, ElementReader, NextElementReader};
+use crate::platform::mercury::net::proto::Protocol;
+use crate::platform::mercury::net::socket::PacketSocket;
 
 use super::io_invalid_data;
 

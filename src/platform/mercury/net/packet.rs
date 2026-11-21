@@ -1,6 +1,6 @@
 //! Packet structure definition with synchronization methods.
 
-use crate::player_sessions::mercury::net::limits;
+use crate::platform::mercury::net::limits;
 use std::collections::VecDeque;
 use std::fmt;
 use std::io::{Cursor, Read};
@@ -316,10 +316,7 @@ pub struct PacketConfig {
     ///
     /// Used when `flags::HAS_REQUESTS` is set.
     first_request_offset: u16,
-    /// The sequence number of this packet, it is used if reliable mode is enabled
-    /// **and/or** if the packet is a fragment of a chain of packet.
-    ///
-    /// Used when `flags::IS_RELIABLE` and/or `flags::IS_FRAGMENT` is set.
+    /// The sequence number carried by on-channel, reliable, or fragmented packets.
     sequence_num: Seq,
     /// If this packet is a fragment (defined just after), this contains the
     /// sequence number of the first packet in the chain.
@@ -435,8 +432,13 @@ impl PacketConfig {
         self.first_request_offset = 0;
     }
 
-    /// Return the sequence number of the packet, it is used if reliable mode is enabled
-    /// and/or if the packet is a fragment of a chain of packet.
+    /// Returns whether the packet carries a sequence number footer.
+    #[inline]
+    pub fn has_sequence_num(&self) -> bool {
+        self.has_flags(flags::HAS_SEQUENCE_NUMBER)
+    }
+
+    /// Returns the packet sequence number when the footer is present.
     #[inline]
     pub fn sequence_num(&self) -> Seq {
         self.sequence_num
@@ -749,8 +751,7 @@ impl PacketConfig {
             }
         }
 
-        if self.has_flags(flags::HAS_SEQUENCE_NUMBER) {
-            // NOTE: This will be really used if IS_RELIABLE or IS_FRAGMENT.
+        if self.has_sequence_num() {
             self.sequence_num = data
                 .pop_back(4)
                 .ok_or(PacketConfigError::MissingSequenceNumFooter)?
@@ -849,8 +850,7 @@ impl PacketConfig {
         }
 
         // Min footer += 4
-        if self.has_flags(flags::IS_RELIABLE) || self.has_flags(flags::IS_FRAGMENT) {
-            // This flags is not used by getters/setters so it's safe to change it here.
+        if self.on_channel() || self.reliable() || self.has_flags(flags::IS_FRAGMENT) {
             self.enable_flags(flags::HAS_SEQUENCE_NUMBER);
             packet.grow(4).write_u32(self.sequence_num.get()).unwrap();
         } else {
@@ -967,7 +967,7 @@ impl fmt::Debug for PacketConfig {
                 debug.field("first_request_offset", &val);
             }
 
-            if self.reliable() || self.sequence_range().is_some() {
+            if self.has_sequence_num() {
                 debug.field("sequence_num", &self.sequence_num());
             }
 

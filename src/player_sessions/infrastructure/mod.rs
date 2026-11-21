@@ -6,5 +6,3 @@ mod credentials;
 mod endpoint;
 
 pub mod xmpp;
-
-pub mod mercury;

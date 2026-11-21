@@ -1,7 +1,7 @@
 ContextMap Server {
   type = SYSTEM_LANDSCAPE
   state = AS_IS
-  contains GameClient, ResourceExtraction, BinaryMapping, Accounts, Social, PlayerSessions, PlayerAdministration, SharedKernel, Platform
+  contains GameClient, ResourceExtraction, BinaryMapping, Accounts, Social, PlayerSessions, Battles, PlayerAdministration, SharedKernel, Platform
   SharedKernel [U] -> [D] PlayerAdministration {
     implementationTechnology = "Shared Rust AccountId validates parsed HTTP path identifiers"
   }
@@ -15,7 +15,10 @@ ContextMap Server {
     implementationTechnology = "Common client-format codecs and PostgreSQL span adapter"
   }
   Platform [U] -> [D] PlayerSessions {
-    implementationTechnology = "Common client-format codecs, bounded HTTP serving, blocking-work span propagation, and browser HTTP tracing and theme"
+    implementationTechnology = "Common Mercury transport and client-format codecs, bounded HTTP serving, blocking-work span propagation, and browser HTTP tracing and theme"
+  }
+  Platform [U] -> [D] Battles {
+    implementationTechnology = "Shared BaseApp transport, script dispatch, and client-format codecs"
   }
   Platform [U] -> [D] PlayerAdministration {
     implementationTechnology = "Bounded HTTP serving for the admin API, with shared TypeScript HTTP tracing and theme for the dashboard"
@@ -33,10 +36,19 @@ ContextMap Server {
     implementationTechnology = "Versioned resource bundle containing garage definitions, camouflage price groups, regular tech trees and vehicle labels"
   }
   ResourceExtraction [U,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch plus arena definitions for Training Room map validation"
+    implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
   }
   GameClient [U] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage, shared Training Room RPCs, invitations and BW_CHAT2 room messages; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
+    implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage, shared Training Room RPCs, invitations, BW_CHAT2 room messages and garage-to-arena handoff; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
+  }
+  ResourceExtraction [U,PL] -> [D,ACL] Battles {
+    implementationTechnology = "Resource bundle with arena definitions, geometry, terrain height tiles and battle entity schemas"
+  }
+  GameClient [U] -> [D,ACL] Battles {
+    implementationTechnology = "Native Avatar and Vehicle control methods, arena lifecycle events and entity replication over Mercury"
+  }
+  Battles [U,OHS,PL] -> [D,ACL] PlayerSessions {
+    implementationTechnology = "Map queries, battle launch with an assigned roster and equipped loadouts, and participant lifecycle for garage handoff and return"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections"
@@ -51,7 +63,7 @@ ContextMap Server {
     implementationTechnology = "Published contacts/search and durable private message APIs adapted to native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Published authentication, opaque account view and garage projections with revision-checked commands. Sessions orders commands and delivers committed results."
+    implementationTechnology = "Published authentication, opaque account view, garage and equipped vehicle projections for battle, and revision-checked commands. Sessions orders commands and delivers committed results."
   }
 }
 BoundedContext GameClient {
@@ -67,7 +79,11 @@ BoundedContext Accounts {
   domainVisionStatement = "Own durable identity, password hashes, player roles, dashboard sessions, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, cosmetic ownership and seasonal and common outfits, crew rosters and training, Premium Account expiry, and revisions in PostgreSQL; project snapshots into versioned garage caches."
 }
 BoundedContext PlayerSessions {
-  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle, Training Room membership, invitations and room text chat, Store browser access and delivery of committed garage and chat updates and Premium Account expiry notifications."
+  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle, Training Room membership, invitations, room text chat, garage-to-arena handoff, Store browser access and delivery of committed garage and chat updates and Premium Account expiry notifications."
+}
+
+BoundedContext Battles {
+  domainVisionStatement = "Own live arenas, battle IDs, participants, round phases, map and terrain use, vehicle simulation, combat resolution and native battle state replication."
 }
 
 BoundedContext Social {
@@ -83,5 +99,5 @@ BoundedContext SharedKernel {
 }
 
 BoundedContext Platform {
-  domainVisionStatement = "Supply reusable tracing adapters and client-format codecs independently of the server's domain models."
+  domainVisionStatement = "Supply reusable Mercury transport, tracing adapters and client-format codecs independently of the server's domain models."
 }

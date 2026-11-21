@@ -4,7 +4,7 @@ use std::fmt;
 use std::io::{self, Read, Write};
 
 use crate::platform::client_formats::util::io::{WgReadExt, WgWriteExt};
-use crate::player_sessions::mercury::net::element::ElementLength;
+use crate::platform::mercury::net::element::ElementLength;
 
 use super::codec::Codec;
 use super::element::{Element, REPLY_ID, Reply};
@@ -955,7 +955,7 @@ impl fmt::Debug for ReplyReader<'_, '_> {
 mod tests {
 
     use super::*;
-    use crate::player_sessions::mercury::net::element::{DebugElementFixed, DebugElementVariable8};
+    use crate::platform::mercury::net::element::{DebugElementFixed, DebugElementVariable8};
 
     /// Fails to encode after writing some bytes, like a value that doesn't fit its type.
     struct Failing;

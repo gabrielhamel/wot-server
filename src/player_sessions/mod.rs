@@ -4,12 +4,10 @@ mod infrastructure;
 use application::{GrantDelivery, GrantRequestError, PlayerGrants};
 pub use infrastructure::{Gateway, GatewayAccounts, GatewayConfig};
 
-use infrastructure::mercury;
-
 #[cfg(feature = "integration-test-support")]
 #[doc(hidden)]
 pub mod test_support {
-    pub use super::infrastructure::mercury;
+    pub use crate::platform::mercury;
 }
 
 #[cfg(test)]

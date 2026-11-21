@@ -1,7 +1,7 @@
 use super::{Account, ClientKey, EntityKey, Gateway};
 use crate::{
     accounts::contract::{ProgressionCommand, cosmetic_purchase},
-    player_sessions::mercury::app::entity::Bytes,
+    platform::mercury::app::entity::Bytes,
 };
 
 pub(super) const BUY_CUSTOMIZATIONS: i16 = 118;

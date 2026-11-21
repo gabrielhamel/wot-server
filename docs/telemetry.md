@@ -190,6 +190,44 @@ Excluding a guest records the target Account entity ID and room. The
 exclusion trace includes roster removal for the remaining players, the
 guest's kick notice and chat close, and the host's command acknowledgement.
 
+**Start Battle** records the host's two team confirmations and the selected
+room and arena. The launch request retains its trace through roster
+preparation and the participants' `EnableEntities` acknowledgments.
+
+```text
+game.command                                      [doCmdInt3, 411]
+  player_sessions.commands.command
+    player_sessions.start_training_battle
+      mercury.response                            [onCmdResponse]
+      player_sessions.prepare_training_battle
+        accounts.battle_vehicle                   [for each combat vehicle]
+        battles.prepare                           [allocates battle ID and prepares arena]
+          battles.load_terrain                     [when terrain is loaded]
+          battles.enter                            [one per participant handoff]
+            mercury.arena_delivery                 [arena elements and delivery]
+```
+
+Avatar commands record the player's account and entity ID. The readiness
+command that starts the countdown also parents the period broadcast.
+Arena cell commands trace the wire element and target entity IDs, the method,
+and the argument byte count. A movement or aim command retains its span
+through the first changed position or angle published on the simulation tick.
+Position replication records the tick and counts the recipients and successful
+socket writes of the shared timestamped snapshot.
+Shots retain their parent through target selection, damage, and the muzzle,
+tracer, reload and health deliveries. Unsupported methods emit an error span.
+Target ownership, invalid input, inactive rounds, and reloading are distinct
+outcomes.
+
+Battle preparation traces the map geometry and the number of height
+tiles loaded from the extracted resource bundle. A native `setClientReady`
+command parents the nested roster update and generation commit for both
+peers. Departure sends the corresponding disconnected state. Arena transport
+acknowledgements record socket delivery and the transport sequence number,
+with no game payload.
+Each arena entry records the Avatar control mode and parents delivery of the
+control handoff to the client.
+
 Training Room invitations record recipient counts and the optional message's
 byte length. Each queued invite and its delivery retain the original command
 trace. Accept, decline and room cleanup trace the resulting invitation

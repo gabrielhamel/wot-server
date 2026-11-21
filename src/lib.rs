@@ -44,6 +44,7 @@
 //! ```
 
 pub mod accounts;
+mod battles;
 pub(crate) mod player_administration;
 pub mod player_sessions;
 pub mod server;

@@ -15,8 +15,10 @@ use wot_server::player_sessions::test_support::mercury::app::{
 };
 use wot_server::player_sessions::test_support::mercury::net::{
     bundle::{Bundle, NextElementReader},
-    element::{Element, ElementLength},
+    element::{Element, ElementLength, SimpleElement},
+    packet::{PACKET_HEADER_LEN, PacketConfig},
     proto::Protocol,
+    seq::Seq,
     socket::PacketSocket,
 };
 use wot_server::player_sessions::test_support::mercury::script::{StringValue, Value};
@@ -25,14 +27,20 @@ struct Method<'a> {
     methods: &'a [MethodDef],
     index: u16,
     args: Vec<Value>,
+    target: Option<u32>,
 }
 impl Element<()> for Method<'_> {
     fn write_length(&self, _: &()) -> io::Result<ElementLength> {
         Ok(ElementLength::Variable16)
     }
     fn write(&self, write: &mut dyn Write, _: &()) -> io::Result<u8> {
-        let (id, sub) =
-            base::id::BASE_ENTITY_METHOD.from_exposed_id(self.methods.len() as u16, self.index);
+        let range = if let Some(target) = self.target {
+            write.write_all(&target.to_le_bytes())?;
+            base::id::CELL_ENTITY_METHOD
+        } else {
+            base::id::BASE_ENTITY_METHOD
+        };
+        let (id, sub) = range.from_exposed_id(self.methods.len() as u16, self.index);
         if let Some(sub) = sub {
             write.write_all(&[sub])?;
         }
@@ -63,6 +71,24 @@ pub struct Peer {
     completed: BTreeMap<u16, Vec<u8>>,
     pub methods: Vec<(String, Vec<Value>)>,
     pub responses: Vec<(i16, i16)>,
+    pub player_entity_id: u32,
+    pub entered_arena: Option<(u64, i32)>,
+    pub cell: Option<client::arena::CreateCellPlayer>,
+    pub geometry: Option<client::arena::GeometryMapping>,
+    pub arena_entities: Vec<client::arena::CreateArenaEntity>,
+    pub arena_roster: Option<Vec<u8>>,
+    pub resets: usize,
+    pub positions: BTreeMap<u32, glam::Vec3>,
+    pub arena_tick: Option<u8>,
+    pub avatar_position_frames: usize,
+    avatar_locally_controlled: Option<bool>,
+    pub nrl_updates: Vec<Vec<u8>>,
+    pub last_sent_reliable: Seq,
+    pub ack_only_through: Option<Seq>,
+    last_unreliable_sequence: Option<Seq>,
+    pub vehicle_methods: Vec<(u32, String, Vec<Value>)>,
+    selected_entity: Option<u32>,
+    player_type: Option<u16>,
 }
 
 impl Peer {
@@ -93,6 +119,24 @@ impl Peer {
             completed: BTreeMap::new(),
             methods: Vec::new(),
             responses: Vec::new(),
+            player_entity_id: 0,
+            entered_arena: None,
+            cell: None,
+            geometry: None,
+            arena_entities: Vec::new(),
+            arena_roster: None,
+            resets: 0,
+            positions: BTreeMap::new(),
+            arena_tick: None,
+            avatar_position_frames: 0,
+            avatar_locally_controlled: None,
+            nrl_updates: Vec::new(),
+            last_sent_reliable: Seq::ZERO,
+            ack_only_through: None,
+            last_unreliable_sequence: None,
+            vehicle_methods: Vec::new(),
+            selected_entity: None,
+            player_type: None,
         }
     }
 
@@ -232,10 +276,38 @@ impl Peer {
         self.protocol
             .channel(self.base, None)
             .prepare(&mut bundle, true);
+        let mut config = PacketConfig::new();
+        bundle
+            .iter()
+            .last()
+            .unwrap()
+            .read_config(&mut config)
+            .unwrap();
+        self.last_sent_reliable = config.sequence_num();
         self.socket.send_bundle(&bundle, self.base).unwrap();
     }
     pub fn command(&mut self, dispatch: &ScriptDispatch, name: &str, args: Vec<Value>) {
-        let methods = &dispatch.entity_from_name("Account").unwrap().1.base_methods;
+        let entity = dispatch.entity_from_id(self.player_type.unwrap()).unwrap();
+        self.call(&entity.base_methods, name, args, None);
+    }
+
+    pub fn cell_command(&mut self, dispatch: &ScriptDispatch, name: &str, args: Vec<Value>) {
+        let avatar = dispatch.entity_from_id(self.player_type.unwrap()).unwrap();
+        self.call(&avatar.cell_methods, name, args, Some(0));
+    }
+
+    pub fn vehicle_command(
+        &mut self,
+        dispatch: &ScriptDispatch,
+        target: u32,
+        name: &str,
+        args: Vec<Value>,
+    ) {
+        let vehicle = dispatch.entity_from_name("Vehicle").unwrap().1;
+        self.call(&vehicle.cell_methods, name, args, Some(target));
+    }
+
+    fn call(&mut self, methods: &[MethodDef], name: &str, args: Vec<Value>, target: Option<u32>) {
         let index = methods.iter().position(|m| m.name.ends_with(name)).unwrap() as u16;
         let mut bundle = self.authenticated_bundle();
         bundle
@@ -244,10 +316,21 @@ impl Peer {
                 methods,
                 index,
                 args,
+                target,
             })
             .unwrap();
         self.send(bundle);
     }
+
+    pub fn enable_entities(&mut self) {
+        let mut bundle = self.authenticated_bundle();
+        bundle
+            .element_writer()
+            .write_simple(base::EnableEntities {})
+            .unwrap();
+        self.send(bundle);
+    }
+
     pub fn disconnect(&mut self) {
         let mut bundle = self.authenticated_bundle();
         bundle
@@ -269,9 +352,34 @@ impl Peer {
             let Ok((packet, addr)) = self.socket.recv() else {
                 continue;
             };
-            let mut channel = self.protocol.accept(packet, addr).unwrap();
+            let mut config = PacketConfig::new();
+            if packet.read_config(&mut config).is_ok() {
+                if config.on_channel() && !config.reliable() {
+                    assert!(
+                        config.has_sequence_num(),
+                        "native client rejects unsequenced on-channel datagrams"
+                    );
+                    let sequence = config.sequence_num();
+                    if self
+                        .last_unreliable_sequence
+                        .is_some_and(|last| sequence.wrapping_cmp(last).is_lt())
+                    {
+                        continue;
+                    }
+                    self.last_unreliable_sequence = Some(sequence);
+                }
+                if config.footer_offset() == PACKET_HEADER_LEN
+                    && let Some(cumulative) = config.cumulative_ack()
+                {
+                    self.ack_only_through = Some(cumulative);
+                }
+            }
+            let Ok(mut channel) = self.protocol.accept(packet, addr) else {
+                continue;
+            };
             for bundle in channel.pop_bundles() {
                 let mut reader = bundle.element_reader();
+                let mut has_tick = false;
                 while let Some(next) = reader.next_element() {
                     let NextElementReader::Element(element) = next else {
                         panic!("Unexpected reply");
@@ -293,6 +401,22 @@ impl Peer {
                             let Value::Dict(properties) = creation.entity_data.as_ref() else {
                                 panic!("Account creation properties")
                             };
+                            self.player_entity_id = creation.entity_id;
+                            self.player_type = Some(creation.entity_type_id);
+                            if creation.entity_type_id
+                                == dispatch.entity_from_name("Avatar").unwrap().0
+                            {
+                                let Value::UInt64(arena) = properties["arenaUniqueID"] else {
+                                    panic!("arena ID")
+                                };
+                                let Value::Int32(map) = properties["arenaTypeID"] else {
+                                    panic!("arena type")
+                                };
+                                assert_eq!(properties["arenaBonusType"], Value::UInt8(2));
+                                assert_eq!(properties["arenaGuiType"], Value::UInt8(2));
+                                self.entered_arena = Some((arena, map));
+                                continue;
+                            }
                             let (version_property, required_version) =
                                 super::account_version(dispatch);
                             assert_eq!(
@@ -395,11 +519,147 @@ impl Peer {
                             assert_eq!(creation.entity_type_id, 1);
                             self.created = true;
                         }
+                        client::arena::ResetEntities::ID => {
+                            let reset = element
+                                .read_simple::<client::arena::ResetEntities>()
+                                .unwrap()
+                                .element;
+                            assert!(!reset.keep_player_on_base);
+                            self.player_type = None;
+                            self.selected_entity = None;
+                            self.created = false;
+                            self.shown = false;
+                            self.entered_arena = None;
+                            self.cell = None;
+                            self.positions.clear();
+                            self.arena_tick = None;
+                            self.avatar_locally_controlled = None;
+                            self.avatar_position_frames = 0;
+                            self.geometry = None;
+                            self.arena_entities.clear();
+                            self.arena_roster = None;
+                            self.resets += 1;
+                        }
+                        client::arena::CreateCellPlayer::ID => {
+                            self.cell = Some(
+                                element
+                                    .read_simple::<client::arena::CreateCellPlayer>()
+                                    .unwrap()
+                                    .element,
+                            );
+                            self.avatar_locally_controlled = Some(true);
+                        }
+                        client::arena::ControlEntity::ID => {
+                            let control = element
+                                .read_simple::<client::arena::ControlEntity>()
+                                .unwrap()
+                                .element;
+                            assert_eq!(control.entity_id, self.player_entity_id);
+                            assert!(self.cell.is_some());
+                            self.avatar_locally_controlled = Some(control.is_locally_controlled);
+                        }
+                        client::arena::GeometryMapping::ID => {
+                            self.geometry = Some(
+                                element
+                                    .read_simple::<client::arena::GeometryMapping>()
+                                    .unwrap()
+                                    .element,
+                            );
+                        }
+                        client::arena::EnterArenaEntity::ID => {
+                            element
+                                .read_simple::<client::arena::EnterArenaEntity>()
+                                .unwrap();
+                        }
+                        client::arena::LeaveArenaEntity::ID => {
+                            element
+                                .read_simple::<client::arena::LeaveArenaEntity>()
+                                .unwrap();
+                        }
+                        client::arena::CreateArenaEntity::ID => {
+                            self.arena_entities.push(
+                                element
+                                    .read_simple::<client::arena::CreateArenaEntity>()
+                                    .unwrap()
+                                    .element,
+                            );
+                        }
+                        client::arena::NrlCreateNode::ID => {
+                            self.arena_roster = Some(
+                                element
+                                    .read_simple::<client::arena::NrlCreateNode>()
+                                    .unwrap()
+                                    .element
+                                    .0,
+                            );
+                        }
+                        client::arena::SpaceProperty::ID => {
+                            element
+                                .read_simple::<client::arena::SpaceProperty>()
+                                .unwrap();
+                        }
+                        client::id::SELECT_ENTITY => {
+                            self.selected_entity = Some(
+                                element
+                                    .read_simple::<client::SelectEntity>()
+                                    .unwrap()
+                                    .element
+                                    .entity_id,
+                            );
+                        }
+                        client::arena::VehiclePosition::ID => {
+                            assert!(has_tick, "vehicle pose must share its bundle with TickSync");
+                            let update = element
+                                .read_simple::<client::arena::VehiclePosition>()
+                                .unwrap()
+                                .element;
+                            self.positions.insert(update.entity_id, update.position);
+                        }
+                        client::arena::NrlData::ID => {
+                            self.nrl_updates.push(
+                                element
+                                    .read_simple::<client::arena::NrlData>()
+                                    .unwrap()
+                                    .element
+                                    .0,
+                            );
+                        }
+                        client::arena::AvatarPosition::ID => {
+                            assert!(has_tick, "Avatar pose must share its bundle with TickSync");
+                            let frame = element
+                                .read_simple::<client::arena::AvatarPosition>()
+                                .unwrap()
+                                .element;
+                            assert_eq!(frame.position, glam::Vec3::ZERO);
+                            if self.avatar_locally_controlled == Some(false) {
+                                self.avatar_position_frames += 1;
+                            }
+                        }
+                        client::arena::ApplyNrlUpdate::ID => {
+                            element
+                                .read_simple::<client::arena::ApplyNrlUpdate>()
+                                .unwrap();
+                        }
+                        client::arena::ArenaEntityProperties::ID => {
+                            element
+                                .read_simple::<client::arena::ArenaEntityProperties>()
+                                .unwrap();
+                        }
                         client::id::SELECT_PLAYER_ENTITY => {
                             element.read_simple::<client::SelectPlayerEntity>().unwrap();
+                            self.selected_entity = None;
                         }
                         client::id::TICK_SYNC => {
-                            element.read_simple::<client::TickSync>().unwrap();
+                            let tick = element
+                                .read_simple::<client::TickSync>()
+                                .unwrap()
+                                .element
+                                .tick;
+                            if let Some(last) = self.arena_tick {
+                                assert!((1..=127).contains(&tick.wrapping_sub(last)));
+                            }
+                            self.arena_tick = Some(tick);
+                            has_tick = true;
                         }
                         client::id::RESOURCE_HEADER => {
                             element.read_simple::<client::ResourceHeader>().unwrap();
@@ -419,16 +679,27 @@ impl Peer {
                             }
                         }
                         id if client::id::ENTITY_METHOD.contains(id) => {
-                            let methods = &dispatch
-                                .entity_from_name("Account")
-                                .unwrap()
-                                .1
-                                .client_methods;
+                            let methods = if self.selected_entity.is_some() {
+                                &dispatch
+                                    .entity_from_name("Vehicle")
+                                    .unwrap()
+                                    .1
+                                    .client_methods
+                            } else {
+                                &dispatch
+                                    .entity_from_id(self.player_type.unwrap())
+                                    .unwrap()
+                                    .client_methods
+                            };
                             let method = element
                                 .read::<client::EntityMethod, _>(methods.as_slice())
                                 .unwrap()
                                 .element;
                             if let MethodCall::Known { name, args, .. } = method.call {
+                                if let Some(target) = self.selected_entity {
+                                    self.vehicle_methods.push((target, name.to_string(), args));
+                                    continue;
+                                }
                                 self.methods.push((name.to_string(), args.clone()));
                                 if name.ends_with("showGUI") {
                                     self.shown = true;

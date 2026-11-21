@@ -12,10 +12,10 @@ use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
 
-use crate::player_sessions::mercury::net::bundle::Bundle;
-use crate::player_sessions::mercury::net::element::Element;
-use crate::player_sessions::mercury::net::proto::Protocol;
-use crate::player_sessions::mercury::net::socket::PacketSocket;
+use crate::platform::mercury::net::bundle::Bundle;
+use crate::platform::mercury::net::element::Element;
+use crate::platform::mercury::net::proto::Protocol;
+use crate::platform::mercury::net::socket::PacketSocket;
 
 use super::client::element::SelectPlayerEntity;
 
@@ -163,6 +163,7 @@ impl ClientOutbox {
                 }
                 Err(error) => {
                     span.record("output.delivery", "send_failed");
+                    span.record("otel.status_code", "ERROR");
                     tracing::error!(%error, "Could not send Mercury response bundle");
                 }
             });
@@ -182,7 +183,7 @@ impl Drop for ClientOutbox {
 #[cfg(test)]
 mod tests {
 
-    use crate::player_sessions::mercury::net::bundle::NextElementReader;
+    use crate::platform::mercury::net::bundle::NextElementReader;
 
     use super::super::client::element::{TickSync, id};
     use super::*;

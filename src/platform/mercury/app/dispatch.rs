@@ -1,6 +1,6 @@
-//! Dynamic entity dispatch: computes, straight from a loaded [`crate::player_sessions::mercury::script::Script`],
+//! Dynamic entity dispatch: computes, straight from a loaded [`crate::platform::mercury::script::Script`],
 //! the exposed-id method/property tables and entity-creation layout that
-//! [`crate::player_sessions::mercury::app::base::App`] uses to resolve an entity/method/property purely by *name*
+//! [`crate::platform::mercury::app::base::App`] uses to resolve an entity/method/property purely by *name*
 //! at runtime, against whatever script model was loaded for the current game version --
 //! see [`ScriptDispatch`], the entry point.
 //!
@@ -13,9 +13,9 @@ use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::sync::Arc;
 
-use crate::player_sessions::mercury::net::codec::Codec;
-use crate::player_sessions::mercury::net::element::ElementLength;
-use crate::player_sessions::mercury::script::{
+use crate::platform::mercury::net::codec::Codec;
+use crate::platform::mercury::net::element::ElementLength;
+use crate::platform::mercury::script::{
     Component, Interface, Method, Property, PropertyFlags, Script, Ty, TyDict, TyDictProp, TyKind,
     TySystem, Value, VariableHeaderSize,
 };
@@ -26,7 +26,7 @@ use crate::player_sessions::mercury::script::{
 ///
 /// `entities` is indexed by wire type id minus one: entity type ids are allocated as a
 /// contiguous 1-based sequence matching `script.entities`' own order (see
-/// [`crate::player_sessions::mercury::script::Entity::id`]), followed immediately by one slot per
+/// [`crate::platform::mercury::script::Entity::id`]), followed immediately by one slot per
 /// `script.dynamic_components` entry, same order. Dynamic components get their own,
 /// independently creatable entity type id in the client's `EntityDescriptionMap`,
 /// continuing the same counter right after the last real entity, in declaration order,
@@ -173,7 +173,7 @@ impl ScriptDispatch {
     ///
     /// NRL numbers components like [`Self::entity_from_id`] does, continuing after the
     /// entities, but skips every component the client has no script class for (see
-    /// [`crate::player_sessions::mercury::script::Component::has_client_class`]), so the two ids drift apart past
+    /// [`crate::platform::mercury::script::Component::has_client_class`]), so the two ids drift apart past
     /// the first such component. Checked against a live battle: every one of the 10
     /// distinct ids seen resolves to a component whose property and client method count
     /// fits the node's children (see `NrlNode::DynComponent`), and the two named
@@ -192,7 +192,7 @@ impl ScriptDispatch {
     }
 
     /// Look up an entity's dispatch tables by its wire type id (1-based -- see
-    /// [`crate::player_sessions::mercury::script::Entity::id`]). Returns `None` for a type id out of range,
+    /// [`crate::platform::mercury::script::Entity::id`]). Returns `None` for a type id out of range,
     /// including `0` (never a valid entity id), instead of panicking.
     pub fn entity_from_id(&self, type_id: u16) -> Option<&EntityDispatch> {
         self.entities.get(usize::from(type_id).checked_sub(1)?)
@@ -240,7 +240,7 @@ pub struct EntityDispatch {
     /// How many static components fold into this entity, the count its creation
     /// elements give, see [`client::element::CreateBasePlayer::entity_components_count`].
     ///
-    /// [`client::element::CreateBasePlayer::entity_components_count`]: crate::player_sessions::mercury::app::client::element::CreateBasePlayer::entity_components_count
+    /// [`client::element::CreateBasePlayer::entity_components_count`]: crate::platform::mercury::app::client::element::CreateBasePlayer::entity_components_count
     pub static_components_count: u8,
 }
 
@@ -277,8 +277,8 @@ pub struct PropertyDef {
     pub length: ElementLength,
     /// Which side hosts it and which clients see it.
     pub flags: PropertyFlags,
-    /// See [`crate::player_sessions::mercury::script::Property::volatile`] and
-    /// [`crate::player_sessions::mercury::script::Property::detail_level`].
+    /// See [`crate::platform::mercury::script::Property::volatile`] and
+    /// [`crate::platform::mercury::script::Property::detail_level`].
     pub volatile: bool,
     pub detail_level: Option<Arc<str>>,
 }
@@ -295,7 +295,7 @@ impl PropertyDef {
 }
 
 /// The dynamically-decoded result of a method call (base- or cell-directed), produced by
-/// [`crate::player_sessions::mercury::app::base::App`] while dispatching against a [`MethodDef`] table.
+/// [`crate::platform::mercury::app::base::App`] while dispatching against a [`MethodDef`] table.
 #[derive(Debug, Clone)]
 pub enum MethodCall {
     /// A call whose exposed id is present in the entity's method table for this
@@ -796,7 +796,7 @@ fn collect_data_props(
 #[cfg(test)]
 mod tests {
 
-    use crate::player_sessions::mercury::script::{
+    use crate::platform::mercury::script::{
         Arg, Interface, Method, TyKind, TySystem, VariableHeaderSize,
     };
 

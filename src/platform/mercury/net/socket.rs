@@ -246,7 +246,7 @@ pub fn encrypt_packet(src_packet: &Packet, bf: &Blowfish) -> io::Result<Packet> 
 /// already allocated packets by keeping an encryption packet around.
 mod encryption_packet {
 
-    use crate::player_sessions::mercury::net::packet::Packet;
+    use crate::platform::mercury::net::packet::Packet;
     use std::cell::Cell;
 
     thread_local! {

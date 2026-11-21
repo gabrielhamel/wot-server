@@ -1,7 +1,7 @@
 //! This module contains the network codec trait and builtin implementations for trivial
 //! types that are commonly used, such as ints, floats and various common blobs.
 
-use crate::player_sessions::mercury::net::limits;
+use crate::platform::mercury::net::limits;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -13,7 +13,7 @@ use glam::{Vec2, Vec3, Vec4};
 
 use crate::platform::client_formats::pickle;
 use crate::platform::client_formats::util::io::{WgReadExt, WgWriteExt};
-use crate::player_sessions::mercury::script::{PythonValue, StringValue, Ty, TyKind, Value};
+use crate::platform::mercury::script::{PythonValue, StringValue, Ty, TyKind, Value};
 
 /// Represent a codec for some data that can be both encoded and decoded, with a
 /// configuration value that can alter how the data is actually encoded and decoded.
@@ -417,14 +417,14 @@ macro_rules! __struct_simple_codec {
             }
 
             #[allow(unused_imports, unused_variables)]
-            impl $crate::player_sessions::mercury::net::codec::SimpleCodec for $struct_name {
+            impl $crate::platform::mercury::net::codec::SimpleCodec for $struct_name {
                 fn write(&self, write: &mut dyn std::io::Write) -> std::io::Result<()> {
-                    use $crate::player_sessions::mercury::net::codec::Codec;
+                    use $crate::platform::mercury::net::codec::Codec;
                     $( Codec::<()>::write(&self.$field_name, &mut *write, &())?; )*
                     Ok(())
                 }
                 fn read(read: &mut dyn std::io::Read) -> std::io::Result<Self> {
-                    use $crate::player_sessions::mercury::net::codec::Codec;
+                    use $crate::platform::mercury::net::codec::Codec;
                     Ok(Self {
                         $( $field_name: Codec::<()>::read(&mut *read, &())?, )*
                     })

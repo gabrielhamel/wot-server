@@ -13,12 +13,14 @@ use crate::platform::client_formats::util::{
     AsciiFmt,
     io::{WgReadExt, WgWriteExt},
 };
-use crate::player_sessions::mercury::net::codec::{Codec, SimpleCodec};
-use crate::player_sessions::mercury::net::element::{Element, ElementLength, SimpleElement};
-use crate::player_sessions::mercury::script::{Ty, Value};
+use crate::platform::mercury::net::codec::{Codec, SimpleCodec};
+use crate::platform::mercury::net::element::{Element, ElementLength, SimpleElement};
+use crate::platform::mercury::script::{Ty, Value};
+
+pub mod arena;
 
 pub mod id {
-    use crate::player_sessions::mercury::net::element::ElementIdRange;
+    use crate::platform::mercury::net::element::ElementIdRange;
 
     pub const UPDATE_FREQUENCY_NOTIFICATION: u8 = 0x02;
     pub const SET_GAME_TIME: u8 = 0x03;

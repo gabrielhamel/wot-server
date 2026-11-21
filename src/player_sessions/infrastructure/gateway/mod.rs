@@ -4,6 +4,7 @@ use super::{
 };
 use crate::{
     accounts::contract::{GameAccounts, GarageCommands, GarageQueries, PreparedAccount},
+    battles::contract::{BattleRuntime, ParticipantDeparture, TICK},
     player_sessions::domain::Admissions,
 };
 use anyhow::{Context, Result};
@@ -29,12 +30,12 @@ use crate::social::contract::{Contact, Conversations, Player, SocialService};
 use admission::{DeferredLogin, LoginAttempt};
 
 use crate::platform::client_formats::pickle::{self, Value};
-use crate::player_sessions::mercury::app::{
+use crate::platform::mercury::app::{
     base::{self, ClientKey},
     entity::{EntityKey, Pickle},
     login::{self, element::LoginError},
 };
-use crate::player_sessions::mercury::script;
+use crate::platform::mercury::script;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     net::{SocketAddr, SocketAddrV4},
@@ -158,7 +159,7 @@ pub struct Gateway {
     deferred_logins: HashMap<SocketAddr, DeferredLogin>,
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
-    training_arenas: HashSet<i32>,
+    battles: BattleRuntime,
     account_bootstrap: AccountBootstrap,
     training_rooms: BTreeMap<u32, training::HostedRoom>,
     last_training_room_id: u32,
@@ -175,7 +176,7 @@ pub struct Gateway {
 
 impl Gateway {
     pub fn bind(
-        _composition: &crate::server::Composition,
+        composition: &crate::server::Composition,
         config: GatewayConfig,
         resources: &ResourceBundle,
         GatewayAccounts {
@@ -209,9 +210,13 @@ impl Gateway {
             .context("Bind garage Account schema")?;
         let account_bootstrap =
             AccountBootstrap::bind(base.dispatch()).context("Bind garage Account creation data")?;
-        let training_arenas =
-            training::load_arenas(resources).context("Load Training Room maps")?;
-        if config.training_room_visible && training_arenas.is_empty() {
+        let battles = crate::server::bind_battles(
+            composition,
+            &mut base,
+            resources,
+            config.training_room_visible,
+        )?;
+        if config.training_room_visible && !battles.has_maps() {
             tracing::warn!(
                 "Training Room creation is unavailable. Re-extract the resource bundle with arena definitions."
             );
@@ -241,7 +246,7 @@ impl Gateway {
             deferred_logins: HashMap::new(),
             tickets: HashMap::new(),
             sessions: HashMap::new(),
-            training_arenas,
+            battles,
             account_bootstrap,
             training_rooms: BTreeMap::new(),
             last_training_room_id: 0,
@@ -266,7 +271,8 @@ impl Gateway {
     }
 
     pub fn run(mut self, stop: Arc<AtomicBool>) -> Result<()> {
-        let mut tick = Instant::now() + Duration::from_millis(100);
+        let interval = TICK;
+        let mut tick = Instant::now() + interval;
         while !stop.load(Ordering::Relaxed) {
             while let Ok(completion) = self.completions.try_recv() {
                 let TracedCompletion { parent, value } = completion;
@@ -306,6 +312,7 @@ impl Gateway {
                     }
                 }
                 base::Event::BaseMethod(event) => self.handle_base_method(event),
+                base::Event::CellMethod(event) => self.battles.cell_method(&mut self.base, event),
                 base::Event::IoError(error) => error!(error = %error.error, "Base packet failed"),
                 _ => {}
             }
@@ -315,11 +322,46 @@ impl Gateway {
                 for client in self.base.take_disconnected_clients() {
                     self.remove_session(client);
                 }
-                tick = Instant::now() + Duration::from_millis(100);
+                let now = Instant::now();
+                for client in self.battles.tick(&mut self.base, now) {
+                    self.return_from_battle(client);
+                }
+                tick += interval;
+                if tick <= now {
+                    tick = now + interval;
+                }
             }
         }
         info!("Garage gateway stopped");
         Ok(())
+    }
+
+    #[tracing::instrument(name = "player_sessions.return_from_battle", skip_all, fields(
+        ddd.bounded_context.name = "player_sessions", input.client.address = %client,
+        output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
+    ))]
+    fn return_from_battle(&mut self, client: ClientKey) {
+        let span = tracing::Span::current();
+        match self.battles.remove_participant(&mut self.base, client) {
+            Some(ParticipantDeparture::Entered) => match self.base.reset_player(client) {
+                Ok(()) => {
+                    span.record("output.outcome", "garage_reset");
+                }
+                Err(error) => {
+                    span.record("output.outcome", "return_failed");
+                    span.record("otel.status_code", "ERROR");
+                    error!(%error, "Could not return to the garage");
+                    self.base.disconnect_client(client);
+                }
+            },
+            Some(ParticipantDeparture::Loading) => {
+                self.base.disconnect_client(client);
+                span.record("output.outcome", "handoff_aborted");
+            }
+            None => {
+                span.record("output.outcome", "already_left");
+            }
+        }
     }
 
     fn authenticate(&mut self, event: login::LoginEvent) {
@@ -520,6 +562,9 @@ impl Gateway {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
         };
+        if self.battles.contains(client) {
+            return self.battles.enter(&mut self.base, client);
+        }
         if session.entity.is_some() {
             return Ok(());
         }

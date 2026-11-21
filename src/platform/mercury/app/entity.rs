@@ -5,7 +5,7 @@ use std::{any::TypeId, collections::HashMap, fmt, io, marker::PhantomData};
 use glam::{Vec2, Vec3, Vec4};
 
 use crate::platform::client_formats::pickle;
-use crate::player_sessions::mercury::script::{PythonValue, StringValue, Ty, TyKind, Value};
+use crate::platform::mercury::script::{PythonValue, StringValue, Ty, TyKind, Value};
 
 use super::{
     client::element::EntityMethod,
@@ -318,6 +318,7 @@ impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4);
 impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5);
 impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6);
 impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7);
+impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12);
 
 /// A method a schema declares, with its arguments' types.
 pub struct MethodDecl {
@@ -643,27 +644,27 @@ macro_rules! script_dict {
             $( $(#[$field_meta])* $field_vis $field: $ty ),*
         }
 
-        impl $crate::player_sessions::mercury::app::entity::ScriptType for $name {
+        impl $crate::platform::mercury::app::entity::ScriptType for $name {
 
-            fn check(ty: &$crate::player_sessions::mercury::script::Ty) -> bool {
-                $crate::player_sessions::mercury::app::entity::dict_check(ty, &[
-                    $( (stringify!($field), <$ty as $crate::player_sessions::mercury::app::entity::ScriptType>::check) ),*
+            fn check(ty: &$crate::platform::mercury::script::Ty) -> bool {
+                $crate::platform::mercury::app::entity::dict_check(ty, &[
+                    $( (stringify!($field), <$ty as $crate::platform::mercury::app::entity::ScriptType>::check) ),*
                 ])
             }
 
-            fn into_value(self, ty: &$crate::player_sessions::mercury::script::Ty) -> $crate::player_sessions::mercury::script::Value {
+            fn into_value(self, ty: &$crate::platform::mercury::script::Ty) -> $crate::platform::mercury::script::Value {
                 let mut dict = ::std::collections::BTreeMap::new();
                 $(
-                    let field_ty = $crate::player_sessions::mercury::app::entity::dict_field_ty(ty, stringify!($field)).expect("checked");
-                    dict.insert(::std::sync::Arc::from(stringify!($field)), $crate::player_sessions::mercury::app::entity::ScriptType::into_value(self.$field, field_ty));
+                    let field_ty = $crate::platform::mercury::app::entity::dict_field_ty(ty, stringify!($field)).expect("checked");
+                    dict.insert(::std::sync::Arc::from(stringify!($field)), $crate::platform::mercury::app::entity::ScriptType::into_value(self.$field, field_ty));
                 )*
-                $crate::player_sessions::mercury::script::Value::Dict(dict)
+                $crate::platform::mercury::script::Value::Dict(dict)
             }
 
-            fn from_value(value: $crate::player_sessions::mercury::script::Value) -> ::std::option::Option<Self> {
-                let $crate::player_sessions::mercury::script::Value::Dict(mut dict) = value else { return None };
+            fn from_value(value: $crate::platform::mercury::script::Value) -> ::std::option::Option<Self> {
+                let $crate::platform::mercury::script::Value::Dict(mut dict) = value else { return None };
                 Some(Self {
-                    $( $field: $crate::player_sessions::mercury::app::entity::ScriptType::from_value(dict.remove(stringify!($field))?)? ),*
+                    $( $field: $crate::platform::mercury::app::entity::ScriptType::from_value(dict.remove(stringify!($field))?)? ),*
                 })
             }
 
@@ -744,40 +745,40 @@ macro_rules! entity_schema {
         paste::paste! {
             $vis struct $name;
 
-            impl $crate::player_sessions::mercury::app::entity::Schema for $name {
+            impl $crate::platform::mercury::app::entity::Schema for $name {
                 const NAME: &'static str = stringify!($name);
-                const CLIENT_METHODS: &'static [$crate::player_sessions::mercury::app::entity::MethodDecl] = &[
-                    $($crate::player_sessions::mercury::app::entity::MethodDecl {
+                const CLIENT_METHODS: &'static [$crate::platform::mercury::app::entity::MethodDecl] = &[
+                    $($crate::platform::mercury::app::entity::MethodDecl {
                         name: stringify!($client),
-                        args: <($($client_ty,)*) as $crate::player_sessions::mercury::app::entity::ScriptArgs>::TYPES,
+                        args: <($($client_ty,)*) as $crate::platform::mercury::app::entity::ScriptArgs>::TYPES,
                     },)*
                 ];
-                const BASE_METHODS: &'static [$crate::player_sessions::mercury::app::entity::MethodDecl] = &[
-                    $($crate::player_sessions::mercury::app::entity::MethodDecl {
+                const BASE_METHODS: &'static [$crate::platform::mercury::app::entity::MethodDecl] = &[
+                    $($crate::platform::mercury::app::entity::MethodDecl {
                         name: stringify!($base),
-                        args: <($($base_ty,)*) as $crate::player_sessions::mercury::app::entity::ScriptArgs>::TYPES,
+                        args: <($($base_ty,)*) as $crate::platform::mercury::app::entity::ScriptArgs>::TYPES,
                     },)*
                 ];
             }
 
-            impl $crate::player_sessions::mercury::app::entity::EntitySchema for $name {
+            impl $crate::platform::mercury::app::entity::EntitySchema for $name {
                 type View<'a> = [<$name View>]<'a>;
             }
 
             #[allow(non_camel_case_types)]
             enum [<$name ClientMethod>] { $($client,)* }
 
-            $vis struct [<$name View>]<'a>($crate::player_sessions::mercury::app::entity::RawEntity<'a>);
+            $vis struct [<$name View>]<'a>($crate::platform::mercury::app::entity::RawEntity<'a>);
 
-            impl<'a> $crate::player_sessions::mercury::app::entity::EntityView<'a> for [<$name View>]<'a> {
-                fn new(raw: $crate::player_sessions::mercury::app::entity::RawEntity<'a>) -> Self {
+            impl<'a> $crate::platform::mercury::app::entity::EntityView<'a> for [<$name View>]<'a> {
+                fn new(raw: $crate::platform::mercury::app::entity::RawEntity<'a>) -> Self {
                     Self(raw)
                 }
             }
 
             #[allow(non_snake_case, dead_code)]
             impl [<$name View>]<'_> {
-                $(pub fn $client(&mut self $(, $client_arg: $client_ty)*) -> std::io::Result<()> {
+                $(#[allow(clippy::too_many_arguments)] pub fn $client(&mut self $(, $client_arg: $client_ty)*) -> std::io::Result<()> {
                     self.0.call_client([<$name ClientMethod>]::$client as usize, ($($client_arg,)*))
                 })*
             }
@@ -791,13 +792,13 @@ macro_rules! entity_schema {
                 $([<$base:camel>] { $($base_arg: $base_ty,)* },)*
             }
 
-            impl $crate::player_sessions::mercury::app::entity::Methods for [<$name Base>] {
+            impl $crate::platform::mercury::app::entity::Methods for [<$name Base>] {
                 type Schema = $name;
 
-                fn decode(index: usize, args: Vec<$crate::player_sessions::mercury::script::Value>) -> Option<Self> {
+                fn decode(index: usize, args: Vec<$crate::platform::mercury::script::Value>) -> Option<Self> {
                     $(if index == [<$name BaseMethod>]::$base as usize {
                         let ($($base_arg,)*) =
-                            <($($base_ty,)*) as $crate::player_sessions::mercury::app::entity::ScriptArgs>::from_values(args)?;
+                            <($($base_ty,)*) as $crate::platform::mercury::app::entity::ScriptArgs>::from_values(args)?;
                         return Some(Self::[<$base:camel>] { $($base_arg,)* });
                     })*
                     None

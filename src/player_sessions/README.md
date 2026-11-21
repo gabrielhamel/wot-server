@@ -9,16 +9,19 @@ Social owns contacts, private conversations and retained messages. The gateway
 adapts those operations for native XMPP and legacy BW/BW_CHAT2 clients, tracks
 presence, authenticates chat tokens through game sessions and routes delivery.
 Player Sessions owns the Training text channel through live room membership.
+When a room is ready to launch, Player Sessions sends the selected map,
+duration and equipped roster through the [Battles contract](../battles/mod.rs).
+It closes the room and handles the player's garage-to-arena handoff and return.
 
 | Layer | Responsibilities |
 | --- | --- |
 | `domain/` | Bounded admission generations, expiry and stale completion rejection. |
 | `domain/training.rs` | Training Room duration and comment limits. |
 | `application/` | Credential input policy, preferences, and garage command translation and dispatch to Accounts' published application contract. |
-| `infrastructure/mercury/` | Mercury UDP framing, reliability, RSA and Blowfish, LoginApp/BaseApp wire sessions, and Account RPC binding from the [resource bundle](../../docs/resources.md). |
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
-| `infrastructure/gateway/training.rs` | Validate bundled map IDs and manage shared room settings, membership, roster, readiness and deletion. |
+| `infrastructure/gateway/training.rs` | Check map IDs through Battles and manage shared room settings, membership, roster, readiness and deletion. |
+| `infrastructure/gateway/training/start.rs` | Validate team confirmation, prepare the roster through the Battles contract and hand off eligible sessions. |
 | `infrastructure/gateway/training/chat.rs` | Open and close the native Training channel and relay messages to the active room roster. |
 | `infrastructure/gateway/training/invites.rs` | Deliver native Training Room invitations and update their status. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
@@ -45,8 +48,8 @@ handling and response delivery. It retains request parents across the grant,
 crew, completion and XMPP output queues. Spans identify operations and
 ddd.bounded_context.name without architecture layer labels. See the [telemetry contract](../../docs/telemetry.md).
 
-The [server composition](../server/mod.rs) runs LoginApp and BaseApp together. Player Sessions owns the UDP protocol
-implementation and shares the [client format codecs](../platform/infrastructure/client_formats/README.md)
+The [server composition](../server/mod.rs) runs LoginApp and BaseApp together. Player Sessions uses [Platform Mercury](../platform/mercury) for shared UDP transport
+and shares the [client format codecs](../platform/infrastructure/client_formats/README.md)
 with Accounts.
 
 | Term | Meaning |
@@ -59,7 +62,7 @@ with Accounts.
 | Store session token | Random credential issued in the Store URL fragment and scoped to the synchronized garage session. |
 | Account entity | Client protocol representation created after the client enables entities. |
 | Resource stream | CRC-described, fragmented transfer correlated with an account command request ID. |
-| Training Room | A discoverable lobby with one host and optional guests. It ends when the host leaves or the host session is removed. |
+| Training Room | A discoverable lobby with one host and optional guests. It ends when its battle starts or the host leaves. |
 | Training channel | Live text conversation shared by the members of one Training Room. |
 
 A successful login replaces the previous session or pending handoff for that

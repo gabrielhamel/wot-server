@@ -440,10 +440,10 @@ fn read_external_parent(
 mod tests {
 
     use super::*;
-    use crate::player_sessions::mercury::script::def::{
+    use crate::platform::mercury::script::def::{
         Method, Property, PropertyFlags, VariableHeaderSize,
     };
-    use crate::player_sessions::mercury::script::ty::TyKind;
+    use crate::platform::mercury::script::ty::TyKind;
 
     fn iface(name: &str, implements: &[&str], property: &str, method: &str) -> Interface {
         let mut tys = TySystem::default();

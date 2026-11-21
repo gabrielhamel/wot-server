@@ -17,14 +17,14 @@ use blowfish::Blowfish;
 use rsa::rand_core::{OsRng, RngCore};
 use tracing::{debug, warn};
 
-use crate::player_sessions::mercury::net::{
+use crate::platform::mercury::net::{
     bundle::{Bundle, ElementReader, NextElementReader},
     element::{Element, ElementLength, SimpleElement},
     limits,
     proto::Protocol,
     socket::PacketSocket,
 };
-use crate::player_sessions::mercury::script::Script;
+use crate::platform::mercury::script::Script;
 
 use super::{
     client,
@@ -188,11 +188,29 @@ impl App {
                 Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
             };
 
+            let reliable = packet.read_flags()
+                & crate::platform::mercury::net::packet::flags::IS_RELIABLE
+                != 0;
             let Ok(mut channel) = self.protocol.accept(packet, addr) else {
                 continue;
             };
 
-            let Some(bundle) = channel.next_bundle() else {
+            let acknowledge = reliable
+                && channel.is_on()
+                && channel.index().is_none()
+                && self
+                    .client_keys
+                    .get(&addr)
+                    .and_then(|key| self.clients.get(key.slot))
+                    .is_some_and(|state| state.arena_vehicle_id.is_some());
+            let bundle = channel.next_bundle();
+            if acknowledge && let Err(error) = self.acknowledge_arena_packet(addr) {
+                return Event::IoError(IoErrorEvent {
+                    error,
+                    addr: Some(addr),
+                });
+            }
+            let Some(bundle) = bundle else {
                 continue;
             };
 
@@ -289,7 +307,7 @@ impl App {
                 self.handle_base_entity_method(client, reader)
             }
             id if element::id::CELL_ENTITY_METHOD.contains(id) => {
-                self.skip::<SkippedEntityMethod>(reader)
+                self.handle_cell_method(client, reader)
             }
             id => Err(io_invalid_data(format_args!("unexpected element #{id}"))),
         }
@@ -340,6 +358,121 @@ impl App {
         }
 
         Ok(())
+    }
+
+    fn handle_cell_method(
+        &mut self,
+        client: Option<ClientKey>,
+        reader: ElementReader<'_, '_>,
+    ) -> io::Result<()> {
+        let Some((client, player, vehicle_id)) = client.and_then(|key| {
+            let state = self.clients.get(key.slot)?;
+            Some((key, state.player?, state.arena_vehicle_id?))
+        }) else {
+            return self.skip::<SkippedEntityMethod>(reader);
+        };
+        let element_id = reader.id();
+        let span = tracing::info_span!(
+            parent: None, "game.cell_command",
+            "ddd.bounded_context.name" = "player_sessions",
+            "input.element_id" = element_id,
+            "rpc.method" = tracing::field::Empty,
+            "input.method_id" = tracing::field::Empty,
+            "input.entity_id" = tracing::field::Empty,
+            "input.bytes" = tracing::field::Empty,
+            "output.outcome" = tracing::field::Empty,
+            "otel.status_code" = tracing::field::Empty,
+        );
+        span.in_scope(|| {
+            let call = reader
+                .read::<element::CellMethodFrame, _>(&())
+                .map_err(|error| {
+                    span.record("output.outcome", "wire_decode_failed");
+                    span.record("otel.status_code", "ERROR");
+                    tracing::error!(%error, "Could not decode Mercury cell method");
+                    error
+                })?
+                .element;
+            let entity_id = if call.target == 0 {
+                player.id().0
+            } else {
+                call.target
+            };
+            span.record("input.entity_id", entity_id);
+            span.record("input.bytes", call.argument_bytes);
+            let dispatch = if entity_id == player.id().0 {
+                self.entities
+                    .get(player.slot)
+                    .and_then(|entity| self.dispatch.entity_from_id(entity.type_id))
+            } else if entity_id == vehicle_id {
+                self.dispatch
+                    .entity_from_name("Vehicle")
+                    .map(|(_, dispatch)| dispatch)
+            } else {
+                span.record("output.outcome", "entity_unavailable");
+                return Ok(());
+            };
+            let Some(dispatch) = dispatch else {
+                return Ok(());
+            };
+            let mut data = call.payload.as_deref().unwrap_or_default();
+            let methods = &dispatch.cell_methods;
+            let range = element::id::CELL_ENTITY_METHOD;
+            let count = methods.len() as u16;
+            let exposed_id = match range.to_exposed_id_checked(count, element_id) {
+                Some(id) => id,
+                None => {
+                    let Some((&sub, remainder)) = data.split_first() else {
+                        span.record("output.outcome", "unimplemented");
+                        span.record("otel.status_code", "ERROR");
+                        tracing::error!("Arena cell method is not implemented");
+                        return Ok(());
+                    };
+                    data = remainder;
+                    range.to_exposed_id(count, element_id, || sub)
+                }
+            };
+            span.record("input.method_id", exposed_id);
+            let method = methods.get(usize::from(exposed_id));
+            if let Some(method) = method {
+                span.record("rpc.method", method.name.as_ref());
+            }
+            if let Some(method) = method.filter(|method| {
+                matches!(
+                    method.name.as_ref(),
+                    "vehicle_moveWith"
+                        | "vehicle_shoot"
+                        | "trackRelativePointWithGun"
+                        | "vehicle_trackRelativePointWithGun"
+                        | "vehicle_trackWorldPointWithGun"
+                        | "stopTrackingWithGun"
+                        | "vehicle_stopTrackingWithGun"
+                        | "vehicle_changeSetting"
+                )
+            }) {
+                match method.read_args(&mut data) {
+                    Ok(args) if data.is_empty() && call.payload.is_some() => {
+                        self.events.push_back(Event::CellMethod(CellMethodEvent {
+                            client,
+                            entity_id,
+                            name: method.name.clone(),
+                            args,
+                            span: span.clone(),
+                        }));
+                    }
+                    _ => {
+                        span.record("output.outcome", "wire_decode_failed");
+                        span.record("otel.status_code", "ERROR");
+                        tracing::error!("Invalid arena cell method arguments");
+                    }
+                }
+            } else {
+                span.record("output.outcome", "unimplemented");
+                span.record("otel.status_code", "ERROR");
+                tracing::error!("Arena cell method is not implemented");
+            }
+            Ok(())
+        })
     }
 
     /// Decode and dispatch an incoming base method call, targeting the client's current
@@ -434,7 +567,7 @@ impl App {
     /// Read (and discard) a single already-typed element, without aborting the rest of
     /// the bundle -- used for ids whose framing is known but that this app doesn't act
     /// on yet.
-    fn skip<T: Element<()>>(&mut self, reader: ElementReader<'_, '_>) -> io::Result<()> {
+    fn skip<T: Element<()>>(&self, reader: ElementReader<'_, '_>) -> io::Result<()> {
         reader.read_simple::<T>()?;
         Ok(())
     }
@@ -494,6 +627,7 @@ impl App {
             last_received: Instant::now(),
             session_key,
             player: None,
+            arena_vehicle_id: None,
         });
         let key = ClientKey { slot, addr };
         self.client_keys.insert(addr, key);
@@ -631,6 +765,162 @@ impl App {
         self.disconnected_clients.push(key);
     }
 
+    pub(crate) fn enable_arena_cell(&mut self, client: ClientKey, vehicle_id: u32) {
+        if let Some(state) = self.clients.get_mut(client.slot) {
+            state.arena_vehicle_id = Some(vehicle_id);
+        }
+    }
+
+    pub(crate) fn reset_player(&mut self, client: ClientKey) -> io::Result<()> {
+        self.send_arena_element(
+            client,
+            client::element::arena::ResetEntities {
+                keep_player_on_base: false,
+            },
+        )?;
+        if let Some(player) = self.clients.get_mut(client.slot).and_then(|state| {
+            state.arena_vehicle_id = None;
+            state.player.take()
+        }) {
+            self.remove_entity(player);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn send_arena_element<E: SimpleElement>(
+        &mut self,
+        client: ClientKey,
+        element: E,
+    ) -> io::Result<()> {
+        if tracing::Span::current().is_disabled() {
+            return self.send_simple(client, element);
+        }
+        let span = tracing::info_span!(
+            "mercury.arena_delivery",
+            "ddd.bounded_context.name" = "player_sessions",
+            "input.element_id" = E::ID,
+            "network.peer.address" = %client.addr().ip(),
+            "output.delivery" = tracing::field::Empty,
+            "otel.status_code" = tracing::field::Empty,
+        );
+        let result = span.in_scope(|| {
+            let out = self.out(client)?;
+            out.write_simple(element)?;
+            if !span.is_disabled() {
+                out.trace_delivery(span.clone());
+            }
+            Ok::<_, io::Error>(())
+        });
+        if let Err(error) = &result {
+            span.record("otel.status_code", "ERROR");
+            span.record("output.delivery", "enqueue_failed");
+            span.in_scope(|| tracing::error!(%error, "Arena message could not be queued"));
+        }
+        result
+    }
+
+    pub(crate) fn arena_entity_id(&mut self) -> u32 {
+        self.new_entity_id()
+    }
+
+    pub(crate) fn arena_vehicle_method(
+        &mut self,
+        client: ClientKey,
+        target: u32,
+        name: &str,
+        args: Vec<crate::platform::mercury::script::Value>,
+    ) -> io::Result<()> {
+        let (_, vehicle) = self
+            .dispatch
+            .entity_from_name("Vehicle")
+            .ok_or_else(|| io_invalid_data(format_args!("Vehicle schema unavailable")))?;
+        let (index, method) = vehicle
+            .client_methods
+            .iter()
+            .enumerate()
+            .find(|(_, method)| &*method.name == name)
+            .ok_or_else(|| io_invalid_data(format_args!("Vehicle method {name} unavailable")))?;
+        if args.len() != method.args.len()
+            || !args
+                .iter()
+                .zip(&method.args)
+                .all(|(arg, ty)| ty.is_instance(arg))
+        {
+            return Err(io_invalid_data(format_args!(
+                "Invalid argument layout for {name}"
+            )));
+        }
+        let call = MethodCall::Known {
+            exposed_id: u16::try_from(index).map_err(io::Error::other)?,
+            name: method.name.clone(),
+            args,
+        };
+        let span = tracing::info_span!(
+            "mercury.arena_vehicle_method",
+            "ddd.bounded_context.name" = "player_sessions",
+            "rpc.method" = name,
+            "input.entity_id" = target,
+            "output.delivery" = tracing::field::Empty,
+            "otel.status_code" = tracing::field::Empty,
+        );
+        let out = self
+            .outbox
+            .client(client.addr, &mut self.protocol, &self.socket)?;
+        out.write_simple(client::element::SelectEntity { entity_id: target })?;
+        out.write_selected(
+            client::element::EntityMethod { call },
+            vehicle.client_methods.as_slice(),
+        )?;
+        if !span.is_disabled() {
+            out.trace_delivery(span);
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(name = "mercury.acknowledge_arena_packet", skip_all, fields(
+        ddd.bounded_context.name = "player_sessions", network.peer.address = %addr.ip(),
+        network.peer.port = addr.port(), output.delivery = tracing::field::Empty,
+        output.packet.sequence = tracing::field::Empty,
+        otel.status_code = tracing::field::Empty,
+    ), err)]
+    fn acknowledge_arena_packet(&mut self, addr: SocketAddr) -> io::Result<()> {
+        self.bundle.clear();
+        self.bundle.push_empty();
+        self.send_unreliable_arena_bundle(addr)?;
+        tracing::Span::current().record("output.delivery", "sent");
+        Ok(())
+    }
+
+    pub(crate) fn arena_tick(
+        &mut self,
+        client: ClientKey,
+        tick: u8,
+        avatar: client::element::arena::AvatarPosition,
+        vehicles: impl Iterator<Item = client::element::arena::VehiclePosition>,
+    ) -> io::Result<()> {
+        self.client(client)?;
+        self.bundle.clear();
+        let mut writer = self.bundle.element_writer();
+        writer.write_simple(client::element::TickSync { tick })?;
+        writer.write_simple(avatar)?;
+        for position in vehicles {
+            writer.write_simple(position)?;
+        }
+        self.send_unreliable_arena_bundle(client.addr)
+    }
+
+    fn send_unreliable_arena_bundle(&mut self, addr: SocketAddr) -> io::Result<()> {
+        let sequence = self
+            .protocol
+            .channel(addr, None)
+            .prepare(&mut self.bundle, false);
+        self.socket.send_bundle(&self.bundle, addr)?;
+        if let Some(sequence) = sequence {
+            tracing::Span::current().record("output.packet.sequence", i64::from(sequence.get()));
+        }
+        Ok(())
+    }
+
     /// Reclaim clients that have stopped sending packets, including heartbeats.
     pub fn disconnect_idle_clients(&mut self, idle: Duration) {
         let now = Instant::now();
@@ -717,6 +1007,7 @@ struct ClientState {
     /// one at a time (real BigWorld: `Proxy` holds a single client channel, and a base
     /// method call carries no entity id of its own -- it always targets this one).
     player: Option<EntityKey<AnyEntity>>,
+    arena_vehicle_id: Option<u32>,
 }
 
 // ============== //
@@ -746,16 +1037,30 @@ impl App {
     /// BigWorld only ever has one at a time).
     ///
     /// `entity_data` is of the entity's client-visible data type (see
-    /// [`crate::player_sessions::mercury::app::dispatch::EntityDispatch::data_ty`]), checked before anything is
+    /// [`crate::platform::mercury::app::dispatch::EntityDispatch::data_ty`]), checked before anything is
     /// sent. It contains the client-visible properties sent at creation.
     pub fn create_base_player<T: EntitySchema>(
         &mut self,
         client: ClientKey,
         entity_data: impl ScriptType,
     ) -> io::Result<EntityKey<T>> {
+        let entity_id = self.new_entity_id();
+        self.create_base_player_with_id(client, entity_id, entity_data)
+    }
+
+    pub(crate) fn create_base_player_with_id<T: EntitySchema>(
+        &mut self,
+        client: ClientKey,
+        entity_id: u32,
+        entity_data: impl ScriptType,
+    ) -> io::Result<EntityKey<T>> {
         let previous = self.client(client)?.player;
         let entity_type_id = self.entity_schemas.type_of::<T>()?;
-        let entity_id = self.new_entity_id();
+        if self.entity_keys.contains_key(&entity_id) {
+            return Err(io_invalid_data(format_args!(
+                "entity ID {entity_id} is already in use"
+            )));
+        }
 
         let dispatch = self
             .dispatch
@@ -771,6 +1076,12 @@ impl App {
             )));
         }
         let entity_data = entity_data.into_value(&dispatch.data_ty);
+        if !dispatch.data_ty.is_instance(&entity_data) {
+            return Err(io_invalid_data(format_args!(
+                "invalid data for {}",
+                T::NAME
+            )));
+        }
 
         self.outbox
             .client(client.addr, &mut self.protocol, &self.socket)?
@@ -847,10 +1158,7 @@ struct EntityState {
     type_id: u16,
 }
 
-fn matches_data_type<D: ScriptType>(
-    _data: &D,
-    ty: &crate::player_sessions::mercury::script::Ty,
-) -> bool {
+fn matches_data_type<D: ScriptType>(_data: &D, ty: &crate::platform::mercury::script::Ty) -> bool {
     D::check(ty)
 }
 
@@ -863,6 +1171,7 @@ pub enum Event {
     /// No event came before the deadline, see [`App::poll_until`].
     Timeout,
     BaseMethod(BaseMethodEvent),
+    CellMethod(CellMethodEvent),
 }
 
 /// Some IO error happened internally and optionally related to a client.
@@ -937,4 +1246,13 @@ mod tests {
         assert!(app.client(third).is_ok());
         assert_eq!(app.take_disconnected_clients(), vec![second]);
     }
+}
+
+#[derive(Debug)]
+pub struct CellMethodEvent {
+    pub client: ClientKey,
+    pub entity_id: u32,
+    pub name: Arc<str>,
+    pub args: Vec<crate::platform::mercury::script::Value>,
+    pub span: tracing::Span,
 }

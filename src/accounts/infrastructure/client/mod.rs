@@ -158,6 +158,52 @@ impl GarageCatalog {
         Ok(Some(vehicle.descr.encode()))
     }
 
+    #[tracing::instrument(name = "accounts.battle_vehicle", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id, output.bytes = tracing::field::Empty, output.crew.count = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
+    pub(crate) fn battle_vehicle(
+        &self,
+        snapshot: &AccountSnapshot,
+        inventory_id: i64,
+    ) -> Result<Option<crate::accounts::contract::BattleVehicle>> {
+        let span = tracing::Span::current();
+        let Some(owned) = snapshot
+            .vehicles
+            .iter()
+            .find(|vehicle| vehicle.inventory_id == inventory_id)
+        else {
+            span.record("output.outcome", "vehicle_unavailable");
+            return Ok(None);
+        };
+        let catalog = self.vehicle(&owned.catalog_key)?;
+        let loadout = catalog.modules.rules.loadout(snapshot, inventory_id);
+        let Some(health) = loadout
+            .get(&crate::accounts::ModuleKind::Turret)
+            .and_then(|turret| catalog.modules.training_health.get(turret))
+            .copied()
+        else {
+            span.record("output.outcome", "health_unavailable");
+            span.record("otel.status_code", "ERROR");
+            tracing::error!("Training vehicle has no health definition");
+            return Ok(None);
+        };
+        let projected = catalog.project(owned, snapshot)?;
+        let descriptor = projected.descr.encode();
+        let ammunition = projected
+            .shells
+            .into_iter()
+            .map(|(shell, count)| Ok((shell, u16::try_from(count)?)))
+            .collect::<Result<_>>()?;
+        let crew_size = catalog.crew_roles.len();
+        span.record("output.bytes", descriptor.len());
+        span.record("output.crew.count", crew_size);
+        span.record("output.outcome", "prepared");
+        Ok(Some(crate::accounts::contract::BattleVehicle {
+            descriptor,
+            health,
+            crew_size,
+            ammunition,
+        }))
+    }
+
     pub fn load(fs: ResourceBundle, keys: &[String]) -> Result<Self> {
         let passports = (0..item_defs::NATIONS.len())
             .map(|nation| crew::Passports::load(&fs, nation as u8))

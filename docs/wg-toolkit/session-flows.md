@@ -305,6 +305,122 @@ fixed argument dictionary. All roster slots share the channel, including
 unassigned players and observers. Messages are limited to 512 characters
 and one send per 500 milliseconds.
 
+## Starting a Training Room battle
+
+The native [Start Battle handler](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/TrainingRoomBase.py#L503)
+confirms Teams 1 and 2 in sequence with `doCmdInt3` command `411`. Command
+`412` clears a confirmation. The server requires the host to confirm each
+team, with at least one ready combat vehicle on each team and a ready vehicle
+for every assigned player. Changes to assigned players, their readiness or
+room settings clear the confirmations. The client checks the host's current
+team state before sending the second request. The server acknowledges the
+first request immediately and publishes both ready states in
+`updatePrebattle(6)` only when the arena is about to launch.
+
+Once both teams confirm, Player Sessions rechecks vehicle ownership and reads
+the current equipped loadouts from Accounts. It submits the roster and room
+settings to [Battles](../../src/battles/README.md), which assigns a Battle ID
+and prepares the client payloads. Player Sessions then closes the room,
+expires invitations and closes the Training text channel. Unassigned members stay in their garages. Each participant
+receives `onArenaCreated` followed by `ResetEntities` on the encrypted channel
+they already use. The client acknowledges with `EnableEntities`. The server
+then creates its Avatar and cell player in the shared space, sends the
+geometry mapping, creates the same Vehicle entities for each client, and
+attaches the shared roster to each client's AvatarInfo. Leaving or exceeding
+the round length resets the player again and reopens the garage after the next
+`EnableEntities`. The arena also closes if either team empties.
+
+The wire order and the replicated roster format were cross-checked against
+[Toolkit battle bootstrap](../references/wg-toolkit-rs/wg-toolkit-wot/src/base/battle/mod.rs)
+and the [native roster component](../references/wot-src/sources/res/scripts/client_common/AvatarVehiclesInfoBase.py).
+The in-place reset handshake follows the client-side
+[BigWorld reference](../references/BigWorld-Engine-14.4.1/programming/bigworld/lib/connection/server_connection.cpp#L2409).
+The installed x64 client's reset handler at `0x142cfc1d0` reaches code that
+queues the same interface element registered as `enableEntities` at
+`0x1402953e1`. This confirms the acknowledgement in the compiled client.
+The native UI handoff still requires a two-client walkthrough.
+
+The round waits for client readiness or a bounded loading timeout, runs a
+countdown, and uses the room's selected time limit. Maps need geometry,
+bounds, two spawn locations and extracted elevation tiles. The server accepts `vehicle_moveWith` on
+the player's Avatar and turret tracking on the player's Avatar or Vehicle.
+The target entity must belong to the sending session. The server advances
+tanks at 10 Hz and sends one full-ID pose snapshot per tick to both teams.
+The snapshot starts with `TickSync` and uses the same channel sequencing
+throughout countdown and combat. Turret property changes use the reliable
+channel. Movement had also sent reliable copies without a tick timestamp,
+which could deliver pose changes at the wrong sample time.
+
+The server fits a hull pose to the terrain under a nominal track footprint
+at each spawn and again as the tank drives. Each Vehicle creation and the
+corresponding player's cell creation use the same terrain-supported world pose.
+The extractor keeps `terrain2/heights` from each outdoor chunk and the map's
+`space.settings`. The server interpolates the quantized PNG heights over the
+terrain triangles. A missing spawn tile rejects launch, and movement stops at
+the edge of available terrain.
+See [Avatar movement](../references/wot-src/sources/res/scripts/client/Avatar.py#L1783)
+and [client aim tracking](../references/wot-src/sources/res/scripts/client/VehicleGunRotator.py#L368)
+for the client inputs. The detailed position frame was checked against
+the Toolkit's client element notes for the executable identified below.
+
+The `OwnVehicle` component initializes the local ammo and reload display from
+the selected garage loadout. Training uses its own ammunition counters for
+the round. A shot consumes one round, applies a three-second reload, and
+casts a ray from the server-side gun position. The closest live opponent
+intersecting the ray takes up to 75 hit points. Both peers receive the muzzle
+event, tracer and health change. Eliminating the last opposing tank finishes
+the round. Track dimensions are shared by the training simulation. Vehicle collision,
+armour, gun-specific ballistics and spectator controls remain separate work.
+
+The native [battle debug controller](../references/wot-src/sources/res/scripts/client/gui/battle_control/controllers/debug_ctrl.py#L45)
+reads ping from `BigWorld.statPing()` and the red indicator from
+`BigWorld.statLagDetected()`. In the installed x64 client, the connection
+latency path at `0x14041be50` clamps the ping statistic to at least 1 ms
+before the stat binding at `0x140ab5500` reads it. The server immediately
+acknowledges accepted reliable arena packets so the client can measure
+round-trip time.
+
+The native client recorded the Avatar control handoff in the 21 November
+2026 training replay, but the replay lacked the periodic Avatar poses. The
+x64 packet receiver calls the unreliable sequence validator at
+`0x142d4cab4` for external channel traffic. The validator at `0x142d35ef0`
+requires a valid 28-bit sequence and rejects older datagrams. Without the
+footer, the packet retains the constructor's `0x10000000` sentinel
+(`0x142d45ea6`) and fails validation. The server now
+adds the sequence footer to all on-channel packets, including standalone
+acknowledgements and single-packet snapshots. Unreliable datagrams draw
+from a separate allocator so reliability can maintain its own contiguous
+sequence. This matches the external channel framing in the
+[BigWorld UDP bundle reference](../references/BigWorld-Engine-14.4.1/programming/bigworld/lib/network/udp_bundle.cpp#L432).
+
+The red dot is driven by the lag checks at `0x14041bfd0`. The
+[Avatar script](../references/wot-src/sources/res/scripts/client/Avatar.py#L315)
+registers its native AvatarFilter through `enableLagDetection(True)`.
+The compiled `createCellPlayer` handler at `0x142cf7c20` adds the Avatar
+to the locally controlled set. The detailed Avatar pose handler at
+`0x142cf7070` returns early for members of that set. Arena entry sends
+`controlEntity` (`0x41`) with the Avatar ID and control disabled, which
+removes it from that set at `0x142cf7a3c`. The server then supplies
+hull-relative Avatar poses and detailed Vehicle poses each tick, including
+while parked. Driving and shooting still use Avatar cell methods. The
+two-peer protocol test models the compiled client's pose gate. The red dot
+still needs verification in the native HUD.
+
+Each roster row starts as loading. `Avatar.setClientReady` publishes a
+nested `AvatarVehiclesInfo.vehiclesInfo` update of `isAvatarReady`, followed by
+the row's `__generation` commit. Both are required by the
+[native roster component](../references/wot-src/sources/res/scripts/client_common/AvatarVehiclesInfoBase.py#L22).
+Late arrivals receive current readiness after their roster is created.
+Departure clears the ready flag for remaining players.
+
+The bundle used for the two-peer protocol check was extracted from the installed
+EU client reporting `v.2.4.1.1 #993`. The launcher executable SHA-256 was
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c` and the
+`win64/WorldOfTanks.exe` SHA-256 was
+`58325ded3e2db7134638971e33de1eab09737f8b66401554d9723a2bf246bb11`.
+Publisher discovery reported EU production build `2.4.1.5514`, matching the
+installed build documented in [client validation](../client-validation.md).
+
 ## Battle entry and return
 
 The sequence below describes the historical Toolkit prototype. At the pinned

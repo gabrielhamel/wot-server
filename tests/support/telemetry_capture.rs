@@ -561,6 +561,7 @@ pub fn assert_operation_traces(account: i64, research_account: i64, online_playe
             [
                 "player_sessions",
                 "accounts",
+                "battles",
                 "social",
                 "player_administration",
                 "server",

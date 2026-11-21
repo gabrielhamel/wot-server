@@ -1,4 +1,4 @@
-use crate::player_sessions::mercury::{
+use crate::platform::mercury::{
     app::{
         dispatch::ScriptDispatch,
         entity::{Bytes, EntityId, Pickle, ScriptType, dict_check, dict_field_ty, entity_schema},

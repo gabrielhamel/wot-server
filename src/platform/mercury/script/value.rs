@@ -28,7 +28,7 @@ pub enum Value {
     Mailbox,
     Dict(BTreeMap<Arc<str>, Value>),
     Seq(Vec<Value>),
-    /// A `FIXED_DICT` value whose type declares `AllowNone` (see [`crate::player_sessions::mercury::script::TyDict`]),
+    /// A `FIXED_DICT` value whose type declares `AllowNone` (see [`crate::platform::mercury::script::TyDict`]),
     /// read off the wire as Python `None` instead of the dict's properties.
     None,
 }
@@ -98,7 +98,7 @@ pub enum StringValue {
 /// already desynced upstream), the raw bytes instead of hard-failing the whole read.
 /// Mirrors how [`StringValue`] already handles an ambiguous encoding: the field's
 /// declared length is always fully consumed either way (see `PythonValue`'s
-/// [`crate::player_sessions::mercury::net::codec`] impl), so one unparseable blob doesn't have to desync
+/// [`crate::platform::mercury::net::codec`] impl), so one unparseable blob doesn't have to desync
 /// everything read after it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PythonValue {

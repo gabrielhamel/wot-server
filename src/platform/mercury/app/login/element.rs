@@ -6,18 +6,16 @@
 //!
 //! This app also provides a way to ping test the server.
 
-use crate::player_sessions::mercury::net::limits;
+use crate::platform::mercury::net::limits;
 use std::io::{self, Read, Write};
 
 use blowfish::Blowfish;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 
 use crate::platform::client_formats::util::io::*;
-use crate::player_sessions::mercury::net::codec::{Codec, SimpleCodec, WgSocketAddrV4};
-use crate::player_sessions::mercury::net::element::{ElementLength, SimpleElement};
-use crate::player_sessions::mercury::net::filter::{
-    BlowfishReader, BlowfishWriter, RsaReader, RsaWriter,
-};
+use crate::platform::mercury::net::codec::{Codec, SimpleCodec, WgSocketAddrV4};
+use crate::platform::mercury::net::element::{ElementLength, SimpleElement};
+use crate::platform::mercury::net::filter::{BlowfishReader, BlowfishWriter, RsaReader, RsaWriter};
 
 /// Internal module containing all raw elements numerical ids.
 ///
