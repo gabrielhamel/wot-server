@@ -3375,7 +3375,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "wot-binary-map"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3388,7 +3388,7 @@ dependencies = [
 
 [[package]]
 name = "wot-context-maps"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3402,7 +3402,7 @@ dependencies = [
 
 [[package]]
 name = "wot-extract"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -3413,7 +3413,7 @@ dependencies = [
 
 [[package]]
 name = "wot-game-client"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3427,7 +3427,7 @@ dependencies = [
 
 [[package]]
 name = "wot-replay"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "blowfish",
@@ -3439,7 +3439,7 @@ dependencies = [
 
 [[package]]
 name = "wot-resources"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3447,7 +3447,7 @@ dependencies = [
 
 [[package]]
 name = "wot-server"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "argon2",
