@@ -250,7 +250,6 @@ impl Gateway {
             if entering {
                 session.entity = None;
                 session.garage_synced = false;
-                session.store_token = None;
                 let result = (|| -> Result<()> {
                     chat::update_membership(&mut self.base, member.entity, room_id, false)?;
                     self.base.entity(member.entity)?.onArenaCreated()?;

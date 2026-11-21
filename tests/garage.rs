@@ -283,7 +283,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         .as_ref()
         .map(|key| Arc::new(rsa::RsaPublicKey::from(&**key)));
     let garage_capacity = if training_room_available { 3 } else { 2 };
-    let gateway = Gateway::bind(
+    let mut gateway = Gateway::bind(
         &wot_server::server::test_support::composition(),
         GatewayConfig {
             login_bind: "127.0.0.1:0".parse().unwrap(),
@@ -305,6 +305,11 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         tokio::runtime::Handle::current(),
     )
     .unwrap();
+    let store = training_battle_available.then(|| {
+        gateway
+            .enable_store("http://127.0.0.1:8081".to_owned())
+            .unwrap()
+    });
     let (login, base) = gateway.addresses().unwrap();
     let grants = gateway.player_grants();
     let runtime = tokio::runtime::Handle::current();
@@ -411,16 +416,30 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             training_room_flow::assert_room_gone(&mut second_peer, &script, training_vehicle_id);
             training_room_flow::assert_empty_list(&mut second_peer, &script);
         }
-        if let Some(shell_damage) = training_shell_damage {
-            training_room_flow::exercise_battle(
-                &mut first_peer,
-                training_vehicle_id,
-                &mut second_peer,
-                guest_vehicle_id,
-                &script,
-                shell_damage,
-            );
-        }
+        let store_after_battle =
+            if let (Some(shell_damage), Some(router)) = (training_shell_damage, store) {
+                equipment_flow::full_cache(&mut second_peer, &script);
+                let shop_url = second_peer.shop_url.clone().unwrap();
+                let token = shop_url.split_once('#').unwrap().1;
+                let check_store = |phase, status| {
+                    runtime.block_on(store_flow::assert_catalog_access(
+                        &router, token, phase, status,
+                    ));
+                };
+                check_store(1, axum::http::StatusCode::OK);
+                training_room_flow::exercise_battle(
+                    &mut first_peer,
+                    training_vehicle_id,
+                    &mut second_peer,
+                    guest_vehicle_id,
+                    &script,
+                    shell_damage,
+                    || check_store(2, axum::http::StatusCode::UNAUTHORIZED),
+                );
+                Some((router, shop_url))
+            } else {
+                None
+            };
         let sync = |id, cmd| {
             vec![
                 Value::Int16(id),
@@ -434,6 +453,16 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         second_peer.command(&script, "doCmdInt3", sync(221, 100));
         first_peer.until(&script, |p| p.has_resource(221));
         second_peer.until(&script, |p| p.has_resource(221));
+        if let Some((router, shop_url)) = store_after_battle {
+            let token = shop_url.split_once('#').unwrap().1;
+            runtime.block_on(store_flow::assert_catalog_access(
+                &router,
+                token,
+                3,
+                axum::http::StatusCode::OK,
+            ));
+            assert!(second_peer.shop_url.as_deref() == Some(shop_url.as_str()));
+        }
         let first_cache = first_peer.resource(221);
         let second_cache = second_peer.resource(221);
         assert_eq!(dict(&first_cache, "rev"), Pickle::I64(3));
@@ -598,6 +627,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         training_room_flow::assert_traces(a.id, b.id, training_room_available);
         if let Some(shell_damage) = training_shell_damage {
             training_room_flow::assert_battle_traces(a.id, b.id, shell_damage);
+            store_flow::assert_battle_catalog_traces(b.id);
         }
         telemetry_capture::assert_operation_traces(a.id, b.id, garage_capacity);
         telemetry_capture::assert_equipment_traces(equipment_account);

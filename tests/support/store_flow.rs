@@ -487,6 +487,70 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     exercise.unwrap();
 }
 
+pub async fn assert_catalog_access(router: &Router, token: &str, phase: u8, status: StatusCode) {
+    let trace_id = battle_catalog_trace_id(phase);
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/shop/catalog")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header("traceparent", format!("00-{trace_id}-0123456789abcdef-01"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), status, "battle phase {phase}");
+}
+
+fn battle_catalog_trace_id(phase: u8) -> TraceId {
+    TraceId::from(0xc0a321d7b8e000000000000000000000 | u128::from(phase))
+}
+
+pub fn assert_battle_catalog_traces(account: i64) {
+    let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
+    let attribute = |span: &opentelemetry_sdk::trace::SpanData, name| {
+        span.attributes
+            .iter()
+            .find(|attr| attr.key.as_str() == name)
+            .map(|attr| attr.value.to_string())
+    };
+    for (phase, status, outcome, player) in [
+        (1, "200", "success", Some(account)),
+        (2, "401", "unauthorized", None),
+        (3, "200", "success", Some(account)),
+    ] {
+        let trace_id = battle_catalog_trace_id(phase);
+        let find = |name| {
+            spans
+                .iter()
+                .find(|span| span.name == name && span.span_context.trace_id() == trace_id)
+                .unwrap()
+        };
+        let http = find("store.http.request");
+        let catalog = find("player_sessions.store.catalog_request");
+        assert_eq!(http.parent_span_id, SpanId::from(0x0123456789abcdef));
+        assert_eq!(catalog.parent_span_id, http.span_context.span_id());
+        assert_eq!(
+            attribute(http, "http.response.status_code").as_deref(),
+            Some(status)
+        );
+        assert_eq!(
+            attribute(catalog, "input.channel").as_deref(),
+            Some("garage")
+        );
+        assert_eq!(
+            attribute(catalog, "user.id"),
+            player.map(|id| id.to_string())
+        );
+        assert_eq!(
+            attribute(catalog, "output.outcome").as_deref(),
+            Some(outcome)
+        );
+    }
+}
+
 async fn store_request(
     router: &Router,
     token: Option<&str>,

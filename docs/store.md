@@ -156,9 +156,12 @@ The authenticated garage receives a random token as a URL fragment for the
 Store page. URL fragments stay in the client. The page sends the token in the
 `Authorization` header for same-origin requests. Gateway lookups require a
 synchronized live garage session. The token has no separate time limit. It
-stays valid for the life of that session, including between Store visits.
-Disconnecting or replacing the game session invalidates it. The web dashboard
-uses its own 60-day session cookie.
+belongs to the game session. During battle, the gateway rejects Store requests
+with that token. After the player returns and synchronizes the garage cache,
+the gateway accepts the same token again and sends the same Store URL in the
+new Account entity. This lets the embedded browser reuse an already-open Store
+page. Disconnecting or replacing the game session invalidates the token. The
+web dashboard uses its own 60-day session cookie.
 Redact authorization headers when logging proxy traffic. The game may log
 its Store URL locally, including the fragment. Disconnect before sharing game
 logs to invalidate the token.
@@ -202,9 +205,14 @@ reconnect persistence, and exported W3C parent and SQL/garage delivery
 ancestry. The `exports_admin_http_access_lifecycle` test checks a dashboard
 purchase while the game is disconnected, session and write-header enforcement,
 account isolation, replay rejection, persisted balances and trace ancestry.
+The garage and training battle integration test checks that the original
+Store token opens the catalog before battle, receives HTTP 401 in the arena,
+and opens the catalog again after the garage synchronizes. It verifies the
+exported HTTP parent context and authorization outcome for each request.
 The browser suite exercises both Store entry points with MSW.
 
 For real-client verification, open the Store from the garage, buy a Depot
 item and confirm the stock and HUD balance. Buy Premium Account time and
 check the garage account status before and after reconnecting. Buy a style
-for a vehicle in the garage and apply it in Exterior.
+for a vehicle in the garage and apply it in Exterior. Open the Store before
+a training battle, return to the garage and open the Store again.
