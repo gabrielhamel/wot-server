@@ -60,7 +60,7 @@ impl Entrant {
     fn tank(&self) -> Tank {
         Tank::new(
             self.position,
-            self.direction.z,
+            self.direction,
             self.vehicle.health,
             self.vehicle.ammunition.clone(),
             self.vehicle.performance.clone(),
@@ -119,6 +119,9 @@ struct Participant {
     tank: Tank,
     observer: bool,
     last_gun_angles: u16,
+    last_gun_marker: Option<crate::battles::domain::vehicle::GunRay>,
+    server_marker: bool,
+    pending_marker: Option<tracing::Span>,
     pending_drive: Option<tracing::Span>,
     pending_aim: Option<tracing::Span>,
     pending_reload: Option<tracing::Span>,
@@ -398,6 +401,9 @@ impl BattleRuntime {
                         tank: player.tank(),
                         observer: player.observer,
                         last_gun_angles: player.initial_gun_angles(),
+                        last_gun_marker: None,
+                        server_marker: false,
+                        pending_marker: None,
                         pending_drive: None,
                         pending_aim: None,
                         pending_reload: None,

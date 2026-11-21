@@ -31,6 +31,43 @@ pub mod id {
     pub const RESOURCE_HEADER: u8 = 0x45;
     pub const RESOURCE_FRAGMENT: u8 = 0x46;
     pub const ENTITY_METHOD: ElementIdRange = ElementIdRange::new(0x4E, 0xA6);
+    pub const ENTITY_PROPERTY: ElementIdRange = ElementIdRange::new(0xA7, 0xFE);
+}
+
+/// A fixed-size property update addressed to the selected entity.
+pub struct FixedEntityProperty<const N: usize> {
+    pub element_id: u8,
+    pub bytes: [u8; N],
+}
+
+impl<const N: usize> Element<()> for FixedEntityProperty<N> {
+    fn write_length(&self, config: &()) -> io::Result<ElementLength> {
+        Self::read_length(config, self.element_id)
+    }
+
+    fn write(&self, write: &mut dyn Write, _config: &()) -> io::Result<u8> {
+        write.write_all(&self.bytes)?;
+        Ok(self.element_id)
+    }
+
+    fn read_length(_config: &(), id: u8) -> io::Result<ElementLength> {
+        if id::ENTITY_PROPERTY.contains(id) {
+            Ok(ElementLength::Fixed(
+                u32::try_from(N).map_err(io::Error::other)?,
+            ))
+        } else {
+            Err(io::ErrorKind::InvalidData.into())
+        }
+    }
+
+    fn read(read: &mut dyn Read, _config: &(), _len: usize, id: u8) -> io::Result<Self> {
+        let mut bytes = [0; N];
+        read.read_exact(&mut bytes)?;
+        Ok(Self {
+            element_id: id,
+            bytes,
+        })
+    }
 }
 
 crate::__struct_simple_codec! {

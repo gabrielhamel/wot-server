@@ -32,7 +32,8 @@ impl Battle {
         ddd.bounded_context.name = "battles", input.battle.id = battle_id,
         input.entity_id = event.entity_id, rpc.method = %event.name, input.args.count = event.args.len(),
         input.drive.flags = tracing::field::Empty, input.ammunition.setting = tracing::field::Empty,
-        input.ammunition.shell = tracing::field::Empty, input.aim.kind = tracing::field::Empty, output.outcome = tracing::field::Empty,
+        input.ammunition.shell = tracing::field::Empty, input.aim.kind = tracing::field::Empty,
+        input.aim.server_marker = tracing::field::Empty, output.outcome = tracing::field::Empty,
         otel.status_code = tracing::field::Empty
     ))]
     fn control(
@@ -49,7 +50,21 @@ impl Battle {
         };
         let avatar_target = event.entity_id == player.avatar_id;
         let vehicle_target = event.entity_id == player.vehicle.entity_id;
-        let outcome = if !player.ready || player.observer || player.tank.health == 0 {
+        let outcome = if let ("setServerMarker", [WireValue::UInt8(enabled @ (0 | 1))]) =
+            (&*event.name, event.args.as_slice())
+            && avatar_target
+        {
+            let enabled = *enabled != 0;
+            operation.record("input.aim.server_marker", enabled);
+            if enabled && (player.observer || player.tank.base_dispersion_angle().is_none()) {
+                "vehicle_unavailable"
+            } else {
+                player.server_marker = enabled;
+                player.last_gun_marker = None;
+                player.pending_marker = enabled.then(|| operation.clone());
+                "accepted"
+            }
+        } else if !player.ready || player.observer || player.tank.health == 0 {
             "vehicle_unavailable"
         } else {
             match (&*event.name, event.args.as_slice()) {
@@ -182,6 +197,8 @@ impl Battle {
             .filter(|(_, player)| player.ready && !player.observer && player.tank.health > 0)
         {
             let previous = player.tank.position;
+            let previous_direction = player.vehicle.direction;
+            let previous_speed = player.tank.speed();
             let drive = player.pending_drive.take();
             player.tank.step(TICK.as_secs_f32(), self.map.bounds);
             if let Some((position, direction)) = self
@@ -189,6 +206,7 @@ impl Battle {
                 .vehicle_pose(player.tank.position.xz(), player.tank.yaw)
             {
                 player.tank.position = position;
+                player.tank.set_hull_tilt(direction);
                 if (position, direction) != (player.vehicle.position, player.vehicle.direction) {
                     player.vehicle.position = position;
                     player.vehicle.direction = direction;
@@ -198,6 +216,25 @@ impl Battle {
                 }
             } else {
                 player.tank.position = previous;
+                player.tank.yaw = previous_direction.z;
+            }
+            if previous_direction != player.vehicle.direction
+                || previous_speed != player.tank.speed()
+            {
+                deliver_state(
+                    drive.clone(),
+                    "hull_aim",
+                    player.avatar_id,
+                    &[client],
+                    |client| {
+                        wire.publish_hull_aim(
+                            base,
+                            client,
+                            player.vehicle.direction,
+                            player.tank.speed(),
+                        )
+                    },
+                );
             }
             let aiming = player.tank.advance_gun(TICK.as_secs_f32());
             let gun = player.tank.packed_gun_angles();
@@ -208,16 +245,26 @@ impl Battle {
                 player.pending_aim.take()
             };
             player.advance_ammunition(base, wire, client, now, time);
+            let parent = aim.or(drive);
             if player.last_gun_angles != gun {
                 player.last_gun_angles = gun;
-                deliver_state(aim.or(drive), "gun_angles", entity_id, &peers, |client| {
-                    wire.vehicle_properties(
-                        base,
-                        client,
-                        entity_id,
-                        [("gunAnglesPacked", WireValue::UInt16(gun))],
-                    )
+                deliver_state(parent.clone(), "gun_angles", entity_id, &peers, |client| {
+                    wire.publish_gun_angles(base, client, entity_id, gun)
                 });
+            }
+            if player.server_marker
+                && let Some(dispersion) = player.tank.base_dispersion_angle()
+            {
+                let ray = player.tank.gun_ray();
+                if player.last_gun_marker != Some(ray) {
+                    let parent = player.pending_marker.clone().or(parent);
+                    deliver_state(parent, "gun_marker", entity_id, &[client], |client| {
+                        wire.publish_gun_marker(base, client, ray, dispersion)?;
+                        player.last_gun_marker = Some(ray);
+                        player.pending_marker = None;
+                        Ok(())
+                    });
+                }
             }
         }
         movement

@@ -2,6 +2,7 @@ use crate::{
     platform::client_formats::pxml::{Element, Value},
     shared_kernel::{GunLoading, GunPerformance},
 };
+use glam::Vec3;
 use std::collections::BTreeMap;
 
 pub(super) fn speed_limits(vehicle: &Element) -> Option<[f32; 2]> {
@@ -29,6 +30,7 @@ pub(super) fn gun(
     local: Option<&Element>,
     base: &Element,
     turret_traverse: f32,
+    gun_position: Option<Vec3>,
     shell_damage: BTreeMap<i32, u16>,
 ) -> Option<GunPerformance> {
     let yaw_limits = field(local, base, &["turretYawLimits"])
@@ -61,6 +63,11 @@ pub(super) fn gun(
         min_pitch,
         max_pitch,
         aiming_time: positive(number(local, base, "aimingTime")?)?,
+        base_dispersion_angle: number(local, base, "shotDispersionRadius")
+            .and_then(non_negative)
+            .map(|radius| (radius / 100.0).atan()),
+        shot_position: gun_position
+            .map(|position| position + vector(local, base, "shotOffset").unwrap_or(Vec3::ZERO)),
         loading: GunLoading {
             capacity,
             reload_time: positive(number(local, base, "reloadTime")?)?,
@@ -72,6 +79,12 @@ pub(super) fn gun(
         },
         shell_damage,
     })
+}
+
+pub(super) fn vector(local: Option<&Element>, base: &Element, name: &str) -> Option<Vec3> {
+    field(local, base, &[name])
+        .and_then(Value::as_vec3)
+        .filter(|value| value.is_finite())
 }
 
 pub(super) fn shell_damage(
@@ -192,6 +205,10 @@ mod tests {
         assert!(amx.gun.loading.capacity > 1);
         assert!(amx.gun.loading.reload_time > amx.gun.loading.intra_clip_time);
         assert!(amx.gun.loading.autoreload_times.is_empty());
+
+        let amx30 = performance("france:F72_AMX_30");
+        assert!(amx30.turret_pivot.unwrap().y > 0.0);
+        assert!(amx30.gun.shot_position.unwrap().length() > 0.0);
 
         let progetto = performance("italy:It13_Progetto_M35_mod_46");
         assert_eq!(

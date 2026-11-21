@@ -134,7 +134,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.ammunition.shell`](../src/battles/infrastructure/controls.rs) | Requested signed shell compact descriptor on shell selection, or current shell compact descriptor on a shot attempt. |
 | [`input.shell.damage`](../src/battles/infrastructure/controls.rs) | Nominal hit points for the fired shell before capping by the target's remaining health. Omitted on rejected shots. |
 | [`input.aim.kind`](../src/battles/infrastructure/controls.rs) | Aim representation on an aim command, `world_point` or `hull_angles`. |
-| [`input.replication.kind`](../src/battles/infrastructure/controls.rs) | `position`, `gun_angles` or `ammunition` on a delivered arena pose, gun angle or reload state update. |
+| [`input.aim.server_marker`](../src/battles/infrastructure/controls.rs) | Boolean supplied by the Avatar's server reticle setting command. |
+| [`input.replication.kind`](../src/battles/infrastructure/controls.rs) | `position`, `hull_aim`, `gun_angles`, `gun_marker` or `ammunition` on a delivered arena pose, owner hull orientation, turret angle, owner reticle or reload state update. |
 | [`input.arena.tick`](../src/battles/infrastructure/mod.rs) | Full arena tick count for the first position snapshot carrying a drive command's change. One unit is 100 ms. |
 | [`input.geometry`](../src/battles/infrastructure/terrain.rs) | Bundle geometry path when loading terrain for the selected arena. |
 | [`input.roster.row`](../src/battles/infrastructure/mod.rs) | Zero-based row index when updating a player's ready state in the arena roster. |
@@ -245,7 +246,7 @@ meanings on different operations; those differences are listed explicitly.
 | --- | --- |
 | [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Byte length of an encoded outgoing XMPP stanza, compressed garage cache, Mercury resource response or available Training Room observer or combat vehicle descriptor. Excludes transport framing. |
 | [`output.recipients.count`](../src/player_sessions/infrastructure/gateway/training/chat.rs) | Number of queued Training channel messages, including the sender, or queued invitations after deduplication. For arena readiness updates, counts the recipients queued for delivery. For position snapshots, counts the clients targeted by the socket writes. |
-| [`output.delivered.count`](../src/battles/infrastructure/mod.rs) | Number of successful socket writes for an arena position snapshot or successful enqueues for a gun angle or ammunition update. |
+| [`output.delivered.count`](../src/battles/infrastructure/mod.rs) | Number of successful socket writes for an arena position snapshot or successful enqueues for hull orientation, gun angles, server marker or ammunition. |
 | [`output.rooms.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of Training Rooms returned by a successful list request. Omitted on rejection or a failed send. |
 | [`output.rooms.total`](../src/player_sessions/infrastructure/gateway/commands.rs) | Total discoverable rooms in the list response before paging. Omitted on rejection or a failed send. |
 | [`output.players.count`](../src/player_sessions/infrastructure/gateway/training.rs) | Count of players in returned rooms on listing, or membership count on successful join or removal. A deleted room has zero players. |

@@ -447,6 +447,7 @@ impl App {
                         | "vehicle_trackWorldPointWithGun"
                         | "stopTrackingWithGun"
                         | "vehicle_stopTrackingWithGun"
+                        | "setServerMarker"
                         | "vehicle_changeSetting"
                 )
             }) {
@@ -792,20 +793,45 @@ impl App {
         client: ClientKey,
         element: E,
     ) -> io::Result<()> {
+        self.queue_arena_element(client, E::ID, |out| out.write_simple(element))
+    }
+
+    pub(crate) fn send_arena_property<const N: usize>(
+        &mut self,
+        client: ClientKey,
+        entity_id: Option<u32>,
+        property: client::element::FixedEntityProperty<N>,
+    ) -> io::Result<()> {
+        self.queue_arena_element(client, property.element_id, |out| {
+            if let Some(entity_id) = entity_id {
+                out.write_simple(client::element::SelectEntity { entity_id })?;
+            } else {
+                out.select_player()?;
+            }
+            out.write_selected(property, &())
+        })
+    }
+
+    fn queue_arena_element(
+        &mut self,
+        client: ClientKey,
+        element_id: u8,
+        write: impl FnOnce(&mut ClientOutbox) -> io::Result<()>,
+    ) -> io::Result<()> {
         if tracing::Span::current().is_disabled() {
-            return self.send_simple(client, element);
+            return write(self.out(client)?);
         }
         let span = tracing::info_span!(
             "mercury.arena_delivery",
             "ddd.bounded_context.name" = "player_sessions",
-            "input.element_id" = E::ID,
+            "input.element_id" = element_id,
             "network.peer.address" = %client.addr().ip(),
             "output.delivery" = tracing::field::Empty,
             "otel.status_code" = tracing::field::Empty,
         );
         let result = span.in_scope(|| {
             let out = self.out(client)?;
-            out.write_simple(element)?;
+            write(out)?;
             if !span.is_disabled() {
                 out.trace_delivery(span.clone());
             }

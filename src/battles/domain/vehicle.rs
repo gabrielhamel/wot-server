@@ -1,6 +1,6 @@
 use super::ammunition::{Ammunition, Reload};
 use crate::shared_kernel::VehiclePerformance;
-use glam::{Vec2, Vec3, Vec3Swizzles};
+use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 use std::time::Instant;
 
 const FORWARD: u8 = 1;
@@ -17,6 +17,7 @@ const HULL_RADIUS: f32 = 2.5;
 pub(crate) struct Tank {
     pub position: Vec3,
     pub yaw: f32,
+    hull_tilt: Vec2,
     pub health: i16,
     pub max_health: i16,
     pub performance: Option<VehiclePerformance>,
@@ -46,10 +47,16 @@ pub(crate) struct Shot {
     pub damage: u16,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct GunRay {
+    pub origin: Vec3,
+    pub direction: Vec3,
+}
+
 impl Tank {
     pub fn new(
         position: Vec3,
-        yaw: f32,
+        direction: Vec3,
         health: i16,
         ammo: Vec<(i32, u16)>,
         performance: Option<VehiclePerformance>,
@@ -59,7 +66,8 @@ impl Tank {
             .map_or(0, |vehicle| vehicle.gun.loading.capacity);
         let mut tank = Self {
             position,
-            yaw,
+            yaw: direction.z,
+            hull_tilt: direction.xy(),
             health,
             performance,
             max_health: health,
@@ -80,6 +88,14 @@ impl Tank {
         }
         self.flags = flags;
         true
+    }
+
+    pub fn set_hull_tilt(&mut self, direction: Vec3) {
+        self.hull_tilt = direction.xy();
+    }
+
+    pub fn speed(&self) -> f32 {
+        self.speed
     }
 
     pub fn aim_at(&mut self, aim: Aim) -> bool {
@@ -141,11 +157,18 @@ impl Tank {
         };
         let (desired_yaw, desired_pitch) = match self.aim {
             Some(Aim::WorldPoint(target)) => {
-                let delta = target - self.muzzle();
-                (
-                    angle(delta.x.atan2(delta.z) - self.yaw),
-                    -delta.y.atan2(delta.xz().length()),
-                )
+                let (pivot, shot_position) = self.gun_mount();
+                let target = self.hull_rotation().inverse() * (target - self.position) - pivot;
+                let horizontal = target.xz().length();
+                let yaw = if horizontal > f32::EPSILON {
+                    // At the final yaw, the target and the shot origin share the same lateral coordinate.
+                    let offset = (shot_position.x / horizontal).clamp(-1.0, 1.0).asin();
+                    angle(target.x.atan2(target.z) - offset)
+                } else {
+                    self.gun_yaw
+                };
+                let from_gun = Quat::from_rotation_y(-yaw) * target - shot_position;
+                (yaw, -from_gun.y.atan2(from_gun.z.max(0.0)))
             }
             Some(Aim::HullAngles { yaw, pitch }) => (angle(yaw), pitch),
             None => (0.0, 0.0),
@@ -217,18 +240,26 @@ impl Tank {
             None => return Err("shell_damage_unavailable"),
         };
         self.ammunition.fire(&performance.gun.loading, now)?;
-        let yaw = self.yaw + self.gun_yaw;
-        let pitch = self.gun_pitch;
-        let direction = Vec3::new(
-            yaw.sin() * pitch.cos(),
-            -pitch.sin(),
-            yaw.cos() * pitch.cos(),
-        );
+        let ray = self.gun_ray();
         Ok(Shot {
-            origin: self.muzzle(),
-            direction,
+            origin: ray.origin,
+            direction: ray.direction,
             damage,
         })
+    }
+
+    pub fn gun_ray(&self) -> GunRay {
+        let hull = self.hull_rotation();
+        let turret = Quat::from_rotation_y(self.gun_yaw);
+        let (pivot, shot_position) = self.gun_mount();
+        GunRay {
+            origin: self.position + hull * (pivot + turret * shot_position),
+            direction: hull * turret * Quat::from_rotation_x(self.gun_pitch) * Vec3::Z,
+        }
+    }
+
+    pub fn base_dispersion_angle(&self) -> Option<f32> {
+        self.performance.as_ref()?.gun.base_dispersion_angle
     }
 
     pub fn rounds(&self) -> impl Iterator<Item = (i32, u16, u16)> + '_ {
@@ -273,8 +304,15 @@ impl Tank {
         (previous, self.health)
     }
 
-    fn muzzle(&self) -> Vec3 {
-        self.position + Vec3::Y * 1.35
+    fn hull_rotation(&self) -> Quat {
+        Quat::from_euler(EulerRot::YXZ, self.yaw, self.hull_tilt.y, self.hull_tilt.x)
+    }
+
+    fn gun_mount(&self) -> (Vec3, Vec3) {
+        self.performance
+            .as_ref()
+            .and_then(|profile| profile.turret_pivot.zip(profile.gun.shot_position))
+            .unwrap_or((Vec3::Y * 1.35, Vec3::ZERO))
     }
 }
 
@@ -329,13 +367,14 @@ mod tests {
     fn tank(ammo: Vec<(i32, u16)>) -> Tank {
         Tank::new(
             Vec3::ZERO,
-            0.0,
+            Vec3::ZERO,
             100,
             ammo,
             Some(VehiclePerformance {
                 forward_speed: 12.0,
                 reverse_speed: 4.0,
                 hull_traverse: 0.8,
+                turret_pivot: None,
                 gun: GunPerformance {
                     turret_traverse: 0.5,
                     gun_traverse: 0.0,
@@ -343,6 +382,8 @@ mod tests {
                     min_pitch: vec![(0.0, -0.4), (1.0, -0.4)],
                     max_pitch: vec![(0.0, 0.2), (1.0, 0.2)],
                     aiming_time: 2.0,
+                    base_dispersion_angle: Some(0.005),
+                    shot_position: None,
                     shell_damage: [(10, 36), (20, 90)].into(),
                     loading: GunLoading {
                         capacity: 1,
@@ -410,6 +451,33 @@ mod tests {
         assert_eq!(tank.gun_yaw, 0.3);
         assert_eq!(tank.gun_pitch, -0.4);
         assert_eq!(tank.packed_gun_angles() & 63, 0);
+    }
+
+    #[test]
+    fn nearby_crosshair_target_stays_locked_with_an_offset_gun_on_a_slope() {
+        let mut tank = tank(vec![]);
+        let profile = tank.performance.as_mut().unwrap();
+        profile.turret_pivot = Some(Vec3::new(0.0, 2.0, -0.6));
+        profile.gun.shot_position = Some(Vec3::new(0.4, 0.5, 1.2));
+        tank.position = Vec3::new(16.0, 0.63, -10.0);
+        tank.yaw = 0.8;
+        tank.set_hull_tilt(Vec3::new(0.12, -0.2, 0.8));
+        tank.gun_yaw = 0.82;
+        tank.gun_pitch = 0.15;
+        let expected = tank.gun_ray();
+        let target = expected.origin + expected.direction * 3.0;
+        tank.gun_yaw = -0.5;
+        assert!(tank.aim_at(Aim::WorldPoint(target)));
+        for _ in 0..40 {
+            tank.advance_gun(0.1);
+        }
+        let settled = tank.packed_gun_angles();
+        assert!(tank.gun_ray().origin.distance(expected.origin) < 0.001);
+        assert!(tank.gun_ray().direction.distance(expected.direction) < 0.001);
+        for _ in 0..20 {
+            tank.advance_gun(0.1);
+            assert_eq!(tank.packed_gun_angles(), settled);
+        }
     }
 
     #[test]

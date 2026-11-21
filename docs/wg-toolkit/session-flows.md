@@ -367,7 +367,10 @@ Accounts resolves `speedLimits/forward` and `speedLimits/backward` from the
 vehicle definition, and traverse rates and gun arcs from the equipped chassis,
 turret and gun. The parser merges local overrides with the shared definitions.
 Battles advances yaw and pitch on arena ticks and quantizes pitch against the
-gun's absolute envelope for `gunAnglesPacked`. The drive bits express physical
+gun's absolute envelope for `gunAnglesPacked`. Both the server gun and the
+owner's aim stabilisation use the replicated terrain-supported hull pose.
+The gun aims from the equipped chassis, turret and gun offsets, so nearby
+crosshair targets use the correct pivot and launch point. The drive bits express physical
 hull turns. `Avatar.makeVehicleMovementCommandByKeys` exchanges the left and
 right bits when the player's `backDraftInvert` option is enabled and the
 backward flag is set.
