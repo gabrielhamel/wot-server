@@ -38,6 +38,7 @@ establish compatibility with the current client.
 | Buying and mounting consumables and setting auto-resupply | [Garage consumables](consumables.md) |
 | Seasonal camouflage, paint, decals, inscriptions, effects and 3D attachments | [Garage camouflage and exterior customization](camouflage.md) |
 | Buying and mounting equipment and crew directives | [Garage directives](directives.md) |
+| Arena lifecycle, round state and battle ownership | [Battles](../src/battles/README.md) |
 | Managing crew, perks, training and barracks | [Garage crew](crew.md) |
 | Viewing and selling unmounted stock | [Garage Depot](depot.md) |
 | Contacts, player search and private conversations | [Social protocol](social.md) |

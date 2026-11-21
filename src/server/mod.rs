@@ -28,6 +28,15 @@ pub struct Composition {
     _private: (),
 }
 
+pub(crate) fn bind_battles(
+    _composition: &Composition,
+    base: &mut crate::platform::mercury::app::base::App,
+    resources: &wot_resources::ResourceBundle,
+    enabled: bool,
+) -> anyhow::Result<crate::battles::contract::BattleRuntime> {
+    crate::battles::contract::BattleRuntime::bind(base, resources, enabled)
+}
+
 #[cfg(any(test, feature = "integration-test-support"))]
 #[doc(hidden)]
 pub mod test_support {

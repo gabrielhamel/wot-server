@@ -317,10 +317,11 @@ team state before sending the second request. The server acknowledges the
 first request immediately and publishes both ready states in
 `updatePrebattle(6)` only when the arena is about to launch.
 
-Once both teams confirm, the server rechecks vehicle ownership and reads the
-current equipped descriptors and health from Accounts. It prepares all client
-payloads before closing the room, expiring invitations and closing the Training
-text channel. Unassigned members stay in their garages. Each participant
+Once both teams confirm, Player Sessions rechecks vehicle ownership and reads
+the current equipped loadouts from Accounts. It submits the roster and room
+settings to [Battles](../../src/battles/README.md), which assigns a Battle ID
+and prepares the client payloads. Player Sessions then closes the room,
+expires invitations and closes the Training text channel. Unassigned members stay in their garages. Each participant
 receives `onArenaCreated` followed by `ResetEntities` on the encrypted channel
 they already use. The client acknowledges with `EnableEntities`. The server
 then creates its Avatar and cell player in the shared space, sends the

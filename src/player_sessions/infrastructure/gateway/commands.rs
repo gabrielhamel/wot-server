@@ -1,24 +1,26 @@
 use super::*;
-use crate::player_sessions::mercury::app::entity::MethodDecodeError;
+use crate::{battles::contract::AvatarAction, platform::mercury::app::entity::MethodDecodeError};
 
 const REQUEST_PREBATTLES: i16 = 520;
 const PREBATTLES_STREAM: i16 = 200;
 
 impl Gateway {
     pub(super) fn handle_base_method(&mut self, event: base::BaseMethodEvent) {
-        if let Some(battle_id) = self
-            .sessions
-            .get(&event.client)
-            .and_then(|session| session.training_battle)
-        {
-            self.handle_training_avatar(battle_id, event);
+        let session = self.sessions.get(&event.client);
+        if let Some(session) = session {
+            event
+                .span
+                .record("user.id", session.account.snapshot.id().to_string());
+        }
+        if self.battles.contains(event.client) {
+            event.span.in_scope(|| {
+                if let AvatarAction::Leave = self.battles.avatar_method(&mut self.base, &event) {
+                    self.return_from_battle(event.client);
+                }
+            });
             return;
         }
         let span = event.span;
-        let session = self.sessions.get(&event.client);
-        if let Some(session) = session {
-            span.record("user.id", session.account.snapshot.id().to_string());
-        }
         let owns_entity = session
             .and_then(|session| session.entity)
             .is_some_and(|entity| entity.any() == event.entity);
@@ -212,7 +214,7 @@ impl Gateway {
             } => self.kick_training_player(client, entity, request_id, [arg0, arg1, arg2])?,
             AccountBase::DoCmdInt3 {
                 request_id,
-                cmd: command @ (training::battle::TEAM_READY | training::battle::TEAM_NOT_READY),
+                cmd: command @ (training::TEAM_READY | training::TEAM_NOT_READY),
                 arg0,
                 arg1,
                 arg2,
@@ -221,7 +223,7 @@ impl Gateway {
                 entity,
                 request_id,
                 [arg0, arg1, arg2],
-                command == training::battle::TEAM_READY,
+                command == training::TEAM_READY,
             )?,
             AccountBase::DoCmdInt3 {
                 request_id,

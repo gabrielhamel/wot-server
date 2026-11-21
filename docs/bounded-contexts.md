@@ -65,6 +65,8 @@ For example, Social resolves numeric player IDs through Accounts'
 revision-checked commands through [Accounts' garage API](../src/accounts/application/garage.rs)
 and delivers the committed result to the connected client. These calls cross
 the same boundaries inside one binary that they would cross after extraction.
+Player Sessions also submits a confirmed roster to the [Battles contract](../src/battles/mod.rs).
+Battles owns the resulting arena and its lifecycle.
 
 ## PostgreSQL ownership and migrations
 
@@ -93,6 +95,7 @@ The [context map](../CONTEXT_MAP.md) uses the names found in the code today.
 | Accounts | Familiar domain language for identity and account ownership. The context also owns much of the garage and progression. Revisit that boundary if those rules grow into a separate model. |
 | Social | Fits contacts, presence as seen by other players, and private conversations. |
 | Player Sessions | Names the lifecycle it owns, from admission and handoff to disconnection. Mercury, XMPP, and garage command translation are responsibilities of its adapters. |
+| Battles | Owns the live arena, participants, round progression and combat simulation. Training Room coordination belongs to Player Sessions. |
 | Player Administration | Names the operator workflow for provisioning players, inspecting garages, and granting resources or vehicles. |
 | Shared Kernel | Names the small domain model maintained for use across contexts. It currently defines the local account ID. |
 | Platform | Names the shared technical services used by the runtime contexts. It currently provides codecs and trace adapters. |

@@ -818,19 +818,31 @@ pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
         child.parent_span_id == parent.span_context.span_id()
             && child.span_context.trace_id() == parent.span_context.trace_id()
     };
+    let by_id: std::collections::HashMap<_, _> = traces
+        .iter()
+        .map(|span| {
+            (
+                (span.span_context.trace_id(), span.span_context.span_id()),
+                span,
+            )
+        })
+        .collect();
+    let parent_of = |span: &SpanData| {
+        by_id
+            .get(&(span.span_context.trace_id(), span.parent_span_id))
+            .copied()
+    };
     let assert_player_delivery = |player_id: i64, operation, outcome, response| {
+        let player_id = player_id.to_string();
         let span = traces
             .iter()
             .find(|span| {
                 span.name == operation
                     && has(span, "output.outcome", outcome)
-                    && traces.iter().any(|command| {
+                    && parent_of(span).is_some_and(|command| {
                         command.name == "player_sessions.commands.command"
-                            && child_of(span, command)
-                            && traces.iter().any(|root| {
-                                root.name == "game.command"
-                                    && child_of(command, root)
-                                    && has(root, "user.id", &player_id.to_string())
+                            && parent_of(command).is_some_and(|root| {
+                                root.name == "game.command" && has(root, "user.id", &player_id)
                             })
                     })
             })
@@ -838,11 +850,9 @@ pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
         assert!(
             traces.iter().any(|child| child.name == "mercury.response"
                 && (child_of(child, span)
-                    || traces
-                        .iter()
-                        .any(|resource| resource.name == "mercury.response.resource"
-                            && child_of(resource, span)
-                            && child_of(child, resource)))
+                    || parent_of(child)
+                        .is_some_and(|resource| resource.name == "mercury.response.resource"
+                            && child_of(resource, span)))
                 && has(child, "rpc.method", response)
                 && has(child, "output.delivery", "sent")),
             "Missing delivery of {response} for {outcome}"
@@ -1392,6 +1402,7 @@ pub fn exercise_battle(
     let host_cell = host.cell.as_ref().unwrap();
     let guest_cell = guest.cell.as_ref().unwrap();
     assert_eq!(host.entered_arena, guest.entered_arena);
+    assert_ne!(i64::from(host_cell.space_id), room_id);
     assert_eq!(
         host.entered_arena,
         Some((u64::from(host_cell.space_id), 83))
@@ -1634,11 +1645,12 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
 
     let hit = traces
         .iter()
-        .find(|s| s.name == "player_sessions.training_shot" && has(s, "output.outcome", "hit"))
+        .find(|s| s.name == "battles.shot" && has(s, "output.outcome", "hit"))
         .expect("training hit");
+    assert!(has(hit, "ddd.bounded_context.name", "battles"));
     let control = traces
         .iter()
-        .find(|s| s.name == "player_sessions.training_control" && child_of(hit, s))
+        .find(|s| s.name == "battles.control" && child_of(hit, s))
         .unwrap();
     assert!(
         traces
@@ -1657,23 +1669,17 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
     );
     let movement = traces
         .iter()
-        .find(|s| {
-            s.name == "player_sessions.training_replication"
-                && has(s, "input.replication.kind", "position")
-        })
+        .find(|s| s.name == "battles.replication" && has(s, "input.replication.kind", "position"))
         .expect("movement replication");
     assert!(has(movement, "output.delivered.count", "2"));
+    assert!(has(movement, "ddd.bounded_context.name", "battles"));
     assert!(movement.attributes.iter().any(|attribute| {
         attribute.key.as_str() == "input.arena.tick"
             && matches!(attribute.value, opentelemetry::Value::I64(tick) if tick > 0)
     }));
-    assert!(
-        traces
-            .iter()
-            .any(|s| s.name == "player_sessions.training_control"
-                && child_of(movement, s)
-                && has(s, "input.drive.flags", "1"))
-    );
+    assert!(traces.iter().any(|s| s.name == "battles.control"
+        && child_of(movement, s)
+        && has(s, "input.drive.flags", "1")));
     for outcome in ["reloading", "invalid_flags", "entity_unavailable"] {
         assert!(
             traces
@@ -1695,9 +1701,7 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
     );
     let readiness: Vec<_> = traces
         .iter()
-        .filter(|span| {
-            span.name == "player_sessions.training_roster_ready" && has(span, "input.ready", "true")
-        })
+        .filter(|span| span.name == "battles.roster_ready" && has(span, "input.ready", "true"))
         .collect();
     assert_eq!(readiness.len(), 2);
     for span in readiness {
@@ -1719,10 +1723,7 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
 
     let countdown = traces
         .iter()
-        .find(|s| {
-            s.name == "player_sessions.training_battle_period"
-                && has(s, "output.phase", "countdown")
-        })
+        .find(|s| s.name == "battles.period" && has(s, "output.phase", "countdown"))
         .expect("countdown broadcast");
     assert!(traces.iter().any(|s| s.name == "game.command"
         && child_of(countdown, s)
@@ -1737,6 +1738,24 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
             .count(),
         2
     );
+
+    let leave = traces
+        .iter()
+        .find(|s| {
+            s.name == "game.command"
+                && has(s, "rpc.method", "leaveArena")
+                && has(s, "user.id", &guest.to_string())
+        })
+        .expect("guest leave request");
+    let garage_return = traces
+        .iter()
+        .find(|s| s.name == "player_sessions.return_from_battle" && child_of(s, leave))
+        .expect("garage return in the leave request trace");
+    assert!(has(garage_return, "output.outcome", "garage_reset"));
+    assert!(traces.iter().any(|s| s.name == "battles.remove_participant"
+        && child_of(s, garage_return)
+        && has(s, "ddd.bounded_context.name", "battles")
+        && has(s, "output.players.count", "1")));
 
     for (request, account, outcome, code) in [
         ("5100", guest, "not_host", "-1"),
@@ -1772,15 +1791,29 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
                     s.name == "player_sessions.prepare_training_battle" && child_of(s, launch)
                 })
                 .unwrap();
+            let arena = traces
+                .iter()
+                .find(|s| s.name == "battles.prepare" && child_of(s, prepare))
+                .expect("battle preparation inside the Training launch trace");
+            assert!(has(arena, "ddd.bounded_context.name", "battles"));
+            assert!(has(arena, "output.outcome", "prepared"));
+            assert!(has(arena, "output.players.count", "2"));
+            let battle_id = arena
+                .attributes
+                .iter()
+                .find(|attribute| attribute.key.as_str() == "output.battle.id")
+                .expect("allocated battle ID")
+                .value
+                .to_string();
             let entries = traces
                 .iter()
-                .filter(|s| {
-                    s.name == "player_sessions.enter_training_battle" && child_of(s, prepare)
-                })
+                .filter(|s| s.name == "battles.enter" && child_of(s, arena))
                 .collect::<Vec<_>>();
             assert_eq!(entries.len(), 2);
             for entry in entries {
                 assert!(has(entry, "output.outcome", "entered"));
+                assert!(has(entry, "ddd.bounded_context.name", "battles"));
+                assert!(has(entry, "input.battle.id", &battle_id));
                 assert!(has(entry, "output.avatar_control", "server"));
                 for element in ["6", "65"] {
                     assert!(traces.iter().any(|s| s.name == "mercury.arena_delivery"

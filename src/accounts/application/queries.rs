@@ -6,8 +6,8 @@ use super::super::{
 use crate::platform::client_formats::pickle::Value;
 use std::sync::Arc;
 
-/// The equipped vehicle data needed to enter a training arena.
-pub struct TrainingVehicle {
+/// The equipped vehicle data needed to enter a battle.
+pub struct BattleVehicle {
     pub descriptor: Vec<u8>,
     pub health: i16,
     pub crew_size: usize,
@@ -71,12 +71,12 @@ impl GarageQueries {
         self.0.training_vehicle_descriptor(&account.0, inventory_id)
     }
 
-    pub fn training_vehicle(
+    pub fn battle_vehicle(
         &self,
         account: &AccountView,
         inventory_id: i64,
-    ) -> anyhow::Result<Option<TrainingVehicle>> {
-        self.0.training_vehicle(&account.0, inventory_id)
+    ) -> anyhow::Result<Option<BattleVehicle>> {
+        self.0.battle_vehicle(&account.0, inventory_id)
     }
 
     pub fn outfit_change<'a>(

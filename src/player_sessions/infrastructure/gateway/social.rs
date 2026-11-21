@@ -1,6 +1,6 @@
 use super::*;
+use crate::platform::mercury::app::entity::{Bytes, EntityId};
 use crate::player_sessions::infrastructure::schema::{ChatActionData, MessengerArgs};
-use crate::player_sessions::mercury::app::entity::{Bytes, EntityId};
 use crate::social::contract::{ContactChange, Conversation};
 
 mod command {

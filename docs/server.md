@@ -154,10 +154,12 @@ used for earlier observations.
 
 ## Protocol implementation
 
-The server owns its [Mercury adapter](../src/player_sessions/infrastructure/mercury) for
-UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish, session lifecycle
-and Account RPCs. The adapter loads the method tables and creation layout from
-the configured bundle. The [shared codecs](../src/platform/infrastructure/client_formats/README.md)
+The server owns its [Mercury adapter](../src/platform/mercury) for
+UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish and dynamic
+entity dispatch. [Player Sessions](../src/player_sessions/README.md) binds
+Account RPCs for the garage. [Battles](../src/battles/README.md) binds arena
+entities and controls using the same BaseApp transport. The adapters validate
+their method tables and creation layout against the configured bundle. The [shared codecs](../src/platform/infrastructure/client_formats/README.md)
 read packed resources and serialize Python values for Player Sessions and Accounts.
 
 A standalone checkout builds with `cargo build --locked`. See the

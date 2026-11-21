@@ -54,7 +54,7 @@ Package files take precedence over loose files. The extractor uses package
 order from `paths.xml` where present and considers remaining installed packages
 in filename order. Mod overlays are outside the extraction scope. Resource
 requirements come from the current [garage catalog](../src/accounts/infrastructure/client)
-and [script ABI loader](../src/player_sessions/infrastructure/mercury/script/load.rs).
+and [script ABI loader](../src/platform/mercury/script/load.rs).
 Regenerate the bundle when changing the game build or updating to a server
 that reads different resource paths. For [garage camouflage](camouflage.md),
 regenerate existing bundles with the updated extractor. Each cosmetic category

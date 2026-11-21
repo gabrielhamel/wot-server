@@ -1,15 +1,12 @@
 use super::*;
-use crate::platform::client_formats::pxml;
-use crate::player_sessions::{
-    domain::training::{TrainingRoomSettings, VoiceChatMode},
-    mercury::app::entity::EntityId,
+use crate::{
+    platform::mercury::app::entity::EntityId,
+    player_sessions::domain::training::{TrainingRoomSettings, VoiceChatMode},
 };
-use std::{
-    io::BufReader,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(super) mod battle;
+mod start;
+pub(super) use start::{TEAM_NOT_READY, TEAM_READY};
 mod chat;
 mod invites;
 pub(super) use chat::CHAT_BROADCAST;
@@ -162,7 +159,7 @@ fn voice_chat_index(mode: VoiceChatMode) -> i32 {
 
 fn apply_setting(
     settings: &mut TrainingRoomSettings,
-    arenas: &HashMap<i32, Option<battle::ArenaMap>>,
+    battles: &BattleRuntime,
     command: i16,
     argument: SettingArgument<'_>,
 ) -> Option<(&'static str, Value)> {
@@ -170,7 +167,7 @@ fn apply_setting(
         (CHANGE_ARENA, SettingArgument::Numeric([arena, 0, 0])) => {
             let arena = i32::try_from(arena)
                 .ok()
-                .filter(|id| arenas.contains_key(id))?;
+                .filter(|id| battles.has_map(*id))?;
             settings.arena_type_id = arena;
             Some(("arenaTypeID", Value::from(arena)))
         }
@@ -317,72 +314,6 @@ fn ready_state(descriptor: Option<&[u8]>) -> (i32, Value) {
     })
 }
 
-pub(super) fn load_arenas(
-    resources: &ResourceBundle,
-) -> Result<HashMap<i32, Option<battle::ArenaMap>>> {
-    const LIST: &str = "scripts/arena_defs/_list_.xml";
-    if !resources.has_file(LIST) {
-        return Ok(HashMap::new());
-    }
-    let list = pxml::from_reader(BufReader::new(resources.read(LIST)?))?;
-    let defaults = pxml::from_reader(BufReader::new(
-        resources.read("scripts/arena_defs/_default_.xml")?,
-    ))?;
-    let mut arenas = HashMap::new();
-    for map in list
-        .iter_children("map")
-        .filter_map(pxml::Value::as_element)
-    {
-        if map.get_child_boolean("isHangar") == Some(true) {
-            continue;
-        }
-        let Some(geometry) = map
-            .get_child_integer("id")
-            .and_then(|id| u16::try_from(id).ok())
-        else {
-            continue;
-        };
-        let name = map
-            .get_child_string("name")
-            .context("Arena entry has no name")?;
-        let path = format!("scripts/arena_defs/{name}.xml");
-        if !resources.has_file(&path) && map.get_child_boolean("isDevelopment") == Some(true) {
-            continue;
-        }
-        let map = pxml::from_reader(BufReader::new(resources.read(&path)?))
-            .with_context(|| path.clone())?;
-        if let Some(gameplays) = map.get_child_element("gameplayTypes") {
-            for (gameplay, id) in [
-                ("ctf", 0),
-                ("domination", 1),
-                ("assault", 2),
-                ("assault2", 6),
-            ] {
-                if let Some(variant) = gameplays.get_child(gameplay) {
-                    let explicit = variant
-                        .as_element()
-                        .and_then(|data| data.get_child_boolean("explicitRequestOnly"))
-                        .or_else(|| {
-                            defaults
-                                .get_child_element("gameplayTypes")?
-                                .get_child_element(gameplay)?
-                                .get_child_boolean("explicitRequestOnly")
-                        });
-                    if explicit != Some(true) {
-                        arenas.insert(
-                            (id << 16) | i32::from(geometry),
-                            battle::ArenaMap::from_definition(&map, gameplay),
-                        );
-                    }
-                }
-            }
-        } else {
-            arenas.insert(i32::from(geometry), None);
-        }
-    }
-    Ok(arenas)
-}
-
 impl Gateway {
     #[tracing::instrument(name = "player_sessions.create_training_room", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.arena_type_id = arena_type_id, input.round_length.seconds = round_length, input.room.open_flag = is_opened, input.string.bytes = comment.len(), output.room.id = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
     pub(super) fn create_training_room(
@@ -398,7 +329,7 @@ impl Gateway {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
         };
-        if !self.config.training_room_visible || self.training_arenas.is_empty() {
+        if !self.config.training_room_visible || !self.battles.has_maps() {
             span.record("output.outcome", "unavailable");
             self.base
                 .entity(entity)?
@@ -407,7 +338,7 @@ impl Gateway {
         }
         let settings = std::str::from_utf8(comment)
             .ok()
-            .filter(|_| is_opened <= 1 && self.training_arenas.contains_key(&arena_type_id))
+            .filter(|_| is_opened <= 1 && self.battles.has_map(arena_type_id))
             .and_then(|comment| {
                 TrainingRoomSettings::new(arena_type_id, round_length, is_opened == 1, comment)
             });
@@ -911,8 +842,7 @@ impl Gateway {
             return Ok(());
         }
         let mut next = room.settings.clone();
-        let Some((key, value)) = apply_setting(&mut next, &self.training_arenas, command, argument)
-        else {
+        let Some((key, value)) = apply_setting(&mut next, &self.battles, command, argument) else {
             span.record("output.outcome", "invalid_request");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,

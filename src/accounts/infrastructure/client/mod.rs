@@ -158,12 +158,12 @@ impl GarageCatalog {
         Ok(Some(vehicle.descr.encode()))
     }
 
-    #[tracing::instrument(name = "accounts.training_vehicle", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id, output.bytes = tracing::field::Empty, output.crew.count = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
-    pub(crate) fn training_vehicle(
+    #[tracing::instrument(name = "accounts.battle_vehicle", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id, output.bytes = tracing::field::Empty, output.crew.count = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
+    pub(crate) fn battle_vehicle(
         &self,
         snapshot: &AccountSnapshot,
         inventory_id: i64,
-    ) -> Result<Option<crate::accounts::contract::TrainingVehicle>> {
+    ) -> Result<Option<crate::accounts::contract::BattleVehicle>> {
         let span = tracing::Span::current();
         let Some(owned) = snapshot
             .vehicles
@@ -196,7 +196,7 @@ impl GarageCatalog {
         span.record("output.bytes", descriptor.len());
         span.record("output.crew.count", crew_size);
         span.record("output.outcome", "prepared");
-        Ok(Some(crate::accounts::contract::TrainingVehicle {
+        Ok(Some(crate::accounts::contract::BattleVehicle {
             descriptor,
             health,
             crew_size,

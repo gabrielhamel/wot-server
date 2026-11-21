@@ -1,4 +1,4 @@
-use crate::player_sessions::mercury::app::login::element::LoginError;
+use crate::platform::mercury::app::login::element::LoginError;
 use serde::Deserialize;
 
 #[derive(Deserialize)]

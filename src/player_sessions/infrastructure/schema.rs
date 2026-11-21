@@ -1,4 +1,4 @@
-use crate::player_sessions::mercury::{
+use crate::platform::mercury::{
     app::{
         dispatch::ScriptDispatch,
         entity::{Bytes, EntityId, Pickle, ScriptType, dict_check, dict_field_ty, entity_schema},
@@ -174,19 +174,5 @@ script_dict! {
         pub strArg1: Bytes,
         pub strArg2: Bytes,
         pub int8Arg1: i8,
-    }
-}
-
-entity_schema! {
-    pub Avatar {
-        client {
-            fn updateArena(update_type: u8, data: Bytes);
-            fn onRoundFinished(winner_team: i8, reason: u8);
-            fn showTracer(shooter: EntityId, shot: i32, ricochet: u8, effects: u8, prefab: u8, shell: u8, caliber: f32, start: glam::Vec3, velocity: glam::Vec3, gravity: f32, range: f32, gun: u8, installation: u8);
-        }
-        base {
-            fn setClientReady();
-            fn leaveArena();
-        }
     }
 }

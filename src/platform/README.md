@@ -1,12 +1,13 @@
 # Platform
 
 Platform is the shared technical boundary. It supplies tracing and
-client-format codecs without depending on runtime domain contexts. Contexts
+client-format codecs and Mercury transport without depending on runtime domain contexts. Contexts
 own their protocol policy, SQL, and trace semantics. Server composition selects
 and configures the telemetry exporters.
 
 | Layer | Responsibility |
 | --- | --- |
+| `mercury/` | Bounded UDP framing, reliability, encryption, entity dispatch and LoginApp/BaseApp transport shared by Player Sessions and Battles. |
 | `infrastructure/http.rs` | Serve HTTP/1 with a bounded connection count and connection lifetime for the shared web listener. |
 | `infrastructure/observability.rs` | Trace PostgreSQL operations for their owning context and propagate spans into blocking work. |
 | `infrastructure/web/` | Typed request transport, browser exception observers, Web OpenTelemetry export and trace propagation. |

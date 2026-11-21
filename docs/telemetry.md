@@ -200,9 +200,11 @@ game.command                                      [doCmdInt3, 411]
     player_sessions.start_training_battle
       mercury.response                            [onCmdResponse]
       player_sessions.prepare_training_battle
-        accounts.training_vehicle                 [for each combat vehicle]
-        player_sessions.enter_training_battle     [one per participant handoff]
-          mercury.arena_delivery                   [arena elements and delivery]
+        accounts.battle_vehicle                   [for each combat vehicle]
+        battles.prepare                           [allocates battle ID and prepares arena]
+          battles.load_terrain                     [when terrain is loaded]
+          battles.enter                            [one per participant handoff]
+            mercury.arena_delivery                 [arena elements and delivery]
 ```
 
 Avatar commands record the player's account and entity ID. The readiness
@@ -217,7 +219,7 @@ tracer, reload and health deliveries. Unsupported methods emit an error span.
 Target ownership, invalid input, inactive rounds, and reloading are distinct
 outcomes.
 
-Training arena preparation traces the map geometry and the number of height
+Battle preparation traces the map geometry and the number of height
 tiles loaded from the extracted resource bundle. A native `setClientReady`
 command parents the nested roster update and generation commit for both
 peers. Departure sends the corresponding disconnected state. Arena transport
