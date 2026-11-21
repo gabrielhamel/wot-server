@@ -1304,12 +1304,30 @@ pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
     }
 }
 
+pub fn cunningham_stock_shell_damage(resources: &wot_resources::ResourceBundle) -> u16 {
+    use wot_server::platform::client_formats::pxml;
+
+    let shells = resources
+        .read("scripts/item_defs/vehicles/usa/components/shells.xml")
+        .unwrap();
+    let shells = pxml::from_reader(shells).unwrap();
+    let damage = shells
+        .get_child_value_at(&["_37mm_AP_1916_1937_T1", "damage", "armor"])
+        .unwrap();
+    damage
+        .as_float()
+        .or_else(|| damage.as_vec2().map(|values| values.x))
+        .unwrap()
+        .round() as u16
+}
+
 pub fn exercise_battle(
     host: &mut Peer,
     host_vehicle: i64,
     guest: &mut Peer,
     guest_vehicle: i64,
     script: &ScriptDispatch,
+    shell_damage: u16,
 ) {
     let command = |peer: &mut Peer, request, command, args: [i64; 3]| {
         let mut values = vec![Value::Int16(request), Value::Int16(command)];
@@ -1562,6 +1580,10 @@ pub fn exercise_battle(
         .iter()
         .find(|(target, name, _)| *target == second && name == "onHealthChanged")
         .unwrap();
+    assert_eq!(
+        health[1].as_i64().unwrap() - health[0].as_i64().unwrap(),
+        i64::from(shell_damage)
+    );
     assert_eq!(direction[1].as_i64(), Some(i64::from(first)));
     assert_eq!(
         direction[2].as_i64(),
@@ -1696,7 +1718,7 @@ fn assert_roster_ready(script: &ScriptDispatch, updates: &[Vec<u8>]) {
     assert_eq!(committed, [0, 1].into_iter().collect());
 }
 
-pub fn assert_battle_traces(host: i64, guest: i64) {
+pub fn assert_battle_traces(host: i64, guest: i64, shell_damage: u16) {
     let traces = telemetry_capture::exporter().get_finished_spans().unwrap();
     let has = |span: &SpanData, key, value: &str| {
         span.attributes
@@ -1727,6 +1749,8 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
         .find(|s| s.name == "battles.shot" && has(s, "output.outcome", "hit"))
         .expect("training hit");
     assert!(has(hit, "ddd.bounded_context.name", "battles"));
+    assert!(has(hit, "input.shell.damage", &shell_damage.to_string()));
+    assert!(has(hit, "output.damage", &shell_damage.to_string()));
     let control = traces
         .iter()
         .find(|s| s.name == "battles.control" && child_of(hit, s))

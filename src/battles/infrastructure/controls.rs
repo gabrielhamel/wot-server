@@ -150,7 +150,11 @@ impl Battle {
         };
         operation.record("output.outcome", outcome);
         event.span.record("output.outcome", outcome);
-        if matches!(outcome, "unimplemented" | "delivery_failed") {
+        if matches!(
+            outcome,
+            "unimplemented" | "delivery_failed" | "shell_damage_unavailable"
+        ) {
+            operation.record("otel.status_code", "ERROR");
             event.span.record("otel.status_code", "ERROR");
         }
     }
@@ -219,7 +223,8 @@ impl Battle {
     #[tracing::instrument(name = "battles.shot", skip_all, fields(
         ddd.bounded_context.name = "battles", input.battle.id = battle_id,
         input.client.address = %client, input.entity_id = tracing::field::Empty,
-        input.ammunition.shell = tracing::field::Empty, output.shot.id = tracing::field::Empty,
+        input.ammunition.shell = tracing::field::Empty, input.shell.damage = tracing::field::Empty,
+        output.shot.id = tracing::field::Empty,
         output.target.entity_id = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.hit_direction.radians = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty
@@ -239,14 +244,20 @@ impl Battle {
         let time = now.saturating_duration_since(self.started_at).as_secs_f32();
         shooter.advance_ammunition(base, wire, client, now, time);
         span.record("input.entity_id", shooter.vehicle.entity_id);
-        span.record("input.ammunition.shell", shooter.tank.shell_settings()[0]);
+        let shell = shooter.tank.shell_settings()[0];
+        span.record("input.ammunition.shell", shell);
         let shot = match shooter.tank.fire(now) {
             Ok(shot) => shot,
             Err(reason) => {
                 span.record("output.outcome", reason);
+                if reason == "shell_damage_unavailable" {
+                    span.record("otel.status_code", "ERROR");
+                    error!(shell, "Loaded shell has no valid damage definition");
+                }
                 return Ok(reason);
             }
         };
+        span.record("input.shell.damage", shot.damage);
         shooter.pending_reload = shooter
             .tank
             .reload_timers()
@@ -270,7 +281,7 @@ impl Battle {
         let hit_direction = (-shot.direction.x).atan2(-shot.direction.z);
         let impact = target.and_then(|(target, id, distance)| {
             self.players.get_mut(&target).map(|victim| {
-                let (prev, health) = victim.tank.hit();
+                let (prev, health) = victim.tank.hit(&shot);
                 span.record("output.target.entity_id", id);
                 span.record("output.damage", prev - health);
                 span.record("output.hit_direction.radians", hit_direction);

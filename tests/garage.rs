@@ -117,6 +117,8 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         && resources
             .read_dir("spaces/99_poland/terrain")
             .is_ok_and(|mut tiles| tiles.next().is_some());
+    let training_shell_damage = training_battle_available
+        .then(|| training_room_flow::cunningham_stock_shell_damage(&resources));
     let has_extension_styles =
         resources.has_file("last_stand/scripts/item_defs/customization/styles/list.xml");
     let has_inscriptions = has_extension_styles
@@ -409,13 +411,14 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             training_room_flow::assert_room_gone(&mut second_peer, &script, training_vehicle_id);
             training_room_flow::assert_empty_list(&mut second_peer, &script);
         }
-        if training_battle_available {
+        if let Some(shell_damage) = training_shell_damage {
             training_room_flow::exercise_battle(
                 &mut first_peer,
                 training_vehicle_id,
                 &mut second_peer,
                 guest_vehicle_id,
                 &script,
+                shell_damage,
             );
         }
         let sync = |id, cmd| {
@@ -593,8 +596,8 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             &account_version_property,
         );
         training_room_flow::assert_traces(a.id, b.id, training_room_available);
-        if training_battle_available {
-            training_room_flow::assert_battle_traces(a.id, b.id);
+        if let Some(shell_damage) = training_shell_damage {
+            training_room_flow::assert_battle_traces(a.id, b.id, shell_damage);
         }
         telemetry_capture::assert_operation_traces(a.id, b.id, garage_capacity);
         telemetry_capture::assert_equipment_traces(equipment_account);

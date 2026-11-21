@@ -12,7 +12,6 @@ const QUARTER_SPEED: u8 = 32;
 const BRAKE: u8 = 64;
 
 pub(crate) const SHOT_RANGE: f32 = 800.0;
-const DAMAGE: i16 = 75;
 const HULL_RADIUS: f32 = 2.5;
 
 pub(crate) struct Tank {
@@ -43,6 +42,7 @@ pub(crate) enum AmmunitionCommand {
 pub(crate) struct Shot {
     pub origin: Vec3,
     pub direction: Vec3,
+    pub damage: u16,
 }
 
 impl Tank {
@@ -208,6 +208,12 @@ impl Tank {
         let Some(performance) = &self.performance else {
             return Err("vehicle_unavailable");
         };
+        let shell = self.ammunition.settings()[0];
+        let damage = match performance.gun.shell_damage.get(&shell) {
+            Some(&damage) => damage,
+            None if self.ammunition.loaded(shell) == 0 => 0,
+            None => return Err("shell_damage_unavailable"),
+        };
         self.ammunition.fire(&performance.gun.loading, now)?;
         let yaw = self.yaw + self.gun_yaw;
         let pitch = self.gun_pitch;
@@ -219,6 +225,7 @@ impl Tank {
         Ok(Shot {
             origin: self.muzzle(),
             direction,
+            damage,
         })
     }
 
@@ -258,9 +265,9 @@ impl Tank {
         }
     }
 
-    pub fn hit(&mut self) -> (i16, i16) {
+    pub fn hit(&mut self, shot: &Shot) -> (i16, i16) {
         let previous = self.health;
-        self.health = previous.saturating_sub(DAMAGE).max(0);
+        self.health = previous.saturating_sub_unsigned(shot.damage).max(0);
         (previous, self.health)
     }
 
@@ -334,6 +341,7 @@ mod tests {
                     min_pitch: vec![(0.0, -0.4), (1.0, -0.4)],
                     max_pitch: vec![(0.0, 0.2), (1.0, 0.2)],
                     aiming_time: 2.0,
+                    shell_damage: [(10, 36), (20, 90)].into(),
                     loading: GunLoading {
                         capacity: 1,
                         reload_time: 3.0,
@@ -405,7 +413,7 @@ mod tests {
     #[test]
     fn shot_uses_server_origin_and_aim_and_consumes_one_round_after_reload() {
         let now = Instant::now();
-        let mut shooter = tank(vec![(10, 2)]);
+        let mut shooter = tank(vec![(10, 1), (20, 1)]);
         let mut target = tank(vec![]);
         target.position = Vec3::X * 25.0;
         assert!(!shooter.aim_at(Aim::WorldPoint(Vec3::splat(f32::NAN))));
@@ -413,16 +421,29 @@ mod tests {
         shooter.advance_gun(4.0);
         let shot = shooter.fire(now).unwrap();
         assert!(shot.intersection(&target).is_some());
-        assert_eq!(target.hit(), (100, 25));
-        assert_eq!(shooter.rounds().next(), Some((10, 1, 0)));
+        assert_eq!(shot.damage, 36);
+        assert_eq!(target.hit(&shot), (100, 64));
+        assert_eq!(shooter.rounds().next(), Some((10, 0, 0)));
+        assert_eq!(shooter.shell_settings(), [20, 20]);
         assert_eq!(
             shooter.fire(now + Duration::from_secs(1)).err(),
             Some("reloading")
         );
         let ready = now + Duration::from_secs(3);
         assert!(shooter.advance_ammunition(ready));
-        assert!(shooter.fire(ready).is_ok());
-        assert_eq!(target.hit(), (25, 0));
+        let shot = shooter.fire(ready).unwrap();
+        assert_eq!(shot.damage, 90);
+        assert_eq!(target.hit(&shot), (64, 0));
         assert_eq!(shooter.fire(ready).err(), Some("empty"));
+    }
+
+    #[test]
+    fn a_shell_without_damage_data_is_rejected_without_consuming_a_round() {
+        let mut shooter = tank(vec![(30, 1)]);
+        assert_eq!(
+            shooter.fire(Instant::now()).err(),
+            Some("shell_damage_unavailable")
+        );
+        assert_eq!(shooter.rounds().next(), Some((30, 1, 1)));
     }
 }

@@ -265,13 +265,6 @@ impl VehicleModules {
                             .and_then(|xml| xml.get_child_element(name));
                         let gun_base =
                             gun_shared.or(gun_local).context("Missing gun definition")?;
-                        if let Some(performance) = battle_performance::traverse(local, base)
-                            .and_then(|traverse| {
-                                battle_performance::gun(gun_local, gun_base, traverse)
-                            })
-                        {
-                            gun_performance.insert((id, gun), performance);
-                        }
                         let surfaces = [
                             (VehicleSurface::Hull, hull_camouflage),
                             (
@@ -375,16 +368,17 @@ impl VehicleModules {
                             .or_else(|| gun_base.get_child_integer("maxAmmo"))
                             .context("Missing gun capacity")?;
                         let capacity = u32::try_from(max_ammo).context("Invalid gun capacity")?;
-                        let shots = gun_local
-                            .and_then(|l| l.get_child_element("shots"))
-                            .or_else(|| gun_base.get_child_element("shots"))
-                            .context("Missing gun shots")?;
+                        let local_shots = gun_local.and_then(|l| l.get_child_element("shots"));
+                        let shared_shots = gun_shared.and_then(|g| g.get_child_element("shots"));
+                        let shots = local_shots.or(shared_shots).context("Missing gun shots")?;
                         let mut defaults = Vec::new();
+                        let mut shell_damage = BTreeMap::new();
                         for (name, shot) in shots.iter_children_all() {
-                            let shell_id = shells
+                            let shell = shells
                                 .get_child_element(name)
-                                .and_then(|s| s.get_child_integer("id"))
-                                .context("Missing shell ID")?;
+                                .context("Missing shell definition")?;
+                            let shell_id =
+                                shell.get_child_integer("id").context("Missing shell ID")?;
                             let shell_id = IntCompactDescr {
                                 item_type: 10,
                                 nation: nation_id,
@@ -396,6 +390,20 @@ impl VehicleModules {
                                 .and_then(|s| s.get_child_float("defaultPortion"))
                                 .unwrap_or(0.0);
                             defaults.push((shell_id, (portion * capacity as f32).round() as u32));
+                            if let Some(damage) = battle_performance::shell_damage(
+                                local_shots.and_then(|s| s.get_child_element(name)),
+                                shared_shots.and_then(|s| s.get_child_element(name)),
+                                shell,
+                            ) {
+                                shell_damage.insert(shell_id, damage);
+                            }
+                        }
+                        if let Some(performance) = battle_performance::traverse(local, base)
+                            .and_then(|traverse| {
+                                battle_performance::gun(gun_local, gun_base, traverse, shell_damage)
+                            })
+                        {
+                            gun_performance.insert((id, gun), performance);
                         }
                         let total: u64 = defaults.iter().map(|(_, n)| u64::from(*n)).sum();
                         if let Some((_, first)) = defaults.first_mut() {

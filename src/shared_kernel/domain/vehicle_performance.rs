@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 #[derive(Clone, Debug)]
 pub struct VehiclePerformance {
     pub forward_speed: f32,
@@ -15,6 +17,7 @@ pub struct GunPerformance {
     pub max_pitch: Vec<(f32, f32)>,
     pub aiming_time: f32,
     pub loading: GunLoading,
+    pub shell_damage: BTreeMap<i32, u16>,
 }
 
 #[derive(Clone, Debug)]

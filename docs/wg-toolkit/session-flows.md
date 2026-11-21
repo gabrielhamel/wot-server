@@ -382,8 +382,16 @@ one at a time with the configured duration for each empty slot. Ammo and
 reload timers are local to the round.
 
 A shot casts a ray from the server-side gun position. The closest live opponent
-intersecting the ray takes up to 75 hit points. Both peers receive the muzzle
-event, tracer and health change. The victim also receives
+intersecting the ray takes the loaded shell's nominal damage, capped at its
+remaining health. Accounts reads `damage/armor` from the nation's
+`components/shells.xml` and applies overrides from the equipped gun's shot
+definition. The first value is the nominal damage at short range and the
+midpoint of the shell's ordinary symmetric damage bounds. Damage is rounded
+to whole hit points. The same direct-hit rule applies to HE. Random rolls,
+range-dependent damage, splash, and Tier XI abilities are outside this
+simulation. A loaded shell with invalid or missing damage data is rejected
+before firing. Both peers receive the muzzle event, tracer and health change.
+The victim also receives
 `Avatar.showOwnVehicleHitDirection` with the damage applied and the world
 bearing back along the shot. Eliminating the last opposing tank finishes the
 round. Acceleration and the track footprint are shared by the training
@@ -393,11 +401,15 @@ boost bonuses and spectator controls remain separate work.
 Protocol and data references are [Avatar settings and hit feedback](../references/wot-src/sources/res/scripts/entity_defs/Avatar.def),
 [OwnVehicle](../references/wot-src/sources/res/scripts/component_defs/OwnVehicle.def),
 [gun angle encoding](../references/wot-src/sources/res/scripts/common/gun_rotation_shared.py),
-and [vehicle definition parsing](../references/wot-src/sources/res/scripts/common/items/vehicles.py).
+[vehicle definition parsing](../references/wot-src/sources/res/scripts/common/items/vehicles.py#L5597),
+and [damage range calculation](../references/wot-src/sources/res/scripts/client/gui/shared/items_parameters/params.py#L1022).
 
 The protocol tests check reverse translation, the start and completion of
-a gun reload, and the victim's directional damage message. Catalog checks
-cover the SU-85's limited gun arc, the AMX 13 90's magazine and the Progetto
+a gun reload, the actual health loss from the stock T1 Cunningham shell, and
+the victim's directional damage message. In the extracted EU `v.2.4.1.1 #993`
+resources the T1 Cunningham's stock AP and HE definitions give 30 and 36 HP,
+respectively. Catalog checks cover the SU-85's limited gun arc, the AMX 13 90's
+magazine and the Progetto
 M35 mod. 46's autoreloader. Validation used the published EU
 `v.2.4.1.1 #993` resource bundle. A fresh extraction from the installed
 client with executable SHA-256

@@ -2,6 +2,7 @@ use crate::{
     platform::client_formats::pxml::{Element, Value},
     shared_kernel::{GunLoading, GunPerformance},
 };
+use std::collections::BTreeMap;
 
 pub(super) fn speed_limits(vehicle: &Element) -> Option<[f32; 2]> {
     let speed = vehicle.get_child_element("speedLimits")?;
@@ -28,6 +29,7 @@ pub(super) fn gun(
     local: Option<&Element>,
     base: &Element,
     turret_traverse: f32,
+    shell_damage: BTreeMap<i32, u16>,
 ) -> Option<GunPerformance> {
     let yaw_limits = field(local, base, &["turretYawLimits"])
         .and_then(Value::as_vec2)
@@ -68,7 +70,28 @@ pub(super) fn gun(
             )?,
             autoreload_times,
         },
+        shell_damage,
     })
+}
+
+pub(super) fn shell_damage(
+    local_shot: Option<&Element>,
+    shared_shot: Option<&Element>,
+    shell: &Element,
+) -> Option<u16> {
+    let path = ["damage", "armor"];
+    let value = local_shot
+        .and_then(|shot| shot.get_child_value_at(&path))
+        .or_else(|| shared_shot.and_then(|shot| shot.get_child_value_at(&path)))
+        .or_else(|| shell.get_child_value_at(&path))?;
+    // The optional second value is nominal damage at range. The first is the
+    // midpoint of the ordinary random damage bounds at short range.
+    let damage = value
+        .as_vec2()
+        .map(|pair| pair.x)
+        .or_else(|| value.as_float())?;
+    let midpoint = damage.round();
+    (damage >= 0.0 && midpoint <= f32::from(u16::MAX)).then_some(midpoint as u16)
 }
 
 fn field<'a>(local: Option<&'a Element>, base: &'a Element, path: &[&str]) -> Option<&'a Value> {
@@ -121,8 +144,29 @@ fn positive(value: f32) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::super::GarageCatalog;
+    use super::*;
     use std::path::Path;
     use wot_resources::ResourceBundle;
+
+    #[test]
+    fn shell_damage_prefers_gun_overrides_and_uses_nominal_short_range_damage() {
+        fn definition(armor: Value) -> Element {
+            let mut damage = Element::new();
+            damage.add_children("armor", armor);
+            let mut definition = Element::new();
+            definition.add_children("damage", Value::Element(Box::new(damage)));
+            definition
+        }
+
+        let shell = definition(Value::Integer(90));
+        let shared = definition(Value::Integer(100));
+        let local = definition(Value::String("125 80".into()));
+        assert_eq!(shell_damage(None, None, &shell), Some(90));
+        assert_eq!(shell_damage(None, Some(&shared), &shell), Some(100));
+        assert_eq!(shell_damage(Some(&local), Some(&shared), &shell), Some(125));
+        let invalid = definition(Value::Integer(-1));
+        assert_eq!(shell_damage(Some(&invalid), Some(&shared), &shell), None);
+    }
 
     #[test]
     #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
