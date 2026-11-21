@@ -1618,6 +1618,40 @@ pub fn exercise_battle(
             .expect("target impact");
         assert_eq!(impact[0].as_i64(), Some(i64::from(first)));
         assert_eq!(impact[4].as_i64(), Some(i64::from(shell_damage)));
+        let Value::Seq(points) = &impact[1] else {
+            panic!("expected impact points");
+        };
+        let [Value::Dict(point)] = points.as_slice() else {
+            panic!("expected one point for the penetrating impact effect");
+        };
+        assert_eq!(point["networkID"].as_i64(), Some(0));
+        let Value::UInt64(segment) = point["segment"] else {
+            panic!("expected packed hull segment");
+        };
+        let [effect, part, ax, ay, az, bx, by, bz] = segment.to_le_bytes();
+        assert_eq!((effect, part), (4, 1));
+        assert_ne!([ax, ay, az], [bx, by, bz]);
+        let local_direction =
+            glam::Quat::from_rotation_y(-guest.cell.as_ref().unwrap().direction.z) * *velocity;
+        let encoded_delta = glam::Vec3::new(
+            f32::from(bx) - f32::from(ax),
+            f32::from(by) - f32::from(ay),
+            f32::from(bz) - f32::from(az),
+        );
+        assert!(encoded_delta.normalize().dot(local_direction.normalize()) > 0.99);
+        let params = point["params"].as_i64().unwrap();
+        assert_eq!(params & 0xf, i64::from(effect));
+        assert_eq!((params >> 4) & 0xf, tracer[5].as_i64().unwrap());
+        assert_eq!((params >> 8) & 0xffff, 450);
+        let (_, _, health) = peer
+            .vehicle_methods
+            .iter()
+            .find(|(target, name, _)| *target == second && name == "onHealthChanged")
+            .unwrap();
+        assert_eq!(
+            impact[5].as_i64(),
+            Some(i64::from(shell_damage) * 255 / health[1].as_i64().unwrap())
+        );
     }
     for (peer, event_type, other_vehicle) in [(&*host, 7, second), (&*guest, 10, first)] {
         let (_, events) = peer

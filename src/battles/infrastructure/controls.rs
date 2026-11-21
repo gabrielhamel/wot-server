@@ -285,10 +285,15 @@ impl Battle {
         let impact = target.and_then(|(target, id, distance)| {
             self.players.get_mut(&target).map(|victim| {
                 let (prev, health) = victim.tank.hit(&shot);
+                let damage = prev - health;
+                let local_direction =
+                    glam::Quat::from_rotation_y(-victim.tank.yaw) * shot.direction;
+                let effect =
+                    ShotImpact::new(entity_id, damage, victim.tank.max_health, local_direction);
                 span.record("output.target.entity_id", id);
-                span.record("output.damage", prev - health);
+                span.record("output.damage", damage);
                 span.record("output.hit_direction.radians", hit_direction);
-                (target, id, distance, prev, health)
+                (target, id, distance, prev, health, effect)
             })
         });
         let defeated = impact.is_some()
@@ -313,7 +318,7 @@ impl Battle {
                     entity_id,
                     shot_id,
                     &shot,
-                    impact.map(|(_, _, dist, _, _)| dist),
+                    impact.map(|(_, _, dist, ..)| dist),
                 )?;
                 base.arena_vehicle_method(
                     peer,
@@ -321,7 +326,7 @@ impl Battle {
                     "showShooting",
                     vec![WireValue::UInt8(1), WireValue::Int8(0), WireValue::UInt8(0)],
                 )?;
-                if let Some((victim, id, distance, previous, health)) = impact {
+                if let Some((victim, id, distance, previous, health, effect)) = impact {
                     let damage = previous - health;
                     let endpoint = shot.origin + shot.direction * distance;
                     base.entity(avatar)?.stopTracer(shot_id, endpoint)?;
@@ -339,7 +344,7 @@ impl Battle {
                             gunInstallationIndex: GUN_INSTALLATION_INDEX,
                         }])?;
                     }
-                    wire.show_shot_impact(base, peer, id, entity_id, damage)?;
+                    wire.show_shot_impact(base, peer, id, effect)?;
                     if peer == victim {
                         base.entity(avatar)?.showOwnVehicleHitDirection(
                             hit_direction,

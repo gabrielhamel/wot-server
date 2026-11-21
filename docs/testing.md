@@ -145,7 +145,9 @@ messages to share a bundle with an advancing tick before and after combat starts
 They exercise vehicle-targeted aiming, reject cross-player targeting, and
 fire a shot. Both connections receive a tracer with a matching endpoint,
 the impact and health updates, and the shooter and victim each receive their
-own feedback. The test checks the recipient count and exported parent span for
+own feedback. The impact check verifies the penetrating hull segment, its
+direction in the victim's local frame, and the damage fraction. The test
+checks the recipient count and exported parent span for
 these deliveries and verifies that an immediate second shot is rejected during
 reload.
 The same peers exercise [garage ammunition](ammunition.md): rejected requests

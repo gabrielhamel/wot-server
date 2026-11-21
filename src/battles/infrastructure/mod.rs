@@ -30,7 +30,7 @@ use wot_resources::ResourceBundle;
 
 use avatar::{Avatar, AvatarBase};
 use maps::ArenaMap;
-use wire::{ArenaEntry, ArenaWire};
+use wire::{ArenaEntry, ArenaWire, ShotImpact};
 
 mod avatar;
 mod controls;

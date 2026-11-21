@@ -7,7 +7,81 @@ const SHELL_SPEED: f32 = 450.0;
 const DEFAULT_SHELL_KIND: u8 = 2;
 const DEFAULT_EFFECTS_INDEX: u8 = 0;
 const DEFAULT_PREFAB_EFFECTS_INDEX: u8 = 0;
+const SHELL_CALIBER_MM: u16 = 45;
+const HULL_PART_INDEX: u8 = 1;
+const ARMOR_PIERCED_NO_DAMAGE: u8 = 0;
+const ARMOR_PIERCED: u8 = 4;
 type Fields = BTreeMap<&'static str, WireValue>;
+
+#[derive(Clone, Copy)]
+pub(in super::super) struct ShotImpact {
+    attacker: u32,
+    damage: i16,
+    damage_factor: u8,
+    segment: u64,
+    params: u32,
+}
+
+impl ShotImpact {
+    pub(in super::super) fn new(
+        attacker: u32,
+        damage: i16,
+        max_health: i16,
+        local_direction: Vec3,
+    ) -> Self {
+        let effect = if damage > 0 {
+            ARMOR_PIERCED
+        } else {
+            ARMOR_PIERCED_NO_DAMAGE
+        };
+        // The training hit volume has no part mesh. Give the client a ray
+        // through the center of its own hull bounding box for the impact effect.
+        let reach = local_direction * (0.5 / local_direction.abs().max_element());
+        let quantize = |point: Vec3| point.to_array().map(|axis| (axis * 255.0).round() as u8);
+        let center = Vec3::splat(0.5);
+        let start = quantize(center - reach);
+        let end = quantize(center + reach);
+        let segment = u64::from_le_bytes([
+            effect,
+            HULL_PART_INDEX,
+            start[0],
+            start[1],
+            start[2],
+            end[0],
+            end[1],
+            end[2],
+        ]);
+        Self {
+            attacker,
+            damage,
+            damage_factor: (i32::from(damage) * 255 / i32::from(max_health.max(1))).clamp(0, 255)
+                as u8,
+            segment,
+            params: ((u32::from(SHELL_CALIBER_MM) * 10) << 8)
+                | (u32::from(DEFAULT_SHELL_KIND) << 4)
+                | u32::from(effect),
+        }
+    }
+
+    fn args(self) -> Vec<WireValue> {
+        let hit_point = WireValue::Dict(BTreeMap::from([
+            ("networkID".into(), WireValue::UInt32(0)),
+            ("segment".into(), WireValue::UInt64(self.segment)),
+            ("params".into(), WireValue::UInt32(self.params)),
+        ]));
+        vec![
+            WireValue::Int32(self.attacker as i32),
+            WireValue::Seq(vec![hit_point]),
+            WireValue::UInt8(DEFAULT_EFFECTS_INDEX),
+            WireValue::UInt8(DEFAULT_PREFAB_EFFECTS_INDEX),
+            WireValue::Int32(i32::from(self.damage)),
+            WireValue::UInt8(self.damage_factor),
+            WireValue::UInt8(0),
+            WireValue::Float32(SHELL_SPEED),
+            WireValue::UInt8(0),
+        ]
+    }
+}
 
 impl ArenaWire {
     pub(super) fn validate_controls(&self, dispatch: &ScriptDispatch) -> Result<()> {
@@ -20,7 +94,10 @@ impl ArenaWire {
                 "showShooting",
                 vec![WireValue::UInt8(1), WireValue::Int8(0), WireValue::UInt8(0)],
             ),
-            ("showDamageFromShot", damage_from_shot_args(1, 1)),
+            (
+                "showDamageFromShot",
+                ShotImpact::new(1, 1, 1, Vec3::Z).args(),
+            ),
             (
                 "onHealthChanged",
                 vec![
@@ -175,7 +252,7 @@ impl ArenaWire {
             DEFAULT_EFFECTS_INDEX,
             DEFAULT_PREFAB_EFFECTS_INDEX,
             DEFAULT_SHELL_KIND,
-            45.0,
+            f32::from(SHELL_CALIBER_MM),
             shot.origin,
             shot.direction * SHELL_SPEED,
             0.0,
@@ -191,31 +268,11 @@ impl ArenaWire {
         base: &mut base::App,
         client: ClientKey,
         target: u32,
-        attacker: u32,
-        damage: i16,
+        impact: ShotImpact,
     ) -> Result<()> {
-        base.arena_vehicle_method(
-            client,
-            target,
-            "showDamageFromShot",
-            damage_from_shot_args(attacker, damage),
-        )?;
+        base.arena_vehicle_method(client, target, "showDamageFromShot", impact.args())?;
         Ok(())
     }
-}
-
-fn damage_from_shot_args(attacker: u32, damage: i16) -> Vec<WireValue> {
-    vec![
-        WireValue::Int32(attacker as i32),
-        WireValue::Seq(Vec::new()),
-        WireValue::UInt8(DEFAULT_EFFECTS_INDEX),
-        WireValue::UInt8(DEFAULT_PREFAB_EFFECTS_INDEX),
-        WireValue::Int32(i32::from(damage)),
-        WireValue::UInt8(0),
-        WireValue::UInt8(0),
-        WireValue::Float32(SHELL_SPEED),
-        WireValue::UInt8(0),
-    ]
 }
 
 fn property_type<'a>(component: &'a EntityDispatch, name: &str) -> Result<&'a Ty> {

@@ -147,6 +147,17 @@ at 918398 identify the same attacker and show a drop from 1100 to 825 HP.
 The two impacts involve different pairs of vehicles. The new and previous
 health fields account for the reported damage in each case.
 
+The impact at 88.14 s uses static network ID 0, hull index 1 and
+penetration effect 4. At 77.14 s the point uses static network ID 0,
+chassis index 0 and critical hit effect 5. The client decodes the segment against
+the selected part's bounding box and tests it against the local collision
+mesh. Its impact handler exits before audiovisual feedback when the
+decoded point list is empty. The legacy effect used by Training
+(`autoArmorPiercing`) defines `impactNPC_PC` for the local player
+receiving a penetrating hit. See [point decoding](references/wot-src/sources/res/scripts/client/VehicleEffects.py),
+[vehicle impact handling](references/wot-src/sources/res/scripts/client/Vehicle.py#L461)
+and [shot effects](references/wot-src/sources/res/scripts/item_defs/vehicles/common/shot_effects.xml).
+
 Component record `0x37` at offset 1003496 contains a dealt-damage event
 (type 7) for `553323845`. Its packed details, `0x0007f8023200fe10`, decode
 to 281 HP, primary reason 0 (shot), shell kind 127 (unknown), secondary

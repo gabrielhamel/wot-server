@@ -401,8 +401,12 @@ bearing back along the shot. When a shot removes health, each receives its own
 `Avatar.onBattleEvents` entry for damage dealt or received. The shooter also
 receives updated ammunition and reload state. See the [direct-hit replay
 evidence](../battle-replays.md#direct-hit-in-replay-1344).
-Training resolves the ray immediately and the impact packet has an empty
-hit-point list. The model has no per-part surface intersection to encode.
+Training resolves the ray immediately. The impact packet includes a segment
+through the center of the hull's bounding box in the incoming shot direction,
+expressed in the target's local frame. The client uses its hull mesh to find
+the impact for audiovisual feedback. The segment is a presentation
+approximation for the training hit volume. Impact strength is the HP removed
+as a fraction of the target's starting health, scaled to 0–255.
 On a miss the tracer uses its full range and expires on the client.
 Eliminating the last opposing tank finishes the round. Acceleration and the
 track footprint are shared by the training
