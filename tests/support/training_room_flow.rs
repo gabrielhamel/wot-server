@@ -1556,7 +1556,8 @@ pub fn exercise_battle(
     host.cell_command(script, "vehicle_shoot", vec![]);
     host.cell_command(script, "vehicle_shoot", vec![]);
     let received_shot = |p: &Peer| {
-        p.methods.iter().any(|(name, _)| name == "showTracer")
+        p.methods.iter().any(|(name, _)| name == "stopTracer")
+            && p.methods.iter().any(|(name, _)| name == "onBattleEvents")
             && p.vehicle_methods.iter().any(|(target, name, args)| {
                 *target == second
                     && name == "onHealthChanged"
@@ -1565,6 +1566,114 @@ pub fn exercise_battle(
     };
     host.until(script, received_shot);
     guest.until(script, received_shot);
+    let (_, shot_results) = host
+        .methods
+        .iter()
+        .find(|(name, _)| name == "showShotResults")
+        .expect("shooter received the result");
+    let [Value::Seq(results)] = shot_results.as_slice() else {
+        panic!("expected shot results array");
+    };
+    let [Value::Dict(hit)] = results.as_slice() else {
+        panic!("expected one target in the shot results");
+    };
+    assert_eq!(hit["vehicleID"].as_i64(), Some(i64::from(second)));
+    assert_eq!(hit["hitFlags"].as_i64(), Some(0x0010_0010));
+    assert_eq!(hit["gunInstallationIndex"].as_i64(), Some(0));
+    assert!(
+        !guest
+            .methods
+            .iter()
+            .any(|(name, _)| name == "showShotResults")
+    );
+
+    for peer in [&*host, &*guest] {
+        let (_, tracer) = peer
+            .methods
+            .iter()
+            .find(|(name, _)| name == "showTracer")
+            .unwrap();
+        let (_, endpoint) = peer
+            .methods
+            .iter()
+            .find(|(name, _)| name == "stopTracer")
+            .unwrap();
+        assert_eq!(tracer[0].as_i64(), Some(i64::from(first)));
+        assert_eq!(tracer[1], endpoint[0]);
+        let (
+            Value::Vector3(origin),
+            Value::Vector3(velocity),
+            Value::Float32(range),
+            Value::Vector3(end),
+        ) = (&tracer[7], &tracer[8], &tracer[10], &endpoint[1])
+        else {
+            panic!("expected tracer geometry");
+        };
+        assert!(end.distance(*origin + velocity.normalize() * *range) < 0.01);
+
+        let (_, _, impact) = peer
+            .vehicle_methods
+            .iter()
+            .find(|(target, name, _)| *target == second && name == "showDamageFromShot")
+            .expect("target impact");
+        assert_eq!(impact[0].as_i64(), Some(i64::from(first)));
+        assert_eq!(impact[4].as_i64(), Some(i64::from(shell_damage)));
+        let Value::Seq(points) = &impact[1] else {
+            panic!("expected impact points");
+        };
+        let [Value::Dict(point)] = points.as_slice() else {
+            panic!("expected one point for the penetrating impact effect");
+        };
+        assert_eq!(point["networkID"].as_i64(), Some(0));
+        let Value::UInt64(segment) = point["segment"] else {
+            panic!("expected packed hull segment");
+        };
+        let [effect, part, ax, ay, az, bx, by, bz] = segment.to_le_bytes();
+        assert_eq!((effect, part), (4, 1));
+        assert_ne!([ax, ay, az], [bx, by, bz]);
+        let local_direction =
+            glam::Quat::from_rotation_y(-guest.cell.as_ref().unwrap().direction.z) * *velocity;
+        let encoded_delta = glam::Vec3::new(
+            f32::from(bx) - f32::from(ax),
+            f32::from(by) - f32::from(ay),
+            f32::from(bz) - f32::from(az),
+        );
+        assert!(encoded_delta.normalize().dot(local_direction.normalize()) > 0.99);
+        let params = point["params"].as_i64().unwrap();
+        assert_eq!(params & 0xf, i64::from(effect));
+        assert_eq!((params >> 4) & 0xf, tracer[5].as_i64().unwrap());
+        assert_eq!((params >> 8) & 0xffff, 450);
+        let (_, _, health) = peer
+            .vehicle_methods
+            .iter()
+            .find(|(target, name, _)| *target == second && name == "onHealthChanged")
+            .unwrap();
+        assert_eq!(
+            impact[5].as_i64(),
+            Some(i64::from(shell_damage) * 255 / health[1].as_i64().unwrap())
+        );
+    }
+    for (peer, event_type, other_vehicle) in [(&*host, 7, second), (&*guest, 10, first)] {
+        let (_, events) = peer
+            .methods
+            .iter()
+            .find(|(name, _)| name == "onBattleEvents")
+            .unwrap();
+        let [Value::Seq(events)] = events.as_slice() else {
+            panic!("expected battle events array");
+        };
+        let [Value::Dict(event)] = events.as_slice() else {
+            panic!("expected one damage event");
+        };
+        assert_eq!(event["eventType"].as_i64(), Some(event_type));
+        assert_eq!(event["targetID"].as_i64(), Some(i64::from(other_vehicle)));
+        assert_eq!(event["count"].as_i64(), Some(1));
+        let Value::UInt64(details) = event["details"] else {
+            panic!("expected packed damage details");
+        };
+        assert_eq!(details >> 25 & 0xffff, u64::from(shell_damage));
+        assert_eq!(details >> 17 & 0xff, 0);
+    }
     guest.until(script, |p| {
         p.methods
             .iter()
@@ -1770,16 +1879,26 @@ pub fn assert_battle_traces(host: i64, guest: i64, shell_damage: u16) {
             .count(),
         2
     );
-    assert_eq!(
-        traces
-            .iter()
-            .filter(|span| span.name == "mercury.response"
-                && child_of(span, hit)
-                && has(span, "rpc.method", "showOwnVehicleHitDirection")
-                && has(span, "output.delivery", "sent"))
-            .count(),
-        1
-    );
+    for (span_name, method, recipients) in [
+        ("mercury.arena_vehicle_method", "showDamageFromShot", 2),
+        ("mercury.response", "showTracer", 2),
+        ("mercury.response", "stopTracer", 2),
+        ("mercury.response", "showShotResults", 1),
+        ("mercury.response", "onBattleEvents", 2),
+        ("mercury.response", "showOwnVehicleHitDirection", 1),
+    ] {
+        assert_eq!(
+            traces
+                .iter()
+                .filter(|span| span.name == span_name
+                    && child_of(span, hit)
+                    && has(span, "rpc.method", method)
+                    && has(span, "output.delivery", "sent"))
+                .count(),
+            recipients,
+            "{method}"
+        );
+    }
     assert!(
         hit.attributes
             .iter()

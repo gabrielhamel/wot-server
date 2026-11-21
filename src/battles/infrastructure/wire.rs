@@ -17,6 +17,8 @@ use std::{io, net::SocketAddr};
 mod controls;
 mod roster;
 
+pub(super) use controls::ShotImpact;
+
 pub(super) struct ArenaWire {
     avatar_type: u16,
     vehicle_type: u16,

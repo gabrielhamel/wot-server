@@ -216,7 +216,9 @@ to the requested aim, with a child span for each resulting angle update.
 Position replication records the tick and counts the recipients and successful
 socket writes of the shared timestamped snapshot.
 Shots retain their parent through target selection, damage, and the muzzle,
-tracer, reload, victim-only direction and health deliveries. The reload
+tracer start and stop, impact and health deliveries. The same shot parents
+the shooter-only result, the victim-only direction and the private damage
+feedback for each. The reload
 initiator parents the simulation tick deliveries as the gun cooldown and
 magazine refill complete. Unsupported methods emit an error span.
 Target ownership, invalid input, inactive rounds, and reloading are distinct

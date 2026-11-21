@@ -390,11 +390,26 @@ midpoint of the shell's ordinary symmetric damage bounds. Damage is rounded
 to whole hit points. The same direct-hit rule applies to HE. Random rolls,
 range-dependent damage, splash, and Tier XI abilities are outside this
 simulation. A loaded shell with invalid or missing damage data is rejected
-before firing. Both peers receive the muzzle event, tracer and health change.
-The victim also receives
+before firing. Both peers receive `Avatar.showTracer` and
+`Vehicle.showShooting`. On a hit both receive `Avatar.stopTracer` with the
+matching shot ID and ray intersection, `Vehicle.showDamageFromShot`, and the
+health property and callback for the target. The shooter receives
+`Avatar.showShotResults` with the target ID and direct-damage flags, plus the
+kill flag when the hit reduces the target's health to zero. The victim receives
 `Avatar.showOwnVehicleHitDirection` with the damage applied and the world
-bearing back along the shot. Eliminating the last opposing tank finishes the
-round. Acceleration and the track footprint are shared by the training
+bearing back along the shot. When a shot removes health, each receives its own
+`Avatar.onBattleEvents` entry for damage dealt or received. The shooter also
+receives updated ammunition and reload state. See the [direct-hit replay
+evidence](../battle-replays.md#direct-hit-in-replay-1344).
+Training resolves the ray immediately. The impact packet includes a segment
+through the center of the hull's bounding box in the incoming shot direction,
+expressed in the target's local frame. The client uses its hull mesh to find
+the impact for audiovisual feedback. The segment is a presentation
+approximation for the training hit volume. Impact strength is the HP removed
+as a fraction of the target's starting health, scaled to 0–255.
+On a miss the tracer uses its full range and expires on the client.
+Eliminating the last opposing tank finishes the round. Acceleration and the
+track footprint are shared by the training
 simulation. Vehicle collision, armour, gun-specific ballistics, autoreloader
 boost bonuses and spectator controls remain separate work.
 
