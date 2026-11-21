@@ -237,3 +237,41 @@ pub type AvatarUpdateExplicit = DebugElementFixed<{ id::AVATAR_UPDATE_EXPLICIT }
 pub type AckPhysicsCorrection = DebugElementFixed<{ id::ACK_PHYSICS_CORRECTION }, 0>;
 pub type RequestEntityUpdate = DebugElementVariable16<{ id::REQUEST_ENTITY_UPDATE }>;
 pub type NrlMsgToCell = DebugElementVariable16<{ id::NRL_MSG_TO_CELL }>;
+
+pub(super) struct CellMethodFrame {
+    pub target: u32,
+    pub argument_bytes: usize,
+    pub payload: Option<Vec<u8>>,
+}
+
+impl Element<()> for CellMethodFrame {
+    fn write_length(&self, _: &()) -> io::Result<ElementLength> {
+        unreachable!("cell method frame is read-only")
+    }
+
+    fn write(&self, _: &mut dyn Write, _: &()) -> io::Result<u8> {
+        unreachable!("cell method frame is read-only")
+    }
+
+    fn read_length(_: &(), _: u8) -> io::Result<ElementLength> {
+        Ok(ElementLength::Variable16)
+    }
+
+    fn read(read: &mut dyn Read, _: &(), len: usize, _: u8) -> io::Result<Self> {
+        let target = read.read_u32()?;
+        let argument_bytes = len.saturating_sub(4);
+        let payload = if argument_bytes <= 64 {
+            let mut data = vec![0; argument_bytes];
+            read.read_exact(&mut data)?;
+            Some(data)
+        } else {
+            io::copy(read, &mut io::sink())?;
+            None
+        };
+        Ok(Self {
+            target,
+            argument_bytes,
+            payload,
+        })
+    }
+}

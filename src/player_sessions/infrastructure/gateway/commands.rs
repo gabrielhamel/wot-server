@@ -6,6 +6,14 @@ const PREBATTLES_STREAM: i16 = 200;
 
 impl Gateway {
     pub(super) fn handle_base_method(&mut self, event: base::BaseMethodEvent) {
+        if let Some(battle_id) = self
+            .sessions
+            .get(&event.client)
+            .and_then(|session| session.training_battle)
+        {
+            self.handle_training_avatar(battle_id, event);
+            return;
+        }
         let span = event.span;
         let session = self.sessions.get(&event.client);
         if let Some(session) = session {
@@ -202,6 +210,19 @@ impl Gateway {
                 arg1,
                 arg2,
             } => self.kick_training_player(client, entity, request_id, [arg0, arg1, arg2])?,
+            AccountBase::DoCmdInt3 {
+                request_id,
+                cmd: command @ (training::battle::TEAM_READY | training::battle::TEAM_NOT_READY),
+                arg0,
+                arg1,
+                arg2,
+            } => self.change_training_team_ready(
+                client,
+                entity,
+                request_id,
+                [arg0, arg1, arg2],
+                command == training::battle::TEAM_READY,
+            )?,
             AccountBase::DoCmdInt3 {
                 request_id,
                 cmd: training::READY,

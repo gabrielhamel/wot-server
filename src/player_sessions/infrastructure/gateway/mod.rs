@@ -91,6 +91,7 @@ struct Session {
     account: PreparedAccount,
     entity: Option<EntityKey<Account>>,
     training_room: Option<u32>,
+    training_battle: Option<u32>,
     training_invite_next: Instant,
     garage_synced: bool,
     reported_premium_expiry: Option<u32>,
@@ -158,7 +159,9 @@ pub struct Gateway {
     deferred_logins: HashMap<SocketAddr, DeferredLogin>,
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
-    training_arenas: HashSet<i32>,
+    training_arenas: HashMap<i32, Option<training::battle::ArenaMap>>,
+    training_battles: BTreeMap<u32, training::battle::TrainingBattle>,
+    training_wire: Option<training::battle::ArenaWire>,
     account_bootstrap: AccountBootstrap,
     training_rooms: BTreeMap<u32, training::HostedRoom>,
     last_training_room_id: u32,
@@ -216,6 +219,15 @@ impl Gateway {
                 "Training Room creation is unavailable. Re-extract the resource bundle with arena definitions."
             );
         }
+        let training_wire =
+            if config.training_room_visible && training_arenas.values().any(Option::is_some) {
+                Some(
+                    training::battle::ArenaWire::bind(&mut base)
+                        .context("Validate training arena layout")?,
+                )
+            } else {
+                None
+            };
         let (sender, completions) = mpsc::sync_channel(config.max_pending + 2 * config.max_clients);
         let workers = Arc::new(Semaphore::new(config.max_pending));
         let (grant_handle, grants) = crate::player_sessions::PlayerGrants::channel();
@@ -244,6 +256,8 @@ impl Gateway {
             training_arenas,
             account_bootstrap,
             training_rooms: BTreeMap::new(),
+            training_battles: BTreeMap::new(),
+            training_wire,
             last_training_room_id: 0,
             pending_writes: HashSet::new(),
             account_change_epoch: 0,
@@ -306,6 +320,7 @@ impl Gateway {
                     }
                 }
                 base::Event::BaseMethod(event) => self.handle_base_method(event),
+                base::Event::CellMethod(event) => self.handle_training_control(event),
                 base::Event::IoError(error) => error!(error = %error.error, "Base packet failed"),
                 _ => {}
             }
@@ -315,6 +330,7 @@ impl Gateway {
                 for client in self.base.take_disconnected_clients() {
                     self.remove_session(client);
                 }
+                self.tick_training_battles(Instant::now());
                 tick = Instant::now() + Duration::from_millis(100);
             }
         }
@@ -496,6 +512,7 @@ impl Gateway {
                     account: ticket.account,
                     entity: None,
                     training_room: None,
+                    training_battle: None,
                     training_invite_next: Instant::now(),
                     garage_synced: false,
                     reported_premium_expiry: None,
@@ -520,6 +537,9 @@ impl Gateway {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
         };
+        if let Some(arena) = session.training_battle {
+            return self.enter_training_battle(client, arena);
+        }
         if session.entity.is_some() {
             return Ok(());
         }

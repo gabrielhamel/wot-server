@@ -13,12 +13,14 @@ Player Sessions owns the Training text channel through live room membership.
 | Layer | Responsibilities |
 | --- | --- |
 | `domain/` | Bounded admission generations, expiry and stale completion rejection. |
-| `domain/training.rs` | Training Room duration and comment limits. |
+| `domain/training_vehicle.rs` | Bounded tank movement, aim, training ammunition and hit resolution. |
+| `domain/training.rs` | Training Room duration and comment limits, and training round phase transitions. |
 | `application/` | Credential input policy, preferences, and garage command translation and dispatch to Accounts' published application contract. |
 | `infrastructure/mercury/` | Mercury UDP framing, reliability, RSA and Blowfish, LoginApp/BaseApp wire sessions, and Account RPC binding from the [resource bundle](../../docs/resources.md). |
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
 | `infrastructure/gateway/training.rs` | Validate bundled map IDs and manage shared room settings, membership, roster, readiness and deletion. |
+| `infrastructure/gateway/training/battle.rs` and `training/battle/wire.rs` | Validate Start Battle, transition the roster to a shared arena and publish its client entities from the current resource schema. |
 | `infrastructure/gateway/training/chat.rs` | Open and close the native Training channel and relay messages to the active room roster. |
 | `infrastructure/gateway/training/invites.rs` | Deliver native Training Room invitations and update their status. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
@@ -59,7 +61,8 @@ with Accounts.
 | Store session token | Random credential issued in the Store URL fragment and scoped to the synchronized garage session. |
 | Account entity | Client protocol representation created after the client enables entities. |
 | Resource stream | CRC-described, fragmented transfer correlated with an account command request ID. |
-| Training Room | A discoverable lobby with one host and optional guests. It ends when the host leaves or the host session is removed. |
+| Training Room | A discoverable lobby with one host and optional guests. It ends when its battle starts or the host leaves. |
+| Training battle | A timed arena shared by both assigned teams. It takes the room’s map, duration, teams and readied vehicles. |
 | Training channel | Live text conversation shared by the members of one Training Room. |
 
 A successful login replaces the previous session or pending handoff for that

@@ -67,3 +67,5 @@ mod tests {
         assert!(admissions.begin(b, later).is_some());
     }
 }
+
+pub(crate) mod training_vehicle;

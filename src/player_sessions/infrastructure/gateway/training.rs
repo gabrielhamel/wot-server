@@ -9,6 +9,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+pub(super) mod battle;
 mod chat;
 mod invites;
 pub(super) use chat::CHAT_BROADCAST;
@@ -98,6 +99,7 @@ pub(super) struct HostedRoom {
     host: ClientKey,
     members: HashMap<ClientKey, RoomPlayer>,
     invites: HashSet<ClientKey>,
+    teams_ready: (bool, bool),
 }
 
 struct RoomPlayer {
@@ -106,6 +108,7 @@ struct RoomPlayer {
     name: String,
     joined_at: f64,
     ready_vehicle: Option<Vec<u8>>,
+    ready_inventory: Option<i64>,
     roster: RosterSlot,
     role: i32,
 }
@@ -118,6 +121,7 @@ impl RoomPlayer {
             name: session.account.snapshot.display_name().to_owned(),
             joined_at,
             ready_vehicle: None,
+            ready_inventory: None,
             roster: RosterSlot::UnassignedFromTeamOne,
             role,
         }
@@ -158,13 +162,15 @@ fn voice_chat_index(mode: VoiceChatMode) -> i32 {
 
 fn apply_setting(
     settings: &mut TrainingRoomSettings,
-    arenas: &HashSet<i32>,
+    arenas: &HashMap<i32, Option<battle::ArenaMap>>,
     command: i16,
     argument: SettingArgument<'_>,
 ) -> Option<(&'static str, Value)> {
     match (command, argument) {
         (CHANGE_ARENA, SettingArgument::Numeric([arena, 0, 0])) => {
-            let arena = i32::try_from(arena).ok().filter(|id| arenas.contains(id))?;
+            let arena = i32::try_from(arena)
+                .ok()
+                .filter(|id| arenas.contains_key(id))?;
             settings.arena_type_id = arena;
             Some(("arenaTypeID", Value::from(arena)))
         }
@@ -311,16 +317,18 @@ fn ready_state(descriptor: Option<&[u8]>) -> (i32, Value) {
     })
 }
 
-pub(super) fn load_arenas(resources: &ResourceBundle) -> Result<HashSet<i32>> {
+pub(super) fn load_arenas(
+    resources: &ResourceBundle,
+) -> Result<HashMap<i32, Option<battle::ArenaMap>>> {
     const LIST: &str = "scripts/arena_defs/_list_.xml";
     if !resources.has_file(LIST) {
-        return Ok(HashSet::new());
+        return Ok(HashMap::new());
     }
     let list = pxml::from_reader(BufReader::new(resources.read(LIST)?))?;
     let defaults = pxml::from_reader(BufReader::new(
         resources.read("scripts/arena_defs/_default_.xml")?,
     ))?;
-    let mut arenas = HashSet::new();
+    let mut arenas = HashMap::new();
     for map in list
         .iter_children("map")
         .filter_map(pxml::Value::as_element)
@@ -361,12 +369,15 @@ pub(super) fn load_arenas(resources: &ResourceBundle) -> Result<HashSet<i32>> {
                                 .get_child_boolean("explicitRequestOnly")
                         });
                     if explicit != Some(true) {
-                        arenas.insert((id << 16) | i32::from(geometry));
+                        arenas.insert(
+                            (id << 16) | i32::from(geometry),
+                            battle::ArenaMap::from_definition(&map, gameplay),
+                        );
                     }
                 }
             }
         } else {
-            arenas.insert(i32::from(geometry));
+            arenas.insert(i32::from(geometry), None);
         }
     }
     Ok(arenas)
@@ -396,7 +407,7 @@ impl Gateway {
         }
         let settings = std::str::from_utf8(comment)
             .ok()
-            .filter(|_| is_opened <= 1 && self.training_arenas.contains(&arena_type_id))
+            .filter(|_| is_opened <= 1 && self.training_arenas.contains_key(&arena_type_id))
             .and_then(|comment| {
                 TrainingRoomSettings::new(arena_type_id, round_length, is_opened == 1, comment)
             });
@@ -438,6 +449,7 @@ impl Gateway {
                     created_at,
                     host: client,
                     invites: HashSet::new(),
+                    teams_ready: (false, false),
                     members: HashMap::from([(
                         client,
                         RoomPlayer::new(entity, session, created_at, HOST_ROLE),
@@ -695,6 +707,9 @@ impl Gateway {
             span.record("output.players.count", 0);
             "deleted"
         } else {
+            if matches!(member.roster, RosterSlot::TeamOne | RosterSlot::TeamTwo) {
+                room.clear_team_readiness();
+            }
             let removed = Pickle(crate::pickle!((
                 (member.entity.id().0),
                 (member.roster as i32)
@@ -782,6 +797,9 @@ impl Gateway {
             "assigned"
         };
         member.roster = destination;
+        if previous != destination {
+            room.clear_team_readiness();
+        }
         room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), None);
         span.record("output.outcome", outcome);
         self.base
@@ -843,7 +861,12 @@ impl Gateway {
             changed |= destination != member.roster;
             member.roster = destination;
         }
-        let outcome = if changed { "swapped" } else { "unchanged" };
+        let outcome = if changed {
+            room.clear_team_readiness();
+            "swapped"
+        } else {
+            "unchanged"
+        };
         room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), None);
         span.record("output.outcome", outcome);
         self.base
@@ -906,6 +929,7 @@ impl Gateway {
                 None,
             );
             room.settings = next;
+            room.clear_team_readiness();
             span.record("output.outcome", "changed");
         } else {
             span.record("output.outcome", "unchanged");
@@ -989,7 +1013,13 @@ impl Gateway {
         let player_entity = entity.id().0;
         let roster = member.roster as i32;
         let role = member.role;
+        let readiness_changed =
+            member.ready_inventory != vehicle_id || member.ready_vehicle != descriptor;
         member.ready_vehicle = descriptor;
+        member.ready_inventory = vehicle_id;
+        if readiness_changed && matches!(roster, 1 | 2) {
+            room.clear_team_readiness();
+        }
         room.broadcast(
             &mut self.base,
             PLAYER_STATE,

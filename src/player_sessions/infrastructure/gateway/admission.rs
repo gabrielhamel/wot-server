@@ -266,6 +266,7 @@ impl Gateway {
             self.xmpp.revoke(session.account.snapshot.id());
             self.social_disconnect(client);
             self.remove_training_member(client);
+            self.remove_training_participant(client);
             for room in self.training_rooms.values_mut() {
                 room.remove_invite(client);
             }

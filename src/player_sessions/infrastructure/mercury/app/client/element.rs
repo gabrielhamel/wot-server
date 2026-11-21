@@ -17,6 +17,8 @@ use crate::player_sessions::mercury::net::codec::{Codec, SimpleCodec};
 use crate::player_sessions::mercury::net::element::{Element, ElementLength, SimpleElement};
 use crate::player_sessions::mercury::script::{Ty, Value};
 
+pub mod arena;
+
 pub mod id {
     use crate::player_sessions::mercury::net::element::ElementIdRange;
 

@@ -129,6 +129,15 @@ guest from an assigned team, updating the player count and closing the
 guest's chat. Guests cannot exclude other players and hosts cannot exclude
 themselves. The test also checks trace parent links for successful and rejected requests. Older bundles
 exercise the unavailable response.
+Two encrypted peers then exercise the native Start Battle command sequence,
+including failed guest and unready-team attempts, team unlock, handoff on the
+same channels, a common space with distinct team vehicles, readiness and
+countdown, and return to the garage after leaving. The test checks that both
+clients' cell deliveries share the original host request trace. The same peers
+drive both vehicles and receive the movement in both directions. They exercise
+vehicle-targeted aiming, reject cross-player targeting, fire a shot, inspect
+tracer, muzzle and health updates on both connections, and check that an
+immediate second shot is rejected during reload.
 The same peers exercise [garage ammunition](ammunition.md): rejected requests
 followed by valid unload/reload/purchase, depot conservation/deletions, balances,
 receipts, idempotency and identical cache after reconnect. A fresh pool confirms

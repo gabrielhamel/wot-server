@@ -6,6 +6,14 @@ use super::super::{
 use crate::platform::client_formats::pickle::Value;
 use std::sync::Arc;
 
+/// The equipped vehicle data needed to enter a training arena.
+pub struct TrainingVehicle {
+    pub descriptor: Vec<u8>,
+    pub health: i16,
+    pub crew_size: usize,
+    pub ammunition: Vec<(i32, u16)>,
+}
+
 /// Read operations for player sessions and the administration dashboard.
 #[derive(Clone)]
 pub struct GarageQueries(Arc<GarageCatalog>);
@@ -61,6 +69,14 @@ impl GarageQueries {
         inventory_id: i64,
     ) -> anyhow::Result<Option<Vec<u8>>> {
         self.0.training_vehicle_descriptor(&account.0, inventory_id)
+    }
+
+    pub fn training_vehicle(
+        &self,
+        account: &AccountView,
+        inventory_id: i64,
+    ) -> anyhow::Result<Option<TrainingVehicle>> {
+        self.0.training_vehicle(&account.0, inventory_id)
     }
 
     pub fn outfit_change<'a>(

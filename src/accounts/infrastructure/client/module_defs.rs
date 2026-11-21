@@ -20,6 +20,7 @@ pub(super) struct VehicleModules {
     pub ammunition: BTreeMap<(i32, i32), AmmunitionRules>,
     exterior_slots: BTreeMap<(i32, i32), VehicleCosmeticSlots>,
     chassis_exteriors: BTreeMap<i32, ChassisExterior>,
+    pub(super) training_health: BTreeMap<i32, i16>,
 }
 
 struct ChassisExterior {
@@ -153,6 +154,10 @@ impl VehicleModules {
         let hull_camouflage = vehicle
             .get_child_element("hull")
             .is_some_and(|hull| super::cosmetic_catalog::has_camouflage_area(hull, "HULL"));
+        let hull_health = vehicle
+            .get_child_element("hull")
+            .and_then(|hull| hull.get_child_integer("maxHealth"));
+        let mut training_health = BTreeMap::new();
         let shells = item_defs::read_xml(fs, &format!("{dir}/components/shells.xml"))?;
         for (kind, section) in [
             (2, "chassis"),
@@ -209,6 +214,13 @@ impl VehicleModules {
                     );
                 }
                 if kind == 3 {
+                    if let Some(health) = hull_health
+                        .zip(number("maxHealth"))
+                        .map(|(hull, turret)| hull as f32 + turret)
+                        .filter(|&health| health > 0.0 && health <= f32::from(i16::MAX))
+                    {
+                        training_health.insert(id, health as i16);
+                    }
                     let guns = local
                         .and_then(|l| l.get_child_element("guns"))
                         .or_else(|| base.get_child_element("guns"))
@@ -412,6 +424,7 @@ impl VehicleModules {
             ammunition,
             exterior_slots,
             chassis_exteriors,
+            training_health,
         })
     }
 

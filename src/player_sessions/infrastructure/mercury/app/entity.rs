@@ -318,6 +318,7 @@ impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4);
 impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5);
 impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6);
 impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7);
+impl_args!(A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12);
 
 /// A method a schema declares, with its arguments' types.
 pub struct MethodDecl {
@@ -777,7 +778,7 @@ macro_rules! entity_schema {
 
             #[allow(non_snake_case, dead_code)]
             impl [<$name View>]<'_> {
-                $(pub fn $client(&mut self $(, $client_arg: $client_ty)*) -> std::io::Result<()> {
+                $(#[allow(clippy::too_many_arguments)] pub fn $client(&mut self $(, $client_arg: $client_ty)*) -> std::io::Result<()> {
                     self.0.call_client([<$name ClientMethod>]::$client as usize, ($($client_arg,)*))
                 })*
             }

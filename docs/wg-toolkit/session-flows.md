@@ -305,6 +305,69 @@ fixed argument dictionary. All roster slots share the channel, including
 unassigned players and observers. Messages are limited to 512 characters
 and one send per 500 milliseconds.
 
+## Starting a Training Room battle
+
+The native [Start Battle handler](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/TrainingRoomBase.py#L503)
+confirms Teams 1 and 2 in sequence with `doCmdInt3` command `411`. Command
+`412` clears a confirmation. The server requires the host to confirm each
+team, with at least one ready combat vehicle on each team and a ready vehicle
+for every assigned player. Changes to assigned players, their readiness or
+room settings clear the confirmations. The client checks the host's current
+team state before sending the second request. The server acknowledges the
+first request immediately and publishes both ready states in
+`updatePrebattle(6)` only when the arena is about to launch.
+
+Once both teams confirm, the server rechecks vehicle ownership and reads the
+current equipped descriptors and health from Accounts. It prepares all client
+payloads before closing the room, expiring invitations and closing the Training
+text channel. Unassigned members stay in their garages. Each participant
+receives `onArenaCreated` followed by `ResetEntities` on the encrypted channel
+they already use. The client acknowledges with `EnableEntities`. The server
+then creates its Avatar and cell player in the shared space, sends the
+geometry mapping, creates the same Vehicle entities for each client, and
+attaches the shared roster to each client's AvatarInfo. Leaving or exceeding
+the round length resets the player again and reopens the garage after the next
+`EnableEntities`. The arena also closes if either team empties.
+
+The wire order and the replicated roster format were cross-checked against
+[Toolkit battle bootstrap](../references/wg-toolkit-rs/wg-toolkit-wot/src/base/battle/mod.rs)
+and the [native roster component](../references/wot-src/sources/res/scripts/client_common/AvatarVehiclesInfoBase.py).
+The in-place reset handshake follows the client-side
+[BigWorld reference](../references/BigWorld-Engine-14.4.1/programming/bigworld/lib/connection/server_connection.cpp#L2409).
+The installed x64 client's reset handler at `0x142cfc1d0` reaches code that
+queues the same interface element registered as `enableEntities` at
+`0x1402953e1`. This confirms the acknowledgement in the compiled client.
+The native UI handoff still requires a two-client walkthrough.
+
+The round waits for client readiness or a bounded loading timeout, runs a
+countdown, and uses the room's selected time limit. Maps need geometry,
+bounds and two spawn locations. The server accepts `vehicle_moveWith` on
+the player's Avatar and turret tracking on the player's Avatar or Vehicle.
+The target entity must belong to the sending session. The server advances
+tanks every 100 ms and sends full-ID position and turret updates to both teams.
+See [Avatar movement](../references/wot-src/sources/res/scripts/client/Avatar.py#L1783)
+and [client aim tracking](../references/wot-src/sources/res/scripts/client/VehicleGunRotator.py#L368)
+for the client inputs. The detailed position frame was checked against
+the Toolkit's client element notes for the executable identified below.
+
+The `OwnVehicle` component initializes the local ammo and reload display from
+the selected garage loadout. Training uses its own ammunition counters for
+the round. A shot consumes one round, applies a three-second reload, and
+casts a ray from the server-side gun position. The closest live opponent
+intersecting the ray takes up to 75 hit points. Both peers receive the muzzle
+event, tracer and health change. Eliminating the last opposing tank finishes
+the round. This uses a level driving plane, equal vehicle movement parameters,
+simple tank hit volumes and generic shot effects. Terrain adhesion, collision,
+armour, gun-specific ballistics and spectator controls remain separate work.
+
+The bundle used for the two-peer protocol check was extracted from the installed
+EU client reporting `v.2.4.1.1 #993`. The launcher executable SHA-256 was
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c` and the
+`win64/WorldOfTanks.exe` SHA-256 was
+`58325ded3e2db7134638971e33de1eab09737f8b66401554d9723a2bf246bb11`.
+Publisher discovery reported EU production build `2.4.1.5514`, matching the
+installed build documented in [client validation](../client-validation.md).
+
 ## Battle entry and return
 
 The sequence below describes the historical Toolkit prototype. At the pinned

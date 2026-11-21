@@ -111,10 +111,10 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.method_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Numeric exposed Mercury method ID after wire decoding. |
 | [`input.entity_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | Protocol entity ID of the player's target entity. |
 | [`input.string.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Byte length of the `doCmdStr` argument, Training Room creation description, or Training Room invitation message. The text stays out of telemetry. |
-| [`input.arena_type_id`](../src/player_sessions/infrastructure/gateway/training.rs) | Client-supplied arena type ID on Training Room creation. |
+| [`input.arena_type_id`](../src/player_sessions/infrastructure/gateway/training.rs) | Client-supplied arena type ID on Training Room creation, or the server-selected arena on entry. |
 | [`input.round_length.seconds`](../src/player_sessions/infrastructure/gateway/training.rs) | Requested Training Room duration in seconds on creation. |
 | [`input.room.open_flag`](../src/player_sessions/infrastructure/gateway/training.rs) | Wire privacy flag on Training Room creation. `0` denotes invite-only and `1` denotes open. |
-| [`input.room.id`](../src/player_sessions/infrastructure/gateway/training.rs) | Training Room ID supplied by the client on join or decline, or set by the server for invitation delivery and channel open and close operations. |
+| [`input.room.id`](../src/player_sessions/infrastructure/gateway/training.rs) | Training Room ID supplied by the client on join or decline, or set by the server for invitation delivery, channel membership and arena lifecycle operations. |
 | [`input.cluster.id`](../src/player_sessions/infrastructure/gateway/training.rs) | Cluster supplied on Training Room join or decline, or configured periphery on invitation delivery. Public room-list joins use `0`. |
 | [`input.invitation`](../src/player_sessions/infrastructure/gateway/training.rs) | True when the join request accepts an invitation. |
 | [`input.recipients.count`](../src/player_sessions/infrastructure/gateway/training/invites.rs) | Number of requested recipient IDs before deduplication. The IDs stay out of telemetry. |
@@ -122,6 +122,13 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.player_entity_id`](../src/player_sessions/infrastructure/gateway/training.rs) | Target Account entity ID on a Training Room roster assignment or exclusion. |
 | [`input.roster.slot`](../src/player_sessions/infrastructure/gateway/training.rs) | Requested roster slot on assignment. Team 1 and Team 2 use `1` and `2`. Their unassigned slots use `17` and `18`. |
 | [`input.roster.group`](../src/player_sessions/infrastructure/gateway/training.rs) | Requested player group on roster assignment. Training Rooms accept group `0`. |
+| [`input.team`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Team number from a Start Battle confirmation or the server-assigned team on arena entry. |
+| [`input.force`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Native team-ready flag supplied with command `411`. Values `0` and `1` are accepted. |
+| [`input.ready`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | True for a team confirmation and false for a team unlock. |
+| [`input.element_id`](../src/player_sessions/infrastructure/mercury/app/base/mod.rs) | One-byte Mercury element ID on arena delivery and incoming cell commands. |
+| [`input.drive.flags`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. |
+| [`input.replication.kind`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | `position` or `gun_angles` on an arena update caused by a sampled control. |
+| [`input.players.count`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Count of arena participants when publishing a period transition. |
 | [`input.cache.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Cached shop length in bytes reported by the client. |
 | [`input.cache.crc`](../src/player_sessions/infrastructure/gateway/commands.rs) | Signed CRC32 of the shop cache reported by the client. |
 | [`input.token_type`](../src/player_sessions/infrastructure/gateway/commands.rs) | Numeric token kind from the Mercury request. Credential material stays out of telemetry. |
@@ -226,7 +233,7 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Byte length of an encoded outgoing XMPP stanza, compressed garage cache, Mercury resource response or available Training Room observer descriptor. Excludes transport framing. |
+| [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Byte length of an encoded outgoing XMPP stanza, compressed garage cache, Mercury resource response or available Training Room observer or combat vehicle descriptor. Excludes transport framing. |
 | [`output.recipients.count`](../src/player_sessions/infrastructure/gateway/training/chat.rs) | Number of queued Training channel messages, including the sender, or queued invitations after deduplication. Actual socket delivery is recorded by the Mercury response spans. |
 | [`output.rooms.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of Training Rooms returned by a successful list request. Omitted on rejection or a failed send. |
 | [`output.rooms.total`](../src/player_sessions/infrastructure/gateway/commands.rs) | Total discoverable rooms in the list response before paging. Omitted on rejection or a failed send. |
@@ -237,6 +244,14 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.count`](../src/social/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
 | [`output.unlocked_vehicle_count`](../src/accounts/infrastructure/client/store.rs) | Number of gold vehicle descriptors purchasable through the native shop and projected in the Tech Tree economics unlock set during garage sync. |
 | [`output.offers.count`](../src/player_sessions/infrastructure/gateway/store.rs) | Number of offers included in a Store catalog response. |
+| [`output.arena_type_id`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Arena type selected in the room when the host confirms or unlocks a team. |
+| [`output.shot.id`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | Arena-local sequence number assigned after firing, omitted on rejection. |
+| [`output.target.entity_id`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | Vehicle entity struck by a training shot, omitted on miss. |
+| [`output.damage`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | Hit points actually removed by a training shot, omitted on miss. |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/training/battle/controls.rs) | Cell controls record `accepted`, `shell_selected`, `hit`, `miss`, `reloading`, `empty`, `invalid_flags`, `invalid_aim`, `shell_unavailable`, `round_inactive`, `vehicle_unavailable`, `unimplemented` or `delivery_failed`. Mercury records `entity_unavailable` for a target outside the session's control and `wire_decode_failed` for invalid framing or argument data. |
+| [`output.phase`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | New training period enum when publishing a transition. Values are `countdown`, `battle` and `finished`. |
+| [`output.crew.count`](../src/accounts/infrastructure/client/mod.rs) | Number of crew seats in the catalog vehicle prepared for the arena. |
+| [`output.outcome`](../src/player_sessions/infrastructure/gateway/training/battle.rs) | Team commands record `team_ready`, `team_unlocked`, `launched`, `invalid_arguments`, `room_unavailable`, `not_host`, `team_not_ready`, `roster_or_map_unavailable` or `preparation_failed`. Entry records `entered` or `delivery_failed`. Return records `garage_reset` or `handoff_aborted`. Avatar readiness records `ready` or `already_ready`. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/admission.rs) | Login admission records `admitted`, `replaced`, `superseded`, `waiting_for_write`, `refreshing_snapshot`, `expired`, `full`, `destination_unavailable`, or `reply_unavailable`. |
 | [`output.outcome`](../src/player_sessions/infrastructure/xmpp/mod.rs) | XMPP connection spans record `disconnected` on normal closure or `failed` on error. XMPP stanza spans record `handled`, `rate_limited` or `failed`. |
 | [`output.outcome`](../src/player_administration/presentation/players.rs) | First-admin setup records `created`, `setup_closed` when setup is unavailable, or the provisioning error outcome. Field validation records `invalid_email`, `invalid_display_name` or `invalid_password`. |

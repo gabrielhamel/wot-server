@@ -252,6 +252,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     assert_ne!(r1.unwrap(), r2.unwrap());
     let stored = repository.snapshot(a.id).await.unwrap();
     let training_vehicle_id = stored.vehicles[0].inventory_id;
+    let guest_vehicle_id = repository.snapshot(b.id).await.unwrap().vehicles[0].inventory_id;
     assert_eq!(stored.revision, 3);
     assert_eq!(stored.settings, BTreeMap::from([(10, 20), (11, 21)]));
     assert!(repository.snapshot(b.id).await.unwrap().settings.is_empty());
@@ -403,6 +404,13 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             training_room_flow::assert_room_gone(&mut first_peer, &script, training_vehicle_id);
             training_room_flow::assert_room_gone(&mut second_peer, &script, training_vehicle_id);
             training_room_flow::assert_empty_list(&mut second_peer, &script);
+            training_room_flow::exercise_battle(
+                &mut first_peer,
+                training_vehicle_id,
+                &mut second_peer,
+                guest_vehicle_id,
+                &script,
+            );
         }
         let sync = |id, cmd| {
             vec![
@@ -579,6 +587,9 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             &account_version_property,
         );
         training_room_flow::assert_traces(a.id, b.id, training_room_available);
+        if training_room_available {
+            training_room_flow::assert_battle_traces(a.id, b.id);
+        }
         telemetry_capture::assert_operation_traces(a.id, b.id, garage_capacity);
         telemetry_capture::assert_equipment_traces(equipment_account);
         if has_camouflage {

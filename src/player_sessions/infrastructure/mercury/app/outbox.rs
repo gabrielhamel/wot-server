@@ -163,6 +163,7 @@ impl ClientOutbox {
                 }
                 Err(error) => {
                     span.record("output.delivery", "send_failed");
+                    span.record("otel.status_code", "ERROR");
                     tracing::error!(%error, "Could not send Mercury response bundle");
                 }
             });
