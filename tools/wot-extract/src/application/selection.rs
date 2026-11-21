@@ -32,6 +32,13 @@ const GARAGE_FILES: &[&str] = &[
     "scripts/item_defs/vehicles/common/post_progression/trees.xml",
 ];
 
+const BATTLE_EFFECT_FILES: &[&str] = &[
+    "scripts/item_defs/vehicles/common/shot_effects.xml",
+    "scripts/item_defs/vehicles/common/prefab_effects/shot_effects.xml",
+    "scripts/item_defs/vehicles/common/vehicle.xml",
+    "system/data/material_kinds.xml",
+];
+
 const VEHICLE_COMPONENTS: &[&str] = &[
     "chassis.xml",
     "engines.xml",
@@ -47,7 +54,7 @@ pub(super) fn resource_root<'a>(
     extensions: &BTreeSet<String>,
 ) -> Option<(&'a str, &'a str)> {
     let (first, rest) = path.split_once('/')?;
-    if matches!(first, "scripts" | "gui" | "text") {
+    if matches!(first, "scripts" | "gui" | "text" | "system") {
         Some(("", path))
     } else if extensions.contains(first) {
         Some((first, rest))
@@ -110,6 +117,7 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
     root.is_empty()
         && (ABI_FILES.contains(&path)
             || GARAGE_FILES.contains(&path)
+            || BATTLE_EFFECT_FILES.contains(&path)
             || path == "scripts/item_defs/vehicles/common/forbidden_vehicles_to_battle_config.xml"
             || matches!(
                 path,
@@ -149,6 +157,7 @@ pub(super) fn required_files() -> impl Iterator<Item = String> {
     ABI_FILES
         .iter()
         .chain(GARAGE_FILES)
+        .chain(BATTLE_EFFECT_FILES)
         .map(|path| (*path).to_owned())
         .chain(NATIONS.iter().flat_map(|nation| {
             [

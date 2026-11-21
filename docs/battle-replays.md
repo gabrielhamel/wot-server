@@ -152,9 +152,8 @@ penetration effect 4. At 77.14 s the point uses static network ID 0,
 chassis index 0 and critical hit effect 5. The client decodes the segment against
 the selected part's bounding box and tests it against the local collision
 mesh. Its impact handler exits before audiovisual feedback when the
-decoded point list is empty. The legacy effect used by Training
-(`autoArmorPiercing`) defines `impactNPC_PC` for the local player
-receiving a penetrating hit. See [point decoding](references/wot-src/sources/res/scripts/client/VehicleEffects.py),
+decoded point list is empty. The legacy shot effect tables can select a separate `impactNPC_PC` sound
+when the local player receives a penetrating hit. See [point decoding](references/wot-src/sources/res/scripts/client/VehicleEffects.py),
 [vehicle impact handling](references/wot-src/sources/res/scripts/client/Vehicle.py#L461)
 and [shot effects](references/wot-src/sources/res/scripts/item_defs/vehicles/common/shot_effects.xml).
 
@@ -180,6 +179,76 @@ delivery acknowledgments, and the remaining component updates require a
 controlled capture of both live connections. The approximately 400 ms
 between the launch and impact records measures this replay's shot. The
 sample does not establish a fixed delay or a collision algorithm.
+
+## Scene impacts and gun audio
+
+The two tracked EU replays carry Avatar method `explodeProjectile` at exposed
+index 67 in record type `0x08`. Match its first field to `showTracer`'s shot ID
+on the same Avatar. The little-endian argument layout is `i32` shot ID,
+four `u8` values (legacy effect, prefab effect, material and shell kind),
+`f32` effect caliber in millimetres, two three-component `f32` vectors
+(endpoint and travel direction), `f32` speed, and a packed-length array of
+`u32` destructible references. An empty array uses one zero byte, giving
+41 argument bytes. Nonempty arrays in replay 1344 have 45, 49 and 73
+argument bytes. The direction vector can have a length greater than one.
+
+| Replay | Shot ID | Tracer clock / offset | Impact clock / offset | Material | Shell and caliber | Legacy / prefab |
+| --- | ---: | --- | --- | --- | --- | --- |
+| 1344 | 194388395 | 140.24 s / 1443772 | 140.34 s / 1444839 | 0, ground | APCR, 85 mm | 34 / 3 |
+| 1344 | 195316139 | 613.64 s / 4967341 | 613.84 s / 4968844 | 0, ground | AP, 85 mm | 29 / 2 |
+| 1344 | 194294187 | 108.74 s / 1178233 | 109.04 s / 1181009 | 2, stone | AP, 90 mm | 29 / 2 |
+| 1344 | 194937259 | 325.84 s / 2921297 | 326.24 s / 2924145 | 5, metal | APCR, 128 mm | 42 / 3 |
+| 1345 | 31690887 | 690.56 s / 5910446 | 690.86 s / 5913979 | 0, ground | APCR, 105 mm | 34 / 3 |
+| 1345 | 31187079 | 61.22 s / 852581 | 61.52 s / 856720 | 2, stone | AP, 100 mm | 29 / 2 |
+
+Replay 1344 also includes eight destructible references in the wood impact at
+13.14 s, offset 221491. The material names follow first occurrence in
+[`material_kinds.xml`](references/wot-src/sources/res/system/data/material_kinds.xml),
+as read by the [client material table](references/wot-src/sources/res/scripts/common/material_kinds.py).
+The [projectile mover](references/wot-src/sources/res/scripts/client/ProjectileMover.py)
+looks up the material-specific hit effect and emits a scene event carrying
+the shell kind and caliber. The [shot effect table](references/wot-src/sources/res/scripts/item_defs/vehicles/common/shot_effects.xml)
+includes different sound switches for ground, stone and metal.
+
+For muzzle audio, the [shooting extra](references/wot-src/sources/res/scripts/client/vehicle_extras.py)
+loads effects from the equipped gun in the vehicle descriptor and forwards the
+shell kind from `Vehicle.showShooting`. The [gun effect table](references/wot-src/sources/res/scripts/item_defs/vehicles/common/gun_effects.xml)
+defines sound families such as automatic, small and large, with separate
+local and other-player events. Gun definitions select the effect family.
+For incoming hits, `Vehicle.showDamageFromShot` selects the hit group and
+forwards the caliber and shell kind decoded from the packed hit point. The
+87.74 s tracer in replay 1344 identifies an 85 mm HE shell with legacy/prefab
+indices 31/1. Its `showShooting` also carries HE kind 1.
+
+Training selects the first hit along the shot ray from the outdoor
+heightfield, placed obstacle meshes, and eligible vehicles. The heightfield
+uses a one-metre search and a binary refinement. The server bounds the
+obstacle search with the nearer of the terrain and vehicle candidates. For
+scene impacts, it sends the tracer, muzzle event and `explodeProjectile` to
+battle participants with the collision point, material effect index and
+loaded shell data. The same shell data goes to the vehicle hit path. Training
+uses the existing 450 m/s tracer speed and a straight trajectory.
+
+The obstacle extractor adapts the pinned Toolkit's
+[compiled space readers](references/wg-toolkit-rs/wg-toolkit/src/space/bin)
+and [Havok mesh decoder](references/wg-toolkit-rs/wg-toolkit/src/havok).
+`BSMI` supplies transforms and visibility masks, `BSMO` links models to
+their collision hashes, and `BWST` resolves those hashes to resource paths.
+The current client's `BSMI` model records have an eight-byte stride and
+the model index is the first word. The extractor stores the placement and
+the material of each collision triangle. It skips bodies marked as passing
+shells and bodies named as destruction remains, per the reference's
+classification. Battles filters placements by gameplay visibility and
+translates raw material kinds to the client's effect table.
+
+As a check against the extracted EU client geometry identified above, a
+ray through the recorded stone impact in replay 1345 at 61.52 s struck
+material kind 111 (stone, effect index 2) approximately 0.9 mm from the
+recorded endpoint. The scene extraction found 2,979 usable collision meshes
+across 74 compiled spaces. It reported 10 unavailable or unsupported
+models. SpeedTree collision, destructible damage and destruction replication
+remain open. Training sends an empty destructibles list. Live client
+playback is needed to verify audio and visuals.
 
 ## Turret and reticle replication
 

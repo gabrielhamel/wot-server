@@ -1,5 +1,5 @@
 use super::ammunition::{Ammunition, Reload};
-use crate::shared_kernel::VehiclePerformance;
+use crate::shared_kernel::{ShellEffects, VehiclePerformance};
 use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 use std::time::Instant;
 
@@ -45,6 +45,7 @@ pub(crate) struct Shot {
     pub origin: Vec3,
     pub direction: Vec3,
     pub damage: u16,
+    pub effects: ShellEffects,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -239,12 +240,19 @@ impl Tank {
             None if self.ammunition.loaded(shell) == 0 => 0,
             None => return Err("shell_damage_unavailable"),
         };
+        let effects = performance
+            .gun
+            .shell_effects
+            .get(&shell)
+            .copied()
+            .unwrap_or_default();
         self.ammunition.fire(&performance.gun.loading, now)?;
         let ray = self.gun_ray();
         Ok(Shot {
             origin: ray.origin,
             direction: ray.direction,
             damage,
+            effects,
         })
     }
 
@@ -385,6 +393,27 @@ mod tests {
                     base_dispersion_angle: Some(0.005),
                     shot_position: None,
                     shell_damage: [(10, 36), (20, 90)].into(),
+                    shell_effects: [
+                        (
+                            10,
+                            ShellEffects {
+                                kind: 2,
+                                caliber_mm: 37.0,
+                                legacy_index: 17,
+                                prefab_index: 2,
+                            },
+                        ),
+                        (
+                            20,
+                            ShellEffects {
+                                kind: 1,
+                                caliber_mm: 37.0,
+                                legacy_index: 19,
+                                prefab_index: 1,
+                            },
+                        ),
+                    ]
+                    .into(),
                     loading: GunLoading {
                         capacity: 1,
                         reload_time: 3.0,
@@ -492,6 +521,7 @@ mod tests {
         let shot = shooter.fire(now).unwrap();
         assert!(shot.intersection(&target).is_some());
         assert_eq!(shot.damage, 36);
+        assert_eq!((shot.effects.kind, shot.effects.legacy_index), (2, 17));
         assert_eq!(target.hit(&shot), (100, 64));
         assert_eq!(shooter.rounds().next(), Some((10, 0, 0)));
         assert_eq!(shooter.shell_settings(), [20, 20]);
@@ -503,6 +533,7 @@ mod tests {
         assert!(shooter.advance_ammunition(ready));
         let shot = shooter.fire(ready).unwrap();
         assert_eq!(shot.damage, 90);
+        assert_eq!((shot.effects.kind, shot.effects.legacy_index), (1, 19));
         assert_eq!(target.hit(&shot), (64, 0));
         assert_eq!(shooter.fire(ready).err(), Some("empty"));
     }

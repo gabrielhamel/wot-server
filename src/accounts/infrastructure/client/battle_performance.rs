@@ -1,6 +1,6 @@
 use crate::{
     platform::client_formats::pxml::{Element, Value},
-    shared_kernel::{GunLoading, GunPerformance},
+    shared_kernel::{GunLoading, GunPerformance, ShellEffects},
 };
 use glam::Vec3;
 use std::collections::BTreeMap;
@@ -32,6 +32,7 @@ pub(super) fn gun(
     turret_traverse: f32,
     gun_position: Option<Vec3>,
     shell_damage: BTreeMap<i32, u16>,
+    shell_effects: BTreeMap<i32, ShellEffects>,
 ) -> Option<GunPerformance> {
     let yaw_limits = field(local, base, &["turretYawLimits"])
         .and_then(Value::as_vec2)
@@ -78,6 +79,7 @@ pub(super) fn gun(
             autoreload_times,
         },
         shell_damage,
+        shell_effects,
     })
 }
 

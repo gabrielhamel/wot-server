@@ -12,6 +12,10 @@ the MIT license below.
   `src/platform/infrastructure/client_formats/`, were adapted from the hardened reference revision
   `f3b1f2b7c515183c0827735ce2e58f7802fc13b3`.
 
+- The collision extraction in `tools/wot-extract/src/infrastructure/obstacles/`
+  adapts the compiled space and Havok readers from revision
+  `54204789d8c009330f178f6aa88ecf10f5d1f8a9`.
+
 MIT License
 
 Copyright (c) 2022 Théo Rozier

@@ -3407,7 +3407,9 @@ dependencies = [
  "anyhow",
  "byteorder",
  "clap",
+ "glam",
  "roxmltree",
+ "thiserror 1.0.69",
  "wot-resources",
 ]
 

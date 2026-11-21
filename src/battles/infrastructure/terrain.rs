@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::platform::client_formats::pxml;
+use glam::Vec3Swizzles;
 use std::io::{BufReader, Read};
 
 const CHUNK_LIMIT: usize = 1024;
@@ -69,6 +70,39 @@ impl Terrain {
         let i = i16::try_from(grid.x as i32).ok()?;
         let j = i16::try_from(grid.y as i32).ok()?;
         self.tiles.get(&(i, j))?.sample(point / self.metres - grid)
+    }
+
+    pub(super) fn shot_intersection(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        range: f32,
+    ) -> Option<f32> {
+        let below = |distance: f32| {
+            let point = origin + direction * distance;
+            self.height_at(point.xz())
+                .is_some_and(|height| point.y <= height)
+        };
+        let steps = range.ceil() as u32;
+        let mut previous = 0.0;
+        for step in 1..=steps {
+            let distance = (step as f32).min(range);
+            if below(distance) {
+                let mut lo = previous;
+                let mut hi = distance;
+                for _ in 0..8 {
+                    let mid = (lo + hi) * 0.5;
+                    if below(mid) {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                return Some(hi);
+            }
+            previous = distance;
+        }
+        None
     }
 
     pub(super) fn vehicle_pose(&self, point: Vec2, yaw: f32) -> Option<(Vec3, Vec3)> {
@@ -216,5 +250,10 @@ mod tests {
         let (position, direction) = ground.vehicle_pose(Vec2::new(-25.0, 50.0), 0.0).unwrap();
         assert!((position.y - 39.0).abs() < 0.001);
         assert!(direction.x > 0.0 && direction.y < 0.0);
+
+        let origin = position + 5.25 * Vec3::Y;
+        assert_eq!(ground.shot_intersection(origin, -Vec3::Y, 4.0), None);
+        assert_eq!(ground.shot_intersection(origin, Vec3::Y, 10.0), None);
+        assert_eq!(ground.shot_intersection(origin, -Vec3::Y, 10.0), Some(5.25));
     }
 }

@@ -16,7 +16,7 @@ mode.
 | --- | --- |
 | `domain/` | Round timing and phase transitions, vehicle movement, aim, ammunition and hit resolution. |
 | `application/` | Launch inputs and roster eligibility for a two-team battle. |
-| `infrastructure/` | In-memory arena and participant lifecycle, bundled arena definitions and terrain, and the native Avatar, Vehicle and roster adapters over Platform's shared Mercury transport. |
+| `infrastructure/` | In-memory arena and participant lifecycle, bundled arena definitions, terrain and obstacle collision, and the native Avatar, Vehicle and roster adapters over Platform's shared Mercury transport. |
 
 Callers use [the published contract](mod.rs). Preparation validates the roster
 and builds the client payloads before Player Sessions acknowledges the launch.
@@ -31,3 +31,4 @@ allocated independently of the Training Room ID.
 | Participant | A connected player assigned to a team with a combat or observer vehicle. |
 | Round | The progression through loading, countdown, active battle and results. |
 | Loadout | The equipped vehicle descriptor, health, crew size, ammunition and base performance at launch. |
+| Scene impact | The first projectile contact with terrain or a placed obstacle, reported with its effect material. |

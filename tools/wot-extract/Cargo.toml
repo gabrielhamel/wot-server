@@ -10,3 +10,5 @@ byteorder = "1.5"
 clap = { version = "4.6.7", features = ["derive"] }
 roxmltree = "0.20"
 wot-resources = { path = "../wot-resources" }
+glam = "0.29"
+thiserror = "1"

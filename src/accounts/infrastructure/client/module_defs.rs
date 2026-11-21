@@ -107,6 +107,7 @@ impl VehicleModules {
         stock: &VehicleDef,
         prices: &ItemPrices,
         shell_prices: &BTreeMap<i32, ShellPrice>,
+        effects: &super::shell_effects::ShellEffectCatalog,
     ) -> Result<Self> {
         let dir = item_defs::vehicle_dirs(fs, nation)
             .into_iter()
@@ -395,6 +396,7 @@ impl VehicleModules {
                         let shots = local_shots.or(shared_shots).context("Missing gun shots")?;
                         let mut defaults = Vec::new();
                         let mut shell_damage = BTreeMap::new();
+                        let mut shell_effects = BTreeMap::new();
                         for (name, shot) in shots.iter_children_all() {
                             let shell = shells
                                 .get_child_element(name)
@@ -412,12 +414,15 @@ impl VehicleModules {
                                 .and_then(|s| s.get_child_float("defaultPortion"))
                                 .unwrap_or(0.0);
                             defaults.push((shell_id, (portion * capacity as f32).round() as u32));
-                            if let Some(damage) = battle_performance::shell_damage(
-                                local_shots.and_then(|s| s.get_child_element(name)),
-                                shared_shots.and_then(|s| s.get_child_element(name)),
-                                shell,
-                            ) {
+                            let local = local_shots.and_then(|s| s.get_child_element(name));
+                            let shared = shared_shots.and_then(|s| s.get_child_element(name));
+                            if let Some(damage) =
+                                battle_performance::shell_damage(local, shared, shell)
+                            {
                                 shell_damage.insert(shell_id, damage);
+                            }
+                            if let Some(effect) = effects.resolve(local.or(shared), shell) {
+                                shell_effects.insert(shell_id, effect);
                             }
                         }
                         if let Some(performance) = battle_performance::traverse(local, base)
@@ -428,6 +433,7 @@ impl VehicleModules {
                                     traverse,
                                     gun_position,
                                     shell_damage,
+                                    shell_effects,
                                 )
                             })
                         {

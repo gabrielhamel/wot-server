@@ -1304,7 +1304,13 @@ pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
     }
 }
 
-pub fn cunningham_stock_shell_damage(resources: &wot_resources::ResourceBundle) -> u16 {
+#[derive(Clone, Copy)]
+pub struct BattleFixture {
+    shell_damage: u16,
+    has_obstacles: bool,
+}
+
+pub fn battle_fixture(resources: &wot_resources::ResourceBundle) -> BattleFixture {
     use wot_server::platform::client_formats::pxml;
 
     let shells = resources
@@ -1314,12 +1320,19 @@ pub fn cunningham_stock_shell_damage(resources: &wot_resources::ResourceBundle) 
     let damage = shells
         .get_child_value_at(&["_37mm_AP_1916_1937_T1", "damage", "armor"])
         .unwrap();
-    damage
-        .as_float()
-        .or_else(|| damage.as_vec2().map(|values| values.x))
-        .unwrap()
-        .round() as u16
+    BattleFixture {
+        shell_damage: damage
+            .as_float()
+            .or_else(|| damage.as_vec2().map(|values| values.x))
+            .unwrap()
+            .round() as u16,
+        has_obstacles: resources.has_file("spaces/07_lakeville/collision.bin"),
+    }
 }
+
+// Lakeville Encounter has a clear firing line along the lakeside road.
+const BATTLE_ARENA_TYPE: i32 = (1 << 16) | 5;
+pub const BATTLE_TERRAIN: &str = "spaces/07_lakeville/terrain";
 
 pub fn exercise_battle(
     host: &mut Peer,
@@ -1327,9 +1340,10 @@ pub fn exercise_battle(
     guest: &mut Peer,
     guest_vehicle: i64,
     script: &ScriptDispatch,
-    shell_damage: u16,
+    fixture: BattleFixture,
     check_store_in_battle: impl FnOnce(),
 ) {
+    let shell_damage = fixture.shell_damage;
     let command = |peer: &mut Peer, request, command, args: [i64; 3]| {
         let mut values = vec![Value::Int16(request), Value::Int16(command)];
         values.extend(args.map(Value::Int64));
@@ -1340,7 +1354,7 @@ pub fn exercise_battle(
         script,
         "accountPrebattle_createTraining",
         vec![
-            Value::Int32(83),
+            Value::Int32(BATTLE_ARENA_TYPE),
             Value::Int32(300),
             Value::UInt8(1),
             Value::String(StringValue::String(String::new())),
@@ -1425,11 +1439,11 @@ pub fn exercise_battle(
     assert_ne!(i64::from(host_cell.space_id), room_id);
     assert_eq!(
         host.entered_arena,
-        Some((u64::from(host_cell.space_id), 83))
+        Some((u64::from(host_cell.space_id), BATTLE_ARENA_TYPE))
     );
     assert!(
         host_cell.position.y > 1.0 && guest_cell.position.y > 1.0,
-        "Studzianki spawns must be elevated above world zero: {:?} and {:?}",
+        "Lakeville spawns must be elevated above world zero: {:?} and {:?}",
         host_cell.position,
         guest_cell.position
     );
@@ -1547,13 +1561,23 @@ pub fn exercise_battle(
         "trackRelativePointWithGun",
         vec![Value::Vector3(glam::Vec3::Y)],
     );
-    let offset = host.positions[&second] - host.positions[&first] + glam::Vec3::Y * 1.35;
+    let target = host.positions[&second] + glam::Vec3::Y * 1.35;
+    let offset = target - host.positions[&first];
+    host.cell_command(script, "setServerMarker", vec![Value::UInt8(1)]);
     host.vehicle_command(
         script,
         first,
         "trackRelativePointWithGun",
         vec![Value::Vector3(offset)],
     );
+    host.until(script, |peer| {
+        gun_markers(peer, script)
+            .last()
+            .is_some_and(|(origin, velocity, _)| {
+                (target - *origin).cross(velocity.normalize()).length() < 0.6
+            })
+    });
+    host.cell_command(script, "setServerMarker", vec![Value::UInt8(0)]);
     host.cell_command(
         script,
         "vehicle_changeSetting",
@@ -1561,6 +1585,19 @@ pub fn exercise_battle(
     );
     host.cell_command(script, "vehicle_shoot", vec![]);
     host.cell_command(script, "vehicle_shoot", vec![]);
+    host.until(script, |peer| {
+        peer.methods
+            .iter()
+            .any(|(name, _)| name == "stopTracer" || name == "explodeProjectile")
+    });
+    assert!(
+        host.methods.iter().any(|(name, _)| name == "stopTracer"),
+        "direct shot tracer and scene impact: {:?}",
+        host.methods
+            .iter()
+            .filter(|(name, _)| name == "showTracer" || name == "explodeProjectile")
+            .collect::<Vec<_>>()
+    );
     let received_shot = |p: &Peer| {
         p.methods.iter().any(|(name, _)| name == "stopTracer")
             && p.methods.iter().any(|(name, _)| name == "onBattleEvents")
@@ -1648,7 +1685,11 @@ pub fn exercise_battle(
         let params = point["params"].as_i64().unwrap();
         assert_eq!(params & 0xf, i64::from(effect));
         assert_eq!((params >> 4) & 0xf, tracer[5].as_i64().unwrap());
-        assert_eq!((params >> 8) & 0xffff, 450);
+        assert_eq!(tracer[5], Value::UInt8(2));
+        assert_eq!(tracer[6], Value::Float32(37.0));
+        assert_eq!((params >> 8) & 0xffff, 370);
+        assert_eq!(impact[2], tracer[3]);
+        assert_eq!(impact[3], tracer[4]);
         let (_, _, health) = peer
             .vehicle_methods
             .iter()
@@ -1679,6 +1720,7 @@ pub fn exercise_battle(
         };
         assert_eq!(details >> 25 & 0xffff, u64::from(shell_damage));
         assert_eq!(details >> 17 & 0xff, 0);
+        assert_eq!(details >> 9 & 0x7f, if event_type == 10 { 2 } else { 127 });
     }
     guest.until(script, |p| {
         p.methods
@@ -1759,6 +1801,42 @@ pub fn exercise_battle(
     );
     let facing = host.cell.as_ref().unwrap().direction.z;
     assert_gun_marker(host, guest, script, first, facing);
+    let reload_count = reload_times(host).len();
+    assert_ground_impact(host, guest, script);
+    if fixture.has_obstacles {
+        std::thread::scope(|scope| {
+            let (aiming, aimed) = std::sync::mpsc::channel::<()>();
+            let observer = &mut *guest;
+            scope.spawn(move || {
+                observer.until(script, |_| {
+                    !matches!(aimed.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty))
+                });
+            });
+            host.until(script, |peer| {
+                let times = reload_times(peer);
+                times[reload_count..].contains(&0.0)
+            });
+            let stone_wall = glam::Vec3::new(-50.5, 9.0, 359.0);
+            let offset = stone_wall - host.positions[&first];
+            host.vehicle_command(
+                script,
+                first,
+                "trackRelativePointWithGun",
+                vec![Value::Vector3(offset)],
+            );
+            host.until(script, |peer| {
+                gun_markers(peer, script)
+                    .last()
+                    .is_some_and(|(origin, velocity, _)| {
+                        let target = stone_wall - *origin;
+                        let direction = velocity.normalize();
+                        target.dot(direction) > 0.0 && target.cross(direction).length() < 0.15
+                    })
+            });
+            drop(aiming);
+        });
+        assert_scene_impact(host, guest, script, 2, 20.0..80.0);
+    }
     let forward = glam::Vec3::new(facing.sin(), 0.0, facing.cos());
     let stopped = host.positions[&first];
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(2)]);
@@ -1774,6 +1852,68 @@ pub fn exercise_battle(
     host.until(script, |p| p.created && p.shown);
     guest.until(script, |p| p.created && p.shown);
     assert_empty_list(host, script);
+}
+
+fn assert_ground_impact(host: &mut Peer, guest: &mut Peer, script: &ScriptDispatch) {
+    host.cell_command(script, "setServerMarker", vec![Value::UInt8(1)]);
+    host.cell_command(
+        script,
+        "vehicle_stopTrackingWithGun",
+        vec![Value::Float32(-0.25), Value::Float32(0.25)],
+    );
+    host.until(script, |peer| {
+        gun_markers(peer, script)
+            .last()
+            .is_some_and(|(_, velocity, _)| velocity.y < -35.0)
+    });
+    assert_scene_impact(host, guest, script, 0, 0.0..50.0);
+}
+
+#[track_caller]
+fn assert_scene_impact(
+    host: &mut Peer,
+    guest: &mut Peer,
+    script: &ScriptDispatch,
+    material: u8,
+    expected_distance: std::ops::Range<f32>,
+) {
+    host.cell_command(script, "vehicle_shoot", vec![]);
+    for peer in [host, guest] {
+        let received = peer.methods.len();
+        peer.until(script, |peer| {
+            peer.methods[received..]
+                .iter()
+                .any(|(name, _)| name == "explodeProjectile")
+        });
+        let messages = &peer.methods[received..];
+        let explosion_index = messages
+            .iter()
+            .position(|(name, _)| name == "explodeProjectile")
+            .unwrap();
+        let (_, impact) = &messages[explosion_index];
+        let (_, tracer) = peer.methods[..received + explosion_index]
+            .iter()
+            .rev()
+            .find(|(name, _)| name == "showTracer")
+            .expect("tracer sent before explosion");
+        assert_eq!(impact[0], tracer[1]);
+        assert_eq!(impact[1..3], tracer[3..5]);
+        assert_eq!(impact[3], Value::UInt8(material));
+        assert_eq!(impact[4..6], tracer[5..7]);
+        let (Value::Vector3(endpoint), Value::Vector3(origin), Value::Vector3(velocity)) =
+            (&impact[6], &tracer[7], &tracer[8])
+        else {
+            panic!("expected impact geometry");
+        };
+        assert!(expected_distance.contains(&endpoint.distance(*origin)));
+        assert!((*endpoint - *origin).normalize().dot(velocity.normalize()) > 0.999);
+        assert!(matches!(&impact[9], Value::Seq(destructibles) if destructibles.is_empty()));
+        assert!(
+            !messages
+                .iter()
+                .any(|(name, _)| name == "stopTracer" || name == "showShotResults")
+        );
+    }
 }
 
 fn assert_aux_orientation(aux: u64, direction: glam::Vec3) {
@@ -1794,36 +1934,14 @@ fn assert_gun_marker(
     facing: f32,
 ) {
     use std::f32::consts::{PI, TAU};
-    use wot_server::player_sessions::test_support::mercury::net::codec::Codec;
-
-    let (marker_type, schema) = script.entity_from_name("GunMarkerComponent").unwrap();
-    let (index, property) = schema
-        .properties
-        .iter()
-        .enumerate()
-        .find(|(_, property)| &*property.name == "gunMarker")
-        .unwrap();
+    let (marker_type, _) = script.entity_from_name("GunMarkerComponent").unwrap();
     let marker_type = script.component_nrl_id(marker_type).unwrap();
     let component = host.arena_roster.as_ref().unwrap();
     assert_eq!(
         &component[..7],
         &[8, 0, 4, 0, 2, marker_type as u8, (marker_type >> 8) as u8]
     );
-    let node = (2049 + index as u16).to_be_bytes();
-    let markers = |peer: &Peer| {
-        peer.nrl_updates.iter().filter_map(|record| {
-            let mut body = record.strip_prefix(&node)?;
-            let Value::Dict(marker) = Value::read(&mut body, &property.ty).unwrap() else {
-                panic!("expected a gun marker dictionary");
-            };
-            assert!(body.is_empty());
-            let (Value::Vector3(origin), Value::Vector3(velocity), Value::Float32(dispersion)) =
-                (&marker["gunPosition"], &marker["shotVector"], &marker["dispersion"]) else {
-                    panic!("expected launch position, velocity and dispersion");
-                };
-            Some((*origin, *velocity, *dispersion))
-        }).collect::<Vec<_>>()
-    };
+    let markers = |peer: &Peer| gun_markers(peer, script);
     let aim = |peer: &mut Peer, yaw| {
         peer.cell_command(
             script,
@@ -1866,6 +1984,36 @@ fn assert_gun_marker(
     host.until(script, reached);
     guest.until(script, reached);
     assert_eq!(markers(host).len(), marker_count);
+}
+
+fn gun_markers(peer: &Peer, script: &ScriptDispatch) -> Vec<(glam::Vec3, glam::Vec3, f32)> {
+    use wot_server::player_sessions::test_support::mercury::net::codec::Codec;
+    let (_, schema) = script.entity_from_name("GunMarkerComponent").unwrap();
+    let (index, property) = schema
+        .properties
+        .iter()
+        .enumerate()
+        .find(|(_, property)| &*property.name == "gunMarker")
+        .unwrap();
+    let node = (2049 + index as u16).to_be_bytes();
+    peer.nrl_updates
+        .iter()
+        .filter_map(|record| {
+            let mut body = record.strip_prefix(&node)?;
+            let Value::Dict(marker) = Value::read(&mut body, &property.ty).unwrap() else {
+                panic!("expected a gun marker dictionary");
+            };
+            assert!(body.is_empty());
+            let (Value::Vector3(origin), Value::Vector3(velocity), Value::Float32(dispersion)) = (
+                &marker["gunPosition"],
+                &marker["shotVector"],
+                &marker["dispersion"],
+            ) else {
+                panic!("expected launch position, velocity and dispersion");
+            };
+            Some((*origin, *velocity, *dispersion))
+        })
+        .collect()
 }
 
 fn assert_roster_ready(script: &ScriptDispatch, updates: &[Vec<u8>]) {
@@ -1927,7 +2075,8 @@ fn assert_roster_ready(script: &ScriptDispatch, updates: &[Vec<u8>]) {
     assert_eq!(committed, [0, 1].into_iter().collect());
 }
 
-pub fn assert_battle_traces(host: i64, guest: i64, shell_damage: u16) {
+pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
+    let shell_damage = fixture.shell_damage;
     let traces = telemetry_capture::exporter().get_finished_spans().unwrap();
     let has = |span: &SpanData, key, value: &str| {
         span.attributes
@@ -2063,6 +2212,53 @@ pub fn assert_battle_traces(host: i64, guest: i64, shell_damage: u16) {
             .iter()
             .any(|attribute| attribute.key.as_str() == "output.hit_direction.radians")
     );
+    let impact_outcomes = [
+        Some("ground_impact"),
+        fixture.has_obstacles.then_some("obstacle_impact"),
+    ];
+    for outcome in impact_outcomes.into_iter().flatten() {
+        let impact = traces
+            .iter()
+            .find(|s| s.name == "battles.shot" && has(s, "output.outcome", outcome))
+            .expect("scene impact traced");
+        assert!(has(impact, "input.shell.kind", "2"));
+        assert!(has(impact, "input.shell.caliber_mm", "37"));
+        assert!(
+            impact.attributes.iter().any(|attribute| {
+                attribute.key.as_str() == "output.scene_impact.distance_metres"
+            })
+        );
+        if outcome == "obstacle_impact" {
+            assert!(has(impact, "output.obstacle.material_kind", "111"));
+            assert!(traces.iter().any(|span| {
+                span.name == "battles.load_obstacles"
+                    && has(span, "ddd.bounded_context.name", "battles")
+                    && span
+                        .attributes
+                        .iter()
+                        .any(|attribute| attribute.key.as_str() == "output.obstacles.instances")
+            }));
+        }
+        assert!(traces.iter().any(|control| {
+            control.name == "battles.control"
+                && child_of(impact, control)
+                && traces.iter().any(|request| {
+                    request.name == "game.cell_command" && child_of(control, request)
+                })
+        }));
+        assert_eq!(
+            traces
+                .iter()
+                .filter(|span| {
+                    span.name == "mercury.response"
+                        && child_of(span, impact)
+                        && has(span, "rpc.method", "explodeProjectile")
+                        && has(span, "output.delivery", "sent")
+                })
+                .count(),
+            2
+        );
+    }
     let reload = traces
         .iter()
         .find(|span| {

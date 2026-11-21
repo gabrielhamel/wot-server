@@ -35,6 +35,7 @@ use wire::{ArenaEntry, ArenaWire, ShotImpact};
 mod avatar;
 mod controls;
 mod maps;
+mod obstacles;
 mod terrain;
 mod wire;
 
@@ -97,6 +98,7 @@ impl Entrant {
 struct Battle {
     map: ArenaMap,
     ground: Arc<terrain::Terrain>,
+    obstacles: Arc<obstacles::Obstacles>,
     arena_type: i32,
     players: HashMap<ClientKey, Participant>,
     started_at: Instant,
@@ -271,7 +273,7 @@ impl BattleRuntime {
     ) -> Result<Self> {
         let maps = maps::load(resources).context("Load arena maps")?;
         let wire = if enabled && maps.values().any(Option::is_some) {
-            Some(ArenaWire::bind(base).context("Validate arena layout")?)
+            Some(ArenaWire::bind(base, resources).context("Validate arena layout")?)
         } else {
             None
         };
@@ -337,6 +339,19 @@ impl BattleRuntime {
             Arc::clone(&active.ground)
         } else {
             Arc::new(terrain::Terrain::load(&self.resources, &map.geometry)?)
+        };
+        let obstacles = if let Some(active) = self
+            .active
+            .values()
+            .find(|active| active.arena_type == arena_type)
+        {
+            Arc::clone(&active.obstacles)
+        } else {
+            Arc::new(obstacles::Obstacles::load(
+                &self.resources,
+                &map.geometry,
+                arena_type,
+            )?)
         };
         let mut entrants = Vec::with_capacity(launch.participants.len());
         let mut counts = [0usize; 2];
@@ -419,6 +434,7 @@ impl BattleRuntime {
             battle: Battle {
                 map: map.clone(),
                 ground,
+                obstacles,
                 arena_type,
                 players,
                 started_at: now,

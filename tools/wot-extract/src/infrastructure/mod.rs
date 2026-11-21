@@ -1,3 +1,4 @@
+pub(crate) mod obstacles;
 mod package;
 
 use anyhow::{Context, Result, ensure};
@@ -86,6 +87,7 @@ impl ClientResources {
             }
         }
         resources.index_loose(&root, "spaces")?;
+        resources.index_loose(&root, "system/data/material_kinds.xml")?;
         Ok(resources)
     }
 
@@ -181,6 +183,40 @@ impl ClientResources {
         Ok(Some((1, bytes)))
     }
 
+    fn read_bounded(&mut self, path: &str, limit: u64) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        match self
+            .files
+            .get(path)
+            .context("Resource missing from index")?
+        {
+            Source::Package {
+                package,
+                entry,
+                size,
+            } => {
+                ensure!(
+                    u64::from(*size) <= limit,
+                    "Resource {path} exceeds size limit"
+                );
+                let package = self
+                    .packages
+                    .get_mut(*package)
+                    .context("Missing resource package")?;
+                package.read_by_index(*entry)?.read_to_end(&mut data)?;
+                ensure!(data.len() == *size as usize, "Truncated resource {path}");
+            }
+            Source::Loose(path) => {
+                File::open(path)?.take(limit + 1).read_to_end(&mut data)?;
+                ensure!(
+                    data.len() as u64 <= limit,
+                    "Resource {path:?} exceeds size limit"
+                );
+            }
+        }
+        Ok(data)
+    }
+
     pub fn copy(&mut self, path: &str, target: &Path) -> Result<u64> {
         (|| {
             fs::create_dir_all(target.parent().context("Output file has no parent")?)?;
@@ -230,7 +266,11 @@ pub fn is_terrain(path: &str) -> bool {
 }
 
 fn is_candidate(path: &str) -> bool {
-    if is_terrain(path) {
+    if is_terrain(path)
+        || obstacles::is_placement(path)
+        || (path.starts_with("content/") && path.ends_with(".havok"))
+        || path == "system/data/material_kinds.xml"
+    {
         return true;
     }
     let Some((first, rest)) = path.split_once('/') else {
