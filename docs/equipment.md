@@ -6,7 +6,10 @@ bought and mounted from a tank's equipment panel. The client calls these items
 and compatibility rules from the installed resource catalog. The T-34, for
 example, can mount Class 2 Improved Aiming and Class 2 Gun Rammer.
 
-The shop sells eligible Improved equipment for bonds. The installed catalog
+The shop sells eligible Improved Equipment at the positive bond prices in the
+client bundle. This server also offers `deluxe` devices marked `notInShop`
+upstream when the bundle supplies a bond price and the Store allows the item.
+Administrators can grant Improved Equipment directly to the depot. The installed catalog
 marks Bounty and Experimental equipment as out of shop, so those items mount
 from depot stock. An administrator can add Basic or Upgraded Bounty Equipment,
 Experimental Equipment at any tier, or Components from [Resources & Garage](admin.md#grants). The garage's

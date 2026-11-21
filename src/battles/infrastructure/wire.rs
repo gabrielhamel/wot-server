@@ -216,7 +216,10 @@ impl ArenaWire {
                         entity_id(property_type("avatarID")?, player.avatar_id)?,
                     ),
                     ("isCrewActive", WireValue::UInt8(1)),
-                    ("gunAnglesPacked", WireValue::UInt16(0x8020)),
+                    (
+                        "gunAnglesPacked",
+                        WireValue::UInt16(player.initial_gun_angles()),
+                    ),
                 ],
             )?,
         })

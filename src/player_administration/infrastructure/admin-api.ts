@@ -180,6 +180,7 @@ function grantInputs(grant: Grant): Attributes {
       return { "input.vehicle_type": grant.vehicle };
     case "crew_book":
     case "experimental_equipment":
+    case "improved_equipment":
     case "bounty_equipment":
       return { "input.item": grant.id, "input.count": grant.count };
     case "attachment":
@@ -202,6 +203,7 @@ const depotCatalogs = {
   crew_book: "crew-books",
   experimental_equipment: "experimental-equipment",
   bounty_equipment: "bounty-equipment",
+  improved_equipment: "improved-equipment",
 } as const satisfies Record<DepotGrantKind, string>;
 
 const garageApi = {

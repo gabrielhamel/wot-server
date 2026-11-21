@@ -52,7 +52,11 @@ export interface DepotItem {
   name: string;
 }
 
-export type DepotGrantKind = "crew_book" | "experimental_equipment" | "bounty_equipment";
+export type DepotGrantKind =
+  | "crew_book"
+  | "experimental_equipment"
+  | "bounty_equipment"
+  | "improved_equipment";
 
 export interface Cosmetic {
   id: number;

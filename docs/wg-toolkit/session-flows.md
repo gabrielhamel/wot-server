@@ -363,14 +363,59 @@ and [client aim tracking](../references/wot-src/sources/res/scripts/client/Vehic
 for the client inputs. The detailed position frame was checked against
 the Toolkit's client element notes for the executable identified below.
 
-The `OwnVehicle` component initializes the local ammo and reload display from
-the selected garage loadout. Training uses its own ammunition counters for
-the round. A shot consumes one round, applies a three-second reload, and
-casts a ray from the server-side gun position. The closest live opponent
-intersecting the ray takes up to 75 hit points. Both peers receive the muzzle
-event, tracer and health change. Eliminating the last opposing tank finishes
-the round. Track dimensions are shared by the training simulation. Vehicle collision,
-armour, gun-specific ballistics and spectator controls remain separate work.
+Accounts resolves `speedLimits/forward` and `speedLimits/backward` from the
+vehicle definition, and traverse rates and gun arcs from the equipped chassis,
+turret and gun. The parser merges local overrides with the shared definitions.
+Battles advances yaw and pitch on arena ticks and quantizes pitch against the
+gun's absolute envelope for `gunAnglesPacked`. The drive bits express physical
+hull turns. `Avatar.makeVehicleMovementCommandByKeys` exchanges the left and
+right bits when the player's `backDraftInvert` option is enabled and the
+backward flag is set.
+
+The `OwnVehicle` component publishes total rounds, rounds in the magazine,
+current and queued shell types, gun cooldown and autoreloader refill timing.
+`vehicle_changeSetting` code 1 queues a shell and code 0 requests an immediate
+change. During the countdown the selection sets the initial shell. A ready, fully loaded gun uses its configured forced reload time for an immediate change when the bundle supplies one.
+Codes 17 and 18 request a magazine reload. An ordinary magazine reloads as a
+unit and enforces its interval between shots. An autoreloader inserts rounds
+one at a time with the configured duration for each empty slot. Ammo and
+reload timers are local to the round.
+
+A shot casts a ray from the server-side gun position. The closest live opponent
+intersecting the ray takes the loaded shell's nominal damage, capped at its
+remaining health. Accounts reads `damage/armor` from the nation's
+`components/shells.xml` and applies overrides from the equipped gun's shot
+definition. The first value is the nominal damage at short range and the
+midpoint of the shell's ordinary symmetric damage bounds. Damage is rounded
+to whole hit points. The same direct-hit rule applies to HE. Random rolls,
+range-dependent damage, splash, and Tier XI abilities are outside this
+simulation. A loaded shell with invalid or missing damage data is rejected
+before firing. Both peers receive the muzzle event, tracer and health change.
+The victim also receives
+`Avatar.showOwnVehicleHitDirection` with the damage applied and the world
+bearing back along the shot. Eliminating the last opposing tank finishes the
+round. Acceleration and the track footprint are shared by the training
+simulation. Vehicle collision, armour, gun-specific ballistics, autoreloader
+boost bonuses and spectator controls remain separate work.
+
+Protocol and data references are [Avatar settings and hit feedback](../references/wot-src/sources/res/scripts/entity_defs/Avatar.def),
+[OwnVehicle](../references/wot-src/sources/res/scripts/component_defs/OwnVehicle.def),
+[gun angle encoding](../references/wot-src/sources/res/scripts/common/gun_rotation_shared.py),
+[vehicle definition parsing](../references/wot-src/sources/res/scripts/common/items/vehicles.py#L5597),
+and [damage range calculation](../references/wot-src/sources/res/scripts/client/gui/shared/items_parameters/params.py#L1022).
+
+The protocol tests check reverse translation, the start and completion of
+a gun reload, the actual health loss from the stock T1 Cunningham shell, and
+the victim's directional damage message. In the extracted EU `v.2.4.1.1 #993`
+resources the T1 Cunningham's stock AP and HE definitions give 30 and 36 HP,
+respectively. Catalog checks cover the SU-85's limited gun arc, the AMX 13 90's
+magazine and the Progetto
+M35 mod. 46's autoreloader. Validation used the published EU
+`v.2.4.1.1 #993` resource bundle. A fresh extraction from the installed
+client with executable SHA-256
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`
+reported the same version.
+
 
 The native [battle debug controller](../references/wot-src/sources/res/scripts/client/gui/battle_control/controllers/debug_ctrl.py#L45)
 reads ping from `BigWorld.statPing()` and the red indicator from

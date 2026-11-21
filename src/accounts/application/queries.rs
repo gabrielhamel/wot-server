@@ -11,6 +11,7 @@ pub struct BattleVehicle {
     pub descriptor: Vec<u8>,
     pub health: i16,
     pub crew_size: usize,
+    pub performance: crate::shared_kernel::VehiclePerformance,
     pub ammunition: Vec<(i32, u16)>,
 }
 
@@ -108,6 +109,10 @@ impl GarageQueries {
 
     pub fn grantable_experimental_equipment(&self) -> impl Iterator<Item = (i32, &str)> {
         self.0.grantable_experimental_equipment()
+    }
+
+    pub fn grantable_improved_equipment(&self) -> impl Iterator<Item = (i32, &str)> {
+        self.0.grantable_improved_equipment()
     }
 
     pub fn grantable_bounty_equipment(&self) -> impl Iterator<Item = (i32, &str)> {

@@ -81,6 +81,10 @@ pub(crate) fn router(
             "/experimental-equipment",
             get(garage::experimental_equipment_catalog),
         )
+        .route(
+            "/improved-equipment",
+            get(garage::improved_equipment_catalog),
+        )
         .route("/bounty-equipment", get(garage::bounty_equipment_catalog))
         .route("/attachments", get(garage::attachment_catalog))
         .route("/stat-trackers", get(garage::stat_tracker_catalog))

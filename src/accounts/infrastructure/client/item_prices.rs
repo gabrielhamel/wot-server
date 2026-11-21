@@ -184,11 +184,17 @@ impl ItemPrices {
     /// Add an item from its definition, which prices it in credits unless it says
     /// otherwise, free if it says nothing.
     pub(super) fn add(&mut self, cd: IntCompactDescr, def: &Element) {
-        self.prices.push((cd, Self::definition_price(def)));
-        if def.get_child_boolean("notInShop") == Some(true)
-            || def
-                .get_child_string("notInShop")
-                .is_some_and(|value| value.trim().eq_ignore_ascii_case("true"))
+        let price = Self::definition_price(def);
+        self.prices.push((cd, price));
+        let improved = cd.item_type == item_type::OPTIONAL_DEVICE
+            && price.currency == "crystal"
+            && price.amount > 0
+            && super::equipment::words(def, "tags").contains("deluxe");
+        if !improved
+            && (def.get_child_boolean("notInShop") == Some(true)
+                || def
+                    .get_child_string("notInShop")
+                    .is_some_and(|value| value.trim().eq_ignore_ascii_case("true")))
         {
             self.not_in_shop.push(cd);
         }

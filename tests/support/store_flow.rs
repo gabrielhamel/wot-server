@@ -72,6 +72,16 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .find(|offer| offer.name == "Improved Ventilation Class 3")
         .unwrap();
     let item = i64::from(equipment.item);
+    let improved = catalog
+        .store_offers()
+        .iter()
+        .find(|offer| offer.item == (111 << 8) | 0xf9)
+        .filter(|offer| {
+            offer.category == wot_server::accounts::test_support::StoreCategory::ImprovedEquipment
+        })
+        .expect("Improved Compressor from the client definitions");
+    let improved_item = i64::from(improved.item);
+    let improved_price = improved.price.amount();
     let credits = equipment.price.amount();
     sqlx::query(
         "UPDATE accounts.accounts SET credits = $2, gold = 12200, bonds = 6450 WHERE id = $1",
@@ -239,7 +249,6 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             ("consumables", 19),
             ("crew_directives", 9),
             ("bond_vehicles", 54),
-            ("improved_equipment", 8),
             ("equipment_directives", 6),
         ] {
             assert_eq!(
@@ -248,6 +257,9 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
                 "{category} offer count",
             );
         }
+        let improved_offers = offers.iter().filter(|offer| offer["category"] == "improved_equipment");
+        assert!(improved_offers.clone().count() > 8);
+        assert!(improved_offers.clone().all(|offer| offer["price"]["currency"] == "bonds"));
         let offer_ids: std::collections::BTreeSet<_> = offers.iter().map(|offer| {
             (offer["item"].as_i64().unwrap(), offer["price"]["currency"].as_str().unwrap())
         }).collect();
@@ -395,9 +407,10 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
 
         let near_expiry = i64::try_from(std::time::UNIX_EPOCH.elapsed().unwrap().as_secs()).unwrap() + 5;
         runtime.block_on(
-            sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = 1250 WHERE id = $1")
+            sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = 1250, bonds = $3 WHERE id = $1")
                 .bind(account_id)
                 .bind(near_expiry)
+                .bind(improved_price + 100)
                 .execute(&expiry_test_db)
         ).unwrap();
         let (mut expiring, expiry_token, state) = connect();
@@ -438,6 +451,24 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         assert_eq!(saved.revision, persisted.revision + 2);
         assert!(saved.vehicles.iter().any(|vehicle| vehicle.catalog_key == "germany:G34_S35_captured"));
         assert!(saved.vehicles.iter().any(|vehicle| vehicle.catalog_key == "china:Ch47_BZ_176"));
+        let offer = find_offer(&current_store, improved_item);
+        assert_eq!(offer["price"], json!({"currency": "bonds", "amount": improved_price}));
+        let order = json!({
+            "item": improved_item,
+            "price": offer["price"],
+            "revision": current_store["revision"],
+        });
+        let (status, purchased) = request(Some(&expiry_token), Some(&order));
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(find_offer(&purchased, improved_item)["in_depot"], 1);
+        assert_eq!(request(Some(&expiry_token), Some(&order)).0, StatusCode::CONFLICT);
+        let diff = next_update(&mut expiring, &dispatch, saved.revision + 1);
+        assert_eq!(dict(&dict(&diff, "stats"), "crystal"), Pickle::I64(saved.balances.bonds - improved_price));
+        assert_depot_item(&diff, improved_item);
+        let persisted = runtime.block_on(accounts.snapshot(account_id)).unwrap();
+        assert_eq!(persisted.balances.bonds, saved.balances.bonds - improved_price);
+        assert_eq!(persisted.progression.depot.get(&(improved_item as i32)), Some(&1));
+        assert_store_traces(account_id, improved_item, "bonds", improved_price);
         expiring.disconnect();
         assert_tech_tree_traces(account_id);
         assert_store_traces(account_id, item, "credits", cost);

@@ -29,6 +29,10 @@ pub enum PlayerGrant {
         id: i32,
         count: u32,
     },
+    ImprovedEquipment {
+        id: i32,
+        count: u32,
+    },
     BountyEquipment {
         id: i32,
         count: u32,
@@ -61,6 +65,8 @@ pub enum GrantError {
     UnknownCrewBook,
     #[error("Select Bounty Equipment from the installed catalog.")]
     UnknownBountyEquipment,
+    #[error("Select Improved Equipment from the installed catalog.")]
+    UnknownImprovedEquipment,
     #[error("Select Experimental Equipment from the installed catalog.")]
     UnknownExperimentalEquipment,
     #[error("Enter a whole number of copies from 1 to 100.")]

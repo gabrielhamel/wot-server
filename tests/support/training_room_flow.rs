@@ -1304,12 +1304,30 @@ pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
     }
 }
 
+pub fn cunningham_stock_shell_damage(resources: &wot_resources::ResourceBundle) -> u16 {
+    use wot_server::platform::client_formats::pxml;
+
+    let shells = resources
+        .read("scripts/item_defs/vehicles/usa/components/shells.xml")
+        .unwrap();
+    let shells = pxml::from_reader(shells).unwrap();
+    let damage = shells
+        .get_child_value_at(&["_37mm_AP_1916_1937_T1", "damage", "armor"])
+        .unwrap();
+    damage
+        .as_float()
+        .or_else(|| damage.as_vec2().map(|values| values.x))
+        .unwrap()
+        .round() as u16
+}
+
 pub fn exercise_battle(
     host: &mut Peer,
     host_vehicle: i64,
     guest: &mut Peer,
     guest_vehicle: i64,
     script: &ScriptDispatch,
+    shell_damage: u16,
 ) {
     let command = |peer: &mut Peer, request, command, args: [i64; 3]| {
         let mut values = vec![Value::Int16(request), Value::Int16(command)];
@@ -1530,6 +1548,11 @@ pub fn exercise_battle(
         "trackRelativePointWithGun",
         vec![Value::Vector3(offset)],
     );
+    host.cell_command(
+        script,
+        "vehicle_changeSetting",
+        vec![Value::UInt8(1), Value::Int32(-1)],
+    );
     host.cell_command(script, "vehicle_shoot", vec![]);
     host.cell_command(script, "vehicle_shoot", vec![]);
     let received_shot = |p: &Peer| {
@@ -1542,12 +1565,90 @@ pub fn exercise_battle(
     };
     host.until(script, received_shot);
     guest.until(script, received_shot);
+    guest.until(script, |p| {
+        p.methods
+            .iter()
+            .any(|(name, _)| name == "showOwnVehicleHitDirection")
+    });
+    let (_, direction) = guest
+        .methods
+        .iter()
+        .find(|(name, _)| name == "showOwnVehicleHitDirection")
+        .unwrap();
+    let (_, _, health) = guest
+        .vehicle_methods
+        .iter()
+        .find(|(target, name, _)| *target == second && name == "onHealthChanged")
+        .unwrap();
+    assert_eq!(
+        health[1].as_i64().unwrap() - health[0].as_i64().unwrap(),
+        i64::from(shell_damage)
+    );
+    assert_eq!(direction[1].as_i64(), Some(i64::from(first)));
+    assert_eq!(
+        direction[2].as_i64(),
+        Some(health[1].as_i64().unwrap() - health[0].as_i64().unwrap())
+    );
+    assert_eq!(direction[6].as_i64(), Some(i64::from(second)));
+    let Value::Float32(yaw) = direction[0] else {
+        panic!("Expected hit bearing in radians");
+    };
+    let towards_shooter = guest.positions[&first] - guest.positions[&second];
+    let expected_yaw = towards_shooter.x.atan2(towards_shooter.z);
+    assert!((yaw - expected_yaw).cos() > 0.95);
+    assert!(
+        !host
+            .methods
+            .iter()
+            .any(|(name, _)| name == "showOwnVehicleHitDirection")
+    );
+
+    let schema = script.entity_from_name("OwnVehicle").unwrap().1;
+    let (reload_index, reload) = schema
+        .properties
+        .iter()
+        .enumerate()
+        .find(|(_, property)| &*property.name == "vehicleGunReloadTime")
+        .unwrap();
+    let node = (1026 + reload_index as u16).to_be_bytes();
+    let reload_times = |peer: &Peer| {
+        use wot_server::player_sessions::test_support::mercury::net::codec::Codec;
+        peer.nrl_updates
+            .iter()
+            .filter_map(|record| {
+                let (length, mut body) = record
+                    .strip_prefix(&node)?
+                    .strip_prefix(&[0])?
+                    .split_first()?;
+                assert_eq!(usize::from(*length), body.len());
+                let Value::Dict(reload) = Value::read(&mut body, &reload.ty).unwrap() else {
+                    return None;
+                };
+                let Value::Float32(time) = reload["timeLeft"] else {
+                    panic!("Expected gun reload time");
+                };
+                Some(time)
+            })
+            .collect::<Vec<_>>()
+    };
+    host.until(script, |p| {
+        let times = reload_times(p);
+        times.last() == Some(&0.0) && times.iter().any(|&time| time > 0.0)
+    });
+
     assert!(
         guest
             .vehicle_methods
             .iter()
             .any(|(target, name, _)| *target == first && name == "showShooting")
     );
+    let facing = host.cell.as_ref().unwrap().direction.z;
+    let forward = glam::Vec3::new(facing.sin(), 0.0, facing.cos());
+    let stopped = host.positions[&first];
+    host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(2)]);
+    host.until(script, |p| {
+        (p.positions[&first] - stopped).dot(forward) < -0.1
+    });
     guest.command(script, "leaveArena", vec![]);
     guest.until(script, |p| p.resets == 2);
     host.until(script, |p| p.resets == 2);
@@ -1617,7 +1718,7 @@ fn assert_roster_ready(script: &ScriptDispatch, updates: &[Vec<u8>]) {
     assert_eq!(committed, [0, 1].into_iter().collect());
 }
 
-pub fn assert_battle_traces(host: i64, guest: i64) {
+pub fn assert_battle_traces(host: i64, guest: i64, shell_damage: u16) {
     let traces = telemetry_capture::exporter().get_finished_spans().unwrap();
     let has = |span: &SpanData, key, value: &str| {
         span.attributes
@@ -1648,6 +1749,8 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
         .find(|s| s.name == "battles.shot" && has(s, "output.outcome", "hit"))
         .expect("training hit");
     assert!(has(hit, "ddd.bounded_context.name", "battles"));
+    assert!(has(hit, "input.shell.damage", &shell_damage.to_string()));
+    assert!(has(hit, "output.damage", &shell_damage.to_string()));
     let control = traces
         .iter()
         .find(|s| s.name == "battles.control" && child_of(hit, s))
@@ -1667,6 +1770,40 @@ pub fn assert_battle_traces(host: i64, guest: i64) {
             .count(),
         2
     );
+    assert_eq!(
+        traces
+            .iter()
+            .filter(|span| span.name == "mercury.response"
+                && child_of(span, hit)
+                && has(span, "rpc.method", "showOwnVehicleHitDirection")
+                && has(span, "output.delivery", "sent"))
+            .count(),
+        1
+    );
+    assert!(
+        hit.attributes
+            .iter()
+            .any(|attribute| attribute.key.as_str() == "output.hit_direction.radians")
+    );
+    let reload = traces
+        .iter()
+        .find(|span| {
+            span.name == "battles.replication"
+                && child_of(span, hit)
+                && has(span, "input.replication.kind", "ammunition")
+        })
+        .expect("reload completion");
+    assert!(
+        traces
+            .iter()
+            .any(|span| span.name == "mercury.arena_delivery"
+                && child_of(span, reload)
+                && has(span, "output.delivery", "sent"))
+    );
+    assert!(traces.iter().any(|span| span.name == "battles.control"
+        && has(span, "input.ammunition.setting", "1")
+        && has(span, "input.ammunition.shell", "-1")
+        && has(span, "output.outcome", "shell_unavailable")));
     let movement = traces
         .iter()
         .find(|s| s.name == "battles.replication" && has(s, "input.replication.kind", "position"))

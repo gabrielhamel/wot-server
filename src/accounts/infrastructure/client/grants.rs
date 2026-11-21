@@ -49,6 +49,13 @@ impl GarageCatalog {
             .map(|(&id, book)| (id, book.name.as_str()))
     }
 
+    pub fn grantable_improved_equipment(&self) -> impl Iterator<Item = (i32, &str)> {
+        self.equipment_grants
+            .improved
+            .iter()
+            .map(|(&id, name)| (id, name.as_str()))
+    }
+
     pub fn grantable_bounty_equipment(&self) -> impl Iterator<Item = (i32, &str)> {
         self.equipment_grants
             .bounty
@@ -110,6 +117,13 @@ impl GarageCatalog {
             PlayerGrant::CrewBook { id, count } => {
                 if !self.crew_books.contains_key(&id) {
                     return Err(GrantError::UnknownCrewBook);
+                }
+                snapshot.progression.grant_depot_stock(id, count)?;
+                None
+            }
+            PlayerGrant::ImprovedEquipment { id, count } => {
+                if !self.equipment_grants.improved.contains_key(&id) {
+                    return Err(GrantError::UnknownImprovedEquipment);
                 }
                 snapshot.progression.grant_depot_stock(id, count)?;
                 None
@@ -216,6 +230,7 @@ impl GarageCatalog {
             }
             PlayerGrant::Vehicle { .. }
             | PlayerGrant::CrewBook { .. }
+            | PlayerGrant::ImprovedEquipment { .. }
             | PlayerGrant::BountyEquipment { .. }
             | PlayerGrant::ExperimentalEquipment { .. }
             | PlayerGrant::Attachment { .. }
