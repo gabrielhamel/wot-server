@@ -63,8 +63,9 @@ installation and configuration.
 - Configure ammunition, consumables, and crew and equipment directives. Save
   consumable auto-resupply preferences.
   [Ammunition](docs/ammunition.md) · [Consumables](docs/consumables.md) · [Directives](docs/directives.md)
-- Buy, mount, and demount equipment. Upgrade Bounty and Experimental Equipment,
-  and disassemble Experimental Equipment for components.
+- Buy, mount, and demount equipment. Buy eligible Improved Equipment for
+  bonds, upgrade Bounty and Experimental Equipment, and disassemble
+  Experimental Equipment for components.
   [Equipment](docs/equipment.md)
 - Recruit, transfer, retrain, dismiss, and restore crew. Manage barracks, perks,
   crew books, and crew skins, and toggle Accelerate Crew Training on eligible
@@ -80,7 +81,8 @@ installation and configuration.
 
 - Shop from the in-game garage or the player dashboard. Buy vehicles for gold
   or bonds, Collectors’ vehicles for credits, and eligible equipment, consumables,
-  directives, 2D and 3D styles, and crew skins.
+  directives, 2D and 3D styles, and crew skins. The Improved Equipment section
+  includes eligible bond-priced items hidden in the upstream shop.
 - Buy and extend WoT Premium Account with gold, and see its status and expiration
   in the garage. [Store](docs/store.md)
 
@@ -97,13 +99,30 @@ installation and configuration.
 </details>
 
 <details>
+<summary>Training Rooms and battles</summary>
+
+- Browse public and invitation-only Training Rooms, invite players, and use room
+  text chat. Hosts can set the map and time limit, organize teams, and start
+  a shared battle once both teams are ready.
+  [Training Rooms](docs/wg-toolkit/session-flows.md#training-room-visibility)
+- Drive forward and in reverse, aim and fire using the equipped vehicle's
+  movement and gun settings, and switch shells or reload the magazine. Direct
+  hits apply the loaded shell's nominal damage, capped by the target's remaining
+  health. Eliminating the opposing team ends the round. Players return to the
+  garage when they leave or the round closes.
+  [Training battles](docs/wg-toolkit/session-flows.md#starting-a-training-room-battle)
+
+</details>
+
+<details>
 <summary>Player and admin dashboard</summary>
 
 - Register a player account, sign in, and view your own tanks and balances.
 - Create player accounts, manage roles, and inspect player garages as an
   administrator.
 - Grant tanks, credits, gold, bonds, free XP, Experimental Equipment components,
-  crew books, Bounty and Experimental Equipment, 3D attachments, and stat trackers.
+  crew books, Improved Equipment, Bounty and Experimental Equipment, 3D
+  attachments, and stat trackers.
 - Enable the dashboard in `server.json` and use the first-administrator setup
   to get started. [Dashboard guide](docs/admin.md)
 
@@ -126,25 +145,12 @@ installation and configuration.
 </details>
 
 <details>
-<summary><strong>Work in progress</strong></summary>
-
-- **Training Rooms.** A host can create a room, change the map and room settings,
-  move between teams, and ready a tank or pick Observer. Shared room discovery,
-  guest joins and invitations, and battle launch are pending. The voice-channel
-  selector stores the setting. Voice audio and in-battle spectating are pending.
-  [Training Room behavior](docs/wg-toolkit/session-flows.md#creating-a-training-room)
-
-</details>
-
-<details>
 <summary><strong>Upcoming</strong></summary>
 
-- **First playable battle.** Enter a fixed arena from the garage, drive and aim,
-  fire and deal damage, then end the battle and return to the garage.
-  [Battle entry](https://github.com/gabrielhamel/wot-server/issues/24) · [Driving and aiming](https://github.com/gabrielhamel/wot-server/issues/25) · [Combat](https://github.com/gabrielhamel/wot-server/issues/26) · [Return to garage](https://github.com/gabrielhamel/wot-server/issues/27)
-- **Battle progression and multiplayer.** Apply battle results to account
-  progression and run a shared battle with two real clients.
-  [Battle results](https://github.com/gabrielhamel/wot-server/issues/28) · [Shared battle](https://github.com/gabrielhamel/wot-server/issues/29)
+- **Battle results and progression.** Apply battle results and rewards to
+  account progression. [Battle results](https://github.com/gabrielhamel/wot-server/issues/28)
+- **More Training Room support.** Voice audio and in-battle spectating.
+  [Training Room behavior](docs/wg-toolkit/session-flows.md#creating-a-training-room)
 - **More Store and exterior support.** Editable and progressive styles, Personal
   Reserves, and Premium Account battle benefits remain open.
   [Store gaps](docs/store-missing-features.md)
