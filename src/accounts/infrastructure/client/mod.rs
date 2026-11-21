@@ -3,6 +3,7 @@ mod battle_performance;
 mod cosmetic_catalog;
 mod cosmetic_inventory;
 mod outfit;
+mod shell_effects;
 pub use cosmetic_catalog::cosmetic_item;
 pub use outfit::decode_outfits;
 mod consumables;
@@ -57,6 +58,7 @@ pub struct GarageCatalog {
     prices: item_prices::ItemPrices,
     cosmetics: cosmetic_catalog::CosmeticCatalog,
     shell_prices: BTreeMap<i32, ShellPrice>,
+    shell_effects: shell_effects::ShellEffectCatalog,
     equipment: crate::accounts::EquipmentRules,
     equipment_grants: equipment::EquipmentGrantCatalog,
     store_offers: Vec<StoreOffer>,
@@ -282,6 +284,7 @@ impl GarageCatalog {
         let mut store_offers =
             store::load(&fs, &prices, &offers, &equipment, &consumables, &directives)?;
         store_offers.extend_from_slice(cosmetics.store_styles());
+        let shell_effects = shell_effects::ShellEffectCatalog::load(&fs)?;
         let tech_tree = starter_garage::tech_tree(&fs, &catalog_keys, &offers)?;
         let catalog = Self {
             templates: RwLock::new(HashMap::new()),
@@ -295,6 +298,7 @@ impl GarageCatalog {
             prices,
             cosmetics,
             shell_prices,
+            shell_effects,
             equipment,
             equipment_grants,
             store_offers,
@@ -338,6 +342,7 @@ impl GarageCatalog {
             &def,
             &self.prices,
             &self.shell_prices,
+            &self.shell_effects,
         )
         .with_context(|| format!("Load modules for {key}"))?;
         let equipment = def.equipment.clone();

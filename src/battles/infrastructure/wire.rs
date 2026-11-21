@@ -12,7 +12,7 @@ use crate::platform::mercury::{
     script::{PythonValue, StringValue, Ty, TyKind, Value as WireValue},
 };
 use glam::{Vec2, Vec3, Vec4};
-use std::{io, net::SocketAddr};
+use std::{io, io::BufReader, net::SocketAddr};
 
 mod controls;
 mod roster;
@@ -31,6 +31,7 @@ pub(super) struct ArenaWire {
     gun_marker_nrl_type: u16,
     gun_angles_element: u8,
     hull_aim_element: u8,
+    impact_materials: ImpactMaterials,
 }
 
 pub(super) struct ArenaEntry {
@@ -45,7 +46,7 @@ pub(super) struct ArenaEntry {
 }
 
 impl ArenaWire {
-    pub(super) fn bind(base: &mut base::App) -> Result<Self> {
+    pub(super) fn bind(base: &mut base::App, resources: &ResourceBundle) -> Result<Self> {
         base.register::<Avatar>().context("Bind Avatar methods")?;
         let dispatch = base.dispatch();
         let type_id = |name: &str| {
@@ -60,6 +61,7 @@ impl ArenaWire {
         let avatar_type = type_id("Avatar")?;
         let gun_marker_type = type_id("GunMarkerComponent")?;
         let schema = Self {
+            impact_materials: ImpactMaterials::load(resources)?,
             avatar_type,
             vehicle_type,
             info_type: type_id("AvatarInfo")?,
@@ -598,5 +600,60 @@ fn default_value(ty: &Ty) -> WireValue {
                 .collect(),
         ),
         TyKind::Alias(_) => unreachable!("alias resolved"),
+    }
+}
+
+#[derive(Default)]
+struct ImpactMaterials {
+    ground: u8,
+    by_kind: HashMap<u32, u8>,
+}
+
+impl ImpactMaterials {
+    fn load(resources: &ResourceBundle) -> Result<Self> {
+        const MATERIAL_KINDS: &str = "system/data/material_kinds.xml";
+        if !resources.has_file(MATERIAL_KINDS) {
+            return Ok(Self::default());
+        }
+        let materials = crate::platform::client_formats::pxml::from_reader(BufReader::new(
+            resources.read(MATERIAL_KINDS)?,
+        ))?;
+        let mut names = Vec::new();
+        let mut by_kind = HashMap::new();
+        for (_, value) in materials.iter_children_all() {
+            let Some(material) = value.as_element() else {
+                continue;
+            };
+            let Some(name) = material
+                .get_child_string("effect_material")
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+            else {
+                continue;
+            };
+            let index = if let Some(index) = names.iter().position(|&existing| existing == name) {
+                index
+            } else {
+                names.push(name);
+                names.len() - 1
+            };
+            let kind = material
+                .get_child_integer("id")
+                .context("Missing collision material ID")?;
+            by_kind.insert(u32::try_from(kind)?, u8::try_from(index)?);
+        }
+        let ground = names
+            .iter()
+            .position(|&name| name == "ground")
+            .context("Missing ground impact material")?;
+        Ok(Self {
+            ground: u8::try_from(ground)?,
+            by_kind,
+        })
+    }
+
+    fn effect_index(&self, kind: Option<u32>) -> u8 {
+        kind.and_then(|kind| self.by_kind.get(&kind).copied())
+            .unwrap_or(self.ground)
     }
 }

@@ -1,12 +1,13 @@
 use super::avatar::{BattleEvent, ShotResult};
 use super::*;
 use crate::{
-    battles::domain::vehicle::{Aim, AmmunitionCommand},
+    battles::domain::vehicle::{Aim, AmmunitionCommand, SHOT_RANGE},
     platform::mercury::script::Value as WireValue,
 };
 use glam::Vec3Swizzles;
 
 const ELIMINATION: u8 = 1;
+const HIGH_EXPLOSIVE_SHELL_KIND: u8 = 1;
 const GUN_INSTALLATION_INDEX: u8 = 0;
 const VEHICLE_KILLED: u32 = 1;
 const ARMOR_PIERCED_WITH_DAMAGE: u32 = 1 << 4;
@@ -274,6 +275,9 @@ impl Battle {
         ddd.bounded_context.name = "battles", input.battle.id = battle_id,
         input.client.address = %client, input.entity_id = tracing::field::Empty,
         input.ammunition.shell = tracing::field::Empty, input.shell.damage = tracing::field::Empty,
+        input.shell.kind = tracing::field::Empty, input.shell.caliber_mm = tracing::field::Empty,
+        output.scene_impact.distance_metres = tracing::field::Empty,
+        output.obstacle.material_kind = tracing::field::Empty,
         output.shot.id = tracing::field::Empty,
         output.target.entity_id = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.hit_direction.radians = tracing::field::Empty,
@@ -308,6 +312,8 @@ impl Battle {
             }
         };
         span.record("input.shell.damage", shot.damage);
+        span.record("input.shell.kind", shot.effects.kind);
+        span.record("input.shell.caliber_mm", shot.effects.caliber_mm);
         shooter.pending_reload = shooter
             .tank
             .reload_timers()
@@ -328,6 +334,23 @@ impl Battle {
                     .map(|dist| (client, p.vehicle.entity_id, dist))
             })
             .min_by(|(_, left, a), (_, right, b)| a.total_cmp(b).then(left.cmp(right)));
+        let range = target.map_or(SHOT_RANGE, |(_, _, distance)| distance);
+        let ground = self
+            .ground
+            .shot_intersection(shot.origin, shot.direction, range);
+        let obstacle =
+            self.obstacles
+                .intersect(shot.origin, shot.direction, ground.unwrap_or(range));
+        let scene = obstacle
+            .map(|hit| (hit.distance, Some(hit.material)))
+            .or_else(|| ground.map(|distance| (distance, None)));
+        let target = target.filter(|_| scene.is_none());
+        if let Some((distance, material)) = scene {
+            span.record("output.scene_impact.distance_metres", distance);
+            if let Some(material) = material {
+                span.record("output.obstacle.material_kind", material);
+            }
+        }
         let hit_direction = (-shot.direction.x).atan2(-shot.direction.z);
         let impact = target.and_then(|(target, id, distance)| {
             self.players.get_mut(&target).map(|victim| {
@@ -335,8 +358,13 @@ impl Battle {
                 let damage = prev - health;
                 let local_direction =
                     glam::Quat::from_rotation_y(-victim.tank.yaw) * shot.direction;
-                let effect =
-                    ShotImpact::new(entity_id, damage, victim.tank.max_health, local_direction);
+                let effect = ShotImpact::new(
+                    entity_id,
+                    damage,
+                    victim.tank.max_health,
+                    local_direction,
+                    shot.effects,
+                );
                 span.record("output.target.entity_id", id);
                 span.record("output.damage", damage);
                 span.record("output.hit_direction.radians", hit_direction);
@@ -352,7 +380,15 @@ impl Battle {
             self.result = Some((team as i8, ELIMINATION));
             self.round.finish(now);
         }
-        let outcome = if impact.is_some() { "hit" } else { "miss" };
+        let outcome = if impact.is_some() {
+            "hit"
+        } else if obstacle.is_some() {
+            "obstacle_impact"
+        } else if ground.is_some() {
+            "ground_impact"
+        } else {
+            "miss"
+        };
         span.record("output.outcome", outcome);
         for (&peer, participant) in &self.players {
             let Some(avatar) = participant.avatar else {
@@ -371,8 +407,15 @@ impl Battle {
                     peer,
                     entity_id,
                     "showShooting",
-                    vec![WireValue::UInt8(1), WireValue::Int8(0), WireValue::UInt8(0)],
+                    vec![
+                        WireValue::UInt8(1),
+                        WireValue::Int8(0),
+                        WireValue::UInt8(shot.effects.kind),
+                    ],
                 )?;
+                if let Some((distance, material)) = scene {
+                    wire.show_scene_impact(base, avatar, shot_id, &shot, distance, material)?;
+                }
                 if let Some((victim, id, distance, previous, health, effect)) = impact {
                     let damage = previous - health;
                     let endpoint = shot.origin + shot.direction * distance;
@@ -399,7 +442,7 @@ impl Battle {
                             damage as u16,
                             0,
                             false,
-                            false,
+                            shot.effects.kind == HIGH_EXPLOSIVE_SHELL_KIND,
                             EntityId(id),
                             0,
                         )?;
@@ -431,6 +474,7 @@ impl Battle {
                                 other_vehicle,
                                 damage as u16,
                                 received,
+                                shot.effects.kind,
                             )])?;
                     }
                 }

@@ -3,7 +3,7 @@ mod selection;
 use anyhow::{Context, Result, ensure};
 use std::{collections::BTreeSet, fs, path::Path};
 
-use crate::infrastructure::ClientResources;
+use crate::infrastructure::{ClientResources, obstacles};
 use wot_resources::{ResourceBundle, validate_resource_path};
 
 pub struct Summary {
@@ -22,7 +22,13 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
     let mut files = Vec::new();
     let mut classes = BTreeSet::new();
     let mut terrain = Vec::new();
+    let mut placements = Vec::new();
     for path in client.paths() {
+        if obstacles::is_placement(path) {
+            validate_resource_path(path)?;
+            placements.push(path.to_owned());
+            continue;
+        }
         if crate::infrastructure::is_terrain(path) {
             validate_resource_path(path)?;
             terrain.push(path.to_owned());
@@ -68,6 +74,10 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
                 bytes += size;
             }
         }
+        let (collision_files, collision_bytes) =
+            obstacles::extract(&mut client, &placements, &root)?;
+        count += collision_files;
+        bytes += collision_bytes;
         ResourceBundle::write_manifest_with_version(output, classes, game_version)
             .context("Write bundle manifest")?;
         Ok(Summary {

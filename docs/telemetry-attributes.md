@@ -111,7 +111,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.method_id`](../src/platform/mercury/app/base/mod.rs) | Numeric exposed Mercury method ID after wire decoding. |
 | [`input.entity_id`](../src/platform/mercury/app/base/mod.rs) | Protocol entity ID of the player's target entity. |
 | [`input.string.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Byte length of the `doCmdStr` argument, Training Room creation description, or Training Room invitation message. The text stays out of telemetry. |
-| [`input.arena_type_id`](../src/player_sessions/infrastructure/gateway/training.rs) | Client-supplied arena type ID on Training Room creation, or the server-selected arena on battle preparation and entry. |
+| [`input.arena_type_id`](../src/player_sessions/infrastructure/gateway/training.rs) | Client-supplied arena type ID on Training Room creation, or the server-selected arena on battle preparation, obstacle loading and entry. |
 | [`input.round_length.seconds`](../src/player_sessions/infrastructure/gateway/training.rs) | Requested duration in seconds on Training Room creation and battle preparation. |
 | [`input.room.open_flag`](../src/player_sessions/infrastructure/gateway/training.rs) | Wire privacy flag on Training Room creation. `0` denotes invite-only and `1` denotes open. |
 | [`input.room.id`](../src/player_sessions/infrastructure/gateway/training.rs) | Training Room ID supplied by the client on join or decline, or set by the server for invitation delivery, channel membership and Training launch preparation. |
@@ -132,12 +132,14 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.drive.flags`](../src/battles/infrastructure/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. |
 | [`input.ammunition.setting`](../src/battles/infrastructure/controls.rs) | Native ammunition setting code `0`, `1`, `17` or `18` on a decoded shell selection or reload command. |
 | [`input.ammunition.shell`](../src/battles/infrastructure/controls.rs) | Requested signed shell compact descriptor on shell selection, or current shell compact descriptor on a shot attempt. |
+| [`input.shell.kind`](../src/battles/infrastructure/controls.rs) | Client shell kind index of a fired shell. |
+| [`input.shell.caliber_mm`](../src/battles/infrastructure/controls.rs) | Effect caliber in millimetres for a fired shell. |
 | [`input.shell.damage`](../src/battles/infrastructure/controls.rs) | Nominal hit points for the fired shell before capping by the target's remaining health. Omitted on rejected shots. |
 | [`input.aim.kind`](../src/battles/infrastructure/controls.rs) | Aim representation on an aim command, `world_point` or `hull_angles`. |
 | [`input.aim.server_marker`](../src/battles/infrastructure/controls.rs) | Boolean supplied by the Avatar's server reticle setting command. |
 | [`input.replication.kind`](../src/battles/infrastructure/controls.rs) | `position`, `hull_aim`, `gun_angles`, `gun_marker` or `ammunition` on a delivered arena pose, owner hull orientation, turret angle, owner reticle or reload state update. |
 | [`input.arena.tick`](../src/battles/infrastructure/mod.rs) | Full arena tick count for the first position snapshot carrying a drive command's change. One unit is 100 ms. |
-| [`input.geometry`](../src/battles/infrastructure/terrain.rs) | Bundle geometry path when loading terrain for the selected arena. |
+| [`input.geometry`](../src/battles/infrastructure/terrain.rs) | Bundle geometry path when loading terrain or obstacles for the selected arena. |
 | [`input.roster.row`](../src/battles/infrastructure/mod.rs) | Zero-based row index when updating a player's ready state in the arena roster. |
 | [`input.players.count`](../src/battles/infrastructure/mod.rs) | Requested roster size during preparation and current participant count on a period transition. |
 | [`input.cache.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Cached shop length in bytes reported by the client. |
@@ -259,9 +261,12 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.arena_type_id`](../src/player_sessions/infrastructure/gateway/training/start.rs) | Arena type selected in the room when the host confirms or unlocks a team. |
 | [`output.shot.id`](../src/battles/infrastructure/controls.rs) | Arena-local sequence number assigned after firing, omitted on rejection. |
 | [`output.hit_direction.radians`](../src/battles/infrastructure/controls.rs) | World bearing in radians from the victim toward the shot source, omitted on miss. |
-| [`output.target.entity_id`](../src/battles/infrastructure/controls.rs) | Vehicle entity struck by a shot, omitted on miss. |
+| [`output.scene_impact.distance_metres`](../src/battles/infrastructure/controls.rs) | Distance in metres from the muzzle to a ground or obstacle impact. |
+| [`output.obstacle.material_kind`](../src/battles/infrastructure/controls.rs) | Raw client material kind of the hit obstacle collision triangle, including 0 when the triangle carries no material. |
+| [`output.target.entity_id`](../src/battles/infrastructure/controls.rs) | Vehicle entity struck by a shot, recorded for vehicle hits. |
 | [`output.damage`](../src/battles/infrastructure/controls.rs) | Hit points actually removed by a shot, omitted on miss. |
-| [`output.outcome`](../src/battles/infrastructure/controls.rs) | Cell controls record `accepted`, `shell_selected`, `shell_queued`, `shell_change_started`, `reload_started`, `magazine_full`, `manual_reload_unavailable`, `hit`, `miss`, `reloading`, `empty`, `invalid_flags`, `invalid_aim`, `shell_unavailable`, `shell_damage_unavailable`, `round_inactive`, `vehicle_unavailable`, `unimplemented` or `delivery_failed`. Missing or invalid loaded-shell damage sets error status. Mercury records `entity_unavailable` for a target outside the session's control and `wire_decode_failed` for invalid framing or argument data. |
+| [`output.outcome`](../src/battles/infrastructure/controls.rs) | Cell controls record `accepted`, `shell_selected`, `shell_queued`, `shell_change_started`, `reload_started`, `magazine_full`, `manual_reload_unavailable`, `hit`, `ground_impact`, `obstacle_impact`, `miss`, `reloading`, `empty`, `invalid_flags`, `invalid_aim`, `shell_unavailable`, `shell_damage_unavailable`, `round_inactive`, `vehicle_unavailable`, `unimplemented` or `delivery_failed`. Missing or invalid loaded-shell damage sets error status. Mercury records `entity_unavailable` for a target outside the session's control and `wire_decode_failed` for invalid framing or argument data. |
+| [`output.obstacles.instances`](../src/battles/infrastructure/obstacles.rs) | Number of collision mesh placements loaded for the selected gameplay mode. Zero when the bundle has no obstacle collision for the map. |
 | [`output.terrain.tiles`](../src/battles/infrastructure/terrain.rs) | Number of decoded outdoor height tiles for the selected arena. |
 | [`output.phase`](../src/battles/infrastructure/mod.rs) | New round phase when publishing a transition. Values are `countdown`, `battle` and `finished`. |
 | [`output.crew.count`](../src/accounts/infrastructure/client/mod.rs) | Number of crew seats in the catalog vehicle prepared for the arena. |

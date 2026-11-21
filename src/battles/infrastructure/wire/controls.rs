@@ -7,15 +7,12 @@ use crate::platform::mercury::{
     },
     net::element::ElementLength,
 };
+use crate::shared_kernel::ShellEffects;
 use std::time::Instant;
 
 const OWN_ENTITY_NODE: u16 = 1024;
 const GUN_MARKER_COMPONENT_NODE: u16 = 2048;
 const SHELL_SPEED: f32 = 450.0;
-const DEFAULT_SHELL_KIND: u8 = 2;
-const DEFAULT_EFFECTS_INDEX: u8 = 0;
-const DEFAULT_PREFAB_EFFECTS_INDEX: u8 = 0;
-const SHELL_CALIBER_MM: u16 = 45;
 const HULL_PART_INDEX: u8 = 1;
 const ARMOR_PIERCED_NO_DAMAGE: u8 = 0;
 const ARMOR_PIERCED: u8 = 4;
@@ -28,6 +25,7 @@ pub(in super::super) struct ShotImpact {
     damage_factor: u8,
     segment: u64,
     params: u32,
+    effects: ShellEffects,
 }
 
 impl ShotImpact {
@@ -36,6 +34,7 @@ impl ShotImpact {
         damage: i16,
         max_health: i16,
         local_direction: Vec3,
+        effects: ShellEffects,
     ) -> Self {
         let effect = if damage > 0 {
             ARMOR_PIERCED
@@ -65,9 +64,10 @@ impl ShotImpact {
             damage_factor: (i32::from(damage) * 255 / i32::from(max_health.max(1))).clamp(0, 255)
                 as u8,
             segment,
-            params: ((u32::from(SHELL_CALIBER_MM) * 10) << 8)
-                | (u32::from(DEFAULT_SHELL_KIND) << 4)
+            params: (u32::from((effects.caliber_mm * 10.0) as u16) << 8)
+                | (u32::from(effects.kind) << 4)
                 | u32::from(effect),
+            effects,
         }
     }
 
@@ -80,8 +80,8 @@ impl ShotImpact {
         vec![
             WireValue::Int32(self.attacker as i32),
             WireValue::Seq(vec![hit_point]),
-            WireValue::UInt8(DEFAULT_EFFECTS_INDEX),
-            WireValue::UInt8(DEFAULT_PREFAB_EFFECTS_INDEX),
+            WireValue::UInt8(self.effects.legacy_index),
+            WireValue::UInt8(self.effects.prefab_index),
             WireValue::Int32(i32::from(self.damage)),
             WireValue::UInt8(self.damage_factor),
             WireValue::UInt8(0),
@@ -239,7 +239,7 @@ impl ArenaWire {
             ),
             (
                 "showDamageFromShot",
-                ShotImpact::new(1, 1, 1, Vec3::Z).args(),
+                ShotImpact::new(1, 1, 1, Vec3::Z, ShellEffects::default()).args(),
             ),
             (
                 "onHealthChanged",
@@ -392,16 +392,40 @@ impl ArenaWire {
             EntityId(shooter),
             shot_id,
             0,
-            DEFAULT_EFFECTS_INDEX,
-            DEFAULT_PREFAB_EFFECTS_INDEX,
-            DEFAULT_SHELL_KIND,
-            f32::from(SHELL_CALIBER_MM),
+            shot.effects.legacy_index,
+            shot.effects.prefab_index,
+            shot.effects.kind,
+            shot.effects.caliber_mm,
             shot.origin,
             shot.direction * SHELL_SPEED,
             0.0,
             distance.unwrap_or(SHOT_RANGE).max(0.1),
             0,
             0,
+        )?;
+        Ok(())
+    }
+
+    pub(in super::super) fn show_scene_impact(
+        &self,
+        base: &mut base::App,
+        avatar: EntityKey<Avatar>,
+        shot_id: i32,
+        shot: &Shot,
+        distance: f32,
+        material: Option<u32>,
+    ) -> Result<()> {
+        base.entity(avatar)?.explodeProjectile(
+            shot_id,
+            shot.effects.legacy_index,
+            shot.effects.prefab_index,
+            self.impact_materials.effect_index(material),
+            shot.effects.kind,
+            shot.effects.caliber_mm,
+            shot.origin + shot.direction * distance,
+            shot.direction,
+            SHELL_SPEED,
+            Vec::new(),
         )?;
         Ok(())
     }

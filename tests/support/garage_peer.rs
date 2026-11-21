@@ -345,6 +345,7 @@ impl Peer {
             .unwrap();
         self.send(bundle);
     }
+    #[track_caller]
     pub fn until(&mut self, dispatch: &ScriptDispatch, condition: impl Fn(&Self) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(15);
         while !condition(self) {
@@ -757,11 +758,14 @@ impl Peer {
                     }
                 }
             }
-            let mut ack = Bundle::new();
-            self.protocol
-                .channel(self.base, None)
-                .prepare(&mut ack, false);
-            self.socket.send_bundle(&ack, self.base).unwrap();
+            if config.reliable() {
+                let mut ack = Bundle::new();
+                ack.push_empty();
+                self.protocol
+                    .channel(self.base, None)
+                    .prepare(&mut ack, false);
+                self.socket.send_bundle(&ack, self.base).unwrap();
+            }
         }
     }
     pub fn clear_resource(&mut self, id: u16) {

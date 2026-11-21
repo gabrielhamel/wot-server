@@ -203,6 +203,7 @@ game.command                                      [doCmdInt3, 411]
         accounts.battle_vehicle                   [for each combat vehicle]
         battles.prepare                           [allocates battle ID and prepares arena]
           battles.load_terrain                     [when terrain is loaded]
+          battles.load_obstacles                  [when obstacle collision is loaded]
           battles.enter                            [one per participant handoff]
             mercury.arena_delivery                 [arena elements and delivery]
 ```
@@ -218,8 +219,11 @@ replicates to the owner and the packed angle replicates to battle peers.
 Position replication records the tick and counts the recipients and successful
 socket writes of the shared timestamped snapshot. The driving command also
 parents the first related `hull_aim` update to the owning Avatar.
-Shots retain their parent through target selection, damage, and the muzzle,
-tracer start and stop, impact and health deliveries. The same shot parents
+Shots retain their parent through target selection, ground and obstacle
+intersection, damage, and the muzzle, tracer, impact and health deliveries.
+The shot span records the loaded shell kind and caliber. Scene impacts
+record distance along the ray and parent the `explodeProjectile`
+deliveries. Obstacle impacts include the raw collision material kind. The same shot parents
 the shooter-only result, the victim-only direction and the private damage
 feedback for each. The reload
 initiator parents the simulation tick deliveries as the gun cooldown and
@@ -228,7 +232,7 @@ Target ownership, invalid input, inactive rounds, and reloading are distinct
 outcomes.
 
 Battle preparation traces the map geometry and the number of height
-tiles loaded from the extracted resource bundle. A native `setClientReady`
+tiles and obstacle instances loaded from the extracted resource bundle. A native `setClientReady`
 command parents the nested roster update and generation commit for both
 peers. Departure sends the corresponding disconnected state. Arena transport
 acknowledgements record socket delivery and the transport sequence number,

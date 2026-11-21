@@ -22,6 +22,7 @@ pub struct GunPerformance {
     pub shot_position: Option<Vec3>,
     pub loading: GunLoading,
     pub shell_damage: BTreeMap<i32, u16>,
+    pub shell_effects: BTreeMap<i32, ShellEffects>,
 }
 
 #[derive(Clone, Debug)]
@@ -31,4 +32,23 @@ pub struct GunLoading {
     pub intra_clip_time: f32,
     pub forced_reload_time: f32,
     pub autoreload_times: Vec<f32>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ShellEffects {
+    pub kind: u8,
+    pub caliber_mm: f32,
+    pub legacy_index: u8,
+    pub prefab_index: u8,
+}
+
+impl Default for ShellEffects {
+    fn default() -> Self {
+        Self {
+            kind: 2,
+            caliber_mm: 45.0,
+            legacy_index: 0,
+            prefab_index: 0,
+        }
+    }
 }

@@ -39,6 +39,17 @@ server. Older manifests without the field remain supported.
   keeps `space.settings` and `terrain2/heights` under the bundled `spaces/`
   tree. Re-extract a bundle without terrain before launching training battles.
   Bundles without arena definitions still serve the garage.
+- **Battles** reads the generated `spaces/<map>/collision.bin` placement
+  files and shared `collision-models/*.mesh` triangle data for projectile
+  impacts. The extractor derives these from the compiled space and its
+  referenced Havok meshes. It omits the original assets and reports the
+  number of missing or unsupported collision models. Each placement stores
+  a mesh reference, visibility mask and affine transform. Each mesh stores
+  triangles and their material IDs. Battles uses
+  `system/data/material_kinds.xml` to resolve the client effect index.
+  **Accounts** reads the legacy and prefab shot effect tables and the common
+  vehicle defaults. Re-extract existing bundles to enable obstacle impacts
+  and select the loaded shell's effect definitions.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
   item definitions, customization price groups, style, camouflage, paint, decal, projected decal, effect, personal-number attachment and stat tracker definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle
