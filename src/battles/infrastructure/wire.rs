@@ -27,6 +27,10 @@ pub(super) struct ArenaWire {
     roster_nrl_type: u16,
     own_vehicle_type: u16,
     own_vehicle_nrl_type: u16,
+    gun_marker_type: u16,
+    gun_marker_nrl_type: u16,
+    gun_angles_element: u8,
+    hull_aim_element: u8,
 }
 
 pub(super) struct ArenaEntry {
@@ -35,6 +39,7 @@ pub(super) struct ArenaEntry {
     cell: CreateCellPlayer,
     own_vehicle: ArenaEntityProperties,
     own_component: NrlCreateNode,
+    gun_marker: NrlCreateNode,
     info: CreateArenaEntity,
     roster: NrlCreateNode,
 }
@@ -51,12 +56,33 @@ impl ArenaWire {
         };
         let roster_component = type_id("AvatarVehiclesInfo")?;
         let own_vehicle_type = type_id("OwnVehicle")?;
+        let vehicle_type = type_id("Vehicle")?;
+        let avatar_type = type_id("Avatar")?;
+        let gun_marker_type = type_id("GunMarkerComponent")?;
         let schema = Self {
-            avatar_type: type_id("Avatar")?,
-            vehicle_type: type_id("Vehicle")?,
+            avatar_type,
+            vehicle_type,
             info_type: type_id("AvatarInfo")?,
             roster_component,
             own_vehicle_type,
+            gun_marker_type,
+            gun_marker_nrl_type: dispatch
+                .component_nrl_id(gun_marker_type)
+                .context("GunMarkerComponent has no client replication type")?,
+            gun_angles_element: Self::bind_fixed_property(
+                dispatch,
+                vehicle_type,
+                "gunAnglesPacked",
+                &WireValue::UInt16(0),
+                2,
+            )?,
+            hull_aim_element: Self::bind_fixed_property(
+                dispatch,
+                avatar_type,
+                "ownVehicleAuxPhysicsData",
+                &WireValue::UInt64(0),
+                8,
+            )?,
             own_vehicle_nrl_type: dispatch
                 .component_nrl_id(own_vehicle_type)
                 .context("OwnVehicle has no client replication type")?,
@@ -118,6 +144,10 @@ impl ArenaWire {
             [
                 ("team", WireValue::UInt8(player.team)),
                 (
+                    "ownVehicleAuxPhysicsData",
+                    WireValue::UInt64(controls::pack_hull_aim(player.direction, 0.0)),
+                ),
+                (
                     "playerVehicleID",
                     id(&avatar.cell_data_ty, "playerVehicleID", player.vehicle_id)?,
                 ),
@@ -160,6 +190,7 @@ impl ArenaWire {
             cell,
             own_vehicle: ArenaEntityProperties(own),
             own_component: self.own_component(dispatch, player)?,
+            gun_marker: self.gun_marker_component(dispatch)?,
             info,
             roster: self.roster(dispatch, player.info_id, players)?,
         })
@@ -299,17 +330,36 @@ fn component_tree(
     let component_node = entity_node
         .checked_add(1)
         .context("Invalid component node")?;
-    let child_count = component.properties.len() + component.client_methods.len() + 1;
-    anyhow::ensure!(
-        child_count < usize::from(u16::MAX - component_node),
-        "Too many component nodes"
-    );
     let mut data = Vec::new();
     data.extend(entity_node.to_be_bytes());
     data.extend(1u16.to_be_bytes());
     data.push(1); // entity node
     data.write_u32(entity_id)?;
     data.push(0); // another create-node instruction
+    write_component_node(
+        &mut data,
+        component,
+        nrl_type,
+        entity_node,
+        component_node,
+        values,
+    )?;
+    Ok(NrlCreateNode(data))
+}
+
+fn write_component_node(
+    data: &mut Vec<u8>,
+    component: &EntityDispatch,
+    nrl_type: u16,
+    entity_node: u16,
+    component_node: u16,
+    values: BTreeMap<&str, WireValue>,
+) -> Result<()> {
+    let child_count = component.properties.len() + component.client_methods.len() + 1;
+    anyhow::ensure!(
+        child_count < usize::from(u16::MAX - component_node),
+        "Too many component nodes"
+    );
     data.extend(component_node.to_be_bytes());
     data.extend(entity_node.to_be_bytes());
     data.push(2); // dynamic component node
@@ -336,13 +386,13 @@ fn component_tree(
                 "Invalid component property {}",
                 property.name
             );
-            value.write(&mut data, &property.ty)?;
+            value.write(data, &property.ty)?;
         }
     }
     for index in 0..component.client_methods.len() {
         data.write_packed_u24(u32::try_from(index)?)?;
     }
-    Ok(NrlCreateNode(data))
+    Ok(())
 }
 
 impl ArenaEntry {
@@ -388,6 +438,7 @@ impl ArenaEntry {
         publish_entity(base, client, self.info.clone())?;
         base.send_arena_element(client, self.roster.clone())?;
         base.send_arena_element(client, self.own_component.clone())?;
+        base.send_arena_element(client, self.gun_marker.clone())?;
         // CreateCellPlayer assumes local Avatar control and filters out server poses.
         base.send_arena_element(
             client,

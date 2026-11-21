@@ -1450,6 +1450,10 @@ pub fn exercise_battle(
             panic!("avatar cell properties");
         };
         assert_eq!(properties["team"].as_i64(), Some(team));
+        let Value::UInt64(aux) = properties["ownVehicleAuxPhysicsData"] else {
+            panic!("expected packed hull orientation");
+        };
+        assert_aux_orientation(aux, cell.direction);
         assert_eq!(
             properties["playerVehicleID"].as_i64(),
             Some(i64::from(cell.vehicle_id))
@@ -1754,12 +1758,14 @@ pub fn exercise_battle(
             .any(|(target, name, _)| *target == first && name == "showShooting")
     );
     let facing = host.cell.as_ref().unwrap().direction.z;
+    assert_gun_marker(host, guest, script, first, facing);
     let forward = glam::Vec3::new(facing.sin(), 0.0, facing.cos());
     let stopped = host.positions[&first];
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(2)]);
     host.until(script, |p| {
-        (p.positions[&first] - stopped).dot(forward) < -0.1
+        (p.positions[&first] - stopped).dot(forward) < -0.1 && p.hull_aim.is_some()
     });
+    assert_aux_orientation(host.hull_aim.unwrap(), host.vehicle_directions[&first]);
     guest.command(script, "leaveArena", vec![]);
     guest.until(script, |p| p.resets == 2);
     host.until(script, |p| p.resets == 2);
@@ -1768,6 +1774,98 @@ pub fn exercise_battle(
     host.until(script, |p| p.created && p.shown);
     guest.until(script, |p| p.created && p.shown);
     assert_empty_list(host, script);
+}
+
+fn assert_aux_orientation(aux: u64, direction: glam::Vec3) {
+    use std::f32::consts::{PI, TAU};
+    let yaw = ((aux & 32767) as f32 / 32768.0) * TAU - PI;
+    let pitch = (((aux >> 15) & 4095) as f32 / 4095.0) * PI - PI * 0.5;
+    let roll = (((aux >> 27) & 8191) as f32 / 8192.0) * TAU - PI;
+    assert!((yaw - direction.z).cos() > 0.999_999);
+    assert!((pitch - direction.y).abs() < 0.002);
+    assert!((roll - direction.x).cos() > 0.999_999);
+}
+
+fn assert_gun_marker(
+    host: &mut Peer,
+    guest: &mut Peer,
+    script: &ScriptDispatch,
+    vehicle: u32,
+    facing: f32,
+) {
+    use std::f32::consts::{PI, TAU};
+    use wot_server::player_sessions::test_support::mercury::net::codec::Codec;
+
+    let (marker_type, schema) = script.entity_from_name("GunMarkerComponent").unwrap();
+    let (index, property) = schema
+        .properties
+        .iter()
+        .enumerate()
+        .find(|(_, property)| &*property.name == "gunMarker")
+        .unwrap();
+    let marker_type = script.component_nrl_id(marker_type).unwrap();
+    let component = host.arena_roster.as_ref().unwrap();
+    assert_eq!(
+        &component[..7],
+        &[8, 0, 4, 0, 2, marker_type as u8, (marker_type >> 8) as u8]
+    );
+    let node = (2049 + index as u16).to_be_bytes();
+    let markers = |peer: &Peer| {
+        peer.nrl_updates.iter().filter_map(|record| {
+            let mut body = record.strip_prefix(&node)?;
+            let Value::Dict(marker) = Value::read(&mut body, &property.ty).unwrap() else {
+                panic!("expected a gun marker dictionary");
+            };
+            assert!(body.is_empty());
+            let (Value::Vector3(origin), Value::Vector3(velocity), Value::Float32(dispersion)) =
+                (&marker["gunPosition"], &marker["shotVector"], &marker["dispersion"]) else {
+                    panic!("expected launch position, velocity and dispersion");
+                };
+            Some((*origin, *velocity, *dispersion))
+        }).collect::<Vec<_>>()
+    };
+    let aim = |peer: &mut Peer, yaw| {
+        peer.cell_command(
+            script,
+            "vehicle_stopTrackingWithGun",
+            vec![Value::Float32(yaw), Value::Float32(0.0)],
+        );
+        let yaw_bits = (((yaw + PI) / TAU * 1024.0).round() as u16) & 1023;
+        move |p: &Peer| {
+            p.gun_angles
+                .get(&vehicle)
+                .is_some_and(|value| value >> 6 == yaw_bits)
+        }
+    };
+
+    host.cell_command(script, "setServerMarker", vec![Value::UInt8(1)]);
+    host.until(script, |p| !markers(p).is_empty());
+    let yaw = 0.25;
+    let reached = aim(host, yaw);
+    host.until(script, |p| {
+        reached(p)
+            && markers(p).last().is_some_and(|(_, velocity, _)| {
+                let direction = p.vehicle_directions[&vehicle];
+                let expected =
+                    glam::Quat::from_euler(glam::EulerRot::YXZ, facing, direction.y, direction.x)
+                        * glam::Quat::from_rotation_y(yaw)
+                        * glam::Vec3::Z;
+                velocity.normalize().dot(expected) > 0.999_999
+            })
+    });
+    guest.until(script, reached);
+    assert_eq!(host.gun_angles[&vehicle], guest.gun_angles[&vehicle]);
+    let (origin, velocity, dispersion) = *markers(host).last().unwrap();
+    assert!(origin.distance(host.positions[&vehicle]) < 5.0);
+    assert!((velocity.length() - 450.0).abs() < 0.01 && dispersion > 0.0);
+    assert!(markers(guest).is_empty());
+
+    let marker_count = markers(host).len();
+    host.cell_command(script, "setServerMarker", vec![Value::UInt8(0)]);
+    let reached = aim(host, -yaw);
+    host.until(script, reached);
+    guest.until(script, reached);
+    assert_eq!(markers(host).len(), marker_count);
 }
 
 fn assert_roster_ready(script: &ScriptDispatch, updates: &[Vec<u8>]) {
@@ -1840,6 +1938,18 @@ pub fn assert_battle_traces(host: i64, guest: i64, shell_damage: u16) {
         child.parent_span_id == parent.span_context.span_id()
             && child.span_context.trace_id() == parent.span_context.trace_id()
     };
+    assert!(traces.iter().any(|update| {
+        has(update, "input.replication.kind", "hull_aim")
+            && has(update, "output.delivered.count", "1")
+            && traces.iter().any(|drive| {
+                has(drive, "rpc.method", "vehicle_moveWith") && child_of(update, drive)
+            })
+            && traces.iter().any(|delivery| {
+                delivery.name == "mercury.arena_delivery"
+                    && child_of(delivery, update)
+                    && has(delivery, "output.delivery", "sent")
+            })
+    }));
     let unimplemented = traces
         .iter()
         .find(|s| s.name == "game.cell_command" && has(s, "output.outcome", "unimplemented"))
@@ -1854,6 +1964,53 @@ pub fn assert_battle_traces(host: i64, guest: i64, shell_damage: u16) {
             .iter()
             .any(|event| event.name == "Arena cell method is not implemented")
     );
+
+    let marker_request = traces
+        .iter()
+        .find(|span| {
+            span.name == "game.cell_command"
+                && has(span, "rpc.method", "setServerMarker")
+                && traces.iter().any(|control| {
+                    child_of(control, span) && has(control, "input.aim.server_marker", "true")
+                })
+        })
+        .expect("server marker request");
+    let marker_control = traces
+        .iter()
+        .find(|span| child_of(span, marker_request) && has(span, "input.aim.server_marker", "true"))
+        .unwrap();
+    let marker = traces
+        .iter()
+        .find(|span| {
+            child_of(span, marker_control) && has(span, "input.replication.kind", "gun_marker")
+        })
+        .unwrap();
+    assert!(has(marker, "output.delivered.count", "1"));
+    assert!(
+        traces
+            .iter()
+            .any(|span| span.name == "mercury.arena_delivery"
+                && child_of(span, marker)
+                && has(span, "output.delivery", "sent"))
+    );
+    assert!(traces.iter().any(|control| {
+        control.name == "battles.control"
+            && has(control, "input.aim.kind", "hull_angles")
+            && traces
+                .iter()
+                .any(|request| request.name == "game.cell_command" && child_of(control, request))
+            && ["gun_angles", "gun_marker"].into_iter().all(|kind| {
+                traces.iter().any(|replication| {
+                    child_of(replication, control)
+                        && has(replication, "input.replication.kind", kind)
+                        && traces.iter().any(|delivery| {
+                            delivery.name == "mercury.arena_delivery"
+                                && child_of(delivery, replication)
+                                && has(delivery, "output.delivery", "sent")
+                        })
+                })
+            })
+    }));
 
     let hit = traces
         .iter()

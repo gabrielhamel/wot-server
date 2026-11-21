@@ -14,6 +14,7 @@ use crate::{
     shared_kernel::{GunPerformance, VehiclePerformance},
 };
 use anyhow::{Context, Result};
+use glam::Vec3;
 use std::collections::{BTreeMap, BTreeSet};
 use wot_resources::ResourceBundle;
 
@@ -24,6 +25,8 @@ pub(super) struct VehicleModules {
     chassis_exteriors: BTreeMap<i32, ChassisExterior>,
     speed_limits: Option<[f32; 2]>,
     hull_traverse: BTreeMap<i32, f32>,
+    hull_positions: BTreeMap<i32, Vec3>,
+    turret_position: Option<Vec3>,
     gun_performance: BTreeMap<(i32, i32), GunPerformance>,
     pub(super) training_health: BTreeMap<i32, i16>,
 }
@@ -39,7 +42,8 @@ struct ChassisExterior {
 impl VehicleModules {
     pub(super) fn battle_performance(&self, modules: &ModuleLoadout) -> Option<VehiclePerformance> {
         let [forward_speed, reverse_speed] = self.speed_limits?;
-        let hull_traverse = *self.hull_traverse.get(modules.get(&ModuleKind::Chassis)?)?;
+        let chassis = modules.get(&ModuleKind::Chassis)?;
+        let hull_traverse = *self.hull_traverse.get(chassis)?;
         let gun = self
             .gun_performance
             .get(&(
@@ -51,6 +55,12 @@ impl VehicleModules {
             forward_speed,
             reverse_speed,
             hull_traverse,
+            turret_pivot: self
+                .hull_positions
+                .get(chassis)
+                .copied()
+                .zip(self.turret_position)
+                .map(|(hull, turret)| hull + turret),
             gun,
         })
     }
@@ -182,6 +192,13 @@ impl VehicleModules {
             .and_then(|hull| hull.get_child_integer("maxHealth"));
         let speed_limits = battle_performance::speed_limits(&vehicle);
         let mut hull_traverse = BTreeMap::new();
+        let mut hull_positions = BTreeMap::new();
+        let turret_position = vehicle
+            .get_child_element("hull")
+            .and_then(|hull| hull.get_child_element("turretPositions"))
+            .and_then(|positions| positions.iter_children_all().next())
+            .and_then(|(_, value)| value.as_vec3())
+            .filter(|position| position.is_finite());
         let mut gun_performance = BTreeMap::new();
         let mut training_health = BTreeMap::new();
         let shells = item_defs::read_xml(fs, &format!("{dir}/components/shells.xml"))?;
@@ -227,6 +244,10 @@ impl VehicleModules {
                     },
                 );
                 if kind == 2 {
+                    if let Some(position) = battle_performance::vector(local, base, "hullPosition")
+                    {
+                        hull_positions.insert(id, position);
+                    }
                     if let Some(traverse) = battle_performance::hull_traverse(local, base) {
                         hull_traverse.insert(id, traverse);
                     }
@@ -243,6 +264,7 @@ impl VehicleModules {
                     );
                 }
                 if kind == 3 {
+                    let gun_position = battle_performance::vector(local, base, "gunPosition");
                     if let Some(health) = hull_health
                         .zip(number("maxHealth"))
                         .map(|(hull, turret)| hull as f32 + turret)
@@ -400,7 +422,13 @@ impl VehicleModules {
                         }
                         if let Some(performance) = battle_performance::traverse(local, base)
                             .and_then(|traverse| {
-                                battle_performance::gun(gun_local, gun_base, traverse, shell_damage)
+                                battle_performance::gun(
+                                    gun_local,
+                                    gun_base,
+                                    traverse,
+                                    gun_position,
+                                    shell_damage,
+                                )
                             })
                         {
                             gun_performance.insert((id, gun), performance);
@@ -471,6 +499,8 @@ impl VehicleModules {
             training_health,
             speed_limits,
             hull_traverse,
+            hull_positions,
+            turret_position,
             gun_performance,
         })
     }

@@ -212,9 +212,12 @@ command that starts the countdown also parents the period broadcast.
 Arena cell commands trace the wire element and target entity IDs, the method,
 and the argument byte count. A movement command parents the first changed
 position snapshot. Aim commands retain their spans through the turret traverse
-to the requested aim, with a child span for each resulting angle update.
+to the requested aim, with a child span for each resulting angle or server
+marker update. Enabling the marker parents its first delivery. The marker
+replicates to the owner and the packed angle replicates to battle peers.
 Position replication records the tick and counts the recipients and successful
-socket writes of the shared timestamped snapshot.
+socket writes of the shared timestamped snapshot. The driving command also
+parents the first related `hull_aim` update to the owning Avatar.
 Shots retain their parent through target selection, damage, and the muzzle,
 tracer start and stop, impact and health deliveries. The same shot parents
 the shooter-only result, the victim-only direction and the private damage

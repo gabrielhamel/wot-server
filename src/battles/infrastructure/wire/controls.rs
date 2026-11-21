@@ -1,8 +1,16 @@
 use super::*;
-use crate::battles::domain::vehicle::{SHOT_RANGE, Shot, Tank};
+use crate::battles::domain::vehicle::{GunRay, SHOT_RANGE, Shot, Tank};
+use crate::platform::mercury::{
+    app::{
+        client::element::{FixedEntityProperty, id::ENTITY_PROPERTY},
+        dispatch::PropertyDef,
+    },
+    net::element::ElementLength,
+};
 use std::time::Instant;
 
 const OWN_ENTITY_NODE: u16 = 1024;
+const GUN_MARKER_COMPONENT_NODE: u16 = 2048;
 const SHELL_SPEED: f32 = 450.0;
 const DEFAULT_SHELL_KIND: u8 = 2;
 const DEFAULT_EFFECTS_INDEX: u8 = 0;
@@ -84,7 +92,142 @@ impl ShotImpact {
 }
 
 impl ArenaWire {
+    pub(super) fn bind_fixed_property(
+        dispatch: &ScriptDispatch,
+        entity_type: u16,
+        name: &str,
+        value: &WireValue,
+        bytes: u32,
+    ) -> Result<u8> {
+        let properties = &dispatch
+            .entity_from_id(entity_type)
+            .context("Missing arena entity")?
+            .properties;
+        let (index, property) = properties
+            .iter()
+            .enumerate()
+            .find(|(_, property)| &*property.name == name)
+            .with_context(|| format!("Missing arena property {name}"))?;
+        let (element, sub_id) = ENTITY_PROPERTY
+            .from_exposed_id(u16::try_from(properties.len())?, u16::try_from(index)?);
+        anyhow::ensure!(
+            sub_id.is_none()
+                && property.length == ElementLength::Fixed(bytes)
+                && property.ty.is_instance(value),
+            "Invalid arena property {name} framing"
+        );
+        Ok(element)
+    }
+
+    pub(in super::super) fn publish_gun_angles(
+        &self,
+        base: &mut base::App,
+        client: ClientKey,
+        entity_id: u32,
+        value: u16,
+    ) -> Result<()> {
+        base.send_arena_property(
+            client,
+            Some(entity_id),
+            FixedEntityProperty {
+                element_id: self.gun_angles_element,
+                bytes: value.to_le_bytes(),
+            },
+        )?;
+        Ok(())
+    }
+
+    pub(in super::super) fn publish_hull_aim(
+        &self,
+        base: &mut base::App,
+        client: ClientKey,
+        direction: Vec3,
+        speed: f32,
+    ) -> Result<()> {
+        base.send_arena_property(
+            client,
+            None,
+            FixedEntityProperty {
+                element_id: self.hull_aim_element,
+                bytes: pack_hull_aim(direction, speed).to_le_bytes(),
+            },
+        )?;
+        Ok(())
+    }
+
+    pub(super) fn gun_marker_component(&self, dispatch: &ScriptDispatch) -> Result<NrlCreateNode> {
+        let (component, _, property) = self.gun_marker_property(dispatch)?;
+        anyhow::ensure!(
+            property.volatile && property.ty.is_instance(&WireValue::None),
+            "Invalid GunMarkerComponent.gunMarker schema"
+        );
+        gun_marker_value(
+            &property.ty,
+            GunRay {
+                origin: Vec3::ZERO,
+                direction: Vec3::Z,
+            },
+            0.005,
+        )?;
+        let mut data = Vec::new();
+        write_component_node(
+            &mut data,
+            component,
+            self.gun_marker_nrl_type,
+            OWN_ENTITY_NODE,
+            GUN_MARKER_COMPONENT_NODE,
+            BTreeMap::from([("gunMarker", WireValue::None)]),
+        )?;
+        Ok(NrlCreateNode(data))
+    }
+
+    pub(in super::super) fn publish_gun_marker(
+        &self,
+        base: &mut base::App,
+        client: ClientKey,
+        ray: GunRay,
+        dispersion: f32,
+    ) -> Result<()> {
+        let (_, node, property) = self.gun_marker_property(base.dispatch())?;
+        let value = gun_marker_value(&property.ty, ray, dispersion)?;
+        let mut record = node.to_be_bytes().to_vec();
+        value.write(&mut record, &property.ty)?;
+        base.send_arena_element(client, NrlData(record))?;
+        base.send_arena_element(client, ApplyNrlUpdate {})?;
+        Ok(())
+    }
+
+    fn gun_marker_property<'a>(
+        &self,
+        dispatch: &'a ScriptDispatch,
+    ) -> Result<(&'a EntityDispatch, u16, &'a PropertyDef)> {
+        let component = dispatch
+            .entity_from_id(self.gun_marker_type)
+            .context("Missing GunMarkerComponent")?;
+        let (index, property) = component
+            .properties
+            .iter()
+            .enumerate()
+            .find(|(_, property)| &*property.name == "gunMarker")
+            .context("Missing GunMarkerComponent.gunMarker")?;
+        let node = (GUN_MARKER_COMPONENT_NODE + 1)
+            .checked_add(u16::try_from(index)?)
+            .context("GunMarkerComponent node overflow")?;
+        Ok((component, node, property))
+    }
+
     pub(super) fn validate_controls(&self, dispatch: &ScriptDispatch) -> Result<()> {
+        let marker_setting = dispatch
+            .entity_from_id(self.avatar_type)
+            .context("Missing Avatar")?
+            .cell_methods
+            .iter()
+            .find(|method| &*method.name == "setServerMarker")
+            .context("Missing Avatar.setServerMarker")?;
+        anyhow::ensure!(
+            matches!(marker_setting.args.as_slice(), [ty] if ty.is_instance(&WireValue::UInt8(1))),
+            "Invalid Avatar.setServerMarker arguments"
+        );
         let methods = &dispatch
             .entity_from_id(self.vehicle_type)
             .context("Missing Vehicle")?
@@ -273,6 +416,37 @@ impl ArenaWire {
         base.arena_vehicle_method(client, target, "showDamageFromShot", impact.args())?;
         Ok(())
     }
+}
+
+pub(super) fn pack_hull_aim(direction: Vec3, speed: f32) -> u64 {
+    use std::f32::consts::{FRAC_PI_2, TAU};
+    let pack_angle = |angle: f32, bits: u32| {
+        let slots = 1u64 << bits;
+        ((angle / TAU + 0.5) * slots as f32).round() as u64 & (slots - 1u64)
+    };
+    let pitch = ((direction.y / FRAC_PI_2 * 0.5 + 0.5).clamp(0.0, 1.0) * 4095.0).round() as u64;
+    let track = (((speed + 15.0) / 45.0).clamp(0.0, 1.0) * 255.0).round() as u64;
+    let idle_rpm = 43u64;
+    idle_rpm << 56
+        | track << 48
+        | track << 40
+        | pack_angle(direction.x, 13) << 27
+        | pitch << 15
+        | pack_angle(direction.z, 15)
+}
+
+fn gun_marker_value(ty: &Ty, ray: GunRay, dispersion: f32) -> Result<WireValue> {
+    dict(
+        ty,
+        [
+            ("gunPosition", WireValue::Vector3(ray.origin)),
+            (
+                "shotVector",
+                WireValue::Vector3(ray.direction * SHELL_SPEED),
+            ),
+            ("dispersion", WireValue::Float32(dispersion)),
+        ],
+    )
 }
 
 fn property_type<'a>(component: &'a EntityDispatch, name: &str) -> Result<&'a Ty> {

@@ -1,3 +1,4 @@
+use glam::Vec3;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
@@ -5,6 +6,7 @@ pub struct VehiclePerformance {
     pub forward_speed: f32,
     pub reverse_speed: f32,
     pub hull_traverse: f32,
+    pub turret_pivot: Option<Vec3>,
     pub gun: GunPerformance,
 }
 
@@ -16,6 +18,8 @@ pub struct GunPerformance {
     pub min_pitch: Vec<(f32, f32)>,
     pub max_pitch: Vec<(f32, f32)>,
     pub aiming_time: f32,
+    pub base_dispersion_angle: Option<f32>,
+    pub shot_position: Option<Vec3>,
     pub loading: GunLoading,
     pub shell_damage: BTreeMap<i32, u16>,
 }

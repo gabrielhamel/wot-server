@@ -180,3 +180,73 @@ delivery acknowledgments, and the remaining component updates require a
 controlled capture of both live connections. The approximately 400 ms
 between the launch and impact records measures this replay's shot. The
 sample does not establish a fixed delay or a collision algorithm.
+
+## Turret and reticle replication
+
+In the same EU sample corpus, replay record `0x07` carries an entity ID,
+exposed property index and value length as three little-endian `u32` fields,
+followed by the value. The current resource dispatch identifies Vehicle index
+13 as `gunAnglesPacked`, a two-byte value. The same property appears 5,604
+times for the LT-432 in replay 1344 and 2,514 times for the SFAC 105 in 1345.
+These offsets point to the start of each replay record.
+
+| Replay | Clock (s) | Stream offset | Recorder vehicle ID | Packed value |
+| --- | ---: | ---: | ---: | --- |
+| 1344 | 87.64 | 999394 | 553323838 | `0x3199` |
+| 1344 | 87.74 | 1000323 | 553323838 | `0x311c` |
+| 1345 | 32.42 | 425277 | 543436810 | `0x81ba` |
+
+A local Lost City training recording from 21:04 Paris time on 2026-11-21
+used the same XML client label. The running `win64/WorldOfTanks.exe`
+had SHA-256 `58325ded3e2db7134638971e33de1eab09737f8b66401554d9723a2bf246bb11`.
+The Lost City replay's SHA-256 was
+`e4272373a3afb3cd383b2660be5770211cfb3b75f7a814827f9c842960f02d74`.
+`cargo wot-replay summary` found 810 type-`0x26` 40-byte playback records
+and no type-`0x07` records. The Sand River recording from 22:02
+(SHA-256 `1f021e714e574a2fb71c522a9a754d3743b1cc29710fa4d610d6a91ada20c925`)
+also had no type-`0x07` records. The `0x26` counts describe playback
+records whose purpose is unconfirmed here.
+
+The [client gun rotator](references/wot-src/sources/res/scripts/client/VehicleGunRotator.py)
+compares its predicted turret yaw with the decoded server yaw and corrects it
+when the difference exceeds its latency-adjusted tolerance.
+The client calls `Avatar.setServerMarker` through its cell mailbox when the
+server aim setting changes. The [gun marker component](references/wot-src/sources/res/scripts/client/GunMarkerComponent.py)
+feeds the optional server marker using a launch position, initial velocity
+and angular dispersion. [Toolkit's vehicle replication](references/wg-toolkit-rs/wg-toolkit-wot/src/base/battle/vehicle.rs)
+confirms the selected Vehicle property and owner component routes.
+
+Training sends live packed angles as standalone Vehicle property updates
+and uses the current resource definitions for their index and size. It attaches
+the gun marker component to the owner's Vehicle node, then sends changed
+marker values to that owner when the setting is enabled. The marker uses the
+same launch origin and direction as the Training shot, the Training tracer
+speed, and the configured gun's base dispersion angle. Training resolves
+hits along a straight line. The client projects the server marker using its
+own collision and trajectory logic.
+
+The Ensk recording from 22:15 Paris time on 2026-11-21 (SHA-256
+`550f08b6bc8d074798108d109bdbbeaf2adee2d9a865c844dcd467373c590691`)
+contains 420 turret updates for the recording AMX 30, entity `1508983177`.
+It accompanies a screen recording of the turret snapping during a stationary
+crosshair sweep near a railcar. The hull stayed at approximately
+`(15.99, 0.63, −9.82)` during the following samples. The type-`0x1c`
+playback payload is a little-endian `f32` consistent with the recorded
+client turret yaw, including samples that snap to the decoded server yaw.
+
+| Replay clock (s) | Server record offset | Server yaw | Client yaw |
+| ---: | ---: | ---: | ---: |
+| 103.73 | 325426 | 21.80° | 37.77° |
+| 103.83 | 325779 | 18.63° | 41.93° |
+| 103.93 | 326132 | 18.63° | 18.63° |
+
+The angle updates establish that native aim reached the server. The
+[Avatar client script](references/wot-src/sources/res/scripts/client/Avatar.py)
+uses `ownVehicleAuxPhysicsData` for the stabilised rotation, and
+[the Toolkit capture](references/wg-toolkit-rs/wg-toolkit-wot/src/base/physics/client.rs)
+records its bit layout. Training now initializes that field with the spawn
+orientation and updates the owning Avatar as the hull changes. The server solves
+aim in hull coordinates using the equipped chassis, turret and gun offsets.
+Solving the lateral gun offset directly makes a stationary target independent
+of the current turret angle. The Training simulation uses a fallback gun mount
+when the equipped resource definitions have no usable geometry.

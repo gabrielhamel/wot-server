@@ -87,6 +87,9 @@ pub struct Peer {
     pub ack_only_through: Option<Seq>,
     last_unreliable_sequence: Option<Seq>,
     pub vehicle_methods: Vec<(u32, String, Vec<Value>)>,
+    pub gun_angles: BTreeMap<u32, u16>,
+    pub hull_aim: Option<u64>,
+    pub vehicle_directions: BTreeMap<u32, glam::Vec3>,
     selected_entity: Option<u32>,
     player_type: Option<u16>,
 }
@@ -135,6 +138,9 @@ impl Peer {
             ack_only_through: None,
             last_unreliable_sequence: None,
             vehicle_methods: Vec::new(),
+            gun_angles: BTreeMap::new(),
+            hull_aim: None,
+            vehicle_directions: BTreeMap::new(),
             selected_entity: None,
             player_type: None,
         }
@@ -614,6 +620,8 @@ impl Peer {
                                 .unwrap()
                                 .element;
                             self.positions.insert(update.entity_id, update.position);
+                            self.vehicle_directions
+                                .insert(update.entity_id, update.direction);
                         }
                         client::arena::NrlData::ID => {
                             self.nrl_updates.push(
@@ -676,6 +684,37 @@ impl Peer {
                                     fragment.id,
                                     pieces.values().flatten().copied().collect(),
                                 );
+                            }
+                        }
+                        id if client::id::ENTITY_PROPERTY.contains(id) => {
+                            let name = if self.selected_entity.is_some() {
+                                "Vehicle"
+                            } else {
+                                "Avatar"
+                            };
+                            let properties = &dispatch.entity_from_name(name).unwrap().1.properties;
+                            let index = client::id::ENTITY_PROPERTY
+                                .to_exposed_id_checked(properties.len() as u16, id)
+                                .unwrap();
+                            match &*properties[index as usize].name {
+                                "gunAnglesPacked" => {
+                                    let update = element
+                                        .read::<client::FixedEntityProperty<2>, _>(&())
+                                        .unwrap()
+                                        .element;
+                                    self.gun_angles.insert(
+                                        self.selected_entity.unwrap(),
+                                        u16::from_le_bytes(update.bytes),
+                                    );
+                                }
+                                "ownVehicleAuxPhysicsData" => {
+                                    let update = element
+                                        .read::<client::FixedEntityProperty<8>, _>(&())
+                                        .unwrap()
+                                        .element;
+                                    self.hull_aim = Some(u64::from_le_bytes(update.bytes));
+                                }
+                                name => panic!("unexpected arena property {name}"),
                             }
                         }
                         id if client::id::ENTITY_METHOD.contains(id) => {
