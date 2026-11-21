@@ -15,17 +15,18 @@ read the Toolkit's own proxy format.
 
 ## Inspect a capture
 
-Download an individual replay using its download link in the
-[Wotlytics replay archive](https://wotlytics.com/replays/), or copy a recording
-from the official client's `replays/` directory. Save third-party raw replays in
-the checkout's ignored `.local/replays/` directory. Track provenance, hashes
-and selected decoded observations in this guide. Raw files include player
-metadata and can include chat.
+The repository includes two raw Random Battle samples under
+`docs/replay-samples/`. For additional captures, download an individual replay
+from the [Wotlytics replay archive](https://wotlytics.com/replays/) or copy a
+recording from the official client's `replays/` directory. Save working
+downloads in the checkout's ignored `.local/replays/` directory. Track
+provenance, hashes and selected decoded observations in this guide. Raw files
+include player metadata and can include chat.
 
 ```sh
 mkdir -p .local/replays
-cargo wot-replay summary .local/replays/example.wotreplay
-cargo wot-replay positions .local/replays/example.wotreplay > .local/replays/example.positions.jsonl
+cargo wot-replay summary docs/replay-samples/wotlytics-1344.wotreplay
+cargo wot-replay positions docs/replay-samples/wotlytics-1344.wotreplay > .local/replays/wotlytics-1344.positions.jsonl
 ```
 
 Use `positions FILE --entity ENTITY_ID` to select a trajectory. The first JSON
@@ -80,8 +81,12 @@ The recordings contain version labels, so executable identity is available
 only for the local client. The launcher update check could not verify the
 installation because it is managed by Wargaming Game Center. [EU release history](https://worldoftanks.eu/en/content/docs/release_notes/)
 
-Save each linked file as `.local/replays/wotlytics-<id>.wotreplay`.
-All position records in these captures used the 45-byte layout.
+All four recordings report `battleType: 1` (Random Battle) and
+`gameplayID: "ctf"` (Standard). Replays 1344 and 1345 are tracked as
+[Prokhorovka](replay-samples/wotlytics-1344.wotreplay) and
+[Karelia](replay-samples/wotlytics-1345.wotreplay). Save the other linked files
+as `.local/replays/wotlytics-<id>.wotreplay`. All position records in these
+captures used the 45-byte layout.
 
 | Replay and download | Battle date | Map and recorder vehicle | Records / position records | Raw file SHA-256 |
 | --- | --- | --- | ---: | --- |
@@ -106,7 +111,7 @@ count and these three payloads.
 To reproduce this window:
 
 ```sh
-cargo wot-replay positions .local/replays/wotlytics-1344.wotreplay --entity 553323838 |
+cargo wot-replay positions docs/replay-samples/wotlytics-1344.wotreplay --entity 553323838 |
   jq -c 'select(.clock_seconds == 36.04 or .clock_seconds == 37.04 or .clock_seconds == 38.04)'
 ```
 

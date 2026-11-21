@@ -70,10 +70,11 @@ changes separate from server implementation changes; see
 [research references](docs/references/README.md) for setup and provenance.
 
 Use [battle replay research](docs/battle-replays.md) to ground battle mechanics
-in observed client behavior. Keep third-party recordings in `.local/replays/`
-and record the source, SHA-256, client label, record layout and decoded evidence
-in the guide. Use `cargo wot-replay` to inspect the playback records. Confirm
-client commands and wire formats with a matching bidirectional capture.
+in observed client behavior. Keep reference samples in `docs/replay-samples/`
+and working downloads in `.local/replays/`. Record the source, SHA-256, client
+label, record layout and decoded evidence in the guide. Use `cargo wot-replay`
+to inspect the playback records. Confirm client commands and wire formats with
+a matching bidirectional capture.
 
 ## Living technical documentation
 
