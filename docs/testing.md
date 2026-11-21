@@ -142,10 +142,12 @@ request trace. The same peers
 check that both initial Vehicle poses agree with their corresponding cell
 creation on both clients. They drive both vehicles and require their position
 messages to share a bundle with an advancing tick before and after combat starts.
-They exercise
-vehicle-targeted aiming, reject cross-player targeting, fire a shot, inspect
-tracer, muzzle and health updates on both connections, and check that an
-immediate second shot is rejected during reload.
+They exercise vehicle-targeted aiming, reject cross-player targeting, and
+fire a shot. Both connections receive a tracer with a matching endpoint,
+the impact and health updates, and the shooter and victim each receive their
+own feedback. The test checks the recipient count and exported parent span for
+these deliveries and verifies that an immediate second shot is rejected during
+reload.
 The same peers exercise [garage ammunition](ammunition.md): rejected requests
 followed by valid unload/reload/purchase, depot conservation/deletions, balances,
 receipts, idempotency and identical cache after reconnect. A fresh pool confirms

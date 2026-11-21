@@ -1,8 +1,12 @@
 use super::*;
-use crate::battles::domain::vehicle::Tank;
+use crate::battles::domain::vehicle::{SHOT_RANGE, Shot, Tank};
 use std::time::Instant;
 
 const OWN_ENTITY_NODE: u16 = 1024;
+const SHELL_SPEED: f32 = 450.0;
+const DEFAULT_SHELL_KIND: u8 = 2;
+const DEFAULT_EFFECTS_INDEX: u8 = 0;
+const DEFAULT_PREFAB_EFFECTS_INDEX: u8 = 0;
 type Fields = BTreeMap<&'static str, WireValue>;
 
 impl ArenaWire {
@@ -16,6 +20,7 @@ impl ArenaWire {
                 "showShooting",
                 vec![WireValue::UInt8(1), WireValue::Int8(0), WireValue::UInt8(0)],
             ),
+            ("showDamageFromShot", damage_from_shot_args(1, 1)),
             (
                 "onHealthChanged",
                 vec![
@@ -153,6 +158,64 @@ impl ArenaWire {
         base.send_arena_element(client, ArenaEntityProperties(update))?;
         Ok(())
     }
+
+    pub(in super::super) fn show_tracer(
+        &self,
+        base: &mut base::App,
+        avatar: EntityKey<Avatar>,
+        shooter: u32,
+        shot_id: i32,
+        shot: &Shot,
+        distance: Option<f32>,
+    ) -> Result<()> {
+        base.entity(avatar)?.showTracer(
+            EntityId(shooter),
+            shot_id,
+            0,
+            DEFAULT_EFFECTS_INDEX,
+            DEFAULT_PREFAB_EFFECTS_INDEX,
+            DEFAULT_SHELL_KIND,
+            45.0,
+            shot.origin,
+            shot.direction * SHELL_SPEED,
+            0.0,
+            distance.unwrap_or(SHOT_RANGE).max(0.1),
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    pub(in super::super) fn show_shot_impact(
+        &self,
+        base: &mut base::App,
+        client: ClientKey,
+        target: u32,
+        attacker: u32,
+        damage: i16,
+    ) -> Result<()> {
+        base.arena_vehicle_method(
+            client,
+            target,
+            "showDamageFromShot",
+            damage_from_shot_args(attacker, damage),
+        )?;
+        Ok(())
+    }
+}
+
+fn damage_from_shot_args(attacker: u32, damage: i16) -> Vec<WireValue> {
+    vec![
+        WireValue::Int32(attacker as i32),
+        WireValue::Seq(Vec::new()),
+        WireValue::UInt8(DEFAULT_EFFECTS_INDEX),
+        WireValue::UInt8(DEFAULT_PREFAB_EFFECTS_INDEX),
+        WireValue::Int32(i32::from(damage)),
+        WireValue::UInt8(0),
+        WireValue::UInt8(0),
+        WireValue::Float32(SHELL_SPEED),
+        WireValue::UInt8(0),
+    ]
 }
 
 fn property_type<'a>(component: &'a EntityDispatch, name: &str) -> Result<&'a Ty> {

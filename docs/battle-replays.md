@@ -119,3 +119,53 @@ For new mechanics, record the capture hash, client label, battle mode, entity
 and clock range, record type and payload shape. Compare several observations
 and check the matching client definitions. Use a controlled client session to
 vary one input at a time when inferring command semantics, timing or physics.
+
+## Direct hit in replay 1344
+
+The recorder's vehicle is `553323838` and its Avatar entity is `553323883`.
+The following records show its shot at vehicle `553323845`. Record type
+`0x08` carries three little-endian `u32` fields before the method arguments.
+They identify the receiving entity, the exposed method index in that entity's
+dispatch table, and the argument byte count. The stream offsets below point
+to the record headers. Match the method indices against the [dispatch
+snapshot](wg-toolkit/dispatch-snapshot.md) and validate the argument layout
+against the resource definitions.
+
+| Replay clock (s) | Stream byte offset | Recipient entity | Exposed method index and argument size | Observation |
+| ---: | ---: | --- | --- | --- |
+| 87.74 | 999971 | Avatar | 37, 50 bytes | `showTracer` identifies the recorder as the shooter and assigns shot ID `0x0b9451ab`. |
+| 87.74 | 1000252 | Shooter Vehicle | 1, 3 bytes | `showShooting` has burst count 1, gun 0 and shell kind 1. |
+| 88.14 | 1003333 | Avatar | 28, 16 bytes | `stopTracer` supplies the endpoint for the same shot ID. |
+| 88.14 | 1003373 | Avatar | 54, 10 bytes | `showShotResults` contains one result for the target with flags `0x00100010` and gun installation 0. |
+| 88.14 | 1003797 | Target Vehicle | 10, 34 bytes | `showDamageFromShot` identifies the shooter and contains one packed hit-point entry and 281 damage. |
+| 88.14 | 1003881 | Target Vehicle | 4, 10 bytes | `onHealthChanged` attributes the drop from 800 to 519 HP to the shooter. |
+
+A type `0x07` record at offset 1003855 updates the target's health to 519
+before the health-change callback. The recorder also received a hit at
+77.14 s. The corresponding impact at offset 918302 and health callback
+at 918398 identify the same attacker and show a drop from 1100 to 825 HP.
+The two impacts involve different pairs of vehicles. The new and previous
+health fields account for the reported damage in each case.
+
+Component record `0x37` at offset 1003496 contains a dealt-damage event
+(type 7) for `553323845`. Its packed details, `0x0007f8023200fe10`, decode
+to 281 HP, primary reason 0 (shot), shell kind 127 (unknown), secondary
+reason 16 (none) and extended reason −1 (none). The component record at
+918123 contains a received-damage event (type 10) for attacker `553323830`.
+Its packed details, `0x0007f80226000210`, decode to 275 HP, reason 0 and shell
+kind 1. See the [battle feedback field
+definitions](references/wot-src/sources/res/scripts/common/BattleFeedbackCommon.py).
+Training sends these feedback entries through `Avatar.onBattleEvents`.
+
+Replay 1345 corroborates the target and health fields for lethal shots. At
+524.42 s, the recorder's shot result at offset 4741469 names target
+`543436828` and carries flags `0x00100111`. The health callback at
+4742054 reports 60 to 0 HP. At 704.76 s, offsets 6056615 and 6057018 show
+flags `0x00100511` and a drop from 165 to 0 HP for `543436820`. Both carry
+the kill bit `0x1` and additional device flags.
+
+The fired command, the other client's private feedback for the same shot,
+delivery acknowledgments, and the remaining component updates require a
+controlled capture of both live connections. The approximately 400 ms
+between the launch and impact records measures this replay's shot. The
+sample does not establish a fixed delay or a collision algorithm.

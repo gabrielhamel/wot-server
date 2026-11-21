@@ -1,13 +1,16 @@
+use super::avatar::{BattleEvent, ShotResult};
 use super::*;
 use crate::{
-    battles::domain::vehicle::{Aim, AmmunitionCommand, SHOT_RANGE, Shot},
+    battles::domain::vehicle::{Aim, AmmunitionCommand},
     platform::mercury::script::Value as WireValue,
 };
 use glam::Vec3Swizzles;
 
 const ELIMINATION: u8 = 1;
-const SHELL_SPEED: f32 = 450.0;
-const DEFAULT_SHELL_KIND: u8 = 2;
+const GUN_INSTALLATION_INDEX: u8 = 0;
+const VEHICLE_KILLED: u32 = 1;
+const ARMOR_PIERCED_WITH_DAMAGE: u32 = 1 << 4;
+const DIRECT_PROJECTILE: u32 = 1 << 20;
 
 impl BattleRuntime {
     pub(crate) fn cell_method(&mut self, base: &mut base::App, event: base::CellMethodEvent) {
@@ -304,13 +307,7 @@ impl Battle {
                 continue;
             };
             let result = (|| -> Result<()> {
-                base.arena_vehicle_method(
-                    peer,
-                    entity_id,
-                    "showShooting",
-                    vec![WireValue::UInt8(1), WireValue::Int8(0), WireValue::UInt8(0)],
-                )?;
-                self.tracer(
+                wire.show_tracer(
                     base,
                     avatar,
                     entity_id,
@@ -318,12 +315,36 @@ impl Battle {
                     &shot,
                     impact.map(|(_, _, dist, _, _)| dist),
                 )?;
-                if let Some((victim, id, _, previous, health)) = impact {
+                base.arena_vehicle_method(
+                    peer,
+                    entity_id,
+                    "showShooting",
+                    vec![WireValue::UInt8(1), WireValue::Int8(0), WireValue::UInt8(0)],
+                )?;
+                if let Some((victim, id, distance, previous, health)) = impact {
+                    let damage = previous - health;
+                    let endpoint = shot.origin + shot.direction * distance;
+                    base.entity(avatar)?.stopTracer(shot_id, endpoint)?;
+                    if peer == client {
+                        let mut flags = DIRECT_PROJECTILE;
+                        if damage > 0 {
+                            flags |= ARMOR_PIERCED_WITH_DAMAGE;
+                        }
+                        if health == 0 {
+                            flags |= VEHICLE_KILLED;
+                        }
+                        base.entity(avatar)?.showShotResults(vec![ShotResult {
+                            vehicleID: id,
+                            hitFlags: flags,
+                            gunInstallationIndex: GUN_INSTALLATION_INDEX,
+                        }])?;
+                    }
+                    wire.show_shot_impact(base, peer, id, entity_id, damage)?;
                     if peer == victim {
                         base.entity(avatar)?.showOwnVehicleHitDirection(
                             hit_direction,
                             EntityId(entity_id),
-                            (previous - health) as u16,
+                            damage as u16,
                             0,
                             false,
                             false,
@@ -350,6 +371,16 @@ impl Battle {
                             WireValue::Int8(-1),
                         ],
                     )?;
+                    if damage > 0 && (peer == client || peer == victim) {
+                        let received = peer == victim;
+                        let other_vehicle = if received { entity_id } else { id };
+                        base.entity(avatar)?
+                            .onBattleEvents(vec![BattleEvent::shot_damage(
+                                other_vehicle,
+                                damage as u16,
+                                received,
+                            )])?;
+                    }
                 }
                 if peer == client || impact.is_some_and(|(victim, ..)| victim == peer) {
                     wire.publish_own_state(
@@ -373,33 +404,6 @@ impl Battle {
             self.publish_period(base, battle_id, now);
         }
         Ok(outcome)
-    }
-
-    fn tracer(
-        &self,
-        base: &mut base::App,
-        avatar: EntityKey<Avatar>,
-        shooter: u32,
-        shot_id: i32,
-        shot: &Shot,
-        distance: Option<f32>,
-    ) -> Result<()> {
-        base.entity(avatar)?.showTracer(
-            EntityId(shooter),
-            shot_id,
-            0,
-            0,
-            0,
-            DEFAULT_SHELL_KIND,
-            45.0,
-            shot.origin,
-            shot.direction * SHELL_SPEED,
-            0.0,
-            distance.unwrap_or(SHOT_RANGE).max(0.1),
-            0,
-            0,
-        )?;
-        Ok(())
     }
 }
 
