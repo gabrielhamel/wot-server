@@ -3,7 +3,7 @@ use axum::{
     Router,
     body::Bytes,
     extract::{DefaultBodyLimit, State, rejection::BytesRejection},
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, HeaderName, StatusCode, Uri, header},
     response::{IntoResponse, Response},
     routing::get,
 };
@@ -22,6 +22,7 @@ use std::{
 use tokio::sync::Semaphore;
 
 const UPLOAD_ROUTE: &str = "/api/web/telemetry";
+const FETCH_SITE: HeaderName = HeaderName::from_static("sec-fetch-site");
 const CONTENT_TYPE: &str = "application/x-protobuf";
 const MAX_BODY: usize = 32 * 1024;
 const MAX_SPANS: usize = 24;
@@ -30,6 +31,7 @@ const RATE_WINDOW: Duration = Duration::from_secs(10);
 
 struct Relay {
     origin: String,
+    authority: String,
     endpoint: Url,
     client: Client,
     active: Semaphore,
@@ -54,12 +56,39 @@ impl Relay {
             .timeout(Duration::from_secs(2))
             .build()?;
         Ok(Self {
+            authority: parsed.authority().to_owned(),
             origin,
             endpoint,
             client,
             active: Semaphore::new(4),
             window: Mutex::new((Instant::now(), 0)),
         })
+    }
+
+    fn accepts_origin(&self, uri: &Uri, headers: &HeaderMap) -> bool {
+        let mut origins = headers.get_all(header::ORIGIN).iter();
+        match (origins.next(), origins.next()) {
+            (Some(origin), None) if origin == self.origin.as_str() => return true,
+            (Some(origin), None) if origin == "null" => {}
+            (None, None) => {}
+            _ => return false,
+        }
+
+        let mut sites = headers.get_all(FETCH_SITE).iter();
+        if !sites.next().is_some_and(|site| site == "same-origin") || sites.next().is_some() {
+            return false;
+        }
+
+        let mut hosts = headers.get_all(header::HOST).iter();
+        match (uri.authority(), hosts.next(), hosts.next()) {
+            (Some(authority), None, None) => {
+                authority.as_str().eq_ignore_ascii_case(&self.authority)
+            }
+            (None, Some(host), None) => host
+                .as_bytes()
+                .eq_ignore_ascii_case(self.authority.as_bytes()),
+            _ => false,
+        }
     }
 
     fn take_budget(&self) -> bool {
@@ -122,6 +151,7 @@ fn router(relay: Relay) -> Router {
 )]
 async fn ingest(
     State(relay): State<Arc<Relay>>,
+    uri: Uri,
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
@@ -130,7 +160,7 @@ async fn ingest(
         Err(rejection) => return finish_upload("body_rejected", rejection.into_response()),
     };
     tracing::Span::current().record("input.body.bytes", body.len() as i64);
-    let (outcome, status) = forward_upload(&relay, &headers, &body).await;
+    let (outcome, status) = forward_upload(&relay, &uri, &headers, &body).await;
     finish_upload(outcome, status.into_response())
 }
 
@@ -150,14 +180,11 @@ fn finish_upload(outcome: &'static str, response: Response) -> Response {
 
 async fn forward_upload(
     relay: &Relay,
+    uri: &Uri,
     headers: &HeaderMap,
     body: &[u8],
 ) -> (&'static str, StatusCode) {
-    if headers
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok())
-        != Some(&relay.origin)
-    {
+    if !relay.accepts_origin(uri, headers) {
         return ("origin_rejected", StatusCode::FORBIDDEN);
     }
     if headers
@@ -247,6 +274,50 @@ mod tests {
     use tower::ServiceExt;
     use tracing_subscriber::prelude::*;
 
+    #[test]
+    fn accepts_opaque_or_missing_origin_only_for_the_configured_same_origin() {
+        let relay = Relay::new(
+            "https://example.test:8443".into(),
+            Url::parse("http://localhost:4318/v1/traces").unwrap(),
+        )
+        .unwrap();
+        let path: Uri = UPLOAD_ROUTE.parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, "example.test:8443".parse().unwrap());
+        assert!(!relay.accepts_origin(&path, &headers));
+        headers.insert(FETCH_SITE, "same-origin".parse().unwrap());
+        assert!(relay.accepts_origin(&path, &headers));
+
+        headers.insert(header::ORIGIN, "https://other.test".parse().unwrap());
+        assert!(!relay.accepts_origin(&path, &headers));
+        headers.insert(header::ORIGIN, "null".parse().unwrap());
+        assert!(relay.accepts_origin(&path, &headers));
+
+        for site in ["same-site", "cross-site", "none"] {
+            headers.insert(FETCH_SITE, site.parse().unwrap());
+            assert!(!relay.accepts_origin(&path, &headers));
+        }
+
+        headers.remove(FETCH_SITE);
+        assert!(!relay.accepts_origin(&path, &headers));
+        headers.insert(FETCH_SITE, "same-origin".parse().unwrap());
+        headers.append(FETCH_SITE, "same-origin".parse().unwrap());
+        assert!(!relay.accepts_origin(&path, &headers));
+        headers.insert(FETCH_SITE, "same-origin".parse().unwrap());
+
+        headers.insert(header::HOST, "other.test:8443".parse().unwrap());
+        assert!(!relay.accepts_origin(&path, &headers));
+        headers.remove(header::HOST);
+        assert!(!relay.accepts_origin(&path, &headers));
+        let absolute = "https://example.test:8443/api/web/telemetry"
+            .parse()
+            .unwrap();
+        assert!(relay.accepts_origin(&absolute, &headers));
+
+        headers.append(header::ORIGIN, "null".parse().unwrap());
+        assert!(!relay.accepts_origin(&absolute, &headers));
+    }
+
     #[tokio::test]
     async fn forwards_browser_span_ids_with_server_assigned_resource_and_bounded_ingress() {
         let (received, collector) = tokio::sync::mpsc::channel(1);
@@ -305,10 +376,16 @@ mod tests {
             name: "web.http.request".into(),
             ..Default::default()
         };
+        let root = Span {
+            trace_id: span.trace_id.clone(),
+            span_id: span.parent_span_id.clone(),
+            name: "web.admin.list_players".into(),
+            ..Default::default()
+        };
         let wire = ExportTraceServiceRequest {
             resource_spans: vec![ResourceSpans {
                 scope_spans: vec![ScopeSpans {
-                    spans: vec![span.clone()],
+                    spans: vec![root.clone(), span.clone()],
                     ..Default::default()
                 }],
                 ..Default::default()
@@ -337,7 +414,17 @@ mod tests {
             StatusCode::PAYLOAD_TOO_LARGE
         );
         assert_eq!(
-            send("https://example.test", CONTENT_TYPE, wire)
+            router
+                .clone()
+                .oneshot(
+                    Request::post(UPLOAD_ROUTE)
+                        .header(header::ORIGIN, "null")
+                        .header(header::HOST, "example.test")
+                        .header(FETCH_SITE, "same-origin")
+                        .header(header::CONTENT_TYPE, CONTENT_TYPE)
+                        .body(Body::from(wire))
+                        .unwrap(),
+                )
                 .await
                 .unwrap()
                 .status(),
@@ -346,7 +433,7 @@ mod tests {
         let bytes = collector.recv().await.unwrap();
         let forwarded = ExportTraceServiceRequest::decode(bytes).unwrap();
         let resource = &forwarded.resource_spans[0];
-        assert_eq!(resource.scope_spans[0].spans, vec![span]);
+        assert_eq!(resource.scope_spans[0].spans, vec![root, span]);
         assert!(
             resource
                 .resource

@@ -469,9 +469,15 @@ When serving the browser assets, opt in with both environment variables:
 | `WG_WEB_TELEMETRY_ENDPOINT` | Complete, fixed OTLP/HTTP protobuf trace endpoint inside the deployment, such as `http://alloy.telemetry.svc.cluster.local:4318/v1/traces`. |
 
 The browser discovers the same-origin `/api/web/telemetry` endpoint before
-enabling tracing. The relay accepts origin-matched protobuf POSTs, applies
-a 32 KiB request limit, 24 spans per batch, four concurrent forwards and
-30 batches per ten-second window per server replica. Collector calls have a
+enabling tracing. The relay accepts protobuf POSTs from the configured
+origin. The dashboard and Store use `Referrer-Policy: no-referrer`, which can
+serialize the origin of these same-origin POSTs as `null`. For requests with
+a null or missing origin, the relay requires browser Fetch Metadata
+`Sec-Fetch-Site: same-origin` and the configured public host and port in the
+request authority. Reverse
+proxies must preserve the public host and port. The relay applies a 32 KiB
+request limit, 24 spans per batch, four concurrent forwards and 30 batches
+per ten-second window per server replica. Collector calls have a
 two-second deadline. The relay assigns browser service identity and forwards
 to the same trace pipeline as the server. Keep collector ingress private and
 preserve `traceparent` when proxying the admin and Store APIs. Browser spans
