@@ -4,7 +4,7 @@ mod vehicle_offers;
 use super::{StoreCategory as Category, StoreOffer, StorePrice};
 use crate::accounts::infrastructure::client::{
     item_defs::{NATIONS, read_xml},
-    item_prices::{ItemPrices, NO_NATION},
+    item_prices::{ItemPrices, NO_NATION, Price},
     items::{IntCompactDescr, item_type},
     localization::{humanize_item_name, localized_names},
     vehicle_defs::VehicleOffer,
@@ -138,7 +138,7 @@ fn vehicle_listings(
         .collect();
     vehicles
         .iter()
-        .filter(|(_, vehicle)| vehicle.grantable())
+        .filter(|(_, vehicle)| vehicle.store_eligible())
         .flat_map(move |(&item, vehicle)| {
             let nation = NATIONS
                 .get(usize::from(
@@ -150,13 +150,19 @@ fn vehicle_listings(
                 tier: vehicle.level,
                 ..listing(item, name.to_owned(), category, price)
             };
-            let priced = match (vehicle.store_gold_price, vehicle.price) {
-                (Some(gold), _) => Some(listing(
+            let priced = match (vehicle.definition_price, vehicle.price) {
+                (
+                    Price {
+                        currency: "gold",
+                        amount: gold,
+                    },
+                    _,
+                ) if gold > 0 => Some(listing(
                     Category::PremiumVehicles,
                     &vehicle.name,
                     StorePrice::Gold(gold),
                 )),
-                (None, Some(VehicleCost { credits, gold: 0 }))
+                (_, Some(VehicleCost { credits, gold: 0 }))
                     if vehicle.tags.contains("collectorVehicle") =>
                 {
                     Some(listing(

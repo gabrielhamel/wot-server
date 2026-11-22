@@ -79,6 +79,18 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             "{key}"
         );
     }
+    let test_tank = catalog
+        .grantable_vehicles()
+        .find(|tank| tank.key == "ussr:R165_Object_703_II_2")
+        .expect("The hidden Store variant is offered in the admin vehicle picker");
+    catalog
+        .plan_grant(
+            snapshot.clone(),
+            PlayerGrant::Vehicle {
+                vehicle: test_tank.id,
+            },
+        )
+        .expect("The admin grant can add the hidden Store variant");
     let tank_key = "china:Ch65_Type59_IC4_3DSt";
     let tank = catalog
         .grantable_vehicles()

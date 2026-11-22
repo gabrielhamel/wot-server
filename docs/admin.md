@@ -273,7 +273,8 @@ integer.
 Use a vehicle ID from `GET /api/admin/vehicles`. The picker and grant endpoint
 accept tier I–XI garage vehicles, including eligible `private` and `testTank`
 variants. The server checks that those variants have a garage descriptor,
-crew, stock ammunition, health and battle performance. The catalog excludes
+crew, stock ammunition, health and battle performance. An eligible variant can
+be granted regardless of its vehicle definition price. The catalog excludes
 mode-specific vehicles, observers, pillboxes, premium IGR variants, vehicles
 hidden by `mode_hidden`, and entries explicitly forbidden by
 `forbidden_vehicles_to_battle_config.xml`. The pinned client reference shows

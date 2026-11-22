@@ -1,5 +1,7 @@
 use super::{
-    GarageCatalog, item_defs, item_prices::ItemPrices, items::IntCompactDescr,
+    GarageCatalog, item_defs,
+    item_prices::{ItemPrices, Price},
+    items::IntCompactDescr,
     localization::localized_names,
 };
 use crate::accounts::{
@@ -11,6 +13,7 @@ use wot_resources::ResourceBundle;
 
 const FORBIDDEN_FOR_BATTLE: &str =
     "scripts/item_defs/vehicles/common/forbidden_vehicles_to_battle_config.xml";
+const MAX_PLACEHOLDER_VEHICLE_PRICE: i64 = 100;
 const NON_GARAGE_TAGS: &[&str] = &[
     "event_battles",
     "fallout",
@@ -33,7 +36,7 @@ pub(super) struct VehicleOffer {
     pub key: String,
     pub name: String,
     pub price: Option<VehicleCost>,
-    pub store_gold_price: Option<i64>,
+    pub definition_price: Price,
     pub requires_research: bool,
     pub level: Option<i64>,
     pub tags: BTreeSet<String>,
@@ -42,11 +45,67 @@ pub(super) struct VehicleOffer {
 }
 
 impl VehicleOffer {
+    fn is_private_or_test(&self) -> bool {
+        self.tags.contains("private") || self.tags.contains("testTank")
+    }
+
     pub(super) fn grantable(&self) -> bool {
         self.level.is_some_and(|level| (1..=11).contains(&level))
             && !self.forbidden_for_battle
             && !self.acquisition_unavailable
             && !NON_GARAGE_TAGS.iter().any(|tag| self.tags.contains(*tag))
+    }
+
+    pub(super) fn store_eligible(&self) -> bool {
+        self.grantable()
+            && (!self.is_private_or_test()
+                || (matches!(self.definition_price.currency, "gold" | "credits")
+                    && self.definition_price.amount > MAX_PLACEHOLDER_VEHICLE_PRICE))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::client_formats::pxml::Element;
+
+    #[test]
+    fn store_requires_private_and_test_variants_to_have_a_price_above_100() {
+        let mut vehicle = VehicleOffer {
+            key: String::new(),
+            name: String::new(),
+            price: None,
+            definition_price: ItemPrices::definition_price(&Element::new()),
+            requires_research: false,
+            level: Some(8),
+            tags: BTreeSet::new(),
+            forbidden_for_battle: false,
+            acquisition_unavailable: false,
+        };
+        let undefined = vehicle.definition_price;
+        for tag in ["private", "testTank"] {
+            vehicle.tags = BTreeSet::from([tag.to_owned()]);
+            vehicle.definition_price = undefined;
+            assert!(vehicle.grantable());
+            assert!(!vehicle.store_eligible());
+            for currency in ["gold", "credits"] {
+                for (amount, eligible) in [(1, false), (100, false), (101, true)] {
+                    vehicle.definition_price = Price { currency, amount };
+                    assert!(vehicle.grantable());
+                    assert_eq!(
+                        vehicle.store_eligible(),
+                        eligible,
+                        "{tag}: {amount} {currency}"
+                    );
+                }
+            }
+        }
+        vehicle.tags.clear();
+        vehicle.definition_price = Price {
+            currency: "gold",
+            amount: 1,
+        };
+        assert!(vehicle.store_eligible());
     }
 }
 
@@ -55,9 +114,10 @@ impl GarageCatalog {
     pub(super) fn validate_vehicle_variants(&mut self) {
         let mut accepted = 0;
         let mut unavailable = Vec::new();
-        let variants = self.offers.iter().filter(|(_, offer)| {
-            offer.grantable() && (offer.tags.contains("private") || offer.tags.contains("testTank"))
-        });
+        let variants = self
+            .offers
+            .iter()
+            .filter(|(_, offer)| offer.grantable() && offer.is_private_or_test());
         for (&id, offer) in variants {
             let result = self.vehicle(&offer.key).and_then(|vehicle| {
                 let modules = &vehicle.modules;
@@ -158,10 +218,6 @@ pub(super) fn offers(
                 let premium = vehicle
                     .get_child_string("tags")
                     .is_some_and(|tags| tags.split_whitespace().any(|tag| tag == "premium"));
-                let definition_price = ItemPrices::definition_price(vehicle);
-                let store_gold_price = (definition_price.currency == "gold"
-                    && definition_price.amount > 0)
-                    .then_some(definition_price.amount);
                 let key = format!("{nation_name}:{name}");
                 offers.entry(cd.to_int() as i32).or_insert(VehicleOffer {
                     forbidden_for_battle: forbidden.contains(&key),
@@ -178,7 +234,7 @@ pub(super) fn offers(
                                 .replace('_', " ")
                         }),
                     price,
-                    store_gold_price,
+                    definition_price: ItemPrices::definition_price(vehicle),
                     level: vehicle.get_child_integer("level"),
                     tags: vehicle
                         .get_child_string("tags")
