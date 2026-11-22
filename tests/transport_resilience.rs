@@ -3,13 +3,15 @@ use std::{
     io::Write,
     time::{Duration, Instant},
 };
-use wot_server::player_sessions::test_support::mercury::app::login::element::Ping;
+use wot_server::player_sessions::test_support::mercury::app::{
+    client::element::ResourceFragment, login::element::Ping,
+};
 use wot_server::player_sessions::test_support::mercury::net::{
-    bundle::NextElementReader,
+    bundle::{Bundle, NextElementReader},
     filter::BlowfishWriter,
     packet::{Packet, flags},
     proto::Protocol,
-    socket::decrypt_packet,
+    socket::{decrypt_packet, encrypt_packet},
 };
 
 fn fragment(first: u32, last: u32, number: u32, data: &[u8]) -> Packet {
@@ -34,6 +36,64 @@ fn ping_recovers(protocol: &mut Protocol) {
         panic!("missing ping")
     };
     assert_eq!(element.read_simple::<Ping>().unwrap().element.num, 7);
+}
+
+#[test]
+fn full_encrypted_resource_packets_defer_acks_to_later_packets() {
+    let sender = "127.0.0.1:20001".parse().unwrap();
+    let receiver = "127.0.0.1:20002".parse().unwrap();
+    let mut server = Protocol::new();
+    let mut client = Protocol::new();
+    for _ in 0..256 {
+        let mut datagram = Bundle::new();
+        datagram.push_empty();
+        client.channel(receiver, None).prepare(&mut datagram, true);
+        let packet = datagram.into_packets().next().unwrap();
+        server.accept(packet, sender).unwrap().next_bundle();
+    }
+
+    let mut resource = Bundle::new();
+    resource
+        .element_writer()
+        .write_simple(ResourceFragment {
+            id: 1,
+            sequence_num: 0,
+            last: true,
+            data: vec![0x5a; 8192],
+        })
+        .unwrap();
+    server.channel(sender, None).prepare(&mut resource, true);
+
+    let mut followup = Bundle::new();
+    followup.push_empty();
+    server.channel(sender, None).prepare(&mut followup, false);
+
+    let cipher = Blowfish::new_from_slice(&[7; 16]).unwrap();
+    let mut acked = Vec::new();
+    let resource_packets = resource.len();
+    for (index, packet) in resource
+        .into_packets()
+        .chain(followup.into_packets())
+        .enumerate()
+    {
+        let encrypted = encrypt_packet(&packet, &cipher).unwrap();
+        let clear = decrypt_packet(encrypted, &cipher).unwrap();
+        let parsed = clear.read_config_locked().unwrap();
+        let acks = parsed.config().single_acks();
+        if index == 0 {
+            assert!(!acks.is_empty());
+            assert!(acks.len() < 255);
+        }
+        if index == resource_packets {
+            assert!(
+                !acks.is_empty(),
+                "resource must leave ACKs for a later packet"
+            );
+        }
+        acked.extend(acks.iter().rev().map(|sequence| sequence.get()));
+    }
+    assert_eq!(acked, (0..256).collect::<Vec<_>>());
+    ping_recovers(&mut server);
 }
 
 #[test]

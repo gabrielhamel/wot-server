@@ -76,7 +76,7 @@ impl Gateway {
         });
     }
 
-    #[tracing::instrument(name = "mercury.response.resource", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, output.bytes = data.len()), err)]
+    #[tracing::instrument(name = "mercury.response.resource", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, output.bytes = data.len(), output.delivery = tracing::field::Empty), err)]
     fn stream(
         &mut self,
         client: ClientKey,
@@ -94,6 +94,7 @@ impl Gateway {
         )));
         self.base
             .push_resource(client, request_id as u16, description, data)?;
+        tracing::Span::current().record("output.delivery", "sent");
         Ok(())
     }
 

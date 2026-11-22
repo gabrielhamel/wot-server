@@ -1,4 +1,4 @@
-use super::item_defs::read_xml;
+use super::{item_defs::read_xml, item_prices::ItemPrices};
 use crate::{platform::client_formats::pxml::Element, shared_kernel::ShellEffects};
 use anyhow::{Context, Result, ensure};
 use std::collections::BTreeMap;
@@ -68,6 +68,9 @@ impl ShellEffectCatalog {
         });
         Some(ShellEffects {
             kind: u8::try_from(SHELL_KINDS.iter().position(|&name| name == kind)?).ok()?,
+            damage_log_type: damage_log_type(kind, shot, shell),
+            premium: ItemPrices::definition_price(shell).currency == "gold"
+                || shell.get_child_boolean("improved") == Some(true),
             caliber_mm,
             legacy_index: self.legacy.get(effect.trim()).copied().unwrap_or_default(),
             prefab_index: prefab
@@ -75,6 +78,31 @@ impl ShellEffectCatalog {
                 .unwrap_or(NO_PREFAB),
         })
     }
+}
+
+fn damage_log_type(kind: &str, shot: Option<&Element>, shell: &Element) -> Option<u8> {
+    Some(match kind {
+        "HOLLOW_CHARGE" => 0,
+        "ARMOR_PIERCING" => 1,
+        "ARMOR_PIERCING_HE" => 2,
+        "ARMOR_PIERCING_CR" => 3,
+        "SMOKE" => 4,
+        "HIGH_EXPLOSIVE"
+            if shell.get_child_string("mechanics").map(str::trim) == Some("MODERN") =>
+        {
+            5
+        }
+        "HIGH_EXPLOSIVE"
+            if shot
+                .and_then(|shot| shot.get_child_boolean("hasStun"))
+                .or_else(|| shell.get_child_boolean("hasStun"))
+                == Some(true) =>
+        {
+            6
+        }
+        "HIGH_EXPLOSIVE" => 7,
+        _ => return None,
+    })
 }
 
 fn effect_indices(table: &Element) -> Result<BTreeMap<String, u8>> {
@@ -90,4 +118,49 @@ fn effect_indices(table: &Element) -> Result<BTreeMap<String, u8>> {
             Ok((name.clone(), u8::try_from(index)?))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::client_formats::pxml::Value;
+
+    #[test]
+    fn resolves_damage_log_types_independently_of_projectile_types() {
+        let effects = ShellEffectCatalog::default();
+        for (kind, projectile_type, log_type) in [
+            ("HOLLOW_CHARGE", 0, 0),
+            ("HIGH_EXPLOSIVE", 1, 7),
+            ("ARMOR_PIERCING", 2, 1),
+            ("ARMOR_PIERCING_HE", 3, 2),
+            ("ARMOR_PIERCING_CR", 4, 3),
+            ("SMOKE", 5, 4),
+        ] {
+            let mut shell = Element::new();
+            shell.add_children("kind", Value::String(kind.into()));
+            shell.add_children("caliber", Value::Integer(100));
+            shell.add_children("effects", Value::String("example".into()));
+            let resolved = effects.resolve(None, &shell).unwrap();
+            assert_eq!(
+                (resolved.kind, resolved.damage_log_type),
+                (projectile_type, Some(log_type))
+            );
+            assert!(!resolved.premium);
+        }
+    }
+
+    #[test]
+    fn resolves_he_mechanics_and_uses_local_stun_override() {
+        let mut shell = Element::new();
+        shell.add_children("hasStun", Value::Boolean(true));
+        let mut shot = Element::new();
+        shot.add_children("hasStun", Value::Boolean(false));
+        assert_eq!(damage_log_type("HIGH_EXPLOSIVE", None, &shell), Some(6));
+        assert_eq!(
+            damage_log_type("HIGH_EXPLOSIVE", Some(&shot), &shell),
+            Some(7)
+        );
+        shell.add_children("mechanics", Value::String("MODERN".into()));
+        assert_eq!(damage_log_type("HIGH_EXPLOSIVE", None, &shell), Some(5));
+    }
 }

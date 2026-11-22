@@ -141,8 +141,9 @@ impl Tank {
         };
         let speed_step = if braking { 24.0 } else { 6.0 } * seconds;
         self.speed += (desired - self.speed).clamp(-speed_step, speed_step);
-        self.yaw =
-            angle(self.yaw + axis(self.flags, RIGHT, LEFT) * performance.hull_traverse * seconds);
+        let steering = axis(self.flags, RIGHT, LEFT);
+        let steering = if throttle < 0.0 { -steering } else { steering };
+        self.yaw = angle(self.yaw + steering * performance.hull_traverse * seconds);
         let position =
             self.position.xz() + Vec2::new(self.yaw.sin(), self.yaw.cos()) * self.speed * seconds;
         let [min, max] = bounds;
@@ -401,6 +402,8 @@ mod tests {
                                 caliber_mm: 37.0,
                                 legacy_index: 17,
                                 prefab_index: 2,
+                                damage_log_type: Some(1),
+                                premium: false,
                             },
                         ),
                         (
@@ -410,6 +413,8 @@ mod tests {
                                 caliber_mm: 37.0,
                                 legacy_index: 19,
                                 prefab_index: 1,
+                                damage_log_type: Some(7),
+                                premium: false,
                             },
                         ),
                     ]
@@ -441,10 +446,9 @@ mod tests {
             tank.step(0.1, bounds);
         }
         assert!(!tank.step(0.1, bounds));
-        // These are physical turn commands. The client swaps the bits for inverted reverse controls.
         assert!(tank.drive(REVERSE | LEFT));
         assert!(tank.step(0.1, bounds));
-        assert!(tank.position.z < 2.0 && tank.yaw < 0.0);
+        assert!(tank.position.z < 2.0 && tank.yaw > 0.0);
     }
 
     #[test]

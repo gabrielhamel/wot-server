@@ -1720,7 +1720,7 @@ pub fn exercise_battle(
         };
         assert_eq!(details >> 25 & 0xffff, u64::from(shell_damage));
         assert_eq!(details >> 17 & 0xff, 0);
-        assert_eq!(details >> 9 & 0x7f, if event_type == 10 { 2 } else { 127 });
+        assert_eq!(details >> 9 & 0x7f, if event_type == 10 { 1 } else { 127 });
     }
     guest.until(script, |p| {
         p.methods
@@ -1750,8 +1750,8 @@ pub fn exercise_battle(
     let Value::Float32(yaw) = direction[0] else {
         panic!("Expected hit bearing in radians");
     };
-    let towards_shooter = guest.positions[&first] - guest.positions[&second];
-    let expected_yaw = towards_shooter.x.atan2(towards_shooter.z);
+    let towards_target = guest.positions[&second] - guest.positions[&first];
+    let expected_yaw = towards_target.x.atan2(towards_target.z);
     assert!((yaw - expected_yaw).cos() > 0.95);
     assert!(
         !host
@@ -1844,6 +1844,14 @@ pub fn exercise_battle(
         (p.positions[&first] - stopped).dot(forward) < -0.1 && p.hull_aim.is_some()
     });
     assert_aux_orientation(host.hull_aim.unwrap(), host.vehicle_directions[&first]);
+    let before_reverse_turn = host.vehicle_directions[&first].z;
+    host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(2 | 8)]);
+    for peer in [&mut *host, &mut *guest] {
+        peer.until(script, |p| {
+            (p.vehicle_directions[&first].z - before_reverse_turn).sin() < -0.05
+        });
+    }
+    host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(0)]);
     guest.command(script, "leaveArena", vec![]);
     guest.until(script, |p| p.resets == 2);
     host.until(script, |p| p.resets == 2);
@@ -2168,6 +2176,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
     assert!(has(hit, "ddd.bounded_context.name", "battles"));
     assert!(has(hit, "input.shell.damage", &shell_damage.to_string()));
     assert!(has(hit, "output.damage", &shell_damage.to_string()));
+    assert!(has(hit, "output.damage_log.shell_type", "1"));
     let control = traces
         .iter()
         .find(|s| s.name == "battles.control" && child_of(hit, s))
@@ -2291,6 +2300,11 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
     assert!(traces.iter().any(|s| s.name == "battles.control"
         && child_of(movement, s)
         && has(s, "input.drive.flags", "1")));
+    assert!(traces.iter().any(|s| s.name == "battles.control"
+        && has(s, "input.drive.flags", "10")
+        && traces.iter().any(|replication| child_of(replication, s)
+            && has(replication, "input.replication.kind", "position")
+            && has(replication, "output.delivered.count", "2"))));
     for outcome in ["reloading", "invalid_flags", "entity_unavailable"] {
         assert!(
             traces
@@ -2367,6 +2381,21 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         && child_of(s, garage_return)
         && has(s, "ddd.bounded_context.name", "battles")
         && has(s, "output.players.count", "1")));
+    for account in [host, guest] {
+        let sync = traces
+            .iter()
+            .find(|s| {
+                s.name == "game.command"
+                    && has(s, "user.id", &account.to_string())
+                    && has(s, "input.request_id", "221")
+                    && has(s, "input.command_id", "100")
+            })
+            .expect("post-battle garage cache request");
+        assert!(traces.iter().any(|s| s.name == "mercury.response.resource"
+            && s.span_context.trace_id() == sync.span_context.trace_id()
+            && has(s, "input.request_id", "221")
+            && has(s, "output.delivery", "sent")));
+    }
 
     for (request, account, outcome, code) in [
         ("5100", guest, "not_host", "-1"),

@@ -158,6 +158,16 @@ fn token(peer: &mut Peer, script: &ScriptDispatch, request: u16) -> String {
     String::from_utf8(bytes.clone()).unwrap()
 }
 
+pub fn assert_roster_available_after_battle(
+    game: &mut Peer,
+    script: &ScriptDispatch,
+    address: SocketAddr,
+    account: i64,
+) {
+    let credential = token(game, script, 4004);
+    Chat::connect(address, account, &credential).close();
+}
+
 pub fn exercise_game_disconnect(
     game: &mut Peer,
     script: &ScriptDispatch,
