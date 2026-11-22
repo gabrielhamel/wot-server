@@ -51,7 +51,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
     for key in [
         "germany:G90_DW_II_MapsTraining_Dummy_HT_1",
         "france:F28_105_leFH18B2_IGR",
-        "germany:G98_Waffentrager_E100_WO",
+        "ussr:Observer",
     ] {
         let entry = catalog.vehicle_catalog_entry(key).unwrap();
         assert!(
@@ -68,12 +68,18 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             "{key}"
         );
     }
-    assert!(
-        catalog
-            .grantable_vehicles()
-            .any(|tank| tank.key == "germany:G98_WT_auf_E_100_Phonix")
-    );
-    let tank_key = "germany:G195_HWK_40";
+    for key in [
+        "germany:G98_WT_auf_E_100_Phonix",
+        "germany:G195_HWK_40",
+        "poland:Pl43_Kruk",
+        "uk:GB132_Taurus_CAT",
+    ] {
+        assert!(
+            catalog.grantable_vehicles().any(|tank| tank.key == key),
+            "{key}"
+        );
+    }
+    let tank_key = "ussr:R165_Object_703_II_2";
     let tank = catalog
         .grantable_vehicles()
         .find(|tank| tank.key == tank_key)
@@ -181,7 +187,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             panic!("Login did not return a handoff ticket");
         };
         let (after, delivery) = grant(currency(GrantCurrency::Bonds, 11)).unwrap();
-            let after = wot_server::accounts::test_support::account_snapshot(&after);
+        let after = wot_server::accounts::test_support::account_snapshot(&after);
         assert_eq!(delivery, GrantDelivery::OnNextSync);
         peer.handoff(ticket);
         peer.until(&script, |p| p.created && p.shown);
@@ -250,7 +256,12 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             Err(GrantRequestError::Busy) => grant(PlayerGrant::Vehicle { vehicle: tank }).unwrap(),
             Err(error) => panic!("Grant failed: {error}"),
         };
-            let after = wot_server::accounts::test_support::account_snapshot(&after);
+        let battle_vehicle = wot_server::accounts::test_support::garage_queries(catalog.clone())
+            .battle_vehicle(&after, 2)
+            .unwrap()
+            .expect("Granted vehicle can enter a Training Battle");
+        assert!(battle_vehicle.health > 0);
+        let after = wot_server::accounts::test_support::account_snapshot(&after);
         if peer.responses.contains(&(301, -5)) {
             purchase(&mut peer, 302);
             peer.until(&script, |p| p.responses.contains(&(302, 0)));

@@ -270,17 +270,17 @@ purchase and mounting rules
 still apply. The resulting depot stock per item must fit a signed 32-bit
 integer.
 
-Use a vehicle ID from `GET /api/admin/vehicles`. Both the picker and the grant
-endpoint restrict grants to tier I–XI Random Battles vehicles. The filter uses
-the installed catalog's tags and its `forbidden_vehicles_to_battle_config.xml`.
-It follows the mode tags in `common/constants.py` and the Random Battles platoon
-criteria in `client/gui/impl/lobby/platoon/platoon_config.py`, including the
-Maps Training exclusion. Permanent grants also exclude private, observer,
-pillbox and premium IGR entries. Vehicles tagged `testTank` are grantable
-when they meet the same eligibility rules. This excludes the private WT 12 variant
-(`germany:G98_Waffentrager_E100_WO`) while allowing regular rewards such as
-the ISU-130. Names come from the installed localization files when present.
-The granted tank and its stock modules become available in account progression.
+Use a vehicle ID from `GET /api/admin/vehicles`. The picker and grant endpoint
+accept tier I–XI garage vehicles, including eligible `private` and `testTank`
+variants. The server checks that those variants have a garage descriptor,
+crew, stock ammunition, health and battle performance. The catalog excludes
+mode-specific vehicles, observers, pillboxes, premium IGR variants, vehicles
+hidden by `mode_hidden`, and entries explicitly forbidden by
+`forbidden_vehicles_to_battle_config.xml`. The pinned client reference shows
+the carousel exclusions in `carousels/basic/carousel_data_provider.py` and
+prebattle checks in `prb_control/entities/base/limits.py`. Names come from the
+installed localization files when present. The granted tank and its stock
+modules become available in account progression.
 
 An unknown player returns `404`. An invalid amount, unknown or unsupported tank,
 unknown catalog item, or stock, ownership or balance over the limit returns

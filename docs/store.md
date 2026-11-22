@@ -32,8 +32,9 @@ server projects the same maximum into the native garage cache. Buying or
 receiving a premium, reward or Collectors’ vehicle does not advance that maximum.
 
 The Premium vehicles tab lists every garage-eligible vehicle with a positive
-gold price in the client’s definitions, including eligible vehicles tagged
-`testTank`. The `notInShop` flag governs native Tech Tree purchases.
+gold price in the client’s definitions, including eligible `private` and
+`testTank` variants. These variants share the admin grant eligibility checks.
+The `notInShop` flag governs native Tech Tree purchases.
 Bond vehicle offers come from the live mapping and resolve
 to client definitions by catalog key. A vehicle may have a gold offer and a
 bond offer. Checkout identifies the offer by item and currency, and buying
@@ -141,9 +142,10 @@ reported EU `v.2.4.1.1 #993`, launcher executable SHA-256
 `fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`
 and `win64/WorldOfTanks.exe` SHA-256
 `58325ded3e2db7134638971e33de1eab09737f8b66401554d9723a2bf246bb11`.
-Its vehicle definitions in `scripts.pkg` contained 22 `testTank` entries.
-The server accepted grant and gold checkout plans for 19 at 100 gold each.
-The three entries also tagged `private` were excluded from both catalogs.
+Its vehicle definitions in `scripts.pkg` supported grant and gold checkout
+plans for all 22 `testTank` entries at 100 gold each, including Object 703–II
+(100). Among vehicles tagged `private`, 85 supported grants and 32 also
+supported gold checkout. Three vehicles carried both tags.
 
 The compiled client also reads `Account.initialServerSettings.igbWhitelist`
 before the browser opens. When Store is enabled, the server sets `isEnabled`

@@ -11,7 +11,7 @@ use wot_resources::ResourceBundle;
 
 const FORBIDDEN_FOR_BATTLE: &str =
     "scripts/item_defs/vehicles/common/forbidden_vehicles_to_battle_config.xml";
-const NON_RANDOM_TAGS: &[&str] = &[
+const NON_GARAGE_TAGS: &[&str] = &[
     "event_battles",
     "fallout",
     "epic_battles",
@@ -26,7 +26,7 @@ const NON_RANDOM_TAGS: &[&str] = &[
     "premiumIGR",
     "observer",
     "pillbox",
-    "private",
+    "mode_hidden",
 ];
 
 pub(super) struct VehicleOffer {
@@ -38,13 +38,64 @@ pub(super) struct VehicleOffer {
     pub level: Option<i64>,
     pub tags: BTreeSet<String>,
     forbidden_for_battle: bool,
+    acquisition_unavailable: bool,
 }
 
 impl VehicleOffer {
     pub(super) fn grantable(&self) -> bool {
         self.level.is_some_and(|level| (1..=11).contains(&level))
             && !self.forbidden_for_battle
-            && !NON_RANDOM_TAGS.iter().any(|tag| self.tags.contains(*tag))
+            && !self.acquisition_unavailable
+            && !NON_GARAGE_TAGS.iter().any(|tag| self.tags.contains(*tag))
+    }
+}
+
+impl GarageCatalog {
+    #[tracing::instrument(name = "accounts.catalog.validate_vehicle_variants", skip_all, fields(ddd.bounded_context.name = "accounts", input.vehicle_count = self.offers.len(), output.accepted_count = tracing::field::Empty, output.rejected_count = tracing::field::Empty))]
+    pub(super) fn validate_vehicle_variants(&mut self) {
+        let mut accepted = 0;
+        let mut unavailable = Vec::new();
+        let variants = self.offers.iter().filter(|(_, offer)| {
+            offer.grantable() && (offer.tags.contains("private") || offer.tags.contains("testTank"))
+        });
+        for (&id, offer) in variants {
+            let result = self.vehicle(&offer.key).and_then(|vehicle| {
+                let modules = &vehicle.modules;
+                let stock = &modules.rules.stock;
+                let has_health = stock
+                    .get(&crate::accounts::ModuleKind::Turret)
+                    .and_then(|turret| modules.training_health.get(turret))
+                    .is_some_and(|&health| health > 0);
+                anyhow::ensure!(has_health, "Missing stock vehicle health");
+                anyhow::ensure!(
+                    modules.battle_performance(stock).is_some(),
+                    "Missing stock vehicle performance"
+                );
+                anyhow::ensure!(!vehicle.crew_roles.is_empty(), "Missing vehicle crew");
+                anyhow::ensure!(
+                    vehicle
+                        .ammunition_rules(stock)
+                        .is_some_and(|ammo| ammo.defaults.iter().any(|&(_, count)| count > 0)),
+                    "Missing stock vehicle ammunition"
+                );
+                Ok(())
+            });
+            match result {
+                Ok(()) => accepted += 1,
+                Err(error) => {
+                    tracing::warn!(vehicle.id = id, vehicle.key = %offer.key, %error, "Vehicle variant is unavailable for acquisition");
+                    unavailable.push(id);
+                }
+            }
+        }
+        let span = tracing::Span::current();
+        span.record("output.accepted_count", accepted);
+        span.record("output.rejected_count", unavailable.len());
+        for id in unavailable {
+            if let Some(offer) = self.offers.get_mut(&id) {
+                offer.acquisition_unavailable = true;
+            }
+        }
     }
 }
 
@@ -114,6 +165,7 @@ pub(super) fn offers(
                 let key = format!("{nation_name}:{name}");
                 offers.entry(cd.to_int() as i32).or_insert(VehicleOffer {
                     forbidden_for_battle: forbidden.contains(&key),
+                    acquisition_unavailable: false,
                     key,
                     name: vehicle
                         .get_child_string("userString")

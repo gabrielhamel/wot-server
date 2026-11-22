@@ -66,7 +66,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .vehicle_catalog_entry("germany:G51_Lowe")
         .unwrap()
         .id;
-    let test_tank_key = "germany:G195_HWK_40";
+    let test_tank_key = "ussr:R165_Object_703_II_2";
     let test_tank = catalog.vehicle_catalog_entry(test_tank_key).unwrap().id;
     let test_tank_price = catalog
         .store_offers()
