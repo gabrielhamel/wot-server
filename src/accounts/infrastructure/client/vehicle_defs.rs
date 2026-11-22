@@ -27,7 +27,6 @@ const NON_RANDOM_TAGS: &[&str] = &[
     "observer",
     "pillbox",
     "private",
-    "testTank",
 ];
 
 pub(super) struct VehicleOffer {

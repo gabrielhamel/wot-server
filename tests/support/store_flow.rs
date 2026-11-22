@@ -66,6 +66,15 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .vehicle_catalog_entry("germany:G51_Lowe")
         .unwrap()
         .id;
+    let test_tank_key = "germany:G195_HWK_40";
+    let test_tank = catalog.vehicle_catalog_entry(test_tank_key).unwrap().id;
+    let test_tank_price = catalog
+        .store_offers()
+        .iter()
+        .find(|offer| offer.item == test_tank && offer.price.currency() == "gold")
+        .expect("Test tank gold offer")
+        .price
+        .amount();
     let equipment = catalog
         .store_offers()
         .iter()
@@ -407,9 +416,10 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
 
         let near_expiry = i64::try_from(std::time::UNIX_EPOCH.elapsed().unwrap().as_secs()).unwrap() + 5;
         runtime.block_on(
-            sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = 1250, bonds = $3 WHERE id = $1")
+            sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = $3, bonds = $4 WHERE id = $1")
                 .bind(account_id)
                 .bind(near_expiry)
+                .bind(1250 + test_tank_price)
                 .bind(improved_price + 100)
                 .execute(&expiry_test_db)
         ).unwrap();
@@ -439,11 +449,11 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         ]);
         let native_diff = next_update(&mut expiring, &dispatch, persisted.revision + 1);
         assert_eq!(dict(&dict(&native_diff, "premium"), "premMask"), Pickle::I64(2));
-        assert_eq!(dict(&dict(&native_diff, "stats"), "gold"), Pickle::I64(1000));
+        assert_eq!(dict(&dict(&native_diff, "stats"), "gold"), Pickle::I64(1000 + test_tank_price));
         assert!(!persisted.progression.unlocks.contains(&pz_s35));
         super::depot_flow::send_array(&mut expiring, &dispatch, 814, 301, &[1, pz_s35, 0, 0, -1, 0], 0);
         let diff = next_update(&mut expiring, &dispatch, persisted.revision + 2);
-        assert_eq!(dict(&dict(&diff, "stats"), "gold"), Pickle::I64(0));
+        assert_eq!(dict(&dict(&diff, "stats"), "gold"), Pickle::I64(test_tank_price));
         let (_, current_store) = request(Some(&expiry_token), None);
         assert_eq!(find_offer(&current_store, i64::from(pz_s35))["availability"], "in_garage");
         super::depot_flow::send_array(&mut expiring, &dispatch, 815, 301, &[1, pz_s35, 0, 0, -1, 0], -1);
@@ -469,6 +479,23 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         assert_eq!(persisted.balances.bonds, saved.balances.bonds - improved_price);
         assert_eq!(persisted.progression.depot.get(&(improved_item as i32)), Some(&1));
         assert_store_traces(account_id, improved_item, "bonds", improved_price);
+
+        let item_id = i64::from(test_tank);
+        let test_offer = find_offer(&purchased, item_id);
+        assert_eq!(test_offer["availability"], "available");
+        assert_eq!(test_offer["price"], json!({"currency": "gold", "amount": test_tank_price}));
+        super::depot_flow::send_array(&mut expiring, &dispatch, 817, 301, &[1, test_tank, 0, 0, -1, 0], -1);
+        let test_order = json!({"item": item_id, "price": test_offer["price"], "revision": purchased["revision"]});
+        let (status, bought_test_tank) = request(Some(&expiry_token), Some(&test_order));
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(find_offer(&bought_test_tank, item_id)["availability"], "in_garage");
+        assert_eq!(request(Some(&expiry_token), Some(&test_order)).0, StatusCode::CONFLICT);
+        let diff = next_update(&mut expiring, &dispatch, persisted.revision + 1);
+        assert_eq!(dict(&dict(&diff, "stats"), "gold"), Pickle::I64(0));
+        let saved = runtime.block_on(accounts.snapshot(account_id)).unwrap();
+        assert!(saved.vehicles.iter().any(|vehicle| vehicle.catalog_key == test_tank_key));
+        assert_store_traces(account_id, item_id, "gold", test_tank_price);
+
         expiring.disconnect();
         assert_tech_tree_traces(account_id);
         assert_store_traces(account_id, item, "credits", cost);

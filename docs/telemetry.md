@@ -313,7 +313,8 @@ account IDs, role choices, availability and outcomes are allowlisted. Passwords,
 email values, player-entered registration usernames and cookie secrets stay out
 of these spans.
 A connected player's garage update has a Mercury response span under the grant
-completion.
+completion. Grants and Store gold purchases of eligible `testTank` vehicles
+use the same traces as other vehicle acquisitions.
 
 Exterior traces record the shop revision, target inventory ID, outfit
 count and encoded byte length. The Accounts decision records the action and

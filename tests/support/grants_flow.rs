@@ -73,9 +73,10 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             .grantable_vehicles()
             .any(|tank| tank.key == "germany:G98_WT_auf_E_100_Phonix")
     );
+    let tank_key = "germany:G195_HWK_40";
     let tank = catalog
         .grantable_vehicles()
-        .find(|tank| tank.key == "ussr:R111_ISU130")
+        .find(|tank| tank.key == tank_key)
         .unwrap()
         .id;
     let books: Vec<_> = catalog.grantable_crew_books().collect();
@@ -273,7 +274,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         assert_eq!(persisted.progression.depot.get(&book), Some(&5));
         assert_eq!(persisted.progression.depot.get(&equipment), Some(&1));
         assert_eq!(persisted.balances.credits, 100_000_031 - 250_000);
-        assert_eq!(persisted.vehicles[1].catalog_key, "ussr:R111_ISU130");
+        assert_eq!(persisted.vehicles[1].catalog_key, tank_key);
         assert!(persisted.vehicles[1].has_crew);
         assert!(persisted.vehicles[1].ammunition.as_ref().unwrap().loaded.iter().any(|&(_, count)| count > 0));
         peer.disconnect();
@@ -302,7 +303,39 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         .await
         .unwrap();
     test.unwrap();
-    assert_depot_grant_trace(id, book, &exporter.get_finished_spans().unwrap());
+    let spans = exporter.get_finished_spans().unwrap();
+    assert_depot_grant_trace(id, book, &spans);
+    let vehicle_plans: Vec<_> = spans
+        .iter()
+        .filter(|span| {
+            span.name == "accounts.grants.plan_grant"
+                && span.attributes.iter().any(|attr| {
+                    attr.key.as_str() == "input.grant"
+                        && attr.value.as_str() == format!("Vehicle {{ vehicle: {tank} }}")
+                })
+        })
+        .collect();
+    assert!(
+        vehicle_plans
+            .iter()
+            .any(|span| span.status == opentelemetry::trace::Status::Unset)
+    );
+    assert!(
+        vehicle_plans
+            .iter()
+            .any(|span| matches!(span.status, opentelemetry::trace::Status::Error { .. }))
+    );
+    for plan in vehicle_plans {
+        let gateway = spans
+            .iter()
+            .find(|span| span.span_context.span_id() == plan.parent_span_id)
+            .unwrap();
+        assert_eq!(gateway.name, "player_sessions.gateway.grant");
+        assert!(spans.iter().any(|span| {
+            span.name == "player_sessions.gateway.grant_response"
+                && span.parent_span_id == gateway.span_context.span_id()
+        }));
+    }
 }
 
 fn depot_count(cache: &Pickle, item_type: i32, id: i32) -> i64 {

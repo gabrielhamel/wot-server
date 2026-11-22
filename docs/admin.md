@@ -275,8 +275,9 @@ endpoint restrict grants to tier I–XI Random Battles vehicles. The filter uses
 the installed catalog's tags and its `forbidden_vehicles_to_battle_config.xml`.
 It follows the mode tags in `common/constants.py` and the Random Battles platoon
 criteria in `client/gui/impl/lobby/platoon/platoon_config.py`, including the
-Maps Training exclusion. Permanent grants also exclude private, test, observer,
-pillbox and premium IGR entries. This excludes the private WT 12 variant
+Maps Training exclusion. Permanent grants also exclude private, observer,
+pillbox and premium IGR entries. Vehicles tagged `testTank` are grantable
+when they meet the same eligibility rules. This excludes the private WT 12 variant
 (`germany:G98_Waffentrager_E100_WO`) while allowing regular rewards such as
 the ISU-130. Names come from the installed localization files when present.
 The granted tank and its stock modules become available in account progression.
