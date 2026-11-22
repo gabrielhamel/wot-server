@@ -93,6 +93,12 @@ pub struct ModuleRules {
 }
 
 impl ModuleRules {
+    pub(crate) fn loadout_weight(&self, loadout: &ModuleLoadout) -> Option<f32> {
+        loadout.values().try_fold(self.hull_weight, |weight, id| {
+            self.modules.get(id).map(|module| weight + module.weight)
+        })
+    }
+
     pub fn loadout(&self, snapshot: &AccountSnapshot, inventory_id: i64) -> ModuleLoadout {
         snapshot
             .progression
@@ -186,11 +192,8 @@ impl ModuleRules {
         {
             return Err(ProgressionError::InvalidRequest);
         }
-        let weight = next
-            .values()
-            .try_fold(self.hull_weight, |weight, id| {
-                self.modules.get(id).map(|m| weight + m.weight)
-            })
+        let weight = self
+            .loadout_weight(&next)
             .ok_or(ProgressionError::InvalidRequest)?;
         let limit = next
             .get(&ModuleKind::Chassis)

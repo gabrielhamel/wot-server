@@ -39,6 +39,10 @@ server. Older manifests without the field remain supported.
   keeps `space.settings` and `terrain2/heights` under the bundled `spaces/`
   tree. Re-extract a bundle without terrain before launching training battles.
   Bundles without arena definitions still serve the garage.
+- **Battles** uses `terrain2/dominanttextures` for driving surfaces. The extractor
+  stores these as `.mat` files beside the corresponding `.hmp` height tiles.
+  Re-extract existing bundles to enable hard, medium and soft terrain. Heights-only
+  bundles use medium ground everywhere.
 - **Battles** reads the generated `spaces/<map>/collision.bin` placement
   files and shared `collision-models/*.mesh` triangle data for projectile
   impacts. The extractor derives these from the compiled space and its

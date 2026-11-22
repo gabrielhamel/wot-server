@@ -17,7 +17,7 @@ use std::{io, io::BufReader, net::SocketAddr};
 mod controls;
 mod roster;
 
-pub(super) use controls::ShotImpact;
+pub(super) use controls::{ShotImpact, pack_wheel_speed, pack_wheel_steering};
 
 pub(super) struct ArenaWire {
     avatar_type: u16,
@@ -30,6 +30,9 @@ pub(super) struct ArenaWire {
     gun_marker_type: u16,
     gun_marker_nrl_type: u16,
     gun_angles_element: u8,
+    engine_mode_element: u8,
+    wheels_scroll_element: u8,
+    wheels_steering_element: u8,
     hull_aim_element: u8,
     impact_materials: ImpactMaterials,
 }
@@ -77,6 +80,23 @@ impl ArenaWire {
                 "gunAnglesPacked",
                 &WireValue::UInt16(0),
                 2,
+            )?,
+            engine_mode_element: Self::bind_fixed_property(
+                dispatch,
+                vehicle_type,
+                "engineMode",
+                &WireValue::Seq(vec![WireValue::UInt8(1), WireValue::UInt8(0)]),
+                2,
+            )?,
+            wheels_scroll_element: Self::bind_wheel_property(
+                dispatch,
+                vehicle_type,
+                "wheelsScroll",
+            )?,
+            wheels_steering_element: Self::bind_wheel_property(
+                dispatch,
+                vehicle_type,
+                "steeringAngles",
             )?,
             hull_aim_element: Self::bind_fixed_property(
                 dispatch,
@@ -147,7 +167,7 @@ impl ArenaWire {
                 ("team", WireValue::UInt8(player.team)),
                 (
                     "ownVehicleAuxPhysicsData",
-                    WireValue::UInt64(controls::pack_hull_aim(player.direction, 0.0)),
+                    WireValue::UInt64(controls::pack_hull_aim(player.direction, [0.0; 2], 0.2)),
                 ),
                 (
                     "playerVehicleID",

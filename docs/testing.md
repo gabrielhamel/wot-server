@@ -92,11 +92,14 @@ export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
 cargo test --locked --lib initializes_context_storage -- --ignored
-cargo test --locked --lib exports_admin_http -- --ignored
+cargo test --locked --lib exports_admin_http_request_inputs -- --ignored
+cargo test --locked --lib exports_admin_http_access_lifecycle -- --ignored
 cargo test --locked -p wot-server --features integration-test-support --test garage -- --ignored
 ```
 
-The admin HTTP tests send requests through the authenticated router and inspects
+Run the admin HTTP tests in separate processes because the access lifecycle
+test installs a process-wide tracing subscriber. These tests send requests
+through the authenticated router and inspect
 exported inputs, status and parent links for successful and rejected requests.
 They authenticate a player created through the API, check their starter garage,
 and verify that raw credentials and invalid input text stay out of spans. They

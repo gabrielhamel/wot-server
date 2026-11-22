@@ -1553,6 +1553,11 @@ pub fn exercise_battle(
         });
         assert!(peer.positions[&first].y > 1.0 && peer.positions[&second].y > 1.0);
     }
+    guest.until(script, |p| p.engine_modes.get(&first) == Some(&[3, 1]));
+    host.until(script, |p| {
+        p.hull_aim
+            .is_some_and(|aux| (aux >> 40) as u8 > 85 && (aux >> 48) as u8 > 85)
+    });
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(64)]);
     guest.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(64)]);
     host.vehicle_command(
@@ -1846,12 +1851,21 @@ pub fn exercise_battle(
     assert_aux_orientation(host.hull_aim.unwrap(), host.vehicle_directions[&first]);
     let before_reverse_turn = host.vehicle_directions[&first].z;
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(2 | 8)]);
-    for peer in [&mut *host, &mut *guest] {
-        peer.until(script, |p| {
-            (p.vehicle_directions[&first].z - before_reverse_turn).sin() < -0.05
-        });
-    }
+    host.until(script, |p| {
+        (p.vehicle_directions[&first].z - before_reverse_turn).sin() < -0.05
+            && p.hull_aim
+                .is_some_and(|aux| (aux >> 40) as u8 != (aux >> 48) as u8)
+    });
+    guest.until(script, |p| {
+        (p.vehicle_directions[&first].z - before_reverse_turn).sin() < -0.05
+            && p.engine_modes.get(&first) == Some(&[3, 10])
+    });
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(0)]);
+    host.until(script, |p| {
+        p.hull_aim
+            .is_some_and(|aux| (aux >> 40) as u8 == 85 && (aux >> 48) as u8 == 85)
+    });
+    guest.until(script, |p| p.engine_modes.get(&first) == Some(&[1, 0]));
     guest.command(script, "leaveArena", vec![]);
     guest.until(script, |p| p.resets == 2);
     host.until(script, |p| p.resets == 2);
@@ -2105,6 +2119,32 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
                 delivery.name == "mercury.arena_delivery"
                     && child_of(delivery, update)
                     && has(delivery, "output.delivery", "sent")
+            })
+    }));
+    assert!(traces.iter().any(|drive| {
+        drive.name == "battles.control"
+            && has(drive, "input.drive.flags", "1")
+            && traces.iter().any(|step| {
+                step.name == "battles.drive_vehicle"
+                    && child_of(step, drive)
+                    && step
+                        .attributes
+                        .iter()
+                        .any(|attr| attr.key.as_str() == "output.drive.speed_mps")
+                    && step
+                        .attributes
+                        .iter()
+                        .any(|attr| attr.key.as_str() == "input.ground.medium_contacts")
+            })
+            && traces.iter().any(|update| {
+                child_of(update, drive)
+                    && has(update, "input.replication.kind", "engine_mode")
+                    && has(update, "output.delivered.count", "2")
+                    && traces.iter().any(|delivery| {
+                        delivery.name == "mercury.arena_delivery"
+                            && child_of(delivery, update)
+                            && has(delivery, "output.delivery", "sent")
+                    })
             })
     }));
     let unimplemented = traces

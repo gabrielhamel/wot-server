@@ -24,6 +24,15 @@ Activation registers the participants for routing. Once a participant leaves,
 Player Sessions resets the connection for garage entry. The Battle ID is
 allocated independently of the Training Room ID.
 
+The server advances hull speed and yaw every 100 ms. It reads the equipped
+engine, vehicle mass and chassis resistance from the loadout, and samples the
+terrain at four points beneath the chassis. The height map supplies pitch and
+roll, while the surface map supplies hard, medium and soft ground. The driver
+receives independent track speeds in the Avatar's auxiliary physics property.
+Battle peers receive the Vehicle's engine mode and, where the chassis
+defines them, its wheel scroll and steering properties. See the
+[replay and resource evidence](../../docs/battle-replays.md#vehicle-movement-and-chassis-animation).
+
 | Term | Meaning |
 | --- | --- |
 | Battle | A live match on one arena with an assigned roster and round clock. |

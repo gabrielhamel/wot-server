@@ -192,35 +192,59 @@ impl Battle {
             .collect();
         let mut movement = Vec::new();
         let time = now.saturating_duration_since(self.started_at).as_secs_f32();
+        let seconds = TICK.as_secs_f32();
         for (&client, player) in self
             .players
             .iter_mut()
-            .filter(|(_, player)| player.ready && !player.observer && player.tank.health > 0)
+            .filter(|(_, player)| player.ready && !player.observer)
         {
             let previous = player.tank.position;
             let previous_direction = player.vehicle.direction;
-            let previous_speed = player.tank.speed();
+            let previous_tracks = player.tank.track_speeds();
             let drive = player.pending_drive.take();
-            player.tank.step(TICK.as_secs_f32(), self.map.bounds);
-            if let Some((position, direction)) = self
-                .ground
-                .vehicle_pose(player.tank.position.xz(), player.tank.yaw)
-            {
-                player.tank.position = position;
-                player.tank.set_hull_tilt(direction);
-                if (position, direction) != (player.vehicle.position, player.vehicle.direction) {
-                    player.vehicle.position = position;
-                    player.vehicle.direction = direction;
-                    if let Some(parent) = &drive {
-                        movement.push((player.vehicle.entity_id, parent.clone()));
+            if player.tank.health <= 0 {
+                player.tank.stop_motion();
+            } else if drive.is_some() || player.tank.is_driving() {
+                let half_width = player
+                    .tank
+                    .performance
+                    .as_ref()
+                    .map_or(1.25, |profile| profile.mobility.track_half_width);
+                let ground = self.ground.ground_contact(
+                    previous.xz(),
+                    player.tank.yaw,
+                    half_width,
+                    previous_direction.y,
+                );
+                let mut step = || player.tank.step(seconds, self.map.bounds, ground);
+                let moved = match &drive {
+                    Some(parent) => parent.in_scope(step),
+                    None => step(),
+                };
+                if moved {
+                    if let Some((position, direction)) = self
+                        .ground
+                        .vehicle_pose(player.tank.position.xz(), player.tank.yaw)
+                    {
+                        player.tank.position = position;
+                        player.tank.set_hull_tilt(direction);
+                        player.vehicle.position = position;
+                        player.vehicle.direction = direction;
+                        if let Some(parent) = &drive {
+                            movement.push((player.vehicle.entity_id, parent.clone()));
+                        }
+                    } else {
+                        player.tank.position = previous;
+                        player.tank.yaw = previous_direction.z;
+                        player.tank.stop_motion();
                     }
                 }
-            } else {
-                player.tank.position = previous;
-                player.tank.yaw = previous_direction.z;
             }
-            if previous_direction != player.vehicle.direction
-                || previous_speed != player.tank.speed()
+
+            let tracks = player.tank.track_speeds();
+            if drive.is_some()
+                || previous_direction != player.vehicle.direction
+                || previous_tracks != tracks
             {
                 deliver_state(
                     drive.clone(),
@@ -232,12 +256,17 @@ impl Battle {
                             base,
                             client,
                             player.vehicle.direction,
-                            player.tank.speed(),
+                            tracks,
+                            player.tank.rpm(),
                         )
                     },
                 );
             }
-            let aiming = player.tank.advance_gun(TICK.as_secs_f32());
+            player.publish_chassis_motion(base, wire, &peers, drive.as_ref());
+            if player.tank.health <= 0 {
+                continue;
+            }
+            let aiming = player.tank.advance_gun(seconds);
             let gun = player.tank.packed_gun_angles();
             let entity_id = player.vehicle.entity_id;
             let aim = if aiming {
@@ -542,6 +571,45 @@ impl Participant {
             "accepted"
         } else {
             "invalid_aim"
+        }
+    }
+}
+
+impl Participant {
+    fn publish_chassis_motion(
+        &mut self,
+        base: &mut base::App,
+        wire: &ArenaWire,
+        peers: &[ClientKey],
+        drive: Option<&tracing::Span>,
+    ) {
+        let entity_id = self.vehicle.entity_id;
+        let engine_mode = self.tank.engine_mode();
+        if engine_mode != self.last_engine_mode {
+            deliver_state(drive.cloned(), "engine_mode", entity_id, peers, |client| {
+                wire.publish_engine_mode(base, client, entity_id, engine_mode)
+            });
+            self.last_engine_mode = engine_mode;
+        }
+
+        let mut scroll = Vec::new();
+        let mut steering = Vec::new();
+        for (speed, angle) in self.tank.wheel_motion() {
+            scroll.push(wire::pack_wheel_speed(speed));
+            if let Some(angle) = angle {
+                steering.push(wire::pack_wheel_steering(angle));
+            }
+        }
+        for (index, (kind, values)) in [("wheels_scroll", scroll), ("steering_angles", steering)]
+            .into_iter()
+            .enumerate()
+        {
+            if values != self.last_wheels[index] {
+                deliver_state(drive.cloned(), kind, entity_id, peers, |client| {
+                    wire.publish_wheels(base, client, entity_id, index == 1, &values)
+                });
+                self.last_wheels[index] = values;
+            }
         }
     }
 }

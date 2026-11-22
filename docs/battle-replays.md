@@ -120,6 +120,63 @@ and clock range, record type and payload shape. Compare several observations
 and check the matching client definitions. Use a controlled client session to
 vary one input at a time when inferring command semantics, timing or physics.
 
+## Vehicle movement and chassis animation
+
+Replay 1344's LT-432 (entity `553323838`) was stationary through 32.04 s.
+Measuring horizontal displacement over each following second gives 0.50, 5.27,
+8.61, 10.57, 11.83, 13.05 and 13.85 m/s for windows starting at 32.04 through
+38.04 s. The position records at those endpoints span stream offsets 424652
+through 522385. The 71 position samples from 32.04 through 39.04 s all fall on
+medium terrain in the installed `05_prohorovka` map at the hull center.
+Steering, slope, loadout and throttle can all affect these rates.
+
+In the same replay, type `0x07` has a 12-byte property header with entity ID,
+property index and argument length, all little-endian `u32`.
+The recorder's Vehicle property 15 (`engineMode`) carries a two-byte tuple.
+It changes from `01 00` at 32.74 s (offset 433382), through `03 05` at
+32.84 s (434922) and `03 01` at 33.94 s (449788), to `02 01` at 35.14 s
+(465782). The second byte carries the movement flags. The older local Tundra
+training capture below has no property 15 updates for its recorder Vehicle
+(`1925198086`).
+
+The supplied client executable has the SHA-256 in the EU evidence above.
+Its Prokhorovka, Karelia and Tundra packages contain version 1
+`terrain2/dominanttextures` maps. Each sampled tile has a 128 × 128 zlib-compressed,
+row-major cell grid after the texture-name table. The high nibble of each cell
+is the ground class (1 hard, 2 medium, 3 soft), matching the pinned Toolkit
+[decoder](references/wg-toolkit-rs/wg-toolkit/src/space/terrain.rs).
+The low nibble is the texture index. Four chassis samples blend the equipped
+chassis's resistance and rolling friction at surface boundaries. Missing and
+unpainted cells fall back to medium.
+
+The server models longitudinal acceleration from engine power per unit mass,
+surface resistance, rolling friction and hull pitch. It separately ramps the
+yaw rate and integrates speed through throttle release, braking, and reversal.
+The acceleration curve and its low-speed cap are approximations informed by
+the replay and the Toolkit's
+[capture comparisons](references/wg-toolkit-rs/wg-toolkit-wot/src/base/physics/drive.rs).
+Ground following still uses the height map. Suspension dynamics, lateral slip
+and handbrake drifts require separate work.
+
+For the driver, `Avatar.ownVehicleAuxPhysicsData` carries separate left and
+right track scroll speeds in bits 40–47 and 48–55, from −15 to 30 m/s.
+`Avatar.__onSetOwnVehicleAuxPhysicsData` forwards them to the appearance.
+For other vehicles, the client forwards `Vehicle.engineMode` to the track
+controller. Chassis with general wheels use the byte tuples `wheelsScroll`
+and `steeringAngles`. The client unpacks each element into its wheel filters.
+The wire layouts are validated against the extracted definitions at startup.
+See [Avatar handling](references/wot-src/sources/res/scripts/client/Avatar.py#L1033),
+[Vehicle handling](references/wot-src/sources/res/scripts/client/Vehicle.py#L749)
+and the [Toolkit's field measurements](references/wg-toolkit-rs/wg-toolkit-wot/src/base/physics/client.rs).
+
+Validation with the extracted local bundle covered 16,976 surface tiles.
+The encrypted Training Room E2E verified driver track differential during
+a turn, the remote engine mode, and the drive command's simulation and
+delivery spans. A separate two-peer check with the EBR 105 decoded eight
+wheel speeds and four steering angles on each peer and observed their
+return to neutral after releasing the controls. Native visual verification
+is pending.
+
 ## Direct hit in replay 1344
 
 The recorder's vehicle is `553323838` and its Avatar entity is `553323883`.

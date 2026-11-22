@@ -2,7 +2,7 @@ use super::*;
 use crate::battles::domain::vehicle::{GunRay, SHOT_RANGE, Shot, Tank};
 use crate::platform::mercury::{
     app::{
-        client::element::{FixedEntityProperty, id::ENTITY_PROPERTY},
+        client::element::{FixedEntityProperty, VariableEntityProperty, id::ENTITY_PROPERTY},
         dispatch::PropertyDef,
     },
     net::element::ElementLength,
@@ -99,6 +99,36 @@ impl ArenaWire {
         value: &WireValue,
         bytes: u32,
     ) -> Result<u8> {
+        Self::bind_property(
+            dispatch,
+            entity_type,
+            name,
+            value,
+            ElementLength::Fixed(bytes),
+        )
+    }
+
+    pub(super) fn bind_wheel_property(
+        dispatch: &ScriptDispatch,
+        entity_type: u16,
+        name: &str,
+    ) -> Result<u8> {
+        Self::bind_property(
+            dispatch,
+            entity_type,
+            name,
+            &WireValue::Seq(vec![WireValue::UInt8(127)]),
+            ElementLength::Variable8,
+        )
+    }
+
+    fn bind_property(
+        dispatch: &ScriptDispatch,
+        entity_type: u16,
+        name: &str,
+        value: &WireValue,
+        length: ElementLength,
+    ) -> Result<u8> {
         let properties = &dispatch
             .entity_from_id(entity_type)
             .context("Missing arena entity")?
@@ -111,9 +141,7 @@ impl ArenaWire {
         let (element, sub_id) = ENTITY_PROPERTY
             .from_exposed_id(u16::try_from(properties.len())?, u16::try_from(index)?);
         anyhow::ensure!(
-            sub_id.is_none()
-                && property.length == ElementLength::Fixed(bytes)
-                && property.ty.is_instance(value),
+            sub_id.is_none() && property.length == length && property.ty.is_instance(value),
             "Invalid arena property {name} framing"
         );
         Ok(element)
@@ -129,6 +157,7 @@ impl ArenaWire {
         base.send_arena_property(
             client,
             Some(entity_id),
+            self.gun_angles_element,
             FixedEntityProperty {
                 element_id: self.gun_angles_element,
                 bytes: value.to_le_bytes(),
@@ -142,15 +171,60 @@ impl ArenaWire {
         base: &mut base::App,
         client: ClientKey,
         direction: Vec3,
-        speed: f32,
+        tracks: [f32; 2],
+        rpm: f32,
     ) -> Result<()> {
         base.send_arena_property(
             client,
             None,
+            self.hull_aim_element,
             FixedEntityProperty {
                 element_id: self.hull_aim_element,
-                bytes: pack_hull_aim(direction, speed).to_le_bytes(),
+                bytes: pack_hull_aim(direction, tracks, rpm).to_le_bytes(),
             },
+        )?;
+        Ok(())
+    }
+
+    pub(in super::super) fn publish_engine_mode(
+        &self,
+        base: &mut base::App,
+        client: ClientKey,
+        entity_id: u32,
+        mode: [u8; 2],
+    ) -> Result<()> {
+        base.send_arena_property(
+            client,
+            Some(entity_id),
+            self.engine_mode_element,
+            FixedEntityProperty {
+                element_id: self.engine_mode_element,
+                bytes: mode,
+            },
+        )?;
+        Ok(())
+    }
+
+    pub(in super::super) fn publish_wheels(
+        &self,
+        base: &mut base::App,
+        client: ClientKey,
+        entity_id: u32,
+        steering: bool,
+        values: &[u8],
+    ) -> Result<()> {
+        let element_id = if steering {
+            self.wheels_steering_element
+        } else {
+            self.wheels_scroll_element
+        };
+        let mut bytes = Vec::with_capacity(values.len() + 1);
+        bytes.write_blob_variable(values)?;
+        base.send_arena_property(
+            client,
+            Some(entity_id),
+            element_id,
+            VariableEntityProperty { element_id, bytes },
         )?;
         Ok(())
     }
@@ -442,21 +516,32 @@ impl ArenaWire {
     }
 }
 
-pub(super) fn pack_hull_aim(direction: Vec3, speed: f32) -> u64 {
+pub(super) fn pack_hull_aim(direction: Vec3, tracks: [f32; 2], rpm: f32) -> u64 {
     use std::f32::consts::{FRAC_PI_2, TAU};
     let pack_angle = |angle: f32, bits: u32| {
         let slots = 1u64 << bits;
         ((angle / TAU + 0.5) * slots as f32).round() as u64 & (slots - 1u64)
     };
     let pitch = ((direction.y / FRAC_PI_2 * 0.5 + 0.5).clamp(0.0, 1.0) * 4095.0).round() as u64;
-    let track = (((speed + 15.0) / 45.0).clamp(0.0, 1.0) * 255.0).round() as u64;
-    let idle_rpm = 43u64;
-    idle_rpm << 56
-        | track << 48
-        | track << 40
+    let [left, right] =
+        tracks.map(|speed| (((speed + 15.0) / 45.0).clamp(0.0, 1.0) * 255.0).round() as u64);
+    let rpm = ((rpm / 1.2).clamp(0.0, 1.0) * 255.0).round() as u64;
+    rpm << 56
+        | right << 48
+        | left << 40
         | pack_angle(direction.x, 13) << 27
         | pitch << 15
         | pack_angle(direction.z, 15)
+}
+
+pub(in super::super) fn pack_wheel_speed(speed: f32) -> u8 {
+    (speed * 127.5 / 25.0 + 127.0).round().clamp(0.0, 255.0) as u8
+}
+
+pub(in super::super) fn pack_wheel_steering(angle: f32) -> u8 {
+    (angle * 255.0 / std::f32::consts::PI + 127.5)
+        .round()
+        .clamp(0.0, 255.0) as u8
 }
 
 fn gun_marker_value(ty: &Ty, ray: GunRay, dispersion: f32) -> Result<WireValue> {

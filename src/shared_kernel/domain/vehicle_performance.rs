@@ -6,8 +6,38 @@ pub struct VehiclePerformance {
     pub forward_speed: f32,
     pub reverse_speed: f32,
     pub hull_traverse: f32,
+    pub mobility: Mobility,
     pub turret_pivot: Option<Vec3>,
     pub gun: GunPerformance,
+}
+
+#[derive(Clone, Debug)]
+pub struct Mobility {
+    pub power_per_kg: f32,
+    pub terrain_resistance: [f32; 3],
+    pub rolling_friction: [f32; 3],
+    pub track_half_width: f32,
+    pub wheels: Vec<Wheel>,
+    pub turns_in_place: bool,
+}
+
+impl Default for Mobility {
+    fn default() -> Self {
+        Self {
+            power_per_kg: 14.0,
+            terrain_resistance: [1.0, 1.3, 2.0],
+            rolling_friction: [0.045, 0.065, 0.105],
+            track_half_width: 1.25,
+            wheels: Vec::new(),
+            turns_in_place: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Wheel {
+    pub center: glam::Vec2,
+    pub steering_limit: Option<f32>,
 }
 
 #[derive(Clone, Debug)]

@@ -129,7 +129,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.force`](../src/player_sessions/infrastructure/gateway/training/start.rs) | Native team-ready flag supplied with command `411`. Values `0` and `1` are accepted. |
 | [`input.ready`](../src/battles/infrastructure/mod.rs) | True for a team confirmation and false for a team unlock. On arena roster updates, true once the Avatar is ready and false on departure. |
 | [`input.element_id`](../src/platform/mercury/app/base/mod.rs) | One-byte Mercury element ID on arena delivery and incoming cell commands. |
-| [`input.drive.flags`](../src/battles/infrastructure/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. |
+| [`input.drive.flags`](../src/battles/infrastructure/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. The accepted mask is also recorded on the drive step. |
+| [`input.ground.hard_contacts`](../src/battles/domain/vehicle.rs), `input.ground.medium_contacts`, `input.ground.soft_contacts` | Number of chassis surface samples of each class in the drive step, out of four. Unpainted or unavailable surface samples count as medium. |
+| [`input.ground.pitch_radians`](../src/battles/domain/vehicle.rs) | Starting hull pitch in radians for the drive step. Positive values descend along the forward axis. |
 | [`input.ammunition.setting`](../src/battles/infrastructure/controls.rs) | Native ammunition setting code `0`, `1`, `17` or `18` on a decoded shell selection or reload command. |
 | [`input.ammunition.shell`](../src/battles/infrastructure/controls.rs) | Requested signed shell compact descriptor on shell selection, or current shell compact descriptor on a shot attempt. |
 | [`input.shell.kind`](../src/battles/infrastructure/controls.rs) | Client shell kind index of a fired shell. |
@@ -137,7 +139,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.shell.damage`](../src/battles/infrastructure/controls.rs) | Nominal hit points for the fired shell before capping by the target's remaining health. Omitted on rejected shots. |
 | [`input.aim.kind`](../src/battles/infrastructure/controls.rs) | Aim representation on an aim command, `world_point` or `hull_angles`. |
 | [`input.aim.server_marker`](../src/battles/infrastructure/controls.rs) | Boolean supplied by the Avatar's server reticle setting command. |
-| [`input.replication.kind`](../src/battles/infrastructure/controls.rs) | `position`, `hull_aim`, `gun_angles`, `gun_marker` or `ammunition` on a delivered arena pose, owner hull orientation, turret angle, owner reticle or reload state update. |
+| [`input.replication.kind`](../src/battles/infrastructure/controls.rs) | Arena delivery kind, including `position`, `hull_aim` (driver orientation and track motion), `engine_mode`, `wheels_scroll`, `steering_angles`, `gun_angles`, `gun_marker` and `ammunition`. |
 | [`input.arena.tick`](../src/battles/infrastructure/mod.rs) | Full arena tick count for the first position snapshot carrying a drive command's change. One unit is 100 ms. |
 | [`input.geometry`](../src/battles/infrastructure/terrain.rs) | Bundle geometry path when loading terrain or obstacles for the selected arena. |
 | [`input.roster.row`](../src/battles/infrastructure/mod.rs) | Zero-based row index when updating a player's ready state in the arena roster. |
@@ -250,7 +252,7 @@ meanings on different operations; those differences are listed explicitly.
 | --- | --- |
 | [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Byte length of an encoded outgoing XMPP stanza, compressed garage cache, Mercury resource response or available Training Room observer or combat vehicle descriptor. Excludes transport framing. |
 | [`output.recipients.count`](../src/player_sessions/infrastructure/gateway/training/chat.rs) | Number of queued Training channel messages, including the sender, or queued invitations after deduplication. For arena readiness updates, counts the recipients queued for delivery. For position snapshots, counts the clients targeted by the socket writes. |
-| [`output.delivered.count`](../src/battles/infrastructure/mod.rs) | Number of successful socket writes for an arena position snapshot or successful enqueues for hull orientation, gun angles, server marker or ammunition. |
+| [`output.delivered.count`](../src/battles/infrastructure/mod.rs) | Number of successful socket writes for an arena position snapshot or successful enqueues for hull orientation, chassis animation, gun angles, server marker or ammunition. |
 | [`output.rooms.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of Training Rooms returned by a successful list request. Omitted on rejection or a failed send. |
 | [`output.rooms.total`](../src/player_sessions/infrastructure/gateway/commands.rs) | Total discoverable rooms in the list response before paging. Omitted on rejection or a failed send. |
 | [`output.players.count`](../src/player_sessions/infrastructure/gateway/training.rs) | Count of players in returned rooms on listing, or membership count on successful join or removal. A deleted room has zero players. |
@@ -270,7 +272,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.damage`](../src/battles/infrastructure/controls.rs) | Hit points actually removed by a shot, omitted on miss. |
 | [`output.outcome`](../src/battles/infrastructure/controls.rs) | Cell controls record `accepted`, `shell_selected`, `shell_queued`, `shell_change_started`, `reload_started`, `magazine_full`, `manual_reload_unavailable`, `hit`, `ground_impact`, `obstacle_impact`, `miss`, `reloading`, `empty`, `invalid_flags`, `invalid_aim`, `shell_unavailable`, `shell_damage_unavailable`, `round_inactive`, `vehicle_unavailable`, `unimplemented` or `delivery_failed`. Missing or invalid loaded-shell damage sets error status. Mercury records `entity_unavailable` for a target outside the session's control and `wire_decode_failed` for invalid framing or argument data. |
 | [`output.obstacles.instances`](../src/battles/infrastructure/obstacles.rs) | Number of collision mesh placements loaded for the selected gameplay mode. Zero when the bundle has no obstacle collision for the map. |
-| [`output.terrain.tiles`](../src/battles/infrastructure/terrain.rs) | Number of decoded outdoor height tiles for the selected arena. |
+| [`output.terrain.tiles`](../src/battles/infrastructure/terrain.rs), `output.terrain.surface_tiles` | Number of decoded outdoor height tiles and driving surface tiles for the selected arena. |
+| [`output.drive.speed_mps`](../src/battles/domain/vehicle.rs) | Signed speed in metres per second after the simulation step. Negative means reverse. |
+| [`output.drive.yaw_rate_rad_per_second`](../src/battles/domain/vehicle.rs) | Signed yaw rate in radians per second after the simulation step. Positive turns right. |
 | [`output.phase`](../src/battles/infrastructure/mod.rs) | New round phase when publishing a transition. Values are `countdown`, `battle` and `finished`. |
 | [`output.crew.count`](../src/accounts/infrastructure/client/mod.rs) | Number of crew seats in the catalog vehicle prepared for the arena. |
 | [`output.outcome`](../src/player_sessions/infrastructure/gateway/training/start.rs) | Team commands record `team_ready`, `team_unlocked`, `launched`, `invalid_arguments`, `room_unavailable`, `not_host`, `team_not_ready`, `roster_or_map_unavailable` or `preparation_failed`. |

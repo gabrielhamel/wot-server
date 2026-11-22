@@ -1,7 +1,9 @@
-//! Ground elevation from the client geometry's quantized terrain tiles.
+//! Elevation and driving surfaces from the client geometry.
 
 use super::*;
-use crate::platform::client_formats::pxml;
+use crate::{battles::domain::movement::GroundContact, platform::client_formats::pxml};
+use byteorder::{LittleEndian, ReadBytesExt};
+use flate2::read::ZlibDecoder;
 use glam::Vec3Swizzles;
 use std::io::{BufReader, Read};
 
@@ -15,6 +17,7 @@ const TRACK_HALF_LENGTH: f32 = 2.5;
 pub(super) struct Terrain {
     metres: f32,
     tiles: HashMap<(i16, i16), Tile>,
+    surfaces: HashMap<(i16, i16), SurfaceTile>,
 }
 
 struct Tile {
@@ -26,7 +29,7 @@ struct Tile {
 impl Terrain {
     #[tracing::instrument(name = "battles.load_terrain", skip_all, fields(
         ddd.bounded_context.name = "battles", input.geometry = geometry,
-        output.terrain.tiles = tracing::field::Empty, otel.status_code = tracing::field::Empty,
+        output.terrain.tiles = tracing::field::Empty, output.terrain.surface_tiles = tracing::field::Empty, otel.status_code = tracing::field::Empty,
     ), err)]
     pub(super) fn load(resources: &ResourceBundle, geometry: &str) -> Result<Self> {
         let settings = format!("{geometry}/space.settings");
@@ -61,15 +64,60 @@ impl Terrain {
             tiles.insert((x, z), tile);
         }
         anyhow::ensure!(!tiles.is_empty(), "Arena terrain has no elevation tiles");
+        let mut surfaces = HashMap::new();
+        for &(x, z) in tiles.keys() {
+            let key = format!("{geometry}/terrain/{:04x}{:04x}.mat", x as u16, z as u16);
+            if resources.has_file(&key) {
+                let tile = SurfaceTile::decode(BufReader::new(resources.read(&key)?))
+                    .with_context(|| format!("Decode {key}"))?;
+                surfaces.insert((x, z), tile);
+            }
+        }
         tracing::Span::current().record("output.terrain.tiles", tiles.len());
-        Ok(Self { metres, tiles })
+        tracing::Span::current().record("output.terrain.surface_tiles", surfaces.len());
+        Ok(Self {
+            metres,
+            tiles,
+            surfaces,
+        })
+    }
+
+    fn tile_at(&self, point: Vec2) -> Option<((i16, i16), Vec2)> {
+        let point = point / self.metres;
+        let grid = point.floor();
+        let x = i16::try_from(grid.x as i32).ok()?;
+        let z = i16::try_from(grid.y as i32).ok()?;
+        Some(((x, z), point - grid))
     }
 
     pub(super) fn height_at(&self, point: Vec2) -> Option<f32> {
-        let grid = (point / self.metres).floor();
-        let i = i16::try_from(grid.x as i32).ok()?;
-        let j = i16::try_from(grid.y as i32).ok()?;
-        self.tiles.get(&(i, j))?.sample(point / self.metres - grid)
+        let (tile, local) = self.tile_at(point)?;
+        self.tiles.get(&tile)?.sample(local)
+    }
+
+    pub(super) fn ground_contact(
+        &self,
+        point: Vec2,
+        yaw: f32,
+        half_width: f32,
+        pitch: f32,
+    ) -> GroundContact {
+        let forward = Vec2::new(yaw.sin(), yaw.cos()) * TRACK_HALF_LENGTH;
+        let right = Vec2::new(yaw.cos(), -yaw.sin()) * half_width;
+        let mut surfaces = [0; 3];
+        for offset in [
+            forward + right,
+            forward - right,
+            -forward + right,
+            -forward - right,
+        ] {
+            let surface = self
+                .tile_at(point + offset)
+                .and_then(|(tile, local)| self.surfaces.get(&tile)?.sample(local))
+                .unwrap_or(1);
+            surfaces[surface] += 1;
+        }
+        GroundContact { surfaces, pitch }
     }
 
     pub(super) fn shot_intersection(
@@ -144,9 +192,79 @@ fn tile_coordinates(name: &str) -> Option<(i16, i16)> {
     ))
 }
 
+struct SurfaceTile {
+    width: usize,
+    depth: usize,
+    cells: Vec<u8>,
+}
+
+impl SurfaceTile {
+    fn decode(mut input: impl Read) -> Result<Self> {
+        let number = |input: &mut dyn Read| input.read_u32::<LittleEndian>();
+        anyhow::ensure!(
+            number(&mut input)? == u32::from_le_bytes(*b"mat\0"),
+            "Invalid terrain surface header"
+        );
+        anyhow::ensure!(
+            number(&mut input)? == 1,
+            "Unsupported terrain surface version"
+        );
+        let textures = u64::from(number(&mut input)?);
+        let name_bytes = u64::from(number(&mut input)?);
+        let width = number(&mut input)? as usize;
+        let depth = number(&mut input)? as usize;
+        input.read_exact(&mut [0; 8])?;
+        anyhow::ensure!(
+            textures <= 16 && name_bytes <= 1024,
+            "Invalid terrain texture table"
+        );
+        let table_bytes = textures * name_bytes;
+        anyhow::ensure!(
+            std::io::copy(&mut (&mut input).take(table_bytes), &mut std::io::sink())?
+                == table_bytes,
+            "Truncated terrain texture table"
+        );
+        anyhow::ensure!(
+            number(&mut input)? == 0x7a697000,
+            "Invalid terrain surface compression header"
+        );
+        let _compressed_marker = number(&mut input)?;
+        let size = number(&mut input)? as usize;
+        anyhow::ensure!(
+            (1..=MAX_TILE_WIDTH).contains(&width)
+                && (1..=MAX_TILE_WIDTH).contains(&depth)
+                && size == width * depth,
+            "Invalid terrain surface dimensions"
+        );
+        let mut cells = Vec::with_capacity(size);
+        ZlibDecoder::new(input.take(512 * 1024))
+            .take(size as u64 + 1)
+            .read_to_end(&mut cells)?;
+        anyhow::ensure!(cells.len() == size, "Invalid terrain surface cell count");
+        Ok(Self {
+            width,
+            depth,
+            cells,
+        })
+    }
+
+    fn sample(&self, point: Vec2) -> Option<usize> {
+        let x = (point.x * self.width as f32) as usize;
+        let z = (point.y * self.depth as f32) as usize;
+        let cell = self
+            .cells
+            .get(z.min(self.depth - 1) * self.width + x.min(self.width - 1))?;
+        match cell >> 4 {
+            1 => Some(0),
+            2 => Some(1),
+            3 => Some(2),
+            _ => None,
+        }
+    }
+}
+
 impl Tile {
     fn decode(mut input: impl Read) -> Result<Self> {
-        use byteorder::{LittleEndian, ReadBytesExt};
         let mut magic = [0; 4];
         input.read_exact(&mut magic)?;
         anyhow::ensure!(magic == *b"hmp\0", "Invalid terrain header");
@@ -228,12 +346,44 @@ mod tests {
     use super::*;
 
     #[test]
+    fn surface_tiles_use_the_ground_nibble_and_blend_across_signed_chunks() {
+        use flate2::{Compression, write::ZlibEncoder};
+        use std::io::Write;
+
+        let mut tile = Vec::new();
+        for word in [u32::from_le_bytes(*b"mat\0"), 1, 1, 4, 2, 2, 0, 0] {
+            tile.extend(word.to_le_bytes());
+        }
+        tile.extend(b"dds\0");
+        for word in [0x7a697000_u32, 0, 4] {
+            tile.extend(word.to_le_bytes());
+        }
+        let mut compressed = ZlibEncoder::new(tile, Compression::default());
+        compressed.write_all(&[0x1b, 0x11, 0x23, 0x3a]).unwrap();
+        let tile = compressed.finish().unwrap();
+        let surface = SurfaceTile::decode(tile.as_slice()).unwrap();
+        assert_eq!(surface.sample(Vec2::new(0.1, 0.1)), Some(0));
+        assert_eq!(surface.sample(Vec2::new(0.1, 0.9)), Some(1));
+        assert_eq!(surface.sample(Vec2::new(0.9, 0.9)), Some(2));
+        assert!(SurfaceTile::decode(&tile[..40]).is_err());
+
+        let terrain = Terrain {
+            metres: 100.0,
+            tiles: HashMap::new(),
+            surfaces: HashMap::from([((-1, 0), surface)]),
+        };
+        let contact = terrain.ground_contact(Vec2::new(0.0, 75.0), 0.0, 1.25, 0.0);
+        assert_eq!(contact.surfaces, [0, 2, 2]);
+    }
+
+    #[test]
     fn terrain_interpolates_slopes_and_uses_signed_tile_coordinates() {
         let millimetres = (0..7)
             .flat_map(|z| (0..7).map(move |x| 20_000 + 2_000 * x + 4_000 * z))
             .collect();
         let ground = Terrain {
             metres: 100.0,
+            surfaces: HashMap::new(),
             tiles: HashMap::from([(
                 (-1, 0),
                 Tile {
