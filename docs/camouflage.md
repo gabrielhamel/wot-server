@@ -159,11 +159,26 @@ In Training, the same encoded style marker travels with the equipped vehicle
 and is sent in `Vehicle.publicInfo.outfit`. The client reads that field when
 assembling the vehicle's appearance, using the current map's season. Training currently supplies catalog-defined locked styles.
 
+The same Vehicle creation payload goes to the driver and to every other
+player in the arena. It contains the outfit and the compact descriptor for
+the equipped chassis, engine, fuel tank, radio, turret, gun and optional
+devices. Player-selected garage outfits still need battle replication.
+
+The client applies each viewer's customization display preference to other
+vehicles. First Warrior's style is classified as non-historical, so a
+historical-only viewer can see the base Type 59 model even though the
+outfit arrived. Player Sessions forwards the Accounts preference at battle
+entry. The client packs it into bits 2 and 3 of `GAME_EXTENDED_2` (setting
+102), and the server sends it to that viewer as
+`Avatar.customizationDisplayType`. Valid settings are 0 (Historical), 1
+(non-historical allowed), and 2 (All). A missing value or reserved value
+uses the client's default, All.
+
 Client references for this flow are
 [`styles/list.xml`](references/wot-src/sources/res/scripts/item_defs/customization/styles/list.xml),
 [`Vehicle.createAppliedOutfits`](references/wot-src/sources/res/scripts/client/gui/shared/gui_items/Vehicle.py),
 [`Vehicle.onEnterWorld`](references/wot-src/sources/res/scripts/client/Vehicle.py)
-and [`camouflages.getOutfitComponent`](references/wot-src/sources/res/scripts/client/vehicle_systems/camouflages.py).
+and [the client’s outfit builder and historical filter](references/wot-src/sources/res/scripts/client/vehicle_systems/camouflages.py). The preference encoding is in [ServerSettingsManager](references/wot-src/sources/res/scripts/client/account_helpers/settings_core/ServerSettingsManager.py), [options](references/wot-src/sources/res/scripts/client/account_helpers/settings_core/options.py), and [Avatar.def](references/wot-src/sources/res/scripts/entity_defs/Avatar.def).
 
 ## Wire contract
 

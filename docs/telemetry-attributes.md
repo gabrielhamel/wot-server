@@ -153,6 +153,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.arg3`](../src/player_sessions/infrastructure/gateway/commands.rs) | Fourth decoded scalar argument, when the command form supplies it. |
 | [`input.chat.joining`](../src/player_sessions/infrastructure/gateway/training/chat.rs) | True when opening the Training channel for a member, false when closing it. |
 | [`input.args.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of wire method arguments on `game.command`; number of integers on decoded array commands, Training Room listing, settings and ammunition spans. Array contents stay out of telemetry. |
+| [`input.customization.display_type`](../src/battles/infrastructure/mod.rs) | Viewer preference sent to their Avatar at arena entry. Values are 0 for historical, 1 to include non-historical styles and 2 for all styles. |
 | [`input.outfits.count`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Number of outfit descriptors in a decoded array command, including empty descriptors, or participants with a nonempty outfit on arena preparation. |
 | [`input.outfit.bytes`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Total length in bytes of all outfit descriptors passed to the Exterior adapter. Descriptor contents are omitted. |
 | [`input.shop_revision`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Requested shop revision on a cosmetic purchase or apply command, or on progression and ammunition dispatch when supplied. |

@@ -1506,7 +1506,8 @@ pub fn exercise_battle(
     assert_ne!(host_cell.position, guest_cell.position);
     let avatar_schema = script.entity_from_name("Avatar").unwrap().1;
     let vehicle_type = script.entity_from_name("Vehicle").unwrap().0;
-    for (peer, cell, team) in [(&*host, host_cell, 1), (&*guest, guest_cell, 2)] {
+    for (peer, cell, team, display_type) in [(&*host, host_cell, 1, 1), (&*guest, guest_cell, 2, 2)]
+    {
         use wot_server::player_sessions::test_support::mercury::net::codec::Codec;
         let mut blob = cell.properties.as_slice();
         let Value::Dict(properties) = Value::read(&mut blob, &avatar_schema.cell_data_ty).unwrap()
@@ -1514,6 +1515,10 @@ pub fn exercise_battle(
             panic!("avatar cell properties");
         };
         assert_eq!(properties["team"].as_i64(), Some(team));
+        assert_eq!(
+            properties["customizationDisplayType"],
+            Value::UInt8(display_type)
+        );
         let Value::UInt64(aux) = properties["ownVehicleAuxPhysicsData"] else {
             panic!("expected packed hull orientation");
         };
@@ -1545,6 +1550,18 @@ pub fn exercise_battle(
             assert_eq!(vehicle.position, cell.position);
             assert_eq!(vehicle.direction, cell.direction);
         }
+    }
+
+    for cell in [host_cell, guest_cell] {
+        let vehicle_properties = |peer: &Peer| {
+            peer.arena_entities
+                .iter()
+                .find(|entity| entity.entity_id == cell.vehicle_id)
+                .unwrap()
+                .properties
+                .clone()
+        };
+        assert_eq!(vehicle_properties(host), vehicle_properties(guest));
     }
 
     let period = |p: &Peer| {
@@ -2689,6 +2706,12 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
                 assert!(has(entry, "output.outcome", "entered"));
                 assert!(has(entry, "ddd.bounded_context.name", "battles"));
                 assert!(has(entry, "input.battle.id", &battle_id));
+                let display_type = if has(entry, "input.team", "1") {
+                    "1"
+                } else {
+                    "2"
+                };
+                assert!(has(entry, "input.customization.display_type", display_type));
                 assert!(has(entry, "output.avatar_control", "server"));
                 for element in ["6", "65"] {
                     assert!(traces.iter().any(|s| s.name == "mercury.arena_delivery"

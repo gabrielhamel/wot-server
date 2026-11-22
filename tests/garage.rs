@@ -274,7 +274,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             .starts_with("$argon2id$")
     );
     let (r1, r2) = tokio::join!(
-        accounts.save_settings(a.id, BTreeMap::from([(10, 20)])),
+        accounts.save_settings(a.id, BTreeMap::from([(10, 20), (102, 4 | 16)])),
         accounts.save_settings(a.id, BTreeMap::from([(11, 21)]))
     );
     assert_ne!(r1.unwrap(), r2.unwrap());
@@ -282,7 +282,10 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     let training_vehicle_id = stored.vehicles[0].inventory_id;
     let guest_vehicle_id = repository.snapshot(b.id).await.unwrap().vehicles[0].inventory_id;
     assert_eq!(stored.revision, 3);
-    assert_eq!(stored.settings, BTreeMap::from([(10, 20), (11, 21)]));
+    assert_eq!(
+        stored.settings,
+        BTreeMap::from([(10, 20), (11, 21), (102, 4 | 16)])
+    );
     assert!(repository.snapshot(b.id).await.unwrap().settings.is_empty());
     let reconnected = PostgresAccounts::new(
         wot_server::server::test_support::connect_database(&url, 2)

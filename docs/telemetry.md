@@ -240,7 +240,8 @@ command parents the nested roster update and generation commit for both
 peers. Departure sends the corresponding disconnected state. Arena transport
 acknowledgements record socket delivery and the transport sequence number,
 with no game payload.
-Each arena entry records the Avatar control mode and parents delivery of the
+Each arena entry records the viewer’s customization display preference and the
+Avatar control mode, and parents delivery of the
 control handoff to the client.
 
 Training Room invitations record recipient counts and the optional message's

@@ -166,6 +166,10 @@ impl ArenaWire {
             [
                 ("team", WireValue::UInt8(player.team)),
                 (
+                    "customizationDisplayType",
+                    WireValue::UInt8(player.customization_display_type),
+                ),
+                (
                     "ownVehicleAuxPhysicsData",
                     WireValue::UInt64(controls::pack_hull_aim(player.direction, [0.0; 2], 0.2)),
                 ),

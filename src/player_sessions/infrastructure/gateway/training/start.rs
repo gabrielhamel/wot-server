@@ -203,6 +203,7 @@ impl Gateway {
                 team,
                 is_host: room.host == client,
                 observer,
+                customization_display_type: session.account.snapshot.customization_display_type(),
                 vehicle,
             });
         }

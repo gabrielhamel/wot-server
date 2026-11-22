@@ -54,7 +54,7 @@ ContextMap Server {
     implementationTechnology = "Native Avatar and Vehicle control methods, arena lifecycle events and entity replication over Mercury"
   }
   Battles [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Map queries, battle launch with an assigned roster, equipped loadouts with outfits and vehicle performance, and participant lifecycle for garage handoff and scheduled return after the outcome"
+    implementationTechnology = "Map queries, battle launch with an assigned roster, equipped loadouts with outfits and vehicle performance, viewer customization preferences, and participant lifecycle for garage handoff and scheduled return after the outcome"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections"

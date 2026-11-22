@@ -20,6 +20,7 @@ pub(crate) struct BattleParticipant {
     pub team: u8,
     pub is_host: bool,
     pub observer: bool,
+    pub customization_display_type: u8,
     pub vehicle: VehicleLoadout,
 }
 
