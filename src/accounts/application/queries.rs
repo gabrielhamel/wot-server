@@ -9,6 +9,8 @@ use std::sync::Arc;
 /// The equipped vehicle data needed to enter a battle.
 pub struct BattleVehicle {
     pub descriptor: Vec<u8>,
+    /// Encoded outfit for a catalog-defined locked style.
+    pub outfit: Vec<u8>,
     pub health: i16,
     pub crew_size: usize,
     pub performance: crate::shared_kernel::VehiclePerformance,

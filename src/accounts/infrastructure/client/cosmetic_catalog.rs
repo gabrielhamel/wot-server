@@ -44,6 +44,13 @@ pub(super) struct CosmeticCatalog {
     prohibited_numbers: BTreeSet<String>,
     grant_names: BTreeMap<CosmeticItem, String>,
     store_styles: Vec<super::StoreOffer>,
+    locked_styles: Vec<LockedStyle>,
+}
+
+struct LockedStyle {
+    id: u16,
+    include: Vec<VehicleFilter>,
+    exclude: Vec<VehicleFilter>,
 }
 
 struct CosmeticDefinition {
@@ -270,7 +277,11 @@ impl CosmeticCatalog {
                 .map(str::to_owned)
                 .collect();
         }
-        store_styles::load(&mut catalog, fs, prices)?;
+        if fs.has_file(STYLES) {
+            let styles = item_defs::read_xml(fs, STYLES)?;
+            catalog.read_locked_styles(&styles)?;
+            store_styles::load(&mut catalog, &styles, prices)?;
+        }
         Ok(catalog)
     }
 
@@ -305,6 +316,55 @@ impl CosmeticCatalog {
         self.grantable_rule((CosmeticKind::Attachment, attachment.id)).is_some_and(|rule| {
             matches!(&rule.placement, CosmeticPlacement::Attachment(rule) if rule.fits(slot, attachment))
         })
+    }
+
+    fn read_locked_styles(&mut self, styles: &Element) -> Result<()> {
+        for (id, style, group) in cosmetic_definitions(styles, "style") {
+            let tags = style
+                .get_child_string("tags")
+                .or_else(|| group.get_child_string("tags"))
+                .unwrap_or_default();
+            if !tags.split_whitespace().any(|tag| tag == "lockedOnVehicle") {
+                continue;
+            }
+            let Some(filter) = style
+                .get_child_element("vehicleFilter")
+                .or_else(|| group.get_child_element("vehicleFilter"))
+            else {
+                continue;
+            };
+            let include = filter
+                .iter_child_elements()
+                .filter(|(kind, _)| *kind == "include")
+                .map(|(_, node)| VehicleFilter::read(node))
+                .collect::<Result<Vec<_>>>()?;
+            let exclude = filter
+                .iter_child_elements()
+                .filter(|(kind, _)| *kind == "exclude")
+                .map(|(_, node)| VehicleFilter::read(node))
+                .collect::<Result<Vec<_>>>()?;
+            self.locked_styles.push(LockedStyle {
+                id: id?,
+                include,
+                exclude,
+            });
+        }
+        Ok(())
+    }
+
+    pub(super) fn locked_style(&self, vehicle: &VehicleOffer) -> Option<u16> {
+        let (nation, _) = vehicle.key.split_once(':')?;
+        let mut matches = self.locked_styles.iter().filter(|style| {
+            let matches_vehicle =
+                |filter: &VehicleFilter| filter.matches(&vehicle.key, nation, vehicle);
+            style
+                .include
+                .iter()
+                .any(|filter| !filter.vehicles.is_empty() && matches_vehicle(filter))
+                && !style.exclude.iter().any(matches_vehicle)
+        });
+        let style = matches.next()?;
+        matches.next().is_none().then_some(style.id)
     }
 
     fn rules_for(

@@ -153,7 +153,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.arg3`](../src/player_sessions/infrastructure/gateway/commands.rs) | Fourth decoded scalar argument, when the command form supplies it. |
 | [`input.chat.joining`](../src/player_sessions/infrastructure/gateway/training/chat.rs) | True when opening the Training channel for a member, false when closing it. |
 | [`input.args.count`](../src/player_sessions/infrastructure/gateway/commands.rs) | Number of wire method arguments on `game.command`; number of integers on decoded array commands, Training Room listing, settings and ammunition spans. Array contents stay out of telemetry. |
-| [`input.outfits.count`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Number of outfit descriptors in a decoded array command, including empty descriptors. |
+| [`input.outfits.count`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Number of outfit descriptors in a decoded array command, including empty descriptors, or participants with a nonempty outfit on arena preparation. |
 | [`input.outfit.bytes`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Total length in bytes of all outfit descriptors passed to the Exterior adapter. Descriptor contents are omitted. |
 | [`input.shop_revision`](../src/player_sessions/infrastructure/gateway/cosmetics.rs) | Requested shop revision on a cosmetic purchase or apply command, or on progression and ammunition dispatch when supplied. |
 | [`input.has_command`](../src/player_sessions/infrastructure/gateway/progression.rs) | Whether progression dispatch received a parsed progression command. |
@@ -250,6 +250,8 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
+| [`output.outfit.bytes`](../src/accounts/infrastructure/client/mod.rs) | Length of the locked-style outfit descriptor in bytes on successful battle loadout projection. Zero for an unstyled vehicle. |
+| [`output.outfits.locked_count`](../src/accounts/infrastructure/client/mod.rs) | Number of owned vehicles with a catalog-defined locked style in a successful garage projection. |
 | [`output.bytes`](../src/player_sessions/infrastructure/gateway/commands.rs) | Byte length of an encoded outgoing XMPP stanza, compressed garage cache, Mercury resource response or available Training Room observer or combat vehicle descriptor. Excludes transport framing. |
 | [`output.recipients.count`](../src/player_sessions/infrastructure/gateway/training/chat.rs) | Number of queued Training channel messages, including the sender, or invitations enqueued immediately for recipients with active garages. For arena readiness updates, counts the recipients queued for delivery. For position snapshots, counts the clients targeted by the socket writes. |
 | [`output.invites.queued_count`](../src/player_sessions/infrastructure/gateway/training/invites.rs) | Number of new invitations awaiting a garage sync after recipient deduplication. |

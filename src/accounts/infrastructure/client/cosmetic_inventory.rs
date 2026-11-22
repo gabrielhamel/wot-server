@@ -4,7 +4,7 @@ use super::{
     progression::changed_rows,
 };
 use crate::{
-    accounts::{CosmeticItem, CosmeticKind, CosmeticState},
+    accounts::{CosmeticItem, CosmeticKind, CosmeticState, OutfitSeason},
     platform::client_formats::pickle::Value,
 };
 use std::collections::BTreeMap;
@@ -22,7 +22,11 @@ pub(super) struct CosmeticInventory {
 }
 
 impl CosmeticInventory {
-    pub(super) fn project(state: &CosmeticState, vehicle_types: &BTreeMap<i64, i32>) -> Self {
+    pub(super) fn project(
+        state: &CosmeticState,
+        vehicle_types: &BTreeMap<i64, i32>,
+        locked_styles: impl Iterator<Item = (i32, u16)>,
+    ) -> Self {
         let mut fitted = BTreeMap::<CosmeticItem, BTreeMap<i32, u32>>::new();
         for (vehicle, item, units) in state.mounted() {
             if units > 0
@@ -91,7 +95,7 @@ impl CosmeticInventory {
                 ),
             );
         }
-        let outfits = state
+        let mut outfits: BTreeMap<_, _> = state
             .outfits
             .iter()
             .filter_map(|(vehicle, seasons)| {
@@ -108,6 +112,11 @@ impl CosmeticInventory {
                 Some((Value::from(cd), Value::Dict(outfits)))
             })
             .collect();
+        for (vehicle_type, style) in locked_styles {
+            outfits.insert(Value::from(vehicle_type), crate::pickle!({
+                (outfit::season_code(OutfitSeason::Common)): (Value::Bytes(outfit::encode_style(style))),
+            }));
+        }
         Self {
             stock,
             outfits,

@@ -200,8 +200,8 @@ game.command                                      [doCmdInt3, 411]
     player_sessions.start_training_battle
       mercury.response                            [onCmdResponse]
       player_sessions.prepare_training_battle
-        accounts.battle_vehicle                   [for each combat vehicle]
-        battles.prepare                           [allocates battle ID and prepares arena]
+        accounts.battle_vehicle                   [for each combat vehicle, outfit byte count]
+        battles.prepare                           [allocates battle ID and counts arena outfits]
           battles.load_terrain                     [when terrain is loaded]
           battles.load_obstacles                  [when obstacle collision is loaded]
           battles.enter                            [one per participant handoff]

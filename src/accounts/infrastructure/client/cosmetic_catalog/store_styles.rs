@@ -1,13 +1,12 @@
 use super::{
     BTreeMap, BTreeSet, CosmeticCatalog, CosmeticDefinition, CosmeticKind, CosmeticPlacement,
-    CosmeticRule, OutfitSeason, Result, STYLE_TYPE, STYLES, VehicleFilter, cosmetic_definitions,
-    cosmetic_descriptor, item_defs,
+    CosmeticRule, Element, OutfitSeason, Result, STYLE_TYPE, VehicleFilter, cosmetic_definitions,
+    cosmetic_descriptor,
 };
 use crate::accounts::infrastructure::client::item_prices::ItemPrices;
 use crate::accounts::infrastructure::client::store::{
     StoreCategory, StoreOffer, StorePrice, listing,
 };
-use wot_resources::ResourceBundle;
 
 // Prices and labels follow the EU Store catalog in docs/store-eu-catalog.md.
 // The installed client supplies the style IDs, 2D/3D tags, and compatible vehicles.
@@ -63,18 +62,14 @@ const OFFERS: &[(u16, &str, i64)] = &[
 
 pub(super) fn load(
     catalog: &mut CosmeticCatalog,
-    fs: &ResourceBundle,
+    styles: &Element,
     prices: &mut ItemPrices,
 ) -> Result<()> {
-    if !fs.has_file(STYLES) {
-        return Ok(());
-    }
     let offers: BTreeMap<_, _> = OFFERS
         .iter()
         .map(|&(id, name, price)| (id, (name, price)))
         .collect();
-    let styles = item_defs::read_xml(fs, STYLES)?;
-    for (id, style, group) in cosmetic_definitions(&styles, "style") {
+    for (id, style, group) in cosmetic_definitions(styles, "style") {
         let id = id?;
         let Some(&(name, price)) = offers.get(&id) else {
             continue;

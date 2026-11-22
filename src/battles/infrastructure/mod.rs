@@ -84,6 +84,7 @@ impl Entrant {
             observer: false,
             vehicle: VehicleLoadout {
                 descriptor: vec![1],
+                outfit: Vec::new(),
                 health: 100,
                 crew_size: 3,
                 ammunition: vec![(10, 5)],
@@ -348,6 +349,7 @@ impl BattleRuntime {
     #[tracing::instrument(name = "battles.prepare", skip_all, fields(
         ddd.bounded_context.name = "battles", input.arena_type_id = launch.arena_type,
         input.round_length.seconds = launch.duration.as_secs(), input.players.count = launch.participants.len(),
+        input.outfits.count = launch.participants.iter().filter(|participant| !participant.vehicle.outfit.is_empty()).count(),
         output.battle.id = tracing::field::Empty, output.players.count = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
     ), err)]

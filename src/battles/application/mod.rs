@@ -25,6 +25,7 @@ pub(crate) struct BattleParticipant {
 
 pub(crate) struct VehicleLoadout {
     pub descriptor: Vec<u8>,
+    pub outfit: Vec<u8>,
     pub health: i16,
     pub crew_size: usize,
     pub performance: Option<crate::shared_kernel::VehiclePerformance>,

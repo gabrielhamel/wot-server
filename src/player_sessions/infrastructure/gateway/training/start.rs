@@ -175,6 +175,7 @@ impl Gateway {
                     .training_observer_descriptor()
                     .map(|descriptor| VehicleLoadout {
                         descriptor: descriptor.to_vec(),
+                        outfit: Vec::new(),
                         health: 1,
                         crew_size: 0,
                         ammunition: Vec::new(),
@@ -185,6 +186,7 @@ impl Gateway {
                     .battle_vehicle(&session.account.snapshot, inventory_id)?
                     .map(|vehicle| VehicleLoadout {
                         descriptor: vehicle.descriptor,
+                        outfit: vehicle.outfit,
                         health: vehicle.health,
                         crew_size: vehicle.crew_size,
                         ammunition: vehicle.ammunition,

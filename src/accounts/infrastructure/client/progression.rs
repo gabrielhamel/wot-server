@@ -589,7 +589,10 @@ impl GarageCatalog {
                 );
             }
         }
-        if previous.progression.cosmetics != next.progression.cosmetics {
+        if previous.progression.cosmetics != next.progression.cosmetics
+            || change.acquired_vehicle.is_some()
+            || change.sold_vehicle.is_some()
+        {
             let project = |snapshot: &AccountSnapshot| {
                 let vehicle_types = snapshot
                     .vehicles
@@ -601,6 +604,12 @@ impl GarageCatalog {
                 super::cosmetic_inventory::CosmeticInventory::project(
                     &snapshot.progression.cosmetics,
                     &vehicle_types,
+                    snapshot.vehicles.iter().filter_map(|vehicle| {
+                        Some((
+                            *vehicle_types.get(&vehicle.inventory_id)?,
+                            self.locked_style(&vehicle.catalog_key)?,
+                        ))
+                    }),
                 )
             };
             let changes = project(next).diff(&project(previous));

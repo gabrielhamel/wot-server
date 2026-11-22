@@ -41,5 +41,5 @@ defines them, its wheel scroll and steering properties. See the
 | Arena | The shared space where the battle runs, identified by its geometry and gameplay variant. |
 | Participant | A connected player assigned to a team with a combat or observer vehicle. |
 | Round | The progression through loading, countdown, active battle and results. |
-| Loadout | The equipped vehicle descriptor, health, crew size, ammunition and base performance at launch. |
+| Loadout | The equipped vehicle descriptor, health, crew size, ammunition, locked outfit and base performance at launch. |
 | Scene impact | The first projectile contact with terrain or a placed obstacle, reported with its effect material. |

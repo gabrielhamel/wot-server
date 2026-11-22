@@ -161,7 +161,12 @@ impl GarageCatalog {
         Ok(Some(vehicle.descr.encode()))
     }
 
-    #[tracing::instrument(name = "accounts.battle_vehicle", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id, output.bytes = tracing::field::Empty, output.crew.count = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
+    fn locked_style(&self, key: &str) -> Option<u16> {
+        self.cosmetics
+            .locked_style(self.offers.get(self.keys.get(key)?)?)
+    }
+
+    #[tracing::instrument(name = "accounts.battle_vehicle", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id, output.bytes = tracing::field::Empty, output.crew.count = tracing::field::Empty, output.outfit.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     pub(crate) fn battle_vehicle(
         &self,
         snapshot: &AccountSnapshot,
@@ -195,6 +200,9 @@ impl GarageCatalog {
             return Ok(None);
         };
         let projected = catalog.project(owned, snapshot)?;
+        let outfit = projected
+            .locked_style
+            .map_or_else(Vec::new, outfit::encode_style);
         let descriptor = projected.descr.encode();
         let ammunition = projected
             .shells
@@ -204,9 +212,11 @@ impl GarageCatalog {
         let crew_size = catalog.crew_roles.len();
         span.record("output.bytes", descriptor.len());
         span.record("output.crew.count", crew_size);
+        span.record("output.outfit.bytes", outfit.len());
         span.record("output.outcome", "prepared");
         Ok(Some(crate::accounts::contract::BattleVehicle {
             descriptor,
+            outfit,
             health,
             crew_size,
             performance,
@@ -364,6 +374,7 @@ impl GarageCatalog {
         let vehicle = Arc::new(CatalogVehicle {
             template: account::Vehicle {
                 descr: def.descr,
+                locked_style: self.locked_style(key),
                 crew_slots: def.crew_roles.len(),
                 equipment: Default::default(),
                 directive: None,
@@ -468,7 +479,7 @@ impl GarageCatalog {
         }))
     }
 
-    #[tracing::instrument(name = "accounts.project_garage", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, input.vehicle_count = snapshot.vehicles.len()), err)]
+    #[tracing::instrument(name = "accounts.project_garage", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, input.vehicle_count = snapshot.vehicles.len(), output.outfits.locked_count = tracing::field::Empty), err)]
     fn project_account(&self, snapshot: &AccountSnapshot) -> Result<account::AccountData> {
         let default_unlocks = self.default_unlocks(snapshot)?;
         let vehicles = snapshot
@@ -476,6 +487,13 @@ impl GarageCatalog {
             .iter()
             .map(|owned| self.vehicle(&owned.catalog_key)?.project(owned, snapshot))
             .collect::<Result<Vec<_>>>()?;
+        tracing::Span::current().record(
+            "output.outfits.locked_count",
+            vehicles
+                .iter()
+                .filter(|vehicle| vehicle.locked_style.is_some())
+                .count(),
+        );
         Ok(account::AccountData {
             vehicles,
             ids: snapshot.vehicles.iter().map(|v| v.inventory_id).collect(),
