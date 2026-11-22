@@ -1,8 +1,8 @@
 use crate::{
     platform::client_formats::pxml::{Element, Value},
-    shared_kernel::{GunLoading, GunPerformance, ShellEffects},
+    shared_kernel::{GunLoading, GunPerformance, Mobility, ShellEffects, Wheel},
 };
-use glam::Vec3;
+use glam::{Vec3, Vec3Swizzles};
 use std::collections::BTreeMap;
 
 pub(super) fn speed_limits(vehicle: &Element) -> Option<[f32; 2]> {
@@ -24,6 +24,95 @@ pub(super) fn hull_traverse(local: Option<&Element>, base: &Element) -> Option<f
         .and_then(non_negative)
         .map_or(traverse, f32::to_radians);
     Some(traverse.min(limit))
+}
+
+pub(super) fn mobility(
+    local: Option<&Element>,
+    base: &Element,
+    physics: Option<&Element>,
+    wheeled: bool,
+) -> Mobility {
+    let mut mobility = Mobility::default();
+    if let Some(resistance) = vector(local, base, "terrainResistance")
+        .filter(|value| value.min_element() >= 0.05 && value.max_element() <= 20.0)
+    {
+        mobility.terrain_resistance = resistance.to_array();
+    }
+    for (index, ground) in ["firm", "medium", "soft"].into_iter().enumerate() {
+        if let Some(friction) = physics
+            .and_then(|element| element.get_child_value_at(&["grounds", ground, "rollingFriction"]))
+            .and_then(Value::as_float)
+            .filter(|value| (0.0..=1.0).contains(value))
+        {
+            mobility.rolling_friction[index] = friction;
+        }
+    }
+    if let Some(point) = field(local, base, &["topRightCarryingPoint"])
+        .and_then(Value::as_vec2)
+        .filter(|point| (0.1..=5.0).contains(&point.x))
+    {
+        mobility.track_half_width = point.x;
+    }
+    if let Some(wheels) = local
+        .and_then(|chassis| chassis.get_child_element("wheels"))
+        .or_else(|| base.get_child_element("wheels"))
+        && wheels.get_child_boolean("generalWheels") == Some(true)
+    {
+        mobility.wheels = general_wheels(wheels, physics);
+        mobility.turns_in_place = !wheeled
+            || mobility.wheels.is_empty()
+            || physics
+                .and_then(|element| element.get_child_boolean("isWheeledOnSpotRotation"))
+                .unwrap_or(false);
+    }
+    mobility
+}
+
+fn general_wheels(wheels: &Element, physics: Option<&Element>) -> Vec<Wheel> {
+    let mut indexed = Vec::new();
+    for (name, value) in wheels.iter_children_all() {
+        let Some(wheel) = value.as_element().filter(|_| name == "wheel") else {
+            continue;
+        };
+        if wheel.get_child_boolean("nonTrack") != Some(true) {
+            continue;
+        }
+        if let (Some(index), Some(center)) = (
+            wheel.get_child_integer("index"),
+            wheel
+                .get_child_vec3("wheelPos")
+                .filter(|center| center.is_finite() && center.abs().max_element() <= 20.0),
+        ) {
+            indexed.push((
+                index,
+                center.xz(),
+                wheel.get_child("steeringProcessor").is_some(),
+            ));
+        }
+    }
+    indexed.sort_by_key(|&(index, _, _)| index);
+    indexed.truncate(32);
+    let mut axles: Vec<_> = indexed.iter().map(|(_, center, _)| center.y).collect();
+    axles.sort_by(f32::total_cmp);
+    axles.dedup_by(|a, b| (*a - *b).abs() < 0.1);
+    let angles = physics
+        .and_then(|element| element.get_child_value("axleSteeringAngles"))
+        .and_then(floats)
+        .unwrap_or_default();
+    indexed
+        .into_iter()
+        .map(|(_, center, steers)| Wheel {
+            center,
+            steering_limit: steers.then(|| {
+                axles
+                    .iter()
+                    .position(|&z| (z - center.y).abs() < 0.1)
+                    .and_then(|axle| angles.get(axle).copied())
+                    .filter(|angle| angle.is_finite() && angle.abs() < 90.0)
+                    .map_or(0.0, f32::to_radians)
+            }),
+        })
+        .collect()
 }
 
 pub(super) fn gun(
@@ -202,6 +291,19 @@ mod tests {
         assert!(left < 0.0 && right > 0.0 && right - left < std::f32::consts::PI);
         assert!(su85.forward_speed > su85.reverse_speed && su85.reverse_speed > 0.0);
         assert!(su85.hull_traverse > 0.0);
+
+        assert!(su85.mobility.terrain_resistance[2] > su85.mobility.terrain_resistance[0]);
+        assert!(su85.mobility.power_per_kg > 5.0 && su85.mobility.power_per_kg < 25.0);
+
+        let ebr = performance("france:F108_Panhard_EBR_105");
+        assert_eq!(ebr.mobility.wheels.len(), 8);
+        assert!(
+            ebr.mobility
+                .wheels
+                .iter()
+                .any(|wheel| wheel.steering_limit.is_some_and(|limit| limit.abs() > 0.01))
+        );
+        assert!(!ebr.mobility.turns_in_place);
 
         let amx = performance("france:F17_AMX_13_90");
         assert!(amx.gun.loading.capacity > 1);

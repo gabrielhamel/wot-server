@@ -11,7 +11,7 @@ use crate::{
         VehicleCosmeticSlots, VehicleSurface,
     },
     platform::client_formats::pxml::Element,
-    shared_kernel::{GunPerformance, VehiclePerformance},
+    shared_kernel::{GunPerformance, Mobility, VehiclePerformance},
 };
 use anyhow::{Context, Result};
 use glam::Vec3;
@@ -25,6 +25,8 @@ pub(super) struct VehicleModules {
     chassis_exteriors: BTreeMap<i32, ChassisExterior>,
     speed_limits: Option<[f32; 2]>,
     hull_traverse: BTreeMap<i32, f32>,
+    chassis_mobility: BTreeMap<i32, Mobility>,
+    engine_power_hp: BTreeMap<i32, f32>,
     hull_positions: BTreeMap<i32, Vec3>,
     turret_position: Option<Vec3>,
     gun_performance: BTreeMap<(i32, i32), GunPerformance>,
@@ -51,10 +53,24 @@ impl VehicleModules {
                 *modules.get(&ModuleKind::Gun)?,
             ))?
             .clone();
+        let mut mobility = self
+            .chassis_mobility
+            .get(chassis)
+            .cloned()
+            .unwrap_or_default();
+        if let Some((power, mass)) = modules
+            .get(&ModuleKind::Engine)
+            .and_then(|engine| self.engine_power_hp.get(engine))
+            .zip(self.rules.loadout_weight(modules))
+            .filter(|(_, mass)| mass.is_finite() && *mass > 0.0)
+        {
+            mobility.power_per_kg = (power * 745.7 / mass).clamp(1.0, 100.0);
+        }
         Some(VehiclePerformance {
             forward_speed,
             reverse_speed,
             hull_traverse,
+            mobility,
             turret_pivot: self
                 .hull_positions
                 .get(chassis)
@@ -192,7 +208,17 @@ impl VehicleModules {
             .get_child_element("hull")
             .and_then(|hull| hull.get_child_integer("maxHealth"));
         let speed_limits = battle_performance::speed_limits(&vehicle);
+        let wheeled = components
+            .get(&1)
+            .and_then(|list| list.get_child_element(name))
+            .and_then(|entry| entry.get_child_string("tags"))
+            .is_some_and(|tags| tags.split_whitespace().any(|tag| tag == "wheeledVehicle"));
         let mut hull_traverse = BTreeMap::new();
+        let detailed = vehicle
+            .get_child_element("physics")
+            .and_then(|physics| physics.get_child_element("detailed"));
+        let mut chassis_mobility = BTreeMap::new();
+        let mut engine_power_hp = BTreeMap::new();
         let mut hull_positions = BTreeMap::new();
         let turret_position = vehicle
             .get_child_element("hull")
@@ -244,7 +270,26 @@ impl VehicleModules {
                         max_weight: if kind == 2 { number("maxLoad") } else { None },
                     },
                 );
+                if kind == 5 {
+                    let power = detailed
+                        .and_then(|physics| {
+                            physics.get_child_value_at(&["engines", name, "smplEnginePower"])
+                        })
+                        .and_then(|power| power.as_float())
+                        .or_else(|| number("power"))
+                        .filter(|power| power.is_finite() && *power > 0.0);
+                    if let Some(power) = power {
+                        engine_power_hp.insert(id, power);
+                    }
+                }
                 if kind == 2 {
+                    let physics = detailed
+                        .and_then(|physics| physics.get_child_element("chassis"))
+                        .and_then(|chassis| chassis.get_child_element(name));
+                    chassis_mobility.insert(
+                        id,
+                        battle_performance::mobility(local, base, physics, wheeled),
+                    );
                     if let Some(position) = battle_performance::vector(local, base, "hullPosition")
                     {
                         hull_positions.insert(id, position);
@@ -505,6 +550,8 @@ impl VehicleModules {
             training_health,
             speed_limits,
             hull_traverse,
+            chassis_mobility,
+            engine_power_hp,
             hull_positions,
             turret_position,
             gun_performance,

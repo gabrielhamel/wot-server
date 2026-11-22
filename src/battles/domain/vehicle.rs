@@ -1,15 +1,10 @@
-use super::ammunition::{Ammunition, Reload};
+use super::{
+    ammunition::{Ammunition, Reload},
+    movement::{Drive, GroundContact, approach},
+};
 use crate::shared_kernel::{ShellEffects, VehiclePerformance};
 use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 use std::time::Instant;
-
-const FORWARD: u8 = 1;
-const REVERSE: u8 = 2;
-const LEFT: u8 = 4;
-const RIGHT: u8 = 8;
-const HALF_SPEED: u8 = 16;
-const QUARTER_SPEED: u8 = 32;
-const BRAKE: u8 = 64;
 
 pub(crate) const SHOT_RANGE: f32 = 800.0;
 const HULL_RADIUS: f32 = 2.5;
@@ -22,8 +17,7 @@ pub(crate) struct Tank {
     pub max_health: i16,
     pub performance: Option<VehiclePerformance>,
     ammunition: Ammunition,
-    speed: f32,
-    flags: u8,
+    drive: Drive,
     aim: Option<Aim>,
     gun_yaw: f32,
     gun_pitch: f32,
@@ -73,8 +67,7 @@ impl Tank {
             performance,
             max_health: health,
             ammunition: Ammunition::new(ammo, capacity),
-            speed: 0.0,
-            flags: 0,
+            drive: Drive::default(),
             aim: None,
             gun_yaw: 0.0,
             gun_pitch: 0.0,
@@ -87,7 +80,7 @@ impl Tank {
         if flags & 0x80 != 0 {
             return false;
         }
-        self.flags = flags;
+        self.drive.flags = flags;
         true
     }
 
@@ -95,8 +88,36 @@ impl Tank {
         self.hull_tilt = direction.xy();
     }
 
-    pub fn speed(&self) -> f32 {
-        self.speed
+    pub fn track_speeds(&self) -> [f32; 2] {
+        let half_width = self
+            .performance
+            .as_ref()
+            .map_or(1.25, |profile| profile.mobility.track_half_width);
+        self.drive.track_speeds(half_width)
+    }
+
+    pub fn engine_mode(&self) -> [u8; 2] {
+        self.drive.engine_mode()
+    }
+
+    pub fn rpm(&self) -> f32 {
+        self.performance
+            .as_ref()
+            .map_or(0.2, |profile| self.drive.rpm(profile))
+    }
+
+    pub fn wheel_motion(&self) -> impl Iterator<Item = (f32, Option<f32>)> {
+        self.performance
+            .iter()
+            .flat_map(|profile| self.drive.wheel_motion(profile))
+    }
+
+    pub fn is_driving(&self) -> bool {
+        self.drive.is_active()
+    }
+
+    pub fn stop_motion(&mut self) {
+        self.drive.stop();
     }
 
     pub fn aim_at(&mut self, aim: Aim) -> bool {
@@ -115,41 +136,28 @@ impl Tank {
         valid
     }
 
-    pub fn step(&mut self, seconds: f32, bounds: [Vec2; 2]) -> bool {
+    #[tracing::instrument(name = "battles.drive_vehicle", skip_all, fields(
+        ddd.bounded_context.name = "battles", input.drive.flags = self.drive.flags,
+        input.ground.hard_contacts = ground.surfaces[0], input.ground.medium_contacts = ground.surfaces[1],
+        input.ground.soft_contacts = ground.surfaces[2], input.ground.pitch_radians = ground.pitch,
+        output.drive.speed_mps = tracing::field::Empty, output.drive.yaw_rate_rad_per_second = tracing::field::Empty,
+    ))]
+    pub fn step(&mut self, seconds: f32, bounds: [Vec2; 2], ground: GroundContact) -> bool {
         let Some(performance) = self.performance.as_ref().filter(|_| self.health > 0) else {
             return false;
         };
         let before = (self.position, self.yaw);
-        let throttle = axis(self.flags, FORWARD, REVERSE);
-        let speed_limit = if throttle < 0.0 {
-            performance.reverse_speed
-        } else {
-            performance.forward_speed
-        };
-        let gear = if self.flags & QUARTER_SPEED != 0 {
-            0.25
-        } else if self.flags & HALF_SPEED != 0 {
-            0.5
-        } else {
-            1.0
-        };
-        let braking = self.flags & BRAKE != 0;
-        let desired = if braking {
-            0.0
-        } else {
-            throttle * speed_limit * gear
-        };
-        let speed_step = if braking { 24.0 } else { 6.0 } * seconds;
-        self.speed += (desired - self.speed).clamp(-speed_step, speed_step);
-        let steering = axis(self.flags, RIGHT, LEFT);
-        let steering = if throttle < 0.0 { -steering } else { steering };
-        self.yaw = angle(self.yaw + steering * performance.hull_traverse * seconds);
-        let position =
-            self.position.xz() + Vec2::new(self.yaw.sin(), self.yaw.cos()) * self.speed * seconds;
-        let [min, max] = bounds;
-        let position = position.clamp(min, max);
-        self.position.x = position.x;
-        self.position.z = position.y;
+        self.drive.step(
+            performance,
+            ground,
+            &mut self.position,
+            &mut self.yaw,
+            seconds,
+            bounds,
+        );
+        let span = tracing::Span::current();
+        span.record("output.drive.speed_mps", self.drive.speed);
+        span.record("output.drive.yaw_rate_rad_per_second", self.drive.yaw_rate);
         before != (self.position, self.yaw)
     }
 
@@ -310,6 +318,9 @@ impl Tank {
     pub fn hit(&mut self, shot: &Shot) -> (i16, i16) {
         let previous = self.health;
         self.health = previous.saturating_sub_unsigned(shot.damage).max(0);
+        if self.health == 0 {
+            self.drive.flags = 0;
+        }
         (previous, self.health)
     }
 
@@ -338,21 +349,8 @@ impl Shot {
     }
 }
 
-fn axis(flags: u8, positive: u8, negative: u8) -> f32 {
-    f32::from(u8::from(flags & positive != 0)) - f32::from(u8::from(flags & negative != 0))
-}
-
-fn angle(radians: f32) -> f32 {
+pub(super) fn angle(radians: f32) -> f32 {
     (radians + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
-}
-
-fn approach(current: f32, target: f32, step: f32) -> f32 {
-    let difference = target - current;
-    if difference.abs() <= step {
-        target
-    } else {
-        current + difference.signum() * step
-    }
 }
 
 fn pitch_at(points: &[(f32, f32)], yaw: f32) -> f32 {
@@ -373,6 +371,16 @@ mod tests {
     use crate::shared_kernel::{GunLoading, GunPerformance};
     use std::time::Duration;
 
+    const FORWARD: u8 = 1;
+    const REVERSE: u8 = 2;
+    const LEFT: u8 = 4;
+    const HALF_SPEED: u8 = 16;
+    const BRAKE: u8 = 64;
+    const HARD: GroundContact = GroundContact {
+        surfaces: [4, 0, 0],
+        pitch: 0.0,
+    };
+
     fn tank(ammo: Vec<(i32, u16)>) -> Tank {
         Tank::new(
             Vec3::ZERO,
@@ -383,6 +391,7 @@ mod tests {
                 forward_speed: 12.0,
                 reverse_speed: 4.0,
                 hull_traverse: 0.8,
+                mobility: Default::default(),
                 turret_pivot: None,
                 gun: GunPerformance {
                     turret_traverse: 0.5,
@@ -438,16 +447,16 @@ mod tests {
         assert!(!tank.drive(0x80));
         assert!(tank.drive(FORWARD));
         for _ in 0..50 {
-            tank.step(0.1, bounds);
+            tank.step(0.1, bounds, HARD);
         }
         assert_eq!(tank.position, Vec3::Z * 2.0);
         assert!(tank.drive(BRAKE));
         for _ in 0..10 {
-            tank.step(0.1, bounds);
+            tank.step(0.1, bounds, HARD);
         }
-        assert!(!tank.step(0.1, bounds));
+        assert!(!tank.step(0.1, bounds, HARD));
         assert!(tank.drive(REVERSE | LEFT));
-        assert!(tank.step(0.1, bounds));
+        assert!(tank.step(0.1, bounds, HARD));
         assert!(tank.position.z < 2.0 && tank.yaw > 0.0);
     }
 
@@ -461,13 +470,80 @@ mod tests {
             (REVERSE | HALF_SPEED, -2.0),
         ] {
             assert!(tank.drive(flags));
-            for _ in 0..40 {
-                tank.step(0.1, bounds);
+            for _ in 0..100 {
+                tank.step(0.1, bounds, HARD);
             }
             let before = tank.position;
-            tank.step(1.0, bounds);
+            tank.step(1.0, bounds, HARD);
             assert!((tank.position.z - before.z - expected).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn acceleration_depends_on_surface_and_slope_and_releases_with_inertia() {
+        let bounds = [Vec2::splat(-100.0), Vec2::splat(100.0)];
+        let mut hard = tank(vec![]);
+        let mut soft = tank(vec![]);
+        let mut downhill = tank(vec![]);
+        let soft_ground = GroundContact {
+            surfaces: [0, 0, 4],
+            pitch: 0.0,
+        };
+        let grade = GroundContact { pitch: 0.2, ..HARD };
+        for (vehicle, ground) in [
+            (&mut hard, HARD),
+            (&mut soft, soft_ground),
+            (&mut downhill, grade),
+        ] {
+            assert!(vehicle.drive(FORWARD));
+            for _ in 0..10 {
+                vehicle.step(0.1, bounds, ground);
+            }
+        }
+        assert!(downhill.drive.speed > hard.drive.speed && hard.drive.speed > soft.drive.speed);
+        let speed = hard.drive.speed;
+        assert!(hard.drive(REVERSE));
+        hard.step(0.1, bounds, HARD);
+        assert!((0.0..speed).contains(&hard.drive.speed));
+        hard.drive(0);
+        let before = hard.position.z;
+        hard.step(0.1, bounds, HARD);
+        assert!(hard.position.z > before);
+        for _ in 0..10 {
+            hard.step(0.1, bounds, HARD);
+        }
+        assert_eq!(hard.track_speeds(), [0.0; 2]);
+    }
+
+    #[test]
+    fn a_pivot_rolls_tracks_in_opposite_directions_and_wheels_follow_a_turning_arc() {
+        let bounds = [Vec2::splat(-100.0), Vec2::splat(100.0)];
+        let mut tracked = tank(vec![]);
+        tracked.drive(LEFT);
+        assert!(tracked.step(0.1, bounds, HARD));
+        let [left, right] = tracked.track_speeds();
+        assert!(left < 0.0 && right > 0.0);
+        assert_eq!(tracked.position, Vec3::ZERO);
+
+        let mut wheeled = tank(vec![]);
+        let mobility = &mut wheeled.performance.as_mut().unwrap().mobility;
+        mobility.turns_in_place = false;
+        mobility.wheels = [-1.0, 1.0]
+            .map(|x| crate::shared_kernel::Wheel {
+                center: Vec2::new(x, 2.0),
+                steering_limit: Some(0.4),
+            })
+            .to_vec();
+        wheeled.drive(FORWARD | LEFT);
+        for _ in 0..5 {
+            wheeled.step(0.1, bounds, HARD);
+        }
+        let wheels: Vec<_> = wheeled.wheel_motion().collect();
+        let [(inner, inner_angle), (outer, outer_angle)] = wheels.as_slice() else {
+            panic!("expected two wheels");
+        };
+        assert!(*outer > *inner && *inner > 0.0);
+        assert!(inner_angle.unwrap() < outer_angle.unwrap() && outer_angle.unwrap() < 0.0);
     }
 
     #[test]

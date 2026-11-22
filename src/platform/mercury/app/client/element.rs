@@ -70,6 +70,43 @@ impl<const N: usize> Element<()> for FixedEntityProperty<N> {
     }
 }
 
+/// A variable-size property update addressed to the selected entity.
+pub struct VariableEntityProperty {
+    pub element_id: u8,
+    pub bytes: Vec<u8>,
+}
+
+impl Element<()> for VariableEntityProperty {
+    fn write_length(&self, config: &()) -> io::Result<ElementLength> {
+        Self::read_length(config, self.element_id)
+    }
+
+    fn write(&self, write: &mut dyn Write, _config: &()) -> io::Result<u8> {
+        write.write_all(&self.bytes)?;
+        Ok(self.element_id)
+    }
+
+    fn read_length(_config: &(), id: u8) -> io::Result<ElementLength> {
+        if id::ENTITY_PROPERTY.contains(id) {
+            Ok(ElementLength::Variable8)
+        } else {
+            Err(io::ErrorKind::InvalidData.into())
+        }
+    }
+
+    fn read(read: &mut dyn Read, _config: &(), len: usize, id: u8) -> io::Result<Self> {
+        if len > 256 {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        let mut bytes = vec![0; len];
+        read.read_exact(&mut bytes)?;
+        Ok(Self {
+            element_id: id,
+            bytes,
+        })
+    }
+}
+
 crate::__struct_simple_codec! {
     /// The server informs us how frequently it is going to send update
     /// the the client, and also give the server game time (exactly the

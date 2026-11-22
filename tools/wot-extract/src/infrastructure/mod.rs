@@ -160,27 +160,35 @@ impl ClientResources {
             }
         }
         let mut archive = PackageReader::new(io::Cursor::new(archive))?;
-        let height = archive
+        let layers: Vec<_> = archive
             .infos()
             .enumerate()
-            .find(|(_, item)| item.name == "terrain2/heights")
-            .map(|(index, item)| (index, item.size));
-        let Some((index, size)) = height else {
-            return Ok(None);
-        };
-        ensure!(size <= 512 * 1024, "Terrain height map exceeds size limit");
+            .filter_map(|(index, item)| {
+                let extension = match item.name {
+                    "terrain2/heights" => "hmp",
+                    "terrain2/dominanttextures" => "mat",
+                    _ => return None,
+                };
+                Some((index, item.size, extension))
+            })
+            .collect();
         let directory = root.join(space).join("terrain");
-        fs::create_dir_all(&directory)?;
-        let mut output = BufWriter::new(
-            File::options()
-                .write(true)
-                .create_new(true)
-                .open(directory.join(format!("{stem}.hmp")))?,
-        );
-        let bytes = io::copy(&mut archive.read_by_index(index)?, &mut output)?;
-        ensure!(bytes == u64::from(size), "Truncated terrain height map");
-        output.flush()?;
-        Ok(Some((1, bytes)))
+        let mut total_bytes = 0;
+        for &(index, size, extension) in &layers {
+            ensure!(size <= 512 * 1024, "Terrain layer exceeds size limit");
+            fs::create_dir_all(&directory)?;
+            let mut output = BufWriter::new(
+                File::options()
+                    .write(true)
+                    .create_new(true)
+                    .open(directory.join(format!("{stem}.{extension}")))?,
+            );
+            let bytes = io::copy(&mut archive.read_by_index(index)?, &mut output)?;
+            ensure!(bytes == u64::from(size), "Truncated terrain layer");
+            output.flush()?;
+            total_bytes += bytes;
+        }
+        Ok(Some((layers.len(), total_bytes)))
     }
 
     fn read_bounded(&mut self, path: &str, limit: u64) -> Result<Vec<u8>> {

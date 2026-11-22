@@ -89,6 +89,7 @@ pub struct Peer {
     pub vehicle_methods: Vec<(u32, String, Vec<Value>)>,
     pub gun_angles: BTreeMap<u32, u16>,
     pub hull_aim: Option<u64>,
+    pub engine_modes: BTreeMap<u32, [u8; 2]>,
     pub vehicle_directions: BTreeMap<u32, glam::Vec3>,
     selected_entity: Option<u32>,
     player_type: Option<u16>,
@@ -140,6 +141,7 @@ impl Peer {
             vehicle_methods: Vec::new(),
             gun_angles: BTreeMap::new(),
             hull_aim: None,
+            engine_modes: BTreeMap::new(),
             vehicle_directions: BTreeMap::new(),
             selected_entity: None,
             player_type: None,
@@ -707,6 +709,22 @@ impl Peer {
                                         self.selected_entity.unwrap(),
                                         u16::from_le_bytes(update.bytes),
                                     );
+                                }
+                                "engineMode" => {
+                                    let update = element
+                                        .read::<client::FixedEntityProperty<2>, _>(&())
+                                        .unwrap()
+                                        .element;
+                                    self.engine_modes
+                                        .insert(self.selected_entity.unwrap(), update.bytes);
+                                }
+                                "wheelsScroll" | "steeringAngles" => {
+                                    let update = element
+                                        .read::<client::VariableEntityProperty, _>(&())
+                                        .unwrap()
+                                        .element;
+                                    let (&length, wheels) = update.bytes.split_first().unwrap();
+                                    assert_eq!(usize::from(length), wheels.len());
                                 }
                                 "ownVehicleAuxPhysicsData" => {
                                     let update = element

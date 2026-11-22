@@ -796,13 +796,14 @@ impl App {
         self.queue_arena_element(client, E::ID, |out| out.write_simple(element))
     }
 
-    pub(crate) fn send_arena_property<const N: usize>(
+    pub(crate) fn send_arena_property(
         &mut self,
         client: ClientKey,
         entity_id: Option<u32>,
-        property: client::element::FixedEntityProperty<N>,
+        element_id: u8,
+        property: impl crate::platform::mercury::net::element::Element<()>,
     ) -> io::Result<()> {
-        self.queue_arena_element(client, property.element_id, |out| {
+        self.queue_arena_element(client, element_id, |out| {
             if let Some(entity_id) = entity_id {
                 out.write_simple(client::element::SelectEntity { entity_id })?;
             } else {

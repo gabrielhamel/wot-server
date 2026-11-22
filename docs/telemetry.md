@@ -218,7 +218,10 @@ marker update. Enabling the marker parents its first delivery. The marker
 replicates to the owner and the packed angle replicates to battle peers.
 Position replication records the tick and counts the recipients and successful
 socket writes of the shared timestamped snapshot. The driving command also
-parents the first related `hull_aim` update to the owning Avatar.
+parents `battles.drive_vehicle` for the first simulation step, the driver's
+`hull_aim` update, and any changed `engine_mode`, `wheels_scroll` and
+`steering_angles` deliveries to battle peers. The step records the sampled
+surface counts, hull pitch, resulting longitudinal speed and yaw rate.
 Shots retain their parent through target selection, ground and obstacle
 intersection, damage, and the muzzle, tracer, impact and health deliveries.
 The shot span records the loaded shell kind and caliber. Scene impacts
@@ -231,8 +234,8 @@ magazine refill complete. Unsupported methods emit an error span.
 Target ownership, invalid input, inactive rounds, and reloading are distinct
 outcomes.
 
-Battle preparation traces the map geometry and the number of height
-tiles and obstacle instances loaded from the extracted resource bundle. A native `setClientReady`
+Battle preparation traces the map geometry and the number of height tiles,
+driving surface tiles and obstacle instances loaded from the extracted resource bundle. A native `setClientReady`
 command parents the nested roster update and generation commit for both
 peers. Departure sends the corresponding disconnected state. Arena transport
 acknowledgements record socket delivery and the transport sequence number,
