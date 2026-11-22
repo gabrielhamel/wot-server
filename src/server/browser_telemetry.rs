@@ -2,8 +2,9 @@ use anyhow::{Context, Result, ensure};
 use axum::{
     Router,
     body::Bytes,
-    extract::{DefaultBodyLimit, State},
+    extract::{DefaultBodyLimit, State, rejection::BytesRejection},
     http::{HeaderMap, StatusCode, header},
+    response::{IntoResponse, Response},
     routing::get,
 };
 use opentelemetry_proto::tonic::{
@@ -20,6 +21,7 @@ use std::{
 };
 use tokio::sync::Semaphore;
 
+const UPLOAD_ROUTE: &str = "/api/web/telemetry";
 const CONTENT_TYPE: &str = "application/x-protobuf";
 const MAX_BODY: usize = 32 * 1024;
 const MAX_SPANS: usize = 24;
@@ -89,7 +91,7 @@ pub(super) fn from_environment() -> Result<Option<Router>> {
 fn router(relay: Relay) -> Router {
     Router::new()
         .route(
-            "/api/web/telemetry",
+            UPLOAD_ROUTE,
             get(|| async {
                 (
                     [(header::CACHE_CONTROL, "no-store")],
@@ -102,31 +104,80 @@ fn router(relay: Relay) -> Router {
         .with_state(Arc::new(relay))
 }
 
-async fn ingest(State(relay): State<Arc<Relay>>, headers: HeaderMap, body: Bytes) -> StatusCode {
+#[tracing::instrument(
+    name = "browser.telemetry.ingest",
+    skip_all,
+    fields(
+        ddd.bounded_context.name = "server",
+        otel.kind = "server",
+        http.request.method = "POST",
+        http.route = UPLOAD_ROUTE,
+        input.body.bytes = tracing::field::Empty,
+        input.span_count = tracing::field::Empty,
+        output.outcome = tracing::field::Empty,
+        http.response.status_code = tracing::field::Empty,
+        upstream.http.response.status_code = tracing::field::Empty,
+        otel.status_code = tracing::field::Empty,
+    )
+)]
+async fn ingest(
+    State(relay): State<Arc<Relay>>,
+    headers: HeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Response {
+    let body = match body {
+        Ok(body) => body,
+        Err(rejection) => return finish_upload("body_rejected", rejection.into_response()),
+    };
+    tracing::Span::current().record("input.body.bytes", body.len() as i64);
+    let (outcome, status) = forward_upload(&relay, &headers, &body).await;
+    finish_upload(outcome, status.into_response())
+}
+
+fn finish_upload(outcome: &'static str, response: Response) -> Response {
+    let span = tracing::Span::current();
+    span.record("output.outcome", outcome);
+    span.record(
+        "http.response.status_code",
+        i64::from(response.status().as_u16()),
+    );
+    if response.status().is_server_error() {
+        span.record("otel.status_code", "ERROR");
+        tracing::warn!(outcome, "Browser telemetry forwarding failed");
+    }
+    response
+}
+
+async fn forward_upload(
+    relay: &Relay,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> (&'static str, StatusCode) {
     if headers
         .get(header::ORIGIN)
         .and_then(|value| value.to_str().ok())
         != Some(&relay.origin)
     {
-        return StatusCode::FORBIDDEN;
+        return ("origin_rejected", StatusCode::FORBIDDEN);
     }
     if headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         != Some(CONTENT_TYPE)
     {
-        return StatusCode::UNSUPPORTED_MEDIA_TYPE;
+        return ("content_type_rejected", StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
     let Ok(_permit) = relay.active.try_acquire() else {
-        return StatusCode::TOO_MANY_REQUESTS;
+        return ("concurrency_limited", StatusCode::TOO_MANY_REQUESTS);
     };
     if !relay.take_budget() {
-        return StatusCode::TOO_MANY_REQUESTS;
+        return ("rate_limited", StatusCode::TOO_MANY_REQUESTS);
     }
 
-    let Some(traces) = browser_traces(&body) else {
-        return StatusCode::BAD_REQUEST;
+    let Some((traces, span_count)) = browser_traces(body) else {
+        return ("batch_rejected", StatusCode::BAD_REQUEST);
     };
+    tracing::Span::current().record("input.span_count", span_count as i64);
     let response = relay
         .client
         .post(relay.endpoint.clone())
@@ -135,25 +186,23 @@ async fn ingest(State(relay): State<Arc<Relay>>, headers: HeaderMap, body: Bytes
         .send()
         .await;
     match response {
-        Ok(response) if response.status().is_success() => StatusCode::OK,
         Ok(response) => {
-            tracing::warn!(
-                status = response.status().as_u16(),
-                "Collector rejected browser traces"
+            tracing::Span::current().record(
+                "upstream.http.response.status_code",
+                i64::from(response.status().as_u16()),
             );
-            StatusCode::BAD_GATEWAY
+            if response.status().is_success() {
+                ("forwarded", StatusCode::OK)
+            } else {
+                ("collector_rejected", StatusCode::BAD_GATEWAY)
+            }
         }
-        Err(error) => {
-            tracing::warn!(
-                timeout = error.is_timeout(),
-                "Could not forward browser traces"
-            );
-            StatusCode::BAD_GATEWAY
-        }
+        Err(error) if error.is_timeout() => ("collector_timeout", StatusCode::BAD_GATEWAY),
+        Err(_) => ("collector_unreachable", StatusCode::BAD_GATEWAY),
     }
 }
 
-fn browser_traces(bytes: &[u8]) -> Option<ExportTraceServiceRequest> {
+fn browser_traces(bytes: &[u8]) -> Option<(ExportTraceServiceRequest, usize)> {
     let mut traces = ExportTraceServiceRequest::decode(bytes).ok()?;
     let [resource] = traces.resource_spans.as_mut_slice() else {
         return None;
@@ -184,15 +233,19 @@ fn browser_traces(bytes: &[u8]) -> Option<ExportTraceServiceRequest> {
     resource.schema_url.clear();
     scope.scope = None;
     scope.schema_url.clear();
-    Some(traces)
+    let span_count = scope.spans.len();
+    Some((traces, span_count))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::{body::Body, http::Request, routing::post};
+    use opentelemetry::trace::TracerProvider;
     use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span};
+    use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
     use tower::ServiceExt;
+    use tracing_subscriber::prelude::*;
 
     #[tokio::test]
     async fn forwards_browser_span_ids_with_server_assigned_resource_and_bounded_ingress() {
@@ -207,8 +260,11 @@ mod tests {
                     post(move |bytes: Bytes| {
                         let received = received.clone();
                         async move {
-                            received.send(bytes).await.unwrap();
-                            StatusCode::OK
+                            if received.send(bytes).await.is_ok() {
+                                StatusCode::OK
+                            } else {
+                                StatusCode::SERVICE_UNAVAILABLE
+                            }
                         }
                     }),
                 ),
@@ -223,9 +279,17 @@ mod tests {
             )
             .unwrap(),
         );
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_opentelemetry::layer().with_tracer(provider.tracer("browser-relay-test")),
+        );
+        let _subscriber = tracing::subscriber::set_default(subscriber);
         let send = |origin, content_type, body| {
             router.clone().oneshot(
-                Request::post("/api/web/telemetry")
+                Request::post(UPLOAD_ROUTE)
                     .header(header::ORIGIN, origin)
                     .header(header::CONTENT_TYPE, content_type)
                     .body(Body::from(body))
@@ -297,7 +361,20 @@ mod tests {
                 })
         );
 
-        for _ in 1..BURST_LIMIT {
+        drop(collector);
+        assert_eq!(
+            send(
+                "https://example.test",
+                CONTENT_TYPE,
+                forwarded.encode_to_vec()
+            )
+            .await
+            .unwrap()
+            .status(),
+            StatusCode::BAD_GATEWAY
+        );
+
+        for _ in 2..BURST_LIMIT {
             assert_eq!(
                 send("https://example.test", CONTENT_TYPE, vec![0])
                     .await
@@ -313,6 +390,41 @@ mod tests {
                 .status(),
             StatusCode::TOO_MANY_REQUESTS
         );
+        let spans = exporter.get_finished_spans().unwrap();
+        for (outcome, status) in [
+            ("origin_rejected", 403),
+            ("content_type_rejected", 415),
+            ("body_rejected", 413),
+            ("forwarded", 200),
+            ("collector_rejected", 502),
+            ("batch_rejected", 400),
+            ("rate_limited", 429),
+        ] {
+            let upload = spans
+                .iter()
+                .find(|span| {
+                    span.name == "browser.telemetry.ingest"
+                        && span.attributes.iter().any(|attribute| {
+                            attribute.key.as_str() == "output.outcome"
+                                && attribute.value.as_str() == outcome
+                        })
+                })
+                .unwrap();
+            assert!(upload.attributes.iter().any(|attribute| {
+                attribute.key.as_str() == "http.response.status_code"
+                    && attribute.value == opentelemetry::Value::I64(status)
+            }));
+            if status == 502 {
+                assert!(matches!(
+                    upload.status,
+                    opentelemetry::trace::Status::Error { .. }
+                ));
+                assert!(upload.attributes.iter().any(|attribute| {
+                    attribute.key.as_str() == "upstream.http.response.status_code"
+                        && attribute.value == opentelemetry::Value::I64(503)
+                }));
+            }
+        }
         upstream.abort();
     }
 }
