@@ -441,6 +441,7 @@ impl VehicleModules {
                         let shots = local_shots.or(shared_shots).context("Missing gun shots")?;
                         let mut defaults = Vec::new();
                         let mut shell_damage = BTreeMap::new();
+                        let mut shell_ranges = BTreeMap::new();
                         let mut shell_effects = BTreeMap::new();
                         for (name, shot) in shots.iter_children_all() {
                             let shell = shells
@@ -466,6 +467,9 @@ impl VehicleModules {
                             {
                                 shell_damage.insert(shell_id, damage);
                             }
+                            if let Some(range) = battle_performance::shell_range(local, shared) {
+                                shell_ranges.insert(shell_id, range);
+                            }
                             if let Some(effect) = effects.resolve(local.or(shared), shell) {
                                 shell_effects.insert(shell_id, effect);
                             }
@@ -478,6 +482,7 @@ impl VehicleModules {
                                     traverse,
                                     gun_position,
                                     shell_damage,
+                                    shell_ranges,
                                     shell_effects,
                                 )
                             })

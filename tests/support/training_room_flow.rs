@@ -1307,6 +1307,7 @@ pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
 #[derive(Clone, Copy)]
 pub struct BattleFixture {
     shell_damage: u16,
+    shell_range: f32,
     has_obstacles: bool,
 }
 
@@ -1320,12 +1321,28 @@ pub fn battle_fixture(resources: &wot_resources::ResourceBundle) -> BattleFixtur
     let damage = shells
         .get_child_value_at(&["_37mm_AP_1916_1937_T1", "damage", "armor"])
         .unwrap();
+    let guns = resources
+        .read("scripts/item_defs/vehicles/usa/components/guns.xml")
+        .unwrap();
+    let guns = pxml::from_reader(guns).unwrap();
+    let range = guns
+        .get_child_value_at(&[
+            "shared",
+            "_37mm_Gun_M1916",
+            "shots",
+            "_37mm_AP_1916_1937_T1",
+            "maxDistance",
+        ])
+        .unwrap()
+        .as_float()
+        .unwrap();
     BattleFixture {
         shell_damage: damage
             .as_float()
             .or_else(|| damage.as_vec2().map(|values| values.x))
             .unwrap()
             .round() as u16,
+        shell_range: range,
         has_obstacles: resources.has_file("spaces/07_lakeville/collision.bin"),
     }
 }
@@ -1334,6 +1351,37 @@ pub fn battle_fixture(resources: &wot_resources::ResourceBundle) -> BattleFixtur
 const BATTLE_ARENA_TYPE: i32 = (1 << 16) | 5;
 pub const BATTLE_TERRAIN: &str = "spaces/07_lakeville/terrain";
 
+pub fn join_during_battle(peer: &mut Peer, script: &ScriptDispatch, room_id: i64, host_id: i64) {
+    invite::sync(peer, script);
+    invite::assert_received(peer, script, 0, room_id, host_id, invite::MESSAGE);
+    let (total, rooms) = training_list(peer, script, 0, 50);
+    assert_eq!(total, 1);
+    assert!(matches!(&rooms[..], [Pickle::Tuple(room)] if room[1] == Pickle::I64(room_id)));
+    for (request, join) in [(5390, 417), (5391, 400)] {
+        let before = peer.methods.len();
+        if join == 417 {
+            invite::accept(peer, script, room_id);
+        } else {
+            training_command(peer, script, 202, join, room_id);
+        }
+        peer.until(script, |p| {
+            p.methods[before..].iter().any(|(name, args)| {
+                if name != "updatePrebattle" || args[0] != Value::UInt8(1) {
+                    return false;
+                }
+                matches!(pickle_value(&args[1]), Pickle::List(roster)
+                    if roster.len() == 3 && roster.iter().filter(|entry|
+                        matches!(entry, Pickle::Tuple(fields) if fields[5] == Pickle::I64(8))
+                    ).count() == 2)
+            })
+        });
+        assert_eq!(peer.resets, 0);
+        training_command(peer, script, request, 401, 0);
+        peer.until(script, |p| p.responses.contains(&(request, 0)));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn exercise_battle(
     host: &mut Peer,
     host_vehicle: i64,
@@ -1341,7 +1389,8 @@ pub fn exercise_battle(
     guest_vehicle: i64,
     script: &ScriptDispatch,
     fixture: BattleFixture,
-    check_store_in_battle: impl FnOnce(),
+    visitor_account: i64,
+    visit_in_battle: impl FnOnce(i64),
 ) {
     let shell_damage = fixture.shell_damage;
     let command = |peer: &mut Peer, request, command, args: [i64; 3]| {
@@ -1372,6 +1421,7 @@ pub fn exercise_battle(
         .1[0]
         .as_i64()
         .unwrap();
+    invite::send(host, script, &[visitor_account], invite::MESSAGE);
     let first_guest_message = guest.methods.len();
     command(guest, 202, 400, [room_id, 0, 0]);
     guest.until(script, |p| {
@@ -1431,7 +1481,7 @@ pub fn exercise_battle(
     guest.enable_entities();
     host.until(script, |p| p.arena_roster.is_some());
     guest.until(script, |p| p.arena_roster.is_some());
-    check_store_in_battle();
+    visit_in_battle(room_id);
 
     let host_cell = host.cell.as_ref().unwrap();
     let guest_cell = guest.cell.as_ref().unwrap();
@@ -1657,7 +1707,11 @@ pub fn exercise_battle(
         else {
             panic!("expected tracer geometry");
         };
-        assert!(end.distance(*origin + velocity.normalize() * *range) < 0.01);
+        assert_eq!(*range, fixture.shell_range);
+        let ray = velocity.normalize();
+        let offset = *end - *origin;
+        assert!(offset.cross(ray).length() < 0.01);
+        assert!((0.0..=*range).contains(&offset.dot(ray)));
 
         let (_, _, impact) = peer
             .vehicle_methods
@@ -1842,6 +1896,19 @@ pub fn exercise_battle(
         });
         assert_scene_impact(host, guest, script, 2, 20.0..80.0);
     }
+    host.cell_command(
+        script,
+        "vehicle_stopTrackingWithGun",
+        vec![Value::Float32(0.0), Value::Float32(-0.6)],
+    );
+    host.until(script, |peer| reload_times(peer).last() == Some(&0.0));
+    host.until(script, |peer| {
+        gun_markers(peer, script)
+            .last()
+            .is_some_and(|(_, velocity, _)| velocity.y > 60.0)
+    });
+    assert_range_expiry(host, guest, script, fixture.shell_range);
+
     let forward = glam::Vec3::new(facing.sin(), 0.0, facing.cos());
     let stopped = host.positions[&first];
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(2)]);
@@ -1866,14 +1933,75 @@ pub fn exercise_battle(
             .is_some_and(|aux| (aux >> 40) as u8 == 85 && (aux >> 48) as u8 == 85)
     });
     guest.until(script, |p| p.engine_modes.get(&first) == Some(&[1, 0]));
+    host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
+    let stationary = host.positions[&first];
+    host.until(script, |p| p.positions[&first].distance(stationary) > 0.5);
+    let outcome_start = host.methods.len();
     guest.command(script, "leaveArena", vec![]);
     guest.until(script, |p| p.resets == 2);
+    host.until(script, |p| {
+        p.methods[outcome_start..].iter().any(|(name, args)| {
+            name == "onRoundFinished" && args == &[Value::Int8(1), Value::UInt8(1)]
+        })
+    });
+    host.until(script, |p| {
+        p.methods[outcome_start..].iter().any(|(name, args)| {
+            if name != "updateArena" || args[0].as_i64() != Some(3) {
+                return false;
+            }
+            let Value::String(StringValue::Raw(data)) = &args[1] else {
+                return false;
+            };
+            matches!(wot_server::platform::client_formats::pickle::from_reader(
+                flate2::read::ZlibDecoder::new(data.as_slice())),
+                Ok(Pickle::Tuple(fields)) if fields.first() == Some(&Pickle::I64(4))
+                    && fields.last() == Some(&wot_server::pickle!((1, 1))))
+        })
+    });
+    assert_eq!(host.resets, 1);
+    let position_at_result = host.positions[&first];
+    host.until(script, |p| {
+        p.resets == 2 || p.positions[&first].distance(position_at_result) > 0.05
+    });
+    assert_eq!(
+        host.resets, 1,
+        "Vehicle must coast after the outcome is sent"
+    );
     host.until(script, |p| p.resets == 2);
     host.enable_entities();
     guest.enable_entities();
     host.until(script, |p| p.created && p.shown);
     guest.until(script, |p| p.created && p.shown);
-    assert_empty_list(host, script);
+    let (total, rooms) = training_list(host, script, 0, 50);
+    assert_eq!(total, 1);
+    assert!(matches!(&rooms[..], [Pickle::Tuple(room)] if room[1] == Pickle::I64(room_id)));
+}
+
+fn assert_range_expiry(host: &mut Peer, guest: &mut Peer, script: &ScriptDispatch, range: f32) {
+    let start = [host.methods.len(), guest.methods.len()];
+    host.cell_command(script, "vehicle_shoot", vec![]);
+    for (peer, since) in [(host, start[0]), (guest, start[1])] {
+        peer.until(script, |p| {
+            p.methods[since..]
+                .iter()
+                .any(|(name, _)| name == "showTracer")
+        });
+        let tracer = peer.methods[since..]
+            .iter()
+            .find(|(name, _)| name == "showTracer")
+            .unwrap();
+        assert_eq!(tracer.1[10], Value::Float32(range));
+        let shot_id = tracer.1[1].clone();
+        let tick = peer.arena_tick.unwrap();
+        let flight = ((range / 450.0) * 10.0).ceil() as u8;
+        peer.until(script, |p| {
+            p.arena_tick
+                .is_some_and(|now| (flight..=127).contains(&now.wrapping_sub(tick)))
+        });
+        assert!(!peer.methods[since..].iter().any(|(name, args)| {
+            matches!(name.as_str(), "stopTracer" | "explodeProjectile") && args[0] == shot_id
+        }));
+    }
 }
 
 fn assert_ground_impact(host: &mut Peer, guest: &mut Peer, script: &ScriptDispatch) {
@@ -2399,6 +2527,73 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
             .filter(|s| s.name == "mercury.response"
                 && child_of(s, countdown)
                 && has(s, "rpc.method", "updateArena")
+                && has(s, "output.delivery", "sent"))
+            .count(),
+        2
+    );
+
+    let finished = traces
+        .iter()
+        .find(|s| {
+            s.name == "battles.period"
+                && has(s, "output.phase", "finished")
+                && has(s, "output.battle.winner_team", "1")
+                && has(s, "output.battle.finish_reason", "1")
+        })
+        .expect("training battle outcome");
+    for method in ["onRoundFinished", "updateArena"] {
+        assert!(traces.iter().any(|s| s.name == "mercury.response"
+            && child_of(s, finished)
+            && has(s, "rpc.method", method)
+            && has(s, "output.delivery", "sent")));
+    }
+    assert!(traces.iter().any(|s| s.name == "battles.replication"
+        && child_of(s, finished)
+        && has(s, "input.replication.kind", "position")
+        && has(s, "output.delivered.count", "1")));
+    assert!(
+        traces
+            .iter()
+            .any(|s| s.name == "player_sessions.return_from_battle"
+                && child_of(s, finished)
+                && has(s, "output.outcome", "garage_reset"))
+    );
+    let pending = traces
+        .iter()
+        .find(|s| {
+            s.name == "player_sessions.send_training_invites"
+                && has(s, "output.outcome", "queued")
+                && has(s, "output.invites.queued_count", "1")
+        })
+        .expect("offline invitation retained");
+    let delivered = traces
+        .iter()
+        .find(|s| {
+            s.name == "player_sessions.deliver_pending_training_invites"
+                && has(s, "output.invites.delivered_count", "1")
+        })
+        .expect("offline invitation delivered");
+    assert!(
+        delivered
+            .links
+            .iter()
+            .any(|link| link.span_context == pending.span_context)
+    );
+    let range = fixture.shell_range.to_string();
+    let miss = traces
+        .iter()
+        .find(|s| {
+            s.name == "battles.shot"
+                && has(s, "output.outcome", "miss")
+                && has(s, "input.shell.max_distance_metres", &range)
+        })
+        .expect("range expiry trace");
+    assert_eq!(
+        traces
+            .iter()
+            .filter(|s| s.name == "mercury.response"
+                && child_of(s, miss)
+                && has(s, "rpc.method", "showTracer")
                 && has(s, "output.delivery", "sent"))
             .count(),
         2

@@ -1,5 +1,5 @@
 use super::*;
-use crate::battles::domain::vehicle::{GunRay, SHOT_RANGE, Shot, Tank};
+use crate::battles::domain::vehicle::{GunRay, Shot, Tank};
 use crate::platform::mercury::{
     app::{
         client::element::{FixedEntityProperty, VariableEntityProperty, id::ENTITY_PROPERTY},
@@ -460,7 +460,6 @@ impl ArenaWire {
         shooter: u32,
         shot_id: i32,
         shot: &Shot,
-        distance: Option<f32>,
     ) -> Result<()> {
         base.entity(avatar)?.showTracer(
             EntityId(shooter),
@@ -473,7 +472,7 @@ impl ArenaWire {
             shot.origin,
             shot.direction * SHELL_SPEED,
             0.0,
-            distance.unwrap_or(SHOT_RANGE).max(0.1),
+            shot.max_distance,
             0,
             0,
         )?;

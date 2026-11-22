@@ -12,10 +12,10 @@ ContextMap Server {
     implementationTechnology = "Shared Rust AccountId validates participants before Social enforces its distinct-account rule"
   }
   SharedKernel [U] -> [D] Accounts {
-    implementationTechnology = "VehiclePerformance represents catalog speed, traverse, gun limits and reload rules."
+    implementationTechnology = "VehiclePerformance represents catalog speed, traverse, gun limits, shell ranges and reload rules."
   }
   SharedKernel [U] -> [D] Battles {
-    implementationTechnology = "VehiclePerformance supplies the equipped vehicle limits and reload rules used by the simulation."
+    implementationTechnology = "VehiclePerformance supplies the equipped vehicle limits, shell ranges and reload rules used by the simulation."
   }
   Platform [U] -> [D] Accounts {
     implementationTechnology = "Common client-format codecs and PostgreSQL span adapter"
@@ -54,7 +54,7 @@ ContextMap Server {
     implementationTechnology = "Native Avatar and Vehicle control methods, arena lifecycle events and entity replication over Mercury"
   }
   Battles [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Map queries, battle launch with an assigned roster, equipped loadouts and vehicle performance, and participant lifecycle for garage handoff and return"
+    implementationTechnology = "Map queries, battle launch with an assigned roster, equipped loadouts and vehicle performance, and participant lifecycle for garage handoff and scheduled return after the outcome"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections"

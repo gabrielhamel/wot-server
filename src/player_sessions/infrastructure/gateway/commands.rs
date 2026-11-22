@@ -627,8 +627,13 @@ impl Gateway {
             self.stream(client, entity, request_id, cache)?;
         }
         if let Some(session) = self.sessions.get_mut(&client) {
+            let first_sync = !session.garage_synced;
             session.garage_synced = true;
             session.reported_premium_expiry = None;
+            if first_sync {
+                self.restore_training_room(client, entity)?;
+                self.deliver_pending_training_invites(client, entity);
+            }
         }
         Ok(())
     }

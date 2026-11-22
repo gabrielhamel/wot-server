@@ -66,6 +66,13 @@ impl Gateway {
                 "Only the Training Room host can start the battle",
             );
         }
+        if room.members.values().any(|member| member.in_battle) {
+            return reject(
+                &mut self.base,
+                "battle_in_progress",
+                "The previous battle is in progress",
+            );
+        }
         if !ready {
             room.set_team_ready(team, false);
             self.base
@@ -216,56 +223,46 @@ impl Gateway {
     }
 
     fn launch_training_battle(&mut self, room_id: u32, battle: PreparedBattle) {
-        let Some(room) = self.training_rooms.remove(&room_id) else {
+        let Some(room) = self.training_rooms.get_mut(&room_id) else {
             return;
         };
-        // The host checks its own team state before sending the second confirmation.
-        // Publish both only when both commands have arrived.
         room.broadcast(
             &mut self.base,
             TEAM_STATES,
             Pickle(crate::pickle!((2, 2))),
             None,
         );
-        for guest in room.invites {
-            if let Some(session) = self.sessions.get(&guest)
-                && let Some(entity) = session.entity
-            {
-                invites::settle(
-                    &mut self.base,
-                    session,
-                    entity,
-                    room_id,
-                    self.config.periphery_id,
-                    invites::State::Expired,
-                );
+        room.clear_team_readiness();
+        for (&client, member) in &mut room.members {
+            member.ready_vehicle = None;
+            member.ready_inventory = None;
+            if !battle.contains(client) {
+                continue;
             }
-        }
-        for (client, member) in room.members {
-            let entering = battle.contains(client);
             let Some(session) = self.sessions.get_mut(&client) else {
                 continue;
             };
-            session.training_room = None;
-            if entering {
-                session.entity = None;
-                session.garage_synced = false;
-                let result = (|| -> Result<()> {
-                    chat::update_membership(&mut self.base, member.entity, room_id, false)?;
-                    self.base.entity(member.entity)?.onArenaCreated()?;
-                    self.base.reset_player(client)?;
-                    Ok(())
-                })();
-                if let Err(error) = result {
-                    error!(%error, room_id, "Training arena handoff failed");
-                    self.base.disconnect_client(client);
-                }
-            } else {
-                deliver_training_update(&mut self.base, client, room_id, |base| {
-                    notify_training_left(base, member.entity, room_id)
-                });
+            member.in_battle = true;
+            session.entity = None;
+            session.garage_synced = false;
+            let result = (|| -> Result<()> {
+                chat::update_membership(&mut self.base, member.entity, room_id, false)?;
+                self.base.entity(member.entity)?.onArenaCreated()?;
+                self.base.reset_player(client)?;
+                Ok(())
+            })();
+            if let Err(error) = result {
+                error!(%error, room_id, "Training arena handoff failed");
+                self.base.disconnect_client(client);
             }
         }
+        room.broadcast(
+            &mut self.base,
+            TEAM_STATES,
+            Pickle(crate::pickle!((1, 1))),
+            None,
+        );
+        room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), None);
         self.battles.start(battle);
     }
 }

@@ -323,8 +323,8 @@ impl Gateway {
                     self.remove_session(client);
                 }
                 let now = Instant::now();
-                for client in self.battles.tick(&mut self.base, now) {
-                    self.return_from_battle(client);
+                for (client, finish) in self.battles.tick(&mut self.base, now) {
+                    finish.in_scope(|| self.return_from_battle(client));
                 }
                 tick += interval;
                 if tick <= now {

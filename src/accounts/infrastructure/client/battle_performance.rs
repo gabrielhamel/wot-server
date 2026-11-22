@@ -121,6 +121,7 @@ pub(super) fn gun(
     turret_traverse: f32,
     gun_position: Option<Vec3>,
     shell_damage: BTreeMap<i32, u16>,
+    shell_ranges: BTreeMap<i32, f32>,
     shell_effects: BTreeMap<i32, ShellEffects>,
 ) -> Option<GunPerformance> {
     let yaw_limits = field(local, base, &["turretYawLimits"])
@@ -168,6 +169,7 @@ pub(super) fn gun(
             autoreload_times,
         },
         shell_damage,
+        shell_ranges,
         shell_effects,
     })
 }
@@ -176,6 +178,14 @@ pub(super) fn vector(local: Option<&Element>, base: &Element, name: &str) -> Opt
     field(local, base, &[name])
         .and_then(Value::as_vec3)
         .filter(|value| value.is_finite())
+}
+
+pub(super) fn shell_range(local: Option<&Element>, shared: Option<&Element>) -> Option<f32> {
+    let distance = local
+        .and_then(|shot| shot.get_child_value("maxDistance"))
+        .or_else(|| shared.and_then(|shot| shot.get_child_value("maxDistance")))?
+        .as_float()?;
+    (distance > 0.0 && distance <= 10_000.0).then_some(distance)
 }
 
 pub(super) fn shell_damage(

@@ -244,9 +244,17 @@ Each arena entry records the Avatar control mode and parents delivery of the
 control handoff to the client.
 
 Training Room invitations record recipient counts and the optional message's
-byte length. Each queued invite and its delivery retain the original command
-trace. Accept, decline and room cleanup trace the resulting invitation
-state. The invitation message and recipient list stay out of spans.
+byte length. Immediate delivery stays in the invite command trace. Delivery
+on garage sync links that trace to the original command for each pending
+invitation. A returning participant's first garage sync also traces the room
+roster, chat membership and fresh Account entity through
+`player_sessions.restore_training_room`. Accept, decline and room cleanup trace
+the resulting invitation state. Invitation text and recipient lists stay out
+of spans.
+
+`battles.period` records the winner, finish reason and delivery count at the
+transition to the finished phase. The reliable outcome messages, coast-down
+pose replication and scheduled return to the garage retain that trace.
 
     game.command                                  [accountPrebattle_sendPrebattleInvites]
       player_sessions.commands.command

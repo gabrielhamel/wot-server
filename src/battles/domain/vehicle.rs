@@ -6,7 +6,6 @@ use crate::shared_kernel::{ShellEffects, VehiclePerformance};
 use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 use std::time::Instant;
 
-pub(crate) const SHOT_RANGE: f32 = 800.0;
 const HULL_RADIUS: f32 = 2.5;
 
 pub(crate) struct Tank {
@@ -39,6 +38,7 @@ pub(crate) struct Shot {
     pub origin: Vec3,
     pub direction: Vec3,
     pub damage: u16,
+    pub max_distance: f32,
     pub effects: ShellEffects,
 }
 
@@ -255,12 +255,18 @@ impl Tank {
             .get(&shell)
             .copied()
             .unwrap_or_default();
+        let max_distance = match performance.gun.shell_ranges.get(&shell) {
+            Some(&distance) => distance,
+            None if self.ammunition.loaded(shell) == 0 => 0.0,
+            None => return Err("shell_range_unavailable"),
+        };
         self.ammunition.fire(&performance.gun.loading, now)?;
         let ray = self.gun_ray();
         Ok(Shot {
             origin: ray.origin,
             direction: ray.direction,
             damage,
+            max_distance,
             effects,
         })
     }
@@ -345,7 +351,9 @@ impl Shot {
             return None;
         }
         let distance = projected - (HULL_RADIUS * HULL_RADIUS - perpendicular).sqrt();
-        (0.0..=SHOT_RANGE).contains(&distance).then_some(distance)
+        (0.0..=self.max_distance)
+            .contains(&distance)
+            .then_some(distance)
     }
 }
 
@@ -403,6 +411,7 @@ mod tests {
                     base_dispersion_angle: Some(0.005),
                     shot_position: None,
                     shell_damage: [(10, 36), (20, 90)].into(),
+                    shell_ranges: [(10, 720.0), (20, 600.0)].into_iter().collect(),
                     shell_effects: [
                         (
                             10,
@@ -601,6 +610,7 @@ mod tests {
         let shot = shooter.fire(now).unwrap();
         assert!(shot.intersection(&target).is_some());
         assert_eq!(shot.damage, 36);
+        assert_eq!(shot.max_distance, 720.0);
         assert_eq!((shot.effects.kind, shot.effects.legacy_index), (2, 17));
         assert_eq!(target.hit(&shot), (100, 64));
         assert_eq!(shooter.rounds().next(), Some((10, 0, 0)));
@@ -613,6 +623,10 @@ mod tests {
         assert!(shooter.advance_ammunition(ready));
         let shot = shooter.fire(ready).unwrap();
         assert_eq!(shot.damage, 90);
+        assert_eq!(shot.max_distance, 600.0);
+        let mut distant = tank(vec![]);
+        distant.position = shot.origin + shot.direction * 650.0 - Vec3::Y;
+        assert_eq!(shot.intersection(&distant), None);
         assert_eq!((shot.effects.kind, shot.effects.legacy_index), (1, 19));
         assert_eq!(target.hit(&shot), (64, 0));
         assert_eq!(shooter.fire(ready).err(), Some("empty"));

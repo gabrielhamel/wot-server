@@ -135,7 +135,14 @@ exercise the unavailable response.
 With the current extracted terrain tiles, two encrypted peers then exercise the native Start Battle command sequence,
 including failed guest and unready-team attempts, team unlock, handoff on the
 same channels, a common space with distinct team vehicles, readiness and
-countdown, and return to the garage after leaving. The returned Account
+countdown, and return to the garage after leaving. A third peer connects
+during the round and receives the invitation sent while offline. That peer
+finds the same room in discovery and joins through both the invitation and
+the public list. The end-of-round check verifies both outcome messages,
+coasting poses before reset, and restoration of the original room on garage
+sync. The suite also fires a clear shot, checks its resource-derived tracer
+range and verifies the absence of impact messages through its travel time.
+The returned Account
 requests a fresh chat token and the XMPP connection retrieves its roster.
 The suite verifies elevated spawns
 and movement, an immediate transport acknowledgement, stationary Avatar poses

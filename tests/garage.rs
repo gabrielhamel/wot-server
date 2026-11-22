@@ -186,6 +186,28 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         .unwrap()
         .unwrap()
         .id;
+    let offline_visitor = if training_battle_available {
+        let name = format!("{prefix}_visitor@example.test");
+        player_fixture::insert_player(
+            &repository,
+            &name,
+            "TrainingVisitor",
+            "password-visitor",
+            std::slice::from_ref(&tank_b),
+        )
+        .await
+        .unwrap();
+        let id = accounts
+            .authenticate(&name, "password-visitor".into())
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        Some((name, id))
+    } else {
+        None
+    };
+    let visitor_account = offline_visitor.as_ref().map(|(_, id)| *id);
     assert!(
         accounts
             .authenticate(&first, "wrong-password".into())
@@ -416,29 +438,45 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             training_room_flow::assert_room_gone(&mut second_peer, &script, training_vehicle_id);
             training_room_flow::assert_empty_list(&mut second_peer, &script);
         }
-        let store_after_battle = if let (Some(fixture), Some(router)) = (training_fixture, store) {
-            equipment_flow::full_cache(&mut second_peer, &script);
-            let shop_url = second_peer.shop_url.clone().unwrap();
-            let token = shop_url.split_once('#').unwrap().1;
-            let check_store = |phase, status| {
-                runtime.block_on(store_flow::assert_catalog_access(
-                    &router, token, phase, status,
-                ));
+        let store_after_battle =
+            if let (Some(fixture), Some(router), Some((visitor_name, visitor_id))) =
+                (training_fixture, store, offline_visitor)
+            {
+                equipment_flow::full_cache(&mut second_peer, &script);
+                let shop_url = second_peer.shop_url.clone().unwrap();
+                let token = shop_url.split_once('#').unwrap().1;
+                let check_store = |phase, status| {
+                    runtime.block_on(store_flow::assert_catalog_access(
+                        &router, token, phase, status,
+                    ));
+                };
+                check_store(1, axum::http::StatusCode::OK);
+                training_room_flow::exercise_battle(
+                    &mut first_peer,
+                    training_vehicle_id,
+                    &mut second_peer,
+                    guest_vehicle_id,
+                    &script,
+                    fixture,
+                    visitor_id,
+                    |room_id| {
+                        check_store(2, axum::http::StatusCode::UNAUTHORIZED);
+                        let mut visitor = Peer::new(public_key.clone());
+                        visitor.connect(login, &visitor_name, "password-visitor");
+                        visitor.until(&script, |p| p.created && p.shown);
+                        training_room_flow::join_during_battle(
+                            &mut visitor,
+                            &script,
+                            room_id,
+                            a.id,
+                        );
+                        visitor.disconnect();
+                    },
+                );
+                Some((router, shop_url))
+            } else {
+                None
             };
-            check_store(1, axum::http::StatusCode::OK);
-            training_room_flow::exercise_battle(
-                &mut first_peer,
-                training_vehicle_id,
-                &mut second_peer,
-                guest_vehicle_id,
-                &script,
-                fixture,
-                || check_store(2, axum::http::StatusCode::UNAUTHORIZED),
-            );
-            Some((router, shop_url))
-        } else {
-            None
-        };
         let sync = |id, cmd| {
             vec![
                 Value::Int16(id),
@@ -448,11 +486,34 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
                 Value::Int64(0),
             ]
         };
+        let first_before = first_peer.methods.len();
+        let second_before = second_peer.methods.len();
         first_peer.command(&script, "doCmdInt3", sync(221, 100));
         second_peer.command(&script, "doCmdInt3", sync(221, 100));
         first_peer.until(&script, |p| p.has_resource(221));
         second_peer.until(&script, |p| p.has_resource(221));
         if let Some((router, shop_url)) = store_after_battle {
+            let room = |peer: &Peer, start: usize| {
+                let (_, args) = peer.methods[start..]
+                    .iter()
+                    .find(|(name, _)| name == "onPrebattleJoined")
+                    .unwrap();
+                args[0].as_i64().unwrap()
+            };
+            for (peer, start) in [
+                (&mut first_peer, first_before),
+                (&mut second_peer, second_before),
+            ] {
+                peer.until(&script, |p| {
+                    p.methods[start..]
+                        .iter()
+                        .any(|(name, _)| name == "onPrebattleJoined")
+                });
+            }
+            assert_eq!(
+                room(&first_peer, first_before),
+                room(&second_peer, second_before)
+            );
             xmpp_flow::assert_roster_available_after_battle(
                 &mut second_peer,
                 &script,
@@ -953,8 +1014,10 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         );
     }
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
+    let mut fixture_accounts = vec![a.id, b.id, equipment_account];
+    fixture_accounts.extend(visitor_account);
     sqlx::query("DELETE FROM accounts.accounts WHERE id = ANY($1)")
-        .bind(vec![a.id, b.id, equipment_account])
+        .bind(fixture_accounts)
         .execute(&pool)
         .await
         .unwrap();

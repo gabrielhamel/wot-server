@@ -262,9 +262,13 @@ outside the lobby implementation.
 **Invite** sends [`accountPrebattle_sendPrebattleInvites`](../references/wot-src/sources/res/scripts/entity_defs/interfaces/AccountPrebattle.def#L54)
 with a batch of account IDs and one optional UTF-8 message. The room host can
 target up to 100 accounts per request with a message of up to 400 characters.
-The server deduplicates targets and delivers to players who have synchronized
-their garage on this server. Each room keeps a pending invitation per recipient
-session. The server applies the client's eight-second cooldown to valid batches.
+The server deduplicates by recipient account ID and keeps up to 100 active
+invitations per room. Players with a synchronized garage receive them
+immediately. Other recipients receive active invitations on their first garage
+sync, including after reconnecting or returning from another battle. The
+native invite window initially filters to online contacts. Clear the online
+filter to select an offline friend. The server applies an eight-second
+cooldown to valid batches.
 
 Delivery uses the client's legacy [`prebattleInvites` update](../references/wot-src/sources/res/scripts/client/Account.py#L1185),
 keyed by `(room_id, periphery_id)`. The update includes the host's name and
@@ -277,8 +281,8 @@ the recipient. The installed EU build's custom server entry uses `250`.
 Accept (`417`) joins the room, including a **By invitation** room, after
 checking the recipient has an active invitation. Decline (`418`) consumes the
 invitation and updates the notification. Deleting the room or losing the
-host expires outstanding invitations. Disconnecting invalidates invitations
-for the old recipient session.
+host expires outstanding invitations. Invitations live with the in-memory
+room and survive recipient disconnects and subsequent rounds.
 
 ## Training Room text chat
 
@@ -320,15 +324,20 @@ first request immediately and publishes both ready states in
 Once both teams confirm, Player Sessions rechecks vehicle ownership and reads
 the current equipped loadouts from Accounts. It submits the roster and room
 settings to [Battles](../../src/battles/README.md), which assigns a Battle ID
-and prepares the client payloads. Player Sessions then closes the room,
-expires invitations and closes the Training text channel. Unassigned members stay in their garages. Each participant
-receives `onArenaCreated` followed by `ResetEntities` on the encrypted channel
+and prepares the client payloads. The room keeps its ID, settings, roster and
+invitations. Unassigned members stay in their garages, with the same lobby
+chat. Garage players can discover and join open rooms with available capacity
+while the battle is in progress. The in-battle roster is fixed at launch.
+Each participant leaves the lobby chat during handoff and receives `onArenaCreated` followed by `ResetEntities` on the encrypted channel
 they already use. The client acknowledges with `EnableEntities`. The server
 then creates its Avatar and cell player in the shared space, sends the
 geometry mapping, creates the same Vehicle entities for each client, and
-attaches the shared roster to each client's AvatarInfo. Leaving or exceeding
-the round length resets the player again and reopens the garage after the next
-`EnableEntities`. The arena also closes if either team empties.
+attaches the shared roster to each client's AvatarInfo. When a player leaves,
+or the server closes the arena after the outcome, `ResetEntities` and
+`EnableEntities` reopen their garage. The first garage sync restores the room
+and chat membership with the new Account entity ID. The launch clears vehicle
+readiness so each participant can select a loadout for the next round. The host
+can start again once the previous participants have returned or disconnected.
 
 The wire order and the replicated roster format were cross-checked against
 [Toolkit battle bootstrap](../references/wg-toolkit-rs/wg-toolkit-wot/src/base/battle/mod.rs)
@@ -415,8 +424,15 @@ expressed in the target's local frame. The client uses its hull mesh to find
 the impact for audiovisual feedback. The segment is a presentation
 approximation for the training hit volume. Impact strength is the HP removed
 as a fraction of the target's starting health, scaled to 0–255.
-On a miss the tracer uses its full range and expires on the client.
-Eliminating the last opposing tank finishes the round. Acceleration and the
+The equipped gun's selected shot entry supplies `maxDistance`, including
+local overrides. This range bounds vehicle, terrain and obstacle checks.
+On a miss the tracer carries the shell's maximum range and expires on the
+client. See [range and round-end replay evidence](../battle-replays.md#range-expiry).
+Elimination, loss of a team's last combat participant and the time limit
+publish `onRoundFinished` and `updateArena` with the same outcome. During
+the following six seconds the server continues pose and chassis replication
+as tanks coast to a stop. Shooting and steering commands end with the active
+round. The server then returns remaining players to the garage. Acceleration and the
 track footprint are shared by the training
 simulation. Vehicle collision, armour, gun-specific ballistics, autoreloader
 boost bonuses and spectator controls remain separate work.
