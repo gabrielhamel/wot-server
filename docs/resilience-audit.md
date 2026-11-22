@@ -11,6 +11,7 @@ transport checks are independent of the game executable version.
 | Short embedded piggyback packets asserted in `Packet::set_len`. | Validate the embedded header before creating a packet; limit nested piggyback processing to eight levels. |
 | Fragment sequences outside their advertised range indexed outside a vector. | Validate sequence membership and maximum range before allocating; reject conflicting ranges for an existing assembly; use checked vector access. |
 | A non-fragment reliable packet inside a fragment range caused a panic while reporting the mismatch. | Discard the incoherent bundle and continue receiving packets. |
+| A batch of pending single acknowledgments could overfill an outgoing packet during garage synchronization. | Fit acknowledgments within the one-byte count and the remaining encrypted datagram budget, reserving space for later footers. Keep excess acknowledgments queued for subsequent packets. |
 | Invalid Blowfish padding asserted or produced an invalid plaintext length. | Validate padding 1–8 and the resulting minimum header length before resizing. |
 | Fragment ranges and peer/reliability maps could grow without limits. | Apply the limits below before retaining input; periodically reclaim expired state even without new traffic. |
 | Synchronous RSA work and packet polling could monopolize the gateway. | Limit login attempts before decryption, bound RSA ciphertext, and yield from each poll at its deadline or work budget. |
@@ -70,6 +71,17 @@ backpressure, login-rate limiting, all 256 padding-byte values at three packet
 sizes, nested/shared pickle expansion, and 5000 deterministically generated
 packets followed by a valid ping. `tests/rsa_login.rs` covers wrong-key RSA
 rejection followed by valid encrypted login.
+
+During the 2026-11-21 production training session on server 0.15.0, return
+traces recorded the garage reset and a subsequent `EnableEntities` for each
+observed participant. The game gateway then panicked with `not enough
+available data` at 23:42:55, 23:52:28 and 00:01:20 local time
+(Europe/Paris). XMPP closed as the process stopped, and the local client
+logged a refused connection before the third restart. The outgoing ACK
+writer checked available space once before writing the whole queue. The
+transport regression queues ACKs, prepares a multi-packet resource response,
+encrypts and decodes each packet, verifies deferred ACK delivery and
+checks a subsequent valid request.
 
 The final release binary also stayed running after receiving the two former
 pre-login crash packets over UDP, then accepted the existing account using the

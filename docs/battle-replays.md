@@ -159,13 +159,16 @@ and [shot effects](references/wot-src/sources/res/scripts/item_defs/vehicles/com
 
 Component record `0x37` at offset 1003496 contains a dealt-damage event
 (type 7) for `553323845`. Its packed details, `0x0007f8023200fe10`, decode
-to 281 HP, primary reason 0 (shot), shell kind 127 (unknown), secondary
+to 281 HP, primary reason 0 (shot), damage-log shell type 127 (unknown), secondary
 reason 16 (none) and extended reason −1 (none). The component record at
 918123 contains a received-damage event (type 10) for attacker `553323830`.
 Its packed details, `0x0007f80226000210`, decode to 275 HP, reason 0 and shell
-kind 1. See the [battle feedback field
-definitions](references/wot-src/sources/res/scripts/common/BattleFeedbackCommon.py).
-Training sends these feedback entries through `Avatar.onBattleEvents`.
+type 1 (AP). See the [battle feedback field
+definitions](references/wot-src/sources/res/scripts/common/BattleFeedbackCommon.py)
+and the [client damage-log shell enum](references/wot-src/sources/res/scripts/common/constants.py).
+The tracer uses the projectile-effect enum, where AP is 2. Training sends
+feedback through `Avatar.onBattleEvents` using the damage-log enum, with the
+shell's mechanics and stun flag distinguishing the HE variants.
 
 Replay 1345 corroborates the target and health fields for lethal shots. At
 524.42 s, the recorder's shot result at offset 4741469 names target
@@ -179,6 +182,21 @@ delivery acknowledgments, and the remaining component updates require a
 controlled capture of both live connections. The approximately 400 ms
 between the launch and impact records measures this replay's shot. The
 sample does not establish a fixed delay or a collision algorithm.
+
+## Direction indicator in the 2026-11-22 Training Room capture
+
+The local EU client identified above saved a Tundra training replay after
+midnight. The working copy is
+`.local/replays/training-2026-11-22-tundra.wotreplay` with SHA-256
+`c0470b410aa72d471a9e02e34026d27581d1b05f18cbcccb1dce2ca9bad57734`.
+`cargo wot-replay summary` reports three 33-byte entity method records.
+Each has the 12-byte entity method header, Avatar method index 32
+(`showOwnVehicleHitDirection`) and 21 argument bytes. At 38.81 s, stream
+offset 214528, the old server sent −2.824 radians. The contemporaneous
+attacker-to-victim positions give approximately 0.319 radians. The
+opposite yaw matches the player's report of a rear hit highlighting the
+front. Battles now sends the projectile travel yaw. The encrypted E2E
+asserts the wire angle, while native rendering still needs a walkthrough.
 
 ## Scene impacts and gun audio
 

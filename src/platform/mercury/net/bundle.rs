@@ -8,12 +8,15 @@ use crate::platform::mercury::net::element::ElementLength;
 
 use super::codec::Codec;
 use super::element::{Element, REPLY_ID, Reply};
-use super::packet::{self, Packet, PacketConfig, PacketLocked};
+use super::{
+    packet::{self, Packet, PacketConfig, PacketLocked},
+    socket::MAX_ENCRYPTABLE_LEN,
+};
 
-/// The maximum length for writing bundle elements, it's basically the packet capacity
-/// with prefix, flags and reserved footer length subtracted.
+/// The maximum length for bundle elements after reserving headers, footers
+/// and space for socket encryption.
 pub const BUNDLE_PACKET_CAP: usize =
-    packet::PACKET_CAP - packet::PACKET_HEADER_LEN - packet::PACKET_RESERVED_FOOTER_LEN;
+    MAX_ENCRYPTABLE_LEN - packet::PACKET_HEADER_LEN - packet::PACKET_RESERVED_FOOTER_LEN;
 
 const REQUEST_ID_LEN: usize = 4;
 const REQUEST_NEXT_LEN: usize = 2;

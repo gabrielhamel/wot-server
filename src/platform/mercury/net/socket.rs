@@ -17,6 +17,11 @@ use super::packet::{self, Packet};
 const ENCRYPTION_MAGIC: [u8; 4] = 0xDEADBEEFu32.to_le_bytes();
 /// Encryption footer length, 1 byte for wastage count + 4 bytes magic.
 const ENCRYPTION_FOOTER_LEN: usize = ENCRYPTION_MAGIC.len() + 1;
+/// Largest plaintext packet whose encrypted body fits after block padding.
+pub(super) const MAX_ENCRYPTABLE_LEN: usize =
+    (packet::PACKET_CAP - packet::PACKET_PREFIX_LEN) / BLOCK_SIZE * BLOCK_SIZE
+        + packet::PACKET_PREFIX_LEN
+        - ENCRYPTION_FOOTER_LEN;
 
 /// UDP socket with per-session Blowfish keys.
 #[derive(Debug)]

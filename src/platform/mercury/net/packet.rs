@@ -10,6 +10,7 @@ use crate::platform::client_formats::util::io::{SliceCursor, WgReadExt, WgWriteE
 use crate::platform::client_formats::util::{AsciiFmt, TruncateFmt};
 
 use super::seq::Seq;
+use super::socket::MAX_ENCRYPTABLE_LEN;
 
 /// According to disassembly of WoT, outside of a channel, the max size if always
 /// `1500 - 28 = 1472`, this includes the 4-bytes prefix. When prefix use is disabled
@@ -858,45 +859,21 @@ impl PacketConfig {
         }
 
         // Min footer += 1 + 4
-        if !self.single_acks.is_empty() {
-            // Unused by getters/setters so it's safe here.
-            self.enable_flags(flags::HAS_ACKS);
-
-            // Compute the remaining footer length for acks (not counting the count).
-            let available_len = packet.free()
-                - if self.cumulative_ack().is_some() {
-                    4
-                } else {
-                    0
-                }
-                - if self.indexed_channel().is_some() {
-                    8
-                } else {
-                    0
-                }
-                - if self.has_checksum() { 4 } else { 0 }
-                - 1; // Acks count
-
-            // Debug assert, and cap to the max number of acks.
-            debug_assert!(
-                available_len >= 4,
-                "PACKET_MIN_FOOTER_LEN should ensure at least one single ack"
-            );
-            let available_len = available_len.min(u8::MAX as usize * 4);
-
-            let mut count = 0u8;
-            while let Some(ack) = self.single_acks.pop_front() {
-                count += 1;
-                packet.grow(4).write_u32(ack.get()).unwrap();
-                if available_len < 4 {
-                    break;
-                }
-            }
-
-            debug_assert!(count != 0);
-            packet.grow(1)[0] = count;
-        } else {
-            self.disable_flags(flags::HAS_ACKS);
+        let checksum_len = usize::from(self.has_checksum()) * 4;
+        let following_footer_len = usize::from(self.cumulative_ack().is_some()) * 4
+            + usize::from(self.indexed_channel().is_some()) * 8
+            + checksum_len;
+        let available_ack_bytes =
+            MAX_ENCRYPTABLE_LEN.saturating_sub(packet.len() + following_footer_len + 1);
+        let ack_count = (available_ack_bytes / 4)
+            .min(usize::from(u8::MAX))
+            .min(self.single_acks.len());
+        for ack in self.single_acks.drain(..ack_count) {
+            packet.grow(4).write_u32(ack.get()).unwrap();
+        }
+        self.switch_flags(flags::HAS_ACKS, ack_count != 0);
+        if ack_count != 0 {
+            packet.grow(1)[0] = ack_count as u8;
         }
 
         // Min footer += 4
@@ -917,8 +894,7 @@ impl PacketConfig {
             // Check if the packet can be safely added, ending with its own length (i16),
             // we must also consider checksum!
             let piggyback_slice = piggyback_packet.slice();
-            if packet.free() >= piggyback_slice.len() + 2 + if self.has_checksum() { 4 } else { 0 }
-            {
+            if packet.len() + piggyback_slice.len() + 2 + checksum_len <= MAX_ENCRYPTABLE_LEN {
                 packet
                     .grow(piggyback_slice.len())
                     .copy_from_slice(piggyback_slice);

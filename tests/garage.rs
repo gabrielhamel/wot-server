@@ -453,6 +453,12 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         first_peer.until(&script, |p| p.has_resource(221));
         second_peer.until(&script, |p| p.has_resource(221));
         if let Some((router, shop_url)) = store_after_battle {
+            xmpp_flow::assert_roster_available_after_battle(
+                &mut second_peer,
+                &script,
+                chat_address,
+                b.id,
+            );
             let token = shop_url.split_once('#').unwrap().1;
             runtime.block_on(store_flow::assert_catalog_access(
                 &router,

@@ -370,10 +370,13 @@ Battles advances yaw and pitch on arena ticks and quantizes pitch against the
 gun's absolute envelope for `gunAnglesPacked`. Both the server gun and the
 owner's aim stabilisation use the replicated terrain-supported hull pose.
 The gun aims from the equipped chassis, turret and gun offsets, so nearby
-crosshair targets use the correct pivot and launch point. The drive bits express physical
-hull turns. `Avatar.makeVehicleMovementCommandByKeys` exchanges the left and
-right bits when the player's `backDraftInvert` option is enabled and the
-backward flag is set.
+crosshair targets use the correct pivot and launch point. The drive bits
+express steering in the direction of travel. Reverse steering swings the rear
+toward the requested side, consistent with the
+[Toolkit drive model](../references/wg-toolkit-rs/wg-toolkit-wot/src/base/physics/drive.rs).
+`Avatar.makeVehicleMovementCommandByKeys` exchanges the left and right bits
+before transmission when the player's `backDraftInvert` option is enabled and
+the backward flag is set.
 
 The `OwnVehicle` component publishes total rounds, rounds in the magazine,
 current and queued shell types, gun cooldown and autoreloader refill timing.
@@ -400,8 +403,10 @@ health property and callback for the target. The shooter receives
 `Avatar.showShotResults` with the target ID and direct-damage flags, plus the
 kill flag when the hit reduces the target's health to zero. The victim receives
 `Avatar.showOwnVehicleHitDirection` with the damage applied and the world
-bearing back along the shot. When a shot removes health, each receives its own
-`Avatar.onBattleEvents` entry for damage dealt or received. The shooter also
+yaw along the incoming projectile's travel. When a shot removes health, each
+receives its own `Avatar.onBattleEvents` entry for damage dealt or received.
+Received damage uses the client's battle-log shell type, including the HE
+mechanics variant and the premium shell flag. The shooter also
 receives updated ammunition and reload state. See the [direct-hit replay
 evidence](../battle-replays.md#direct-hit-in-replay-1344).
 Training resolves the ray immediately. The impact packet includes a segment

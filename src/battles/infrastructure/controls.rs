@@ -281,6 +281,7 @@ impl Battle {
         output.shot.id = tracing::field::Empty,
         output.target.entity_id = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.hit_direction.radians = tracing::field::Empty,
+        output.damage_log.shell_type = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty
     ), err)]
     fn fire(
@@ -351,7 +352,7 @@ impl Battle {
                 span.record("output.obstacle.material_kind", material);
             }
         }
-        let hit_direction = (-shot.direction.x).atan2(-shot.direction.z);
+        let hit_direction = shot.direction.x.atan2(shot.direction.z);
         let impact = target.and_then(|(target, id, distance)| {
             self.players.get_mut(&target).map(|victim| {
                 let (prev, health) = victim.tank.hit(&shot);
@@ -368,6 +369,9 @@ impl Battle {
                 span.record("output.target.entity_id", id);
                 span.record("output.damage", damage);
                 span.record("output.hit_direction.radians", hit_direction);
+                if let Some(shell_type) = shot.effects.damage_log_type {
+                    span.record("output.damage_log.shell_type", shell_type);
+                }
                 (target, id, distance, prev, health, effect)
             })
         });
@@ -474,7 +478,7 @@ impl Battle {
                                 other_vehicle,
                                 damage as u16,
                                 received,
-                                shot.effects.kind,
+                                shot.effects,
                             )])?;
                     }
                 }

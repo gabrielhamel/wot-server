@@ -1,4 +1,5 @@
 use crate::platform::mercury::app::entity::{Bytes, EntityId, entity_schema};
+use crate::shared_kernel::ShellEffects;
 
 crate::script_dict! {
     pub struct ShotResult {
@@ -22,23 +23,21 @@ impl BattleEvent {
         other_vehicle: u32,
         damage: u16,
         received: bool,
-        shell_kind: u8,
+        shell: ShellEffects,
     ) -> Self {
         const DAMAGE: u8 = 7;
         const RECEIVED_DAMAGE: u8 = 10;
-        const UNKNOWN_SHELL_KIND: u64 = 127;
+        const UNKNOWN_SHELL_TYPE: u8 = 127;
         const NO_SECONDARY_ATTACK_REASON: u64 = 16;
         const NO_EXTENDED_ATTACK_REASON: u64 = 255;
 
+        let shell_type = shell.damage_log_type.filter(|_| received);
         Self {
             eventType: if received { RECEIVED_DAMAGE } else { DAMAGE },
             targetID: EntityId(other_vehicle),
             details: (u64::from(damage) << 25)
-                | ((if received {
-                    u64::from(shell_kind)
-                } else {
-                    UNKNOWN_SHELL_KIND
-                }) << 9)
+                | (u64::from(shell_type.unwrap_or(UNKNOWN_SHELL_TYPE)) << 9)
+                | (u64::from(shell_type.is_some() && shell.premium) << 8)
                 | NO_SECONDARY_ATTACK_REASON
                 | (NO_EXTENDED_ATTACK_REASON << 43),
             count: 1,

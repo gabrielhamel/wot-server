@@ -37,6 +37,8 @@ pub struct GunLoading {
 #[derive(Clone, Copy, Debug)]
 pub struct ShellEffects {
     pub kind: u8,
+    pub damage_log_type: Option<u8>,
+    pub premium: bool,
     pub caliber_mm: f32,
     pub legacy_index: u8,
     pub prefab_index: u8,
@@ -46,6 +48,8 @@ impl Default for ShellEffects {
     fn default() -> Self {
         Self {
             kind: 2,
+            damage_log_type: None,
+            premium: false,
             caliber_mm: 45.0,
             legacy_index: 0,
             prefab_index: 0,
