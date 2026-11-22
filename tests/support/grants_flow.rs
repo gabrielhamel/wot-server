@@ -51,7 +51,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
     for key in [
         "germany:G90_DW_II_MapsTraining_Dummy_HT_1",
         "france:F28_105_leFH18B2_IGR",
-        "germany:G98_Waffentrager_E100_WO",
+        "ussr:Observer",
     ] {
         let entry = catalog.vehicle_catalog_entry(key).unwrap();
         assert!(
@@ -68,14 +68,21 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             "{key}"
         );
     }
-    assert!(
-        catalog
-            .grantable_vehicles()
-            .any(|tank| tank.key == "germany:G98_WT_auf_E_100_Phonix")
-    );
+    for key in [
+        "germany:G98_WT_auf_E_100_Phonix",
+        "germany:G195_HWK_40",
+        "poland:Pl43_Kruk",
+        "uk:GB132_Taurus_CAT",
+    ] {
+        assert!(
+            catalog.grantable_vehicles().any(|tank| tank.key == key),
+            "{key}"
+        );
+    }
+    let tank_key = "ussr:R165_Object_703_II_2";
     let tank = catalog
         .grantable_vehicles()
-        .find(|tank| tank.key == "ussr:R111_ISU130")
+        .find(|tank| tank.key == tank_key)
         .unwrap()
         .id;
     let books: Vec<_> = catalog.grantable_crew_books().collect();
@@ -180,7 +187,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             panic!("Login did not return a handoff ticket");
         };
         let (after, delivery) = grant(currency(GrantCurrency::Bonds, 11)).unwrap();
-            let after = wot_server::accounts::test_support::account_snapshot(&after);
+        let after = wot_server::accounts::test_support::account_snapshot(&after);
         assert_eq!(delivery, GrantDelivery::OnNextSync);
         peer.handoff(ticket);
         peer.until(&script, |p| p.created && p.shown);
@@ -249,7 +256,12 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             Err(GrantRequestError::Busy) => grant(PlayerGrant::Vehicle { vehicle: tank }).unwrap(),
             Err(error) => panic!("Grant failed: {error}"),
         };
-            let after = wot_server::accounts::test_support::account_snapshot(&after);
+        let battle_vehicle = wot_server::accounts::test_support::garage_queries(catalog.clone())
+            .battle_vehicle(&after, 2)
+            .unwrap()
+            .expect("Granted vehicle can enter a Training Battle");
+        assert!(battle_vehicle.health > 0);
+        let after = wot_server::accounts::test_support::account_snapshot(&after);
         if peer.responses.contains(&(301, -5)) {
             purchase(&mut peer, 302);
             peer.until(&script, |p| p.responses.contains(&(302, 0)));
@@ -273,7 +285,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         assert_eq!(persisted.progression.depot.get(&book), Some(&5));
         assert_eq!(persisted.progression.depot.get(&equipment), Some(&1));
         assert_eq!(persisted.balances.credits, 100_000_031 - 250_000);
-        assert_eq!(persisted.vehicles[1].catalog_key, "ussr:R111_ISU130");
+        assert_eq!(persisted.vehicles[1].catalog_key, tank_key);
         assert!(persisted.vehicles[1].has_crew);
         assert!(persisted.vehicles[1].ammunition.as_ref().unwrap().loaded.iter().any(|&(_, count)| count > 0));
         peer.disconnect();
@@ -302,7 +314,39 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         .await
         .unwrap();
     test.unwrap();
-    assert_depot_grant_trace(id, book, &exporter.get_finished_spans().unwrap());
+    let spans = exporter.get_finished_spans().unwrap();
+    assert_depot_grant_trace(id, book, &spans);
+    let vehicle_plans: Vec<_> = spans
+        .iter()
+        .filter(|span| {
+            span.name == "accounts.grants.plan_grant"
+                && span.attributes.iter().any(|attr| {
+                    attr.key.as_str() == "input.grant"
+                        && attr.value.as_str() == format!("Vehicle {{ vehicle: {tank} }}")
+                })
+        })
+        .collect();
+    assert!(
+        vehicle_plans
+            .iter()
+            .any(|span| span.status == opentelemetry::trace::Status::Unset)
+    );
+    assert!(
+        vehicle_plans
+            .iter()
+            .any(|span| matches!(span.status, opentelemetry::trace::Status::Error { .. }))
+    );
+    for plan in vehicle_plans {
+        let gateway = spans
+            .iter()
+            .find(|span| span.span_context.span_id() == plan.parent_span_id)
+            .unwrap();
+        assert_eq!(gateway.name, "player_sessions.gateway.grant");
+        assert!(spans.iter().any(|span| {
+            span.name == "player_sessions.gateway.grant_response"
+                && span.parent_span_id == gateway.span_context.span_id()
+        }));
+    }
 }
 
 fn depot_count(cache: &Pickle, item_type: i32, id: i32) -> i64 {

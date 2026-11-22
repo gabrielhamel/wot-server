@@ -220,7 +220,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.depot.count`](../src/accounts/domain/ammunition.rs) | Number of distinct shell types in the depot passed to ammunition validation; not total shell units. |
 | [`input.stock.shell_types`](../src/accounts/domain/depot.rs) | Number of distinct shell types currently held in depot stock at the start of a depot sale. |
 | [`input.stock.fitting_types`](../src/accounts/domain/depot.rs) | Number of distinct fitting/item descriptors currently held in depot stock at the start of a depot sale. |
-| [`input.vehicle_count`](../src/accounts/infrastructure/players.rs) | Number of vehicles persisted during starter garage creation or projected for the account cache. |
+| [`input.vehicle_count`](../src/accounts/infrastructure/players.rs) | Number of vehicles persisted during starter garage creation or projected for the account cache. On [variant validation](../src/accounts/infrastructure/client/vehicle_defs.rs), the number of vehicle definitions screened for catalog eligibility. |
+| [`output.accepted_count`, `output.rejected_count`](../src/accounts/infrastructure/client/vehicle_defs.rs) | Counts of otherwise eligible private or test vehicle variants that pass or fail validation of their stock garage and battle definitions. |
+| [`vehicle.id`, `vehicle.key`](../src/accounts/infrastructure/client/vehicle_defs.rs) | Vehicle compact descriptor ID and nation-qualified catalog key on a variant validation rejection diagnostic. |
 | [`input.starter.credits`, `input.starter.gold`](../src/accounts/infrastructure/players.rs) | Initial balances in credits and gold offered by `accounts.players.provision`, including attempts that end in conflict. |
 
 ## Crew inputs

@@ -19,6 +19,7 @@ pub(super) fn tech_tree(
                 && vehicles.get(&id).is_some_and(|offer| {
                     offer.requires_research
                         && offer.grantable()
+                        && !offer.tags.contains("private")
                         && !offer.tags.contains("collectorVehicle")
                 })
             {

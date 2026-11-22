@@ -281,16 +281,12 @@ impl GarageCatalog {
                     }
                 }
             });
-        let mut store_offers =
-            store::load(&fs, &prices, &offers, &equipment, &consumables, &directives)?;
-        store_offers.extend_from_slice(cosmetics.store_styles());
         let shell_effects = shell_effects::ShellEffectCatalog::load(&fs)?;
-        let tech_tree = starter_garage::tech_tree(&fs, &catalog_keys, &offers)?;
-        let catalog = Self {
+        let mut catalog = Self {
             templates: RwLock::new(HashMap::new()),
             offers,
             keys: catalog_keys,
-            tech_tree,
+            tech_tree: BTreeSet::new(),
             filesystem: fs,
             passports,
             crew_books,
@@ -301,7 +297,7 @@ impl GarageCatalog {
             shell_effects,
             equipment,
             equipment_grants,
-            store_offers,
+            store_offers: Vec::new(),
             directives,
             consumables,
             supply_slots,
@@ -309,6 +305,20 @@ impl GarageCatalog {
             elite_progression_trees,
             shop,
         };
+        catalog.validate_vehicle_variants();
+        catalog.tech_tree =
+            starter_garage::tech_tree(&catalog.filesystem, &catalog.keys, &catalog.offers)?;
+        catalog.store_offers = store::load(
+            &catalog.filesystem,
+            &catalog.prices,
+            &catalog.offers,
+            &catalog.equipment,
+            &catalog.consumables,
+            &catalog.directives,
+        )?;
+        catalog
+            .store_offers
+            .extend_from_slice(catalog.cosmetics.store_styles());
         for key in keys {
             catalog.vehicle(key)?;
         }
