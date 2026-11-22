@@ -80,7 +80,9 @@ jobs:
           WG_TEST_DATABASE_URL: postgresql://wot_test:ci-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/wot_test
         run: |
           cargo +stable test --locked --lib initializes_context_storage -- --ignored
-          cargo +stable test --locked --lib exports_admin_http -- --ignored
+          # The access lifecycle test installs a process-wide tracing subscriber.
+          cargo +stable test --locked --lib exports_admin_http_request_inputs -- --ignored
+          cargo +stable test --locked --lib exports_admin_http_access_lifecycle -- --ignored
           cargo +stable test --locked -p wot-server --features integration-test-support --test garage -- --ignored
 
   web:
