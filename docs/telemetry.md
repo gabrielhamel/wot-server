@@ -475,8 +475,16 @@ a 32 KiB request limit, 24 spans per batch, four concurrent forwards and
 two-second deadline. The relay assigns browser service identity and forwards
 to the same trace pipeline as the server. Keep collector ingress private and
 preserve `traceparent` when proxying the admin and Store APIs. Browser spans
-are untrusted client reports, and the browser attempts a best-effort flush on
-page exit.
+are untrusted client reports. The browser normally starts exporting buffered
+spans after 500 ms, splits batches that exceed the relay's byte limit, and
+attempts a best-effort flush on page exit. It reports final export failures
+in the browser console with only the span count.
+
+Use `browser.telemetry.ingest` to see whether an upload reached the server and
+whether it was rejected locally or failed while forwarding to the collector.
+The relay records its HTTP status, the collector status when available, and a
+bounded outcome. Successful forwarding acknowledges delivery to the collector.
+Browser and server spans can arrive at Tempo separately.
 
 In Tempo, search for `{ resource.service.name = "wot-server-web" }` and open
 a grant or purchase trace. Check that the browser HTTP span is the direct

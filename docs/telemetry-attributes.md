@@ -442,3 +442,19 @@ Supporting sources include the [browser HTTP adapter](../src/platform/infrastruc
 [browser exception observer](../src/platform/infrastructure/web/browser-telemetry.ts),
 [entry point](../src/server/presentation/web/main.tsx) and
 [OTLP relay](../src/server/browser_telemetry.rs).
+
+### Browser telemetry relay
+
+`browser.telemetry.ingest` is a Rust server span for a browser OTLP POST. It
+has `ddd.bounded_context.name=server` and covers forwarding through the
+HTTP response. It omits browser span contents, origins and collector URLs.
+[Relay implementation](../src/server/browser_telemetry.rs)
+
+| Attribute | Meaning and emission |
+| --- | --- |
+| `http.request.method`, `http.route` | `POST` and the fixed `/api/web/telemetry` route. |
+| `input.body.bytes` | Request body size in bytes, when the bounded body extractor succeeds. |
+| `input.span_count` | Number of spans in a validated batch. |
+| `http.response.status_code` | HTTP status returned to the browser. |
+| `upstream.http.response.status_code` | HTTP status returned by the collector, when available. |
+| `output.outcome` | `forwarded`, `origin_rejected`, `content_type_rejected`, `body_rejected`, `concurrency_limited`, `rate_limited`, `batch_rejected`, `collector_rejected`, `collector_timeout`, or `collector_unreachable`. Collector failures set span status to Error and emit a warning. |
