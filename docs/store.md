@@ -26,13 +26,16 @@ account products, and features outside the current scope.
 The resource bundle contains each nation’s `list.xml`, the Tech Tree nodes,
 and regular service definitions. The Store selects Collectors’ vehicles by
 the `collectorVehicle` tag, the resource credit price, and garage eligibility.
-The observed fixture supplies 92 Collectors’ vehicles. The highest researched
-Tech Tree tier in each nation gates that nation’s Collectors’ offers. The
-server projects the same maximum into the native garage cache. Buying or
+The observed fixture supplies 91 Collectors’ offers after the price filter
+excludes the zero-credit Medium I. The highest researched Tech Tree tier in
+each nation gates that nation’s Collectors’ offers. The server projects the
+same maximum into the native garage cache. Buying or
 receiving a premium, reward or Collectors’ vehicle does not advance that maximum.
 
-The Premium vehicles tab lists every garage-eligible vehicle with a positive
-gold price in the client’s definitions that meets the Store eligibility rules.
+The Premium vehicles tab uses gold prices from the client’s vehicle definitions.
+Store vehicle offers in gold or credits require a price above 100 in the offer’s
+currency. An independently priced bond offer can still appear, as with the
+113 Beijing Opera.
 For vehicles tagged `private` or `testTank`, every Store offer requires a
 defined price above 100 gold or 100 credits in the vehicle definition. This
 also applies to vehicles with a mapped bond offer. Eligible variants priced

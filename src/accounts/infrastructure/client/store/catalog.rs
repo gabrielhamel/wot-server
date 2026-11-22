@@ -7,7 +7,7 @@ use crate::accounts::infrastructure::client::{
     item_prices::{ItemPrices, NO_NATION, Price},
     items::{IntCompactDescr, item_type},
     localization::{humanize_item_name, localized_names},
-    vehicle_defs::VehicleOffer,
+    vehicle_defs::{MAX_PLACEHOLDER_VEHICLE_PRICE, VehicleOffer},
 };
 use crate::accounts::{
     ConsumableRules, DirectivePrice, DirectiveRules, EquipmentPrice, EquipmentRules,
@@ -157,13 +157,14 @@ fn vehicle_listings(
                         amount: gold,
                     },
                     _,
-                ) if gold > 0 => Some(listing(
+                ) if gold > MAX_PLACEHOLDER_VEHICLE_PRICE => Some(listing(
                     Category::PremiumVehicles,
                     &vehicle.name,
                     StorePrice::Gold(gold),
                 )),
                 (_, Some(VehicleCost { credits, gold: 0 }))
-                    if vehicle.tags.contains("collectorVehicle") =>
+                    if credits > MAX_PLACEHOLDER_VEHICLE_PRICE
+                        && vehicle.tags.contains("collectorVehicle") =>
                 {
                     Some(listing(
                         Category::CollectorsVehicles,

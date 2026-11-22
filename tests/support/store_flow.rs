@@ -71,6 +71,14 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .unwrap()
         .id;
     let t30_fl = catalog.vehicle_catalog_entry("usa:A14_T30_FL").unwrap().id;
+    let t22 = catalog
+        .vehicle_catalog_entry("ussr:R120_T22SR_A22")
+        .unwrap()
+        .id;
+    let beijing_opera = catalog
+        .vehicle_catalog_entry("china:Ch22_113_Beijing_Opera")
+        .unwrap()
+        .id;
     let private_premium = catalog
         .vehicle_catalog_entry("china:Ch01_Type59_Gold")
         .unwrap()
@@ -181,7 +189,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         let (status, catalog) = request(Some(&token), None);
         assert_eq!(status, StatusCode::OK);
         let offers = catalog["offers"].as_array().unwrap();
-        for hidden in [test_tank, t30_fl] {
+        for hidden in [test_tank, t30_fl, t22] {
             assert!(
                 !offers.iter().any(|offer| offer["item"] == hidden),
                 "Hidden vehicle {hidden} appeared in the Store"
@@ -191,6 +199,14 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             offer["item"] == private_premium
                 && offer["price"] == json!({"currency": "gold", "amount": 13500})
         }));
+        let beijing_offers: Vec<_> = offers.iter()
+            .filter(|offer| offer["item"] == beijing_opera)
+            .collect();
+        assert_eq!(beijing_offers.len(), 1);
+        assert_eq!(beijing_offers[0]["price"], json!({"currency": "bonds", "amount": 15000}));
+        assert!(offers.iter().filter(|offer| {
+            offer["nation"].is_string() && matches!(offer["price"]["currency"].as_str(), Some("gold" | "credits"))
+        }).all(|offer| offer["price"]["amount"].as_i64().unwrap() > 100));
         assert!(offers.iter().filter(|offer| {
             offer["nation"].is_string() && offer["price"]["currency"] == "credits"
         }).all(|offer| offer["category"] == "collectors_vehicles"));
@@ -266,7 +282,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         );
         for (category, count) in [
             ("premium_account", 8),
-            ("collectors_vehicles", 92),
+            ("collectors_vehicles", 91),
             ("crew_skins", 25),
             ("equipment", 42),
             ("consumables", 19),
@@ -495,12 +511,19 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         assert_store_traces(account_id, improved_item, "bonds", improved_price);
 
         super::depot_flow::send_array(&mut expiring, &dispatch, 817, 301, &[1, test_tank, 0, 0, -1, 0], -1);
-        let test_order = json!({"item": test_tank, "price": {"currency": "gold", "amount": 100}, "revision": purchased["revision"]});
-        assert_eq!(request(Some(&expiry_token), Some(&test_order)).0, StatusCode::NOT_FOUND);
+        for (item, amount, expected) in [
+            (test_tank, 100, StatusCode::NOT_FOUND),
+            (t22, 5, StatusCode::NOT_FOUND),
+            (beijing_opera, 5, StatusCode::CONFLICT),
+        ] {
+            let order = json!({"item": item, "price": {"currency": "gold", "amount": amount}, "revision": purchased["revision"]});
+            assert_eq!(request(Some(&expiry_token), Some(&order)).0, expected);
+        }
         let saved = runtime.block_on(accounts.snapshot(account_id)).unwrap();
         assert_eq!(saved.revision, persisted.revision);
         assert_eq!(saved.balances.gold, persisted.balances.gold);
-        assert_store_unavailable_trace(account_id, test_tank);
+        assert_store_unavailable_trace(account_id, test_tank, 100);
+        assert_store_unavailable_trace(account_id, t22, 5);
 
         expiring.disconnect();
         assert_tech_tree_traces(account_id);
@@ -898,7 +921,7 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
     ));
 }
 
-fn assert_store_unavailable_trace(account_id: i64, item: i32) {
+fn assert_store_unavailable_trace(account_id: i64, item: i32, amount: i64) {
     let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key, expected: &str| {
         span.attributes
@@ -945,7 +968,7 @@ fn assert_store_unavailable_trace(account_id: i64, item: i32) {
         purchase.span_context.span_id(),
     );
     assert!(has(plan, "input.price.currency", "gold"));
-    assert!(has(plan, "input.price.amount", "100"));
+    assert!(has(plan, "input.price.amount", &amount.to_string()));
     assert!(matches!(
         plan.status,
         opentelemetry::trace::Status::Error { .. }
