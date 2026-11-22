@@ -325,6 +325,72 @@ models. SpeedTree collision, destructible damage and destruction replication
 remain open. Training sends an empty destructibles list. Live client
 playback is needed to verify audio and visuals.
 
+## Range expiry
+
+The 2026-11-22 WGUS lookup returned EU production build `2.4.1.5514` for
+both Windows x64 client profiles. The local executable identified above and
+the extracted bundle used for E2E report the same XML label as the replays.
+
+In the tracked Random Battle recordings identified above, the last four-byte
+float in the 50-byte `showTracer` arguments is the range in metres (offset
+44, followed by gun and installation indices). For these examples the same
+Avatar receives no matching `stopTracer` (index 28) or `explodeProjectile`
+(index 67) later in the recording.
+
+| Replay | Clock (s) | Stream offset | Shot ID | Range (m) |
+| --- | ---: | ---: | ---: | ---: |
+| 1344 | 101.54 | 1119649 | 194279851 | 720 |
+| 1344 | 219.14 | 2103468 | 194632107 | 431.99 |
+| 1345 | 89.12 | 1212381 | 31221895 | 720 |
+| 1345 | 700.96 | 6020152 | 31694983 | 720 |
+
+These observations are consistent with the client expiring tracers locally.
+[`Avatar.showTracer`](references/wot-src/sources/res/scripts/client/Avatar.py)
+passes the range to [`ProjectileMover.add`](references/wot-src/sources/res/scripts/client/ProjectileMover.py),
+which gives it to the client ballistics engine. The records measure the range
+advertised to that client. The shorter values may reflect shots first
+replicated partway through flight. The direct hit at 87.74 s in replay
+1344 (shot `194269611`) also advertises 720 m. The separate stop packet
+defines the earlier endpoint.
+
+Training uses the equipped gun's nominal `maxDistance` for the loaded shell
+and retains the straight-ray simulation at 450 m/s. Every tracer advertises
+that range. A miss has no impact message. An invalid or missing range rejects the shot before
+consuming ammunition. The parser accepts positive distances through 10 km,
+the largest value present in the reference shot definitions, which bounds
+the one-metre heightfield search. The official client also computes effective
+range limits from piercing power and damage curves in
+[`computeShotMaxDistance`](references/wot-src/sources/res/scripts/common/helpers_common.py).
+Training still uses nominal range because it does not simulate those curves.
+
+## Round end and movement
+
+Both recorded Avatars receive `onRoundFinished` (index 10, arguments
+`02 01` for team 2 and elimination), immediately followed by `updateArena`
+(index 58, update type 3) on the same replay clock. Its inflated pickle
+contains period 4, an arena-clock deadline, a `60.0` second period length
+and the tuple `(2, 1)`. The recordings continue to carry position samples
+for about six seconds, considerably shorter than the advertised period.
+
+| Replay | Clock (s) | Outcome / period offsets | Last recorded pose clock (s) |
+| --- | ---: | --- | ---: |
+| 1344 | 899.34 | 6579777 / 6579803 | 905.745 |
+| 1345 | 710.26 | 6107541 / 6107567 | 716.66 |
+
+In 1345, vehicle `543436815` travels about 0.70 m between the outcome and
+rest. At 710.56 s (offset 6109356) it makes its last individual position
+step greater than 2 cm. Its pose is still replicated at 716.66 s (offset
+6159939). Replay 1344's remaining vehicles are stationary at the outcome.
+
+Training sends the two outcome methods in the recorded order. It preserves
+the 60-second period on the wire and uses six seconds before returning
+remaining participants to the garage. Vehicles coast on the server with
+neutral drive input while position and chassis updates continue. The native
+[game messages controller](references/wot-src/sources/res/scripts/client/gui/battle_control/controllers/game_messages_ctrl.py)
+handles the in-arena outcome banner. Detailed post-battle reports and
+Random Battle progression are outside the implemented Training end sequence.
+The replay alone cannot establish the complete live transport teardown.
+
 ## Turret and reticle replication
 
 In the same EU sample corpus, replay record `0x07` carries an entity ID,

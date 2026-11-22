@@ -51,6 +51,18 @@ impl AccountView {
         self.0.vehicles.len()
     }
 
+    /// Client customization display preference for other vehicles in battle.
+    pub fn customization_display_type(&self) -> u8 {
+        const GAME_EXTENDED_2: i32 = 102;
+        const ALL_STYLES: u8 = 2;
+        self.0
+            .settings
+            .get(&GAME_EXTENDED_2)
+            .map(|settings| ((settings >> 2) & 0b11) as u8)
+            .filter(|&value| value <= ALL_STYLES)
+            .unwrap_or(ALL_STYLES)
+    }
+
     pub fn active_premium_until(&self) -> Option<u32> {
         self.0.active_premium_until()
     }

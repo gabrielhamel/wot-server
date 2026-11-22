@@ -20,11 +20,13 @@ pub(crate) struct BattleParticipant {
     pub team: u8,
     pub is_host: bool,
     pub observer: bool,
+    pub customization_display_type: u8,
     pub vehicle: VehicleLoadout,
 }
 
 pub(crate) struct VehicleLoadout {
     pub descriptor: Vec<u8>,
+    pub outfit: Vec<u8>,
     pub health: i16,
     pub crew_size: usize,
     pub performance: Option<crate::shared_kernel::VehiclePerformance>,

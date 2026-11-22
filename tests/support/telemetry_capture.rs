@@ -1,4 +1,11 @@
-use opentelemetry::trace::{Status, TracerProvider};
+use opentelemetry::{
+    metrics::MeterProvider,
+    trace::{Status, TracerProvider},
+};
+use opentelemetry_sdk::metrics::{
+    InMemoryMetricExporter, SdkMeterProvider,
+    data::{AggregatedMetrics, MetricData, ResourceMetrics},
+};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
 use std::{
     net::SocketAddr,
@@ -6,6 +13,70 @@ use std::{
     time::{Duration, Instant},
 };
 use tracing_subscriber::prelude::*;
+
+pub struct GatewayMetrics {
+    provider: SdkMeterProvider,
+    exporter: InMemoryMetricExporter,
+}
+
+impl GatewayMetrics {
+    pub fn attach(gateway: &mut wot_server::player_sessions::Gateway) -> Self {
+        let exporter = InMemoryMetricExporter::default();
+        let provider = SdkMeterProvider::builder()
+            .with_periodic_exporter(exporter.clone())
+            .build();
+        wot_server::server::test_support::configure_gateway_metrics(
+            gateway,
+            &provider.meter("garage-test"),
+        );
+        Self { provider, exporter }
+    }
+
+    pub fn assert_snapshot(&self, players: u64, battles: u64, has_battle_ticks: bool) {
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            self.exporter.reset();
+            self.provider.force_flush().unwrap();
+            let exports = self.exporter.get_finished_metrics().unwrap();
+            let latest = exports.last().unwrap();
+            let metric = |name| {
+                latest
+                    .scope_metrics()
+                    .flat_map(|scope| scope.metrics())
+                    .find(|metric| metric.name() == name)
+            };
+            let gauge = |name| match metric(name).unwrap().data() {
+                AggregatedMetrics::U64(MetricData::Gauge(gauge)) => {
+                    gauge.data_points().next().unwrap().value()
+                }
+                data => panic!("expected a gauge for {name}, got {data:?}"),
+            };
+            let observed = (gauge("wot.players.online"), gauge("wot.battles.running"));
+            let has_samples = |name| {
+                metric(name).is_some_and(|metric| {
+                    assert_eq!(metric.unit(), "s");
+                    let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = metric.data()
+                    else {
+                        panic!("expected a histogram for {name}");
+                    };
+                    histogram.data_points().any(|point| point.count() > 0)
+                })
+            };
+            let duration = has_samples("wot.battle.tick.duration");
+            let delay = has_samples("wot.battle.tick.delay");
+            if observed == (players, battles)
+                && (duration, delay) == (has_battle_ticks, has_battle_ticks)
+            {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "expected {players} players, {battles} battles, and battle tick samples={has_battle_ticks}; observed {observed:?}, duration samples={duration}, delay samples={delay}"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+        }
+    }
+}
 
 pub fn exporter() -> &'static InMemorySpanExporter {
     static EXPORTER: OnceLock<InMemorySpanExporter> = OnceLock::new();
@@ -863,13 +934,55 @@ pub async fn assert_database_failure(url: &str) {
             .await
             .unwrap(),
     );
-    repository.connection_pool().close().await;
+    let pool = repository.connection_pool();
+    let metric_exporter = InMemoryMetricExporter::default();
+    let provider = SdkMeterProvider::builder()
+        .with_periodic_exporter(metric_exporter.clone())
+        .build();
+    wot_server::server::test_support::configure_database_metrics(
+        &provider.meter("database-test"),
+        &pool,
+    );
+    assert!(
+        repository
+            .credentials("missing-metrics-test-player")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let connection = pool.acquire().await.unwrap();
+    let check_pool = |idle, non_idle| {
+        provider.force_flush().unwrap();
+        let exports = metric_exporter.get_finished_metrics().unwrap();
+        assert_pool_metrics(exports.last().unwrap(), idle, non_idle);
+    };
+    check_pool(0, 1);
+    drop(connection);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while pool.num_idle() == 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    check_pool(1, 0);
+
+    pool.close().await;
     let before = exporter().get_finished_spans().unwrap().len();
     assert!(repository.snapshot(-1).await.is_err());
     let spans = exporter().get_finished_spans().unwrap();
+    let snapshot = spans
+        .iter()
+        .skip(before)
+        .find(|span| {
+            span.name == "accounts.postgres.snapshot" && has_attribute(span, "input.id", "-1")
+        })
+        .unwrap();
     assert!(
         spans.iter().skip(before).any(|span| {
             span.name == "postgresql.query"
+                && span.parent_span_id == snapshot.span_context.span_id()
+                && span.span_context.trace_id() == snapshot.span_context.trace_id()
                 && matches!(span.status, opentelemetry::trace::Status::Error { .. })
                 && span.attributes.iter().any(|attribute| {
                     attribute.key.as_str() == "db.query.text"
@@ -882,4 +995,73 @@ pub async fn assert_database_failure(url: &str) {
         }),
         "database failure must retain SQL text and error status"
     );
+
+    provider.force_flush().unwrap();
+    let exports = metric_exporter.get_finished_metrics().unwrap();
+    let export = exports.last().unwrap();
+    assert_pool_metrics(export, 0, 0);
+    let metric = export
+        .scope_metrics()
+        .flat_map(|scope| scope.metrics())
+        .find(|metric| metric.name() == "wot.db.operation.duration")
+        .unwrap();
+    assert_eq!(metric.unit(), "s");
+    let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = metric.data() else {
+        panic!("expected a database operation duration histogram");
+    };
+    for (operation, outcome) in [("SELECT", "success"), ("BEGIN", "error")] {
+        assert!(
+            histogram.data_points().any(|point| {
+                point.count() > 0
+                    && point.attributes().count() == 3
+                    && [
+                        ("ddd.bounded_context.name", "accounts"),
+                        ("db.operation.name", operation),
+                        ("outcome", outcome),
+                    ]
+                    .into_iter()
+                    .all(|(key, value)| {
+                        point.attributes().any(|attribute| {
+                            attribute.key.as_str() == key && attribute.value.as_str() == value
+                        })
+                    })
+            }),
+            "missing database metric for {operation} with outcome {outcome}"
+        );
+    }
+}
+
+fn assert_pool_metrics(export: &ResourceMetrics, idle: u64, non_idle: u64) {
+    let gauge = |name| {
+        let metric = export
+            .scope_metrics()
+            .flat_map(|scope| scope.metrics())
+            .find(|metric| metric.name() == name)
+            .unwrap();
+        assert_eq!(metric.unit(), "{connection}");
+        let AggregatedMetrics::U64(MetricData::Gauge(gauge)) = metric.data() else {
+            panic!("expected a connection gauge for {name}");
+        };
+        gauge
+    };
+    assert_eq!(
+        gauge("wot.db.pool.capacity")
+            .data_points()
+            .next()
+            .unwrap()
+            .value(),
+        1
+    );
+    let connections = gauge("wot.db.pool.connections");
+    for (state, count) in [("idle", idle), ("non_idle", non_idle)] {
+        let point = connections
+            .data_points()
+            .find(|point| {
+                point.attributes().any(|attribute| {
+                    attribute.key.as_str() == "state" && attribute.value.as_str() == state
+                })
+            })
+            .unwrap();
+        assert_eq!(point.value(), count);
+    }
 }

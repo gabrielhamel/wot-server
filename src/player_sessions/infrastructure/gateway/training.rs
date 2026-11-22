@@ -52,6 +52,7 @@ const HOST_ROLE: i32 = 0xfe7f;
 const GUEST_ROLE: i32 = 0x60;
 const PLAYER_NOT_READY: i32 = 1;
 const PLAYER_READY: i32 = 4;
+const PLAYER_IN_BATTLE: i32 = 8;
 const OBSERVER_INVENTORY_ID: i64 = -5000;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -95,7 +96,7 @@ pub(super) struct HostedRoom {
     created_at: f64,
     host: ClientKey,
     members: HashMap<ClientKey, RoomPlayer>,
-    invites: HashSet<ClientKey>,
+    invites: HashMap<i64, invites::Invitation>,
     teams_ready: (bool, bool),
 }
 
@@ -104,6 +105,7 @@ struct RoomPlayer {
     account_id: i64,
     name: String,
     joined_at: f64,
+    in_battle: bool,
     ready_vehicle: Option<Vec<u8>>,
     ready_inventory: Option<i64>,
     roster: RosterSlot,
@@ -117,6 +119,7 @@ impl RoomPlayer {
             account_id: session.account.snapshot.id(),
             name: session.account.snapshot.display_name().to_owned(),
             joined_at,
+            in_battle: false,
             ready_vehicle: None,
             ready_inventory: None,
             roster: RosterSlot::UnassignedFromTeamOne,
@@ -132,7 +135,11 @@ impl RoomPlayer {
             (self.account_id),
             ([], []),
             (self.roster as i32),
-            (state),
+            (if self.in_battle {
+                PLAYER_IN_BATTLE
+            } else {
+                state
+            }),
             (self.joined_at),
             (vehicle),
             0,
@@ -204,10 +211,6 @@ fn apply_setting(
 }
 
 impl HostedRoom {
-    pub(super) fn remove_invite(&mut self, client: ClientKey) {
-        self.invites.remove(&client);
-    }
-
     pub(super) fn player_count(&self) -> usize {
         self.members.len()
     }
@@ -269,7 +272,7 @@ impl HostedRoom {
 
     fn broadcast(&self, base: &mut base::App, update: u8, data: Pickle, except: Option<ClientKey>) {
         for (&client, member) in &self.members {
-            if Some(client) != except {
+            if Some(client) != except && !member.in_battle {
                 deliver_training_update(base, client, self.id, |base| {
                     base.entity(member.entity)?
                         .updatePrebattle(update, data.clone())?;
@@ -379,7 +382,7 @@ impl Gateway {
                     settings,
                     created_at,
                     host: client,
-                    invites: HashSet::new(),
+                    invites: HashMap::new(),
                     teams_ready: (false, false),
                     members: HashMap::from([(
                         client,
@@ -427,7 +430,10 @@ impl Gateway {
                         return Ok(());
                     }
                     Some(_) if session.training_room.is_some() => (ACCOUNT_LOCK, "already_in_room"),
-                    Some(room) if invitation && !room.invites.contains(&client) => {
+                    Some(room)
+                        if invitation
+                            && !room.invites.contains_key(&session.account.snapshot.id()) =>
+                    {
                         (PRIVACY, "invitation_unavailable")
                     }
                     Some(room) if !invitation && !room.settings.open => {
@@ -442,8 +448,8 @@ impl Gateway {
                             .insert(client, RoomPlayer::new(entity, session, now(), GUEST_ROLE));
                         session.training_room = Some(id);
                         let count = room.player_count();
-                        let invited = room.invites.remove(&client);
-                        if invited {
+                        let invited = room.invites.remove(&session.account.snapshot.id());
+                        if invited.is_some() {
                             invites::settle(
                                 &mut self.base,
                                 session,
@@ -505,6 +511,48 @@ impl Gateway {
         result
     }
 
+    #[tracing::instrument(name = "player_sessions.restore_training_room", skip_all, fields(
+        ddd.bounded_context.name = "player_sessions", input.entity_id = entity.id().0,
+        input.room.id = tracing::field::Empty, output.players.count = tracing::field::Empty,
+        output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
+    ), err)]
+    pub(super) fn restore_training_room(
+        &mut self,
+        client: ClientKey,
+        entity: EntityKey<Account>,
+    ) -> Result<()> {
+        let span = tracing::Span::current();
+        let Some(room) = self
+            .sessions
+            .get(&client)
+            .and_then(|session| session.training_room)
+            .and_then(|id| self.training_rooms.get_mut(&id))
+        else {
+            span.record("output.outcome", "no_membership");
+            return Ok(());
+        };
+        let Some(member) = room
+            .members
+            .get_mut(&client)
+            .filter(|member| member.in_battle)
+        else {
+            span.record("output.outcome", "already_in_room");
+            return Ok(());
+        };
+        member.entity = entity;
+        member.in_battle = false;
+        let id = room.id;
+        span.record("input.room.id", id);
+        span.record("output.players.count", room.player_count());
+        room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), Some(client));
+        self.send_training_room_state(client, entity, id, true)
+            .inspect_err(|_| {
+                span.record("otel.status_code", "ERROR");
+            })?;
+        span.record("output.outcome", "restored");
+        Ok(())
+    }
+
     #[tracing::instrument(name = "player_sessions.leave_training_room", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, output.room.id = tracing::field::Empty, output.outcome = tracing::field::Empty), err)]
     pub(super) fn leave_training_room(
         &mut self,
@@ -555,7 +603,9 @@ impl Gateway {
                 .members
                 .iter()
                 .find(|(key, member)| {
-                    **key != client && i64::from(member.entity.id().0) == player_id
+                    **key != client
+                        && !member.in_battle
+                        && i64::from(member.entity.id().0) == player_id
                 })
                 .map(|(&key, member)| (key, member.entity))
                 .ok_or((
@@ -612,8 +662,9 @@ impl Gateway {
         };
         let outcome = if room.host == client {
             if let Some(room) = self.training_rooms.remove(&room_id) {
-                for guest in room.invites {
-                    if let Some(session) = self.sessions.get(&guest)
+                for session in self.sessions.values() {
+                    if room.invites.contains_key(&session.account.snapshot.id())
+                        && session.garage_synced
                         && let Some(entity) = session.entity
                     {
                         invites::settle(
@@ -630,9 +681,11 @@ impl Gateway {
                     if let Some(session) = self.sessions.get_mut(&guest) {
                         session.training_room = None;
                     }
-                    deliver_training_update(&mut self.base, guest, room_id, |base| {
-                        notify_training_left(base, member.entity, room_id)
-                    });
+                    if !member.in_battle {
+                        deliver_training_update(&mut self.base, guest, room_id, |base| {
+                            notify_training_left(base, member.entity, room_id)
+                        });
+                    }
                 }
             }
             span.record("output.players.count", 0);

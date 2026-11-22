@@ -34,6 +34,7 @@ pub struct AccountData {
 #[derive(Debug, Clone)]
 pub struct Vehicle {
     pub descr: VehicleDescr,
+    pub(super) locked_style: Option<u16>,
     pub crew_slots: usize,
     /// Its shells, by integer descriptor, and how many of each.
     pub shells: crate::accounts::ShellLayout,
@@ -199,6 +200,12 @@ impl AccountData {
                                 .map(|v| v.descr.int_descr().to_int() as i32),
                         )
                         .collect(),
+                    self.vehicles.iter().filter_map(|vehicle| {
+                        Some((
+                            vehicle.descr.int_descr().to_int() as i32,
+                            vehicle.locked_style?,
+                        ))
+                    }),
                 )
                 .full(),
             ),

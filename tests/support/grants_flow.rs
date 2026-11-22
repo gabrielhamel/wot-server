@@ -79,7 +79,19 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             "{key}"
         );
     }
-    let tank_key = "ussr:R165_Object_703_II_2";
+    let test_tank = catalog
+        .grantable_vehicles()
+        .find(|tank| tank.key == "ussr:R165_Object_703_II_2")
+        .expect("The hidden Store variant is offered in the admin vehicle picker");
+    catalog
+        .plan_grant(
+            snapshot.clone(),
+            PlayerGrant::Vehicle {
+                vehicle: test_tank.id,
+            },
+        )
+        .expect("The admin grant can add the hidden Store variant");
+    let tank_key = "china:Ch65_Type59_IC4_3DSt";
     let tank = catalog
         .grantable_vehicles()
         .find(|tank| tank.key == tank_key)
@@ -261,6 +273,11 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             .unwrap()
             .expect("Granted vehicle can enter a Training Battle");
         assert!(battle_vehicle.health > 0);
+        let decoded = wot_server::accounts::test_support::decode_outfits(
+            &[15], [battle_vehicle.outfit.as_slice()].into_iter(), None,
+        ).unwrap();
+        assert_eq!(decoded[&wot_server::accounts::test_support::OutfitSeason::Common].style, Some(986));
+        let outfit_row = wot_server::pickle!({15: (Pickle::Bytes(battle_vehicle.outfit))});
         let after = wot_server::accounts::test_support::account_snapshot(&after);
         if peer.responses.contains(&(301, -5)) {
             purchase(&mut peer, 302);
@@ -273,6 +290,12 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         let diff = ammunition_flow::update(&peer, after.revision);
         let Pickle::Dict(inventory) = dict(&diff, "inventory") else { panic!("Inventory delta") };
         let tanks = &inventory[&Pickle::from(1)];
+        let built_in_style = |customization: &Pickle| {
+            let Pickle::Dict(tables) = customization else { panic!("Customization tables") };
+            let Pickle::Dict(outfits) = &tables[&Pickle::from(2)] else { panic!("Vehicle outfits") };
+            outfits.get(&Pickle::from(tank)).cloned()
+        };
+        assert_eq!(built_in_style(&inventory[&Pickle::from(12)]), Some(outfit_row.clone()));
         assert!(matches!(dict(tanks, "compDescr"), Pickle::Dict(rows) if rows.contains_key(&Pickle::from(2))));
         assert!(matches!(dict(tanks, "shells"), Pickle::Dict(rows) if rows.contains_key(&Pickle::from(2))));
         assert!(matches!(dict(tanks, "crew"), Pickle::Dict(rows) if rows.contains_key(&Pickle::from(2))));
@@ -301,6 +324,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         assert_eq!(depot_count(&cache, 9, bounty_basic), 2);
         assert_eq!(depot_count(&cache, 9, bounty_upgraded), 1);
         let Pickle::Dict(rows) = dict(&cache, "inventory") else { panic!("Garage inventory") };
+        assert_eq!(built_in_style(&rows[&Pickle::from(12)]), Some(outfit_row));
         let Pickle::Dict(owned) = dict(&rows[&Pickle::from(1)], "compDescr") else { panic!("Owned tanks") };
         let Pickle::Dict(granted) = dict(tanks, "compDescr") else { panic!("Granted tank") };
         assert_eq!(owned.len(), 2);

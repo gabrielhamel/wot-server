@@ -52,6 +52,7 @@ pub struct GunPerformance {
     pub shot_position: Option<Vec3>,
     pub loading: GunLoading,
     pub shell_damage: BTreeMap<i32, u16>,
+    pub shell_ranges: BTreeMap<i32, f32>,
     pub shell_effects: BTreeMap<i32, ShellEffects>,
 }
 

@@ -374,6 +374,13 @@ fn insert_inscription(
     true
 }
 
+pub(super) fn encode_style(style: u16) -> Vec<u8> {
+    encode(&VehicleOutfit {
+        style: Some(style),
+        ..VehicleOutfit::default()
+    })
+}
+
 pub(super) fn encode(layout: &VehicleOutfit) -> Vec<u8> {
     let mut bytes = Vec::new();
     let presets = layout

@@ -138,6 +138,48 @@ Use the striped Camouflage tab in Exterior to edit individual surfaces and seaso
 Reconnect after updating the bundle and restarting the server so the client
 fetches the updated shop cache.
 
+## Styles built into a vehicle
+
+First Warrior is the dedicated `china:Ch65_Type59_IC4_3DSt` vehicle. The
+2026-11-22 EU bundle (`v.2.4.1.1 #993`, executable SHA-256 recorded in the
+[battle replay guide](battle-replays.md#eu-capture-evidence-from-2026-11-21))
+defines style 986 with an explicit filter for that vehicle and the
+`lockedOnVehicle` tag. Its `modelsSet` selects First Warrior's 3D model parts.
+Accounts resolves the style from the current resource catalog, including
+the include and exclude filters, when projecting the vehicle.
+
+In the garage, the customization inventory carries the style marker in the
+common outfit (season 15), keyed by vehicle type descriptor. The client
+uses the common outfit to build each seasonal appearance. The server
+includes it in a full sync for existing vehicles and in the inventory delta
+when the vehicle is acquired or sold. The built-in style follows the vehicle.
+There is no additional depot item or independent purchase or grant.
+
+In Training, the same encoded style marker travels with the equipped vehicle
+and is sent in `Vehicle.publicInfo.outfit`. The client reads that field when
+assembling the vehicle's appearance, using the current map's season. Training currently supplies catalog-defined locked styles.
+
+The same Vehicle creation payload goes to the driver and to every other
+player in the arena. It contains the outfit and the compact descriptor for
+the equipped chassis, engine, fuel tank, radio, turret, gun and optional
+devices. Player-selected garage outfits still need battle replication.
+
+The client applies each viewer's customization display preference to other
+vehicles. First Warrior's style is classified as non-historical, so a
+historical-only viewer can see the base Type 59 model even though the
+outfit arrived. Player Sessions forwards the Accounts preference at battle
+entry. The client packs it into bits 2 and 3 of `GAME_EXTENDED_2` (setting
+102), and the server sends it to that viewer as
+`Avatar.customizationDisplayType`. Valid settings are 0 (Historical), 1
+(non-historical allowed), and 2 (All). A missing value or reserved value
+uses the client's default, All.
+
+Client references for this flow are
+[`styles/list.xml`](references/wot-src/sources/res/scripts/item_defs/customization/styles/list.xml),
+[`Vehicle.createAppliedOutfits`](references/wot-src/sources/res/scripts/client/gui/shared/gui_items/Vehicle.py),
+[`Vehicle.onEnterWorld`](references/wot-src/sources/res/scripts/client/Vehicle.py)
+and [the client’s outfit builder and historical filter](references/wot-src/sources/res/scripts/client/vehicle_systems/camouflages.py). The preference encoding is in [ServerSettingsManager](references/wot-src/sources/res/scripts/client/account_helpers/settings_core/ServerSettingsManager.py), [options](references/wot-src/sources/res/scripts/client/account_helpers/settings_core/options.py), and [Avatar.def](references/wot-src/sources/res/scripts/entity_defs/Avatar.def).
+
 ## Wire contract
 
 | Command | Arguments |

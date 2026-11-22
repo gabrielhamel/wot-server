@@ -1,12 +1,11 @@
 use super::avatar::{BattleEvent, ShotResult};
 use super::*;
 use crate::{
-    battles::domain::vehicle::{Aim, AmmunitionCommand, SHOT_RANGE},
+    battles::domain::vehicle::{Aim, AmmunitionCommand},
     platform::mercury::script::Value as WireValue,
 };
 use glam::Vec3Swizzles;
 
-const ELIMINATION: u8 = 1;
 const HIGH_EXPLOSIVE_SHELL_KIND: u8 = 1;
 const GUN_INSTALLATION_INDEX: u8 = 0;
 const VEHICLE_KILLED: u32 = 1;
@@ -202,6 +201,10 @@ impl Battle {
             let previous_direction = player.vehicle.direction;
             let previous_tracks = player.tank.track_speeds();
             let drive = player.pending_drive.take();
+            if self.round.phase == RoundPhase::Finished {
+                player.tank.drive(0);
+            }
+            let movement_parent = self.finish_span.as_ref().or(drive.as_ref());
             if player.tank.health <= 0 {
                 player.tank.stop_motion();
             } else if drive.is_some() || player.tank.is_driving() {
@@ -217,7 +220,7 @@ impl Battle {
                     previous_direction.y,
                 );
                 let mut step = || player.tank.step(seconds, self.map.bounds, ground);
-                let moved = match &drive {
+                let moved = match movement_parent {
                     Some(parent) => parent.in_scope(step),
                     None => step(),
                 };
@@ -230,7 +233,7 @@ impl Battle {
                         player.tank.set_hull_tilt(direction);
                         player.vehicle.position = position;
                         player.vehicle.direction = direction;
-                        if let Some(parent) = &drive {
+                        if let Some(parent) = movement_parent {
                             movement.push((player.vehicle.entity_id, parent.clone()));
                         }
                     } else {
@@ -247,7 +250,7 @@ impl Battle {
                 || previous_tracks != tracks
             {
                 deliver_state(
-                    drive.clone(),
+                    movement_parent.cloned(),
                     "hull_aim",
                     player.avatar_id,
                     &[client],
@@ -262,8 +265,8 @@ impl Battle {
                     },
                 );
             }
-            player.publish_chassis_motion(base, wire, &peers, drive.as_ref());
-            if player.tank.health <= 0 {
+            player.publish_chassis_motion(base, wire, &peers, movement_parent);
+            if player.tank.health <= 0 || self.round.phase == RoundPhase::Finished {
                 continue;
             }
             let aiming = player.tank.advance_gun(seconds);
@@ -305,6 +308,7 @@ impl Battle {
         input.client.address = %client, input.entity_id = tracing::field::Empty,
         input.ammunition.shell = tracing::field::Empty, input.shell.damage = tracing::field::Empty,
         input.shell.kind = tracing::field::Empty, input.shell.caliber_mm = tracing::field::Empty,
+        input.shell.max_distance_metres = tracing::field::Empty,
         output.scene_impact.distance_metres = tracing::field::Empty,
         output.obstacle.material_kind = tracing::field::Empty,
         output.shot.id = tracing::field::Empty,
@@ -334,9 +338,12 @@ impl Battle {
             Ok(shot) => shot,
             Err(reason) => {
                 span.record("output.outcome", reason);
-                if reason == "shell_damage_unavailable" {
+                if matches!(
+                    reason,
+                    "shell_damage_unavailable" | "shell_range_unavailable"
+                ) {
                     span.record("otel.status_code", "ERROR");
-                    error!(shell, "Loaded shell has no valid damage definition");
+                    error!(shell, reason, "Loaded shell has an invalid shot definition");
                 }
                 return Ok(reason);
             }
@@ -344,6 +351,7 @@ impl Battle {
         span.record("input.shell.damage", shot.damage);
         span.record("input.shell.kind", shot.effects.kind);
         span.record("input.shell.caliber_mm", shot.effects.caliber_mm);
+        span.record("input.shell.max_distance_metres", shot.max_distance);
         shooter.pending_reload = shooter
             .tank
             .reload_timers()
@@ -364,7 +372,7 @@ impl Battle {
                     .map(|dist| (client, p.vehicle.entity_id, dist))
             })
             .min_by(|(_, left, a), (_, right, b)| a.total_cmp(b).then(left.cmp(right)));
-        let range = target.map_or(SHOT_RANGE, |(_, _, distance)| distance);
+        let range = target.map_or(shot.max_distance, |(_, _, distance)| distance);
         let ground = self
             .ground
             .shot_intersection(shot.origin, shot.direction, range);
@@ -428,14 +436,7 @@ impl Battle {
                 continue;
             };
             let result = (|| -> Result<()> {
-                wire.show_tracer(
-                    base,
-                    avatar,
-                    entity_id,
-                    shot_id,
-                    &shot,
-                    impact.map(|(_, _, dist, ..)| dist),
-                )?;
+                wire.show_tracer(base, avatar, entity_id, shot_id, &shot)?;
                 base.arena_vehicle_method(
                     peer,
                     entity_id,

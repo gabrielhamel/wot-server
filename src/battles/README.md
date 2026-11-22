@@ -20,9 +20,13 @@ mode.
 
 Callers use [the published contract](mod.rs). Preparation validates the roster
 and builds the client payloads before Player Sessions acknowledges the launch.
-Activation registers the participants for routing. Once a participant leaves,
+Activation registers the participants for routing and adds the arena to the
+active count published to Player Sessions. Once a participant leaves,
 Player Sessions resets the connection for garage entry. The Battle ID is
-allocated independently of the Training Room ID.
+allocated independently of the Training Room ID. At the end of a round,
+Battles publishes the outcome and continues pose and chassis replication while
+vehicles coast to a stop before the scheduled garage return. Each Avatar receives
+its player’s customization display preference at entry.
 
 The server advances hull speed and yaw every 100 ms. It reads the equipped
 engine, vehicle mass and chassis resistance from the loadout, and samples the
@@ -39,5 +43,5 @@ defines them, its wheel scroll and steering properties. See the
 | Arena | The shared space where the battle runs, identified by its geometry and gameplay variant. |
 | Participant | A connected player assigned to a team with a combat or observer vehicle. |
 | Round | The progression through loading, countdown, active battle and results. |
-| Loadout | The equipped vehicle descriptor, health, crew size, ammunition and base performance at launch. |
+| Loadout | The equipped vehicle descriptor, health, crew size, ammunition, locked outfit and base performance at launch. |
 | Scene impact | The first projectile contact with terrain or a placed obstacle, reported with its effect material. |

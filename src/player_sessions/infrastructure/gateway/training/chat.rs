@@ -95,7 +95,9 @@ impl Gateway {
         };
 
         let mut recipients = 0;
-        for member in room.members.values() {
+        let garage_members = room.members.values().filter(|member| !member.in_battle);
+        let expected = garage_members.clone().count();
+        for member in garage_members {
             let delivery = self.base.entity(member.entity).and_then(|mut account| {
                 account.messenger_onActionByServer_chat2(ON_UNIT_MESSAGE_BROADCAST, 0, args.clone())
             });
@@ -105,7 +107,7 @@ impl Gateway {
             }
         }
         span.record("output.recipients.count", recipients);
-        if recipients == room.player_count() {
+        if recipients == expected {
             span.record("output.outcome", "broadcast");
         } else {
             span.record("output.outcome", "delivery_failed");

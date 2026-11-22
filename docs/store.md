@@ -26,14 +26,21 @@ account products, and features outside the current scope.
 The resource bundle contains each nation’s `list.xml`, the Tech Tree nodes,
 and regular service definitions. The Store selects Collectors’ vehicles by
 the `collectorVehicle` tag, the resource credit price, and garage eligibility.
-The observed fixture supplies 92 Collectors’ vehicles. The highest researched
-Tech Tree tier in each nation gates that nation’s Collectors’ offers. The
-server projects the same maximum into the native garage cache. Buying or
+The observed fixture supplies 91 Collectors’ offers after the price filter
+excludes the zero-credit Medium I. The highest researched Tech Tree tier in
+each nation gates that nation’s Collectors’ offers. The server projects the
+same maximum into the native garage cache. Buying or
 receiving a premium, reward or Collectors’ vehicle does not advance that maximum.
 
-The Premium vehicles tab lists every garage-eligible vehicle with a positive
-gold price in the client’s definitions, including eligible `private` and
-`testTank` variants. These variants share the admin grant eligibility checks.
+The Premium vehicles tab uses gold prices from the client’s vehicle definitions.
+Store vehicle offers in gold or credits require a price above 100 in the offer’s
+currency. An independently priced bond offer can still appear, as with the
+113 Beijing Opera.
+For vehicles tagged `private` or `testTank`, every Store offer requires a
+defined price above 100 gold or 100 credits in the vehicle definition. This
+also applies to vehicles with a mapped bond offer. Eligible variants priced
+at 100 or less, or with a missing price, can still be granted through the admin
+dashboard.
 The `notInShop` flag governs native Tech Tree purchases.
 Bond vehicle offers come from the live mapping and resolve
 to client definitions by catalog key. A vehicle may have a gold offer and a
@@ -142,10 +149,9 @@ reported EU `v.2.4.1.1 #993`, launcher executable SHA-256
 `fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`
 and `win64/WorldOfTanks.exe` SHA-256
 `58325ded3e2db7134638971e33de1eab09737f8b66401554d9723a2bf246bb11`.
-Its vehicle definitions in `scripts.pkg` supported grant and gold checkout
-plans for all 22 `testTank` entries at 100 gold each, including Object 703–II
-(100). Among vehicles tagged `private`, 85 supported grants and 32 also
-supported gold checkout. Three vehicles carried both tags.
+Its vehicle definitions in `scripts.pkg` priced all 22 `testTank` entries
+at 100 gold each, including Object 703–II (100). None of the credit-priced
+entries tagged `private` or `testTank` carried the `collectorVehicle` tag.
 
 The compiled client also reads `Account.initialServerSettings.igbWhitelist`
 before the browser opens. When Store is enabled, the server sets `isEnabled`

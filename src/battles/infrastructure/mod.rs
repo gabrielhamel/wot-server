@@ -40,7 +40,10 @@ mod terrain;
 mod wire;
 
 const ARENA_PERIOD: u8 = 3;
+const AFTERBATTLE_PERIOD: Duration = Duration::from_secs(60);
+const ELIMINATION: u8 = 1;
 const TIME_LIMIT: u8 = 3;
+const TECHNICAL: u8 = 5;
 pub(crate) const TICK: Duration = Duration::from_millis(100);
 
 struct Entrant {
@@ -49,6 +52,7 @@ struct Entrant {
     team: u8,
     is_host: bool,
     observer: bool,
+    customization_display_type: u8,
     vehicle: VehicleLoadout,
     avatar_id: u32,
     vehicle_id: u32,
@@ -79,8 +83,10 @@ impl Entrant {
             team: 1,
             is_host: true,
             observer: false,
+            customization_display_type: 2,
             vehicle: VehicleLoadout {
                 descriptor: vec![1],
+                outfit: Vec::new(),
                 health: 100,
                 crew_size: 3,
                 ammunition: vec![(10, 5)],
@@ -107,6 +113,7 @@ struct Battle {
     launch: Option<tracing::Span>,
     shot_sequence: i32,
     result: Option<(i8, u8)>,
+    finish_span: Option<tracing::Span>,
     roster_count: usize,
 }
 
@@ -120,6 +127,7 @@ struct Participant {
     ready: bool,
     tank: Tank,
     observer: bool,
+    customization_display_type: u8,
     last_engine_mode: [u8; 2],
     last_wheels: [Vec<u8>; 2],
     last_gun_angles: u16,
@@ -166,10 +174,24 @@ impl Battle {
         (now.saturating_duration_since(self.started_at).as_millis() / TICK.as_millis()) as u32
     }
 
-    fn has_both_teams(&self) -> bool {
-        [1, 2]
-            .into_iter()
-            .all(|team| self.players.values().any(|player| player.team == team))
+    fn finish_if_team_left(&mut self, now: Instant) -> bool {
+        if self.round.phase == RoundPhase::Finished {
+            return false;
+        }
+        let team_present = |team| {
+            self.players
+                .values()
+                .any(|player| player.team == team && !player.observer && player.tank.health > 0)
+        };
+        let result = match (team_present(1), team_present(2)) {
+            (true, true) => return false,
+            (true, false) => (1, ELIMINATION),
+            (false, true) => (2, ELIMINATION),
+            (false, false) => (0, TECHNICAL),
+        };
+        self.result = Some(result);
+        self.round.finish(now);
+        true
     }
 
     #[tracing::instrument(name = "battles.period", skip_all, fields(
@@ -179,18 +201,34 @@ impl Battle {
             RoundPhase::Countdown => "countdown",
             RoundPhase::Battle => "battle",
             RoundPhase::Finished => "finished",
-        }, otel.status_code = tracing::field::Empty,
+        }, output.battle.winner_team = tracing::field::Empty,
+        output.battle.finish_reason = tracing::field::Empty,
+        output.delivered.count = tracing::field::Empty,
+        otel.status_code = tracing::field::Empty,
     ))]
-    fn publish_period(&self, base: &mut base::App, battle_id: u32, now: Instant) {
+    fn publish_period(&mut self, base: &mut base::App, battle_id: u32, now: Instant) {
+        let span = tracing::Span::current();
+        if self.round.phase == RoundPhase::Finished {
+            let (winner, reason) = self.result.unwrap_or((0, TIME_LIMIT));
+            span.record("output.battle.winner_team", winner);
+            span.record("output.battle.finish_reason", reason);
+            self.finish_span = Some(span.clone());
+        }
+        let mut delivered = 0;
         for (&client, player) in &self.players {
-            if let Some(avatar) = player.avatar
-                && let Err(error) = self.send_period(base, avatar, now)
-            {
-                tracing::Span::current().record("otel.status_code", "ERROR");
-                error!(%error, "Could not send battle period");
-                base.disconnect_client(client);
+            let Some(avatar) = player.avatar else {
+                continue;
+            };
+            match self.send_period(base, avatar, now) {
+                Ok(()) => delivered += 1,
+                Err(error) => {
+                    span.record("otel.status_code", "ERROR");
+                    error!(%error, "Could not send battle period");
+                    base.disconnect_client(client);
+                }
             }
         }
+        span.record("output.delivered.count", delivered);
     }
 
     fn send_period(
@@ -209,13 +247,23 @@ impl Battle {
                 crate::pickle!(((i32::from(winner)), (i32::from(reason)))),
             ),
         };
+        let length = if self.round.phase == RoundPhase::Finished {
+            AFTERBATTLE_PERIOD
+        } else {
+            self.round.phase_length
+        };
         let end = f64::from(self.ticks(now)) * TICK.as_secs_f64()
             + self
                 .round
                 .deadline
                 .saturating_duration_since(now)
-                .as_secs_f64();
-        let length = self.round.phase_length.as_secs() as i64;
+                .as_secs_f64()
+            + length.saturating_sub(self.round.phase_length).as_secs_f64();
+        let length = if self.round.phase == RoundPhase::Finished {
+            Value::F64(length.as_secs_f64())
+        } else {
+            Value::I64(length.as_secs() as i64)
+        };
         let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
         encoder.write_all(&pickle::to_bytes(&crate::pickle!((
             (period),
@@ -301,9 +349,14 @@ impl BattleRuntime {
         self.engagements.contains_key(&client)
     }
 
+    pub(crate) fn active_count(&self) -> usize {
+        self.active.len()
+    }
+
     #[tracing::instrument(name = "battles.prepare", skip_all, fields(
         ddd.bounded_context.name = "battles", input.arena_type_id = launch.arena_type,
         input.round_length.seconds = launch.duration.as_secs(), input.players.count = launch.participants.len(),
+        input.outfits.count = launch.participants.iter().filter(|participant| !participant.vehicle.outfit.is_empty()).count(),
         output.battle.id = tracing::field::Empty, output.players.count = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
     ), err)]
@@ -380,6 +433,7 @@ impl BattleRuntime {
                     team: player.team,
                     is_host: player.is_host,
                     observer: player.observer,
+                    customization_display_type: player.customization_display_type,
                     vehicle: player.vehicle,
                     avatar_id: base.arena_entity_id(),
                     vehicle_id: base.arena_entity_id(),
@@ -417,6 +471,7 @@ impl BattleRuntime {
                         ready: false,
                         tank: player.tank(),
                         observer: player.observer,
+                        customization_display_type: player.customization_display_type,
                         last_engine_mode: [0; 2],
                         last_wheels: Default::default(),
                         last_gun_angles: player.initial_gun_angles(),
@@ -447,6 +502,7 @@ impl BattleRuntime {
                 launch: Some(tracing::Span::current()),
                 shot_sequence: 0,
                 result: None,
+                finish_span: None,
                 roster_count: roster.len(),
             },
         }))
@@ -481,6 +537,7 @@ impl BattleRuntime {
             "input.battle.id" = battle_id,
             "input.arena_type_id" = battle.arena_type,
             "input.team" = player.team,
+            "input.customization.display_type" = player.customization_display_type,
             "input.entity_id" = player.avatar_id,
             "output.players.count" = battle.players.len(),
             "output.avatar_control" = tracing::field::Empty,
@@ -594,11 +651,23 @@ impl BattleRuntime {
         }
     }
 
-    pub(crate) fn tick(&mut self, base: &mut base::App, now: Instant) -> Vec<ClientKey> {
+    pub(crate) fn tick(
+        &mut self,
+        base: &mut base::App,
+        now: Instant,
+    ) -> Vec<(ClientKey, tracing::Span)> {
         let mut ending = Vec::new();
         for (&battle_id, battle) in &mut self.active {
-            if !battle.has_both_teams() || battle.round.ended(now) {
-                ending.extend(battle.players.keys().copied());
+            if battle.round.ended(now) {
+                ending.extend(battle.players.keys().map(|&client| {
+                    (
+                        client,
+                        battle
+                            .finish_span
+                            .clone()
+                            .unwrap_or_else(tracing::Span::none),
+                    )
+                }));
                 continue;
             }
             if battle.round.advance(now, false) {
@@ -610,8 +679,10 @@ impl BattleRuntime {
             }
             battle.last_snapshot_tick = Some(tick);
             let mut movement = Vec::new();
-            if matches!(battle.round.phase, RoundPhase::Battle)
-                && let Some(wire) = &self.wire
+            if matches!(
+                battle.round.phase,
+                RoundPhase::Battle | RoundPhase::Finished
+            ) && let Some(wire) = &self.wire
             {
                 movement = battle.advance_vehicles(base, wire, now);
             }
@@ -701,6 +772,10 @@ impl BattleRuntime {
             }
             if battle.players.values().all(|p| p.avatar.is_some()) {
                 battle.launch = None;
+            }
+            let now = Instant::now();
+            if battle.finish_if_team_left(now) {
+                battle.publish_period(base, id, now);
             }
         }
         Some(if removed.avatar.is_some() {

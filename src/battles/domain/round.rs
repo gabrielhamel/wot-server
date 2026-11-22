@@ -2,9 +2,9 @@ use std::time::{Duration, Instant};
 
 pub(crate) const LOAD_TIMEOUT: Duration = Duration::from_secs(60);
 const COUNTDOWN: Duration = Duration::from_secs(10);
-const RESULTS: Duration = Duration::from_secs(7);
+const RESULTS: Duration = Duration::from_secs(6);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RoundPhase {
     Loading,
     Countdown,

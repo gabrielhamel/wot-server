@@ -166,6 +166,10 @@ impl ArenaWire {
             [
                 ("team", WireValue::UInt8(player.team)),
                 (
+                    "customizationDisplayType",
+                    WireValue::UInt8(player.customization_display_type),
+                ),
+                (
                     "ownVehicleAuxPhysicsData",
                     WireValue::UInt64(controls::pack_hull_aim(player.direction, [0.0; 2], 0.2)),
                 ),
@@ -234,16 +238,18 @@ impl ArenaWire {
                 .map(|property| &property.ty)
                 .with_context(|| format!("Vehicle has no {name}"))
         };
+        let public_info = property_type("publicInfo")?;
         let public = dict(
-            property_type("publicInfo")?,
+            public_info,
             [
                 ("name", string(&player.name)),
                 (
                     "compDescr",
-                    bytes(
-                        field(property_type("publicInfo")?, "compDescr")?,
-                        &player.vehicle.descriptor,
-                    ),
+                    bytes(field(public_info, "compDescr")?, &player.vehicle.descriptor),
+                ),
+                (
+                    "outfit",
+                    bytes(field(public_info, "outfit")?, &player.vehicle.outfit),
                 ),
                 ("team", WireValue::UInt8(player.team)),
                 (
@@ -675,5 +681,41 @@ impl ImpactMaterials {
     fn effect_index(&self, kind: Option<u32>) -> u8 {
         kind.and_then(|kind| self.by_kind.get(&kind).copied())
             .unwrap_or(self.ground)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::mercury::script;
+
+    #[test]
+    #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+    fn vehicle_creation_carries_locked_outfit_in_public_info() {
+        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
+        let mut base = base::App::new(
+            "127.0.0.1:0".parse().unwrap(),
+            script::load(&resources).unwrap(),
+        )
+        .unwrap();
+        let wire = ArenaWire::bind(&mut base, &resources).unwrap();
+        let dispatch = base.dispatch();
+        let mut player = Entrant::sample();
+        // CustomizationOutfit with the First Warrior style marker.
+        player.vehicle.outfit = vec![4, 16, 0xda, 7];
+        let vehicle = wire.vehicle(dispatch, &player).unwrap();
+        let schema = dispatch.entity_from_id(vehicle.type_id).unwrap();
+        let mut properties = &vehicle.properties[1..];
+        let property_id = u8::read(&mut properties, &()).unwrap();
+        let property = &schema.properties[usize::from(property_id)];
+        assert_eq!(&*property.name, "publicInfo");
+        let WireValue::Dict(info) = WireValue::read(&mut properties, &property.ty).unwrap() else {
+            panic!("Expected vehicle public information");
+        };
+        assert_eq!(
+            info["outfit"],
+            WireValue::String(StringValue::Raw(player.vehicle.outfit))
+        );
     }
 }

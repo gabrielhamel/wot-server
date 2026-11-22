@@ -66,15 +66,23 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .vehicle_catalog_entry("germany:G51_Lowe")
         .unwrap()
         .id;
-    let test_tank_key = "ussr:R165_Object_703_II_2";
-    let test_tank = catalog.vehicle_catalog_entry(test_tank_key).unwrap().id;
-    let test_tank_price = catalog
-        .store_offers()
-        .iter()
-        .find(|offer| offer.item == test_tank && offer.price.currency() == "gold")
-        .expect("Test tank gold offer")
-        .price
-        .amount();
+    let test_tank = catalog
+        .vehicle_catalog_entry("ussr:R165_Object_703_II_2")
+        .unwrap()
+        .id;
+    let t30_fl = catalog.vehicle_catalog_entry("usa:A14_T30_FL").unwrap().id;
+    let t22 = catalog
+        .vehicle_catalog_entry("ussr:R120_T22SR_A22")
+        .unwrap()
+        .id;
+    let beijing_opera = catalog
+        .vehicle_catalog_entry("china:Ch22_113_Beijing_Opera")
+        .unwrap()
+        .id;
+    let private_premium = catalog
+        .vehicle_catalog_entry("china:Ch01_Type59_Gold")
+        .unwrap()
+        .id;
     let equipment = catalog
         .store_offers()
         .iter()
@@ -180,6 +188,28 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         expect_tech_tree_unlocks(&ammunition_flow::receipt(&peer, 809));
         let (status, catalog) = request(Some(&token), None);
         assert_eq!(status, StatusCode::OK);
+        let offers = catalog["offers"].as_array().unwrap();
+        for hidden in [test_tank, t30_fl, t22] {
+            assert!(
+                !offers.iter().any(|offer| offer["item"] == hidden),
+                "Hidden vehicle {hidden} appeared in the Store"
+            );
+        }
+        assert!(offers.iter().any(|offer| {
+            offer["item"] == private_premium
+                && offer["price"] == json!({"currency": "gold", "amount": 13500})
+        }));
+        let beijing_offers: Vec<_> = offers.iter()
+            .filter(|offer| offer["item"] == beijing_opera)
+            .collect();
+        assert_eq!(beijing_offers.len(), 1);
+        assert_eq!(beijing_offers[0]["price"], json!({"currency": "bonds", "amount": 15000}));
+        assert!(offers.iter().filter(|offer| {
+            offer["nation"].is_string() && matches!(offer["price"]["currency"].as_str(), Some("gold" | "credits"))
+        }).all(|offer| offer["price"]["amount"].as_i64().unwrap() > 100));
+        assert!(offers.iter().filter(|offer| {
+            offer["nation"].is_string() && offer["price"]["currency"] == "credits"
+        }).all(|offer| offer["category"] == "collectors_vehicles"));
         let find_offer = |listing: &Value, item| -> Value {
             listing["offers"].as_array().unwrap().iter()
                 .find(|offer| offer["item"] == item).unwrap().clone()
@@ -252,7 +282,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         );
         for (category, count) in [
             ("premium_account", 8),
-            ("collectors_vehicles", 92),
+            ("collectors_vehicles", 91),
             ("crew_skins", 25),
             ("equipment", 42),
             ("consumables", 19),
@@ -419,7 +449,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = $3, bonds = $4 WHERE id = $1")
                 .bind(account_id)
                 .bind(near_expiry)
-                .bind(1250 + test_tank_price)
+                .bind(1350)
                 .bind(improved_price + 100)
                 .execute(&expiry_test_db)
         ).unwrap();
@@ -449,11 +479,11 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         ]);
         let native_diff = next_update(&mut expiring, &dispatch, persisted.revision + 1);
         assert_eq!(dict(&dict(&native_diff, "premium"), "premMask"), Pickle::I64(2));
-        assert_eq!(dict(&dict(&native_diff, "stats"), "gold"), Pickle::I64(1000 + test_tank_price));
+        assert_eq!(dict(&dict(&native_diff, "stats"), "gold"), Pickle::I64(1100));
         assert!(!persisted.progression.unlocks.contains(&pz_s35));
         super::depot_flow::send_array(&mut expiring, &dispatch, 814, 301, &[1, pz_s35, 0, 0, -1, 0], 0);
         let diff = next_update(&mut expiring, &dispatch, persisted.revision + 2);
-        assert_eq!(dict(&dict(&diff, "stats"), "gold"), Pickle::I64(test_tank_price));
+        assert_eq!(dict(&dict(&diff, "stats"), "gold"), Pickle::I64(100));
         let (_, current_store) = request(Some(&expiry_token), None);
         assert_eq!(find_offer(&current_store, i64::from(pz_s35))["availability"], "in_garage");
         super::depot_flow::send_array(&mut expiring, &dispatch, 815, 301, &[1, pz_s35, 0, 0, -1, 0], -1);
@@ -480,21 +510,20 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         assert_eq!(persisted.progression.depot.get(&(improved_item as i32)), Some(&1));
         assert_store_traces(account_id, improved_item, "bonds", improved_price);
 
-        let item_id = i64::from(test_tank);
-        let test_offer = find_offer(&purchased, item_id);
-        assert_eq!(test_offer["availability"], "available");
-        assert_eq!(test_offer["price"], json!({"currency": "gold", "amount": test_tank_price}));
         super::depot_flow::send_array(&mut expiring, &dispatch, 817, 301, &[1, test_tank, 0, 0, -1, 0], -1);
-        let test_order = json!({"item": item_id, "price": test_offer["price"], "revision": purchased["revision"]});
-        let (status, bought_test_tank) = request(Some(&expiry_token), Some(&test_order));
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(find_offer(&bought_test_tank, item_id)["availability"], "in_garage");
-        assert_eq!(request(Some(&expiry_token), Some(&test_order)).0, StatusCode::CONFLICT);
-        let diff = next_update(&mut expiring, &dispatch, persisted.revision + 1);
-        assert_eq!(dict(&dict(&diff, "stats"), "gold"), Pickle::I64(0));
+        for (item, amount, expected) in [
+            (test_tank, 100, StatusCode::NOT_FOUND),
+            (t22, 5, StatusCode::NOT_FOUND),
+            (beijing_opera, 5, StatusCode::CONFLICT),
+        ] {
+            let order = json!({"item": item, "price": {"currency": "gold", "amount": amount}, "revision": purchased["revision"]});
+            assert_eq!(request(Some(&expiry_token), Some(&order)).0, expected);
+        }
         let saved = runtime.block_on(accounts.snapshot(account_id)).unwrap();
-        assert!(saved.vehicles.iter().any(|vehicle| vehicle.catalog_key == test_tank_key));
-        assert_store_traces(account_id, item_id, "gold", test_tank_price);
+        assert_eq!(saved.revision, persisted.revision);
+        assert_eq!(saved.balances.gold, persisted.balances.gold);
+        assert_store_unavailable_trace(account_id, test_tank, 100);
+        assert_store_unavailable_trace(account_id, t22, 5);
 
         expiring.disconnect();
         assert_tech_tree_traces(account_id);
@@ -890,4 +919,67 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
         |span| span.parent_span_id != rejected.span_context.span_id()
             || span.name != "accounts.garage.commit_progression"
     ));
+}
+
+fn assert_store_unavailable_trace(account_id: i64, item: i32, amount: i64) {
+    let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
+    let has = |span: &opentelemetry_sdk::trace::SpanData, key, expected: &str| {
+        span.attributes
+            .iter()
+            .any(|attr| attr.key.as_str() == key && attr.value.to_string() == expected)
+    };
+    let request = spans
+        .iter()
+        .find(|span| {
+            span.name == "player_sessions.store.purchase_request"
+                && has(span, "input.item", &item.to_string())
+                && has(span, "output.outcome", "offer_unavailable")
+        })
+        .expect("Missing unavailable Store offer request span");
+    let trace = request.span_context.trace_id();
+    let find = |name, parent| {
+        spans
+            .iter()
+            .find(|span| {
+                span.name == name
+                    && span.span_context.trace_id() == trace
+                    && span.parent_span_id == parent
+            })
+            .unwrap_or_else(|| panic!("Missing {name} in the unavailable Store offer trace"))
+    };
+    let http = spans
+        .iter()
+        .find(|span| span.span_context.span_id() == request.parent_span_id)
+        .expect("Missing Store HTTP request parent");
+    assert_eq!(http.name, "store.http.request");
+    assert_eq!(http.span_context.trace_id(), trace);
+    assert_eq!(
+        http.parent_span_id,
+        SpanId::from_hex("0123456789abcdef").unwrap()
+    );
+    assert!(has(http, "http.response.status_code", "404"));
+    let purchase = find(
+        "player_sessions.store.purchase",
+        request.span_context.span_id(),
+    );
+    assert!(has(purchase, "user.id", &account_id.to_string()));
+    let plan = find(
+        "accounts.store.plan_purchase",
+        purchase.span_context.span_id(),
+    );
+    assert!(has(plan, "input.price.currency", "gold"));
+    assert!(has(plan, "input.price.amount", &amount.to_string()));
+    assert!(matches!(
+        plan.status,
+        opentelemetry::trace::Status::Error { .. }
+    ));
+    let complete = find(
+        "player_sessions.store.complete_purchase",
+        purchase.span_context.span_id(),
+    );
+    assert!(has(complete, "output.success", "false"));
+    assert!(!spans.iter().any(|span| {
+        span.parent_span_id == purchase.span_context.span_id()
+            && span.name == "accounts.garage.commit_progression"
+    }));
 }

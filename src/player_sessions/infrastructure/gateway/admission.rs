@@ -267,9 +267,6 @@ impl Gateway {
             self.social_disconnect(client);
             self.remove_training_member(client);
             self.battles.remove_participant(&mut self.base, client);
-            for room in self.training_rooms.values_mut() {
-                room.remove_invite(client);
-            }
             self.sessions.remove(&client);
         }
     }

@@ -39,12 +39,13 @@ formats.
 | Revision | Monotonically increasing version changed with persisted preferences, research or inventory. |
 | Cosmetic ownership | Total copies of an exterior item, including applied copies. Stat trackers are bound to a vehicle type. |
 | Outfit | Vehicle appearance for a season, including styles, camouflage, projected decals, inscriptions and effects. |
+| Locked style | A catalog-defined outfit supplied with its vehicle in garage and battle projections. |
 | Shell layout | Ordered compatible shell/count pairs loaded on one vehicle. |
 | Depot stock | Shared unmounted shells, modules, equipment, directives and consumables. Sales debit these counts and credit the account in the same revision. |
 | Equipment components | Balance used for paid demounting of level 2 and 3 Experimental equipment. The client calls it `equipCoin`. |
 | Ammunition proposal | Validated next snapshot and purchase receipt, committed against its source revision. |
 | Garage projection | Compressed Python cache derived from a snapshot and client definitions. |
-| Battle vehicle | An owned loadout projected for battle with the encoded descriptor, equipped turret and hull health, crew size, loaded ammunition, and performance from the equipped chassis, turret and gun. |
+| Battle vehicle | An owned loadout projected for battle with the encoded descriptor, locked outfit, equipped turret and hull health, crew size, loaded ammunition, and performance from the equipped chassis, turret and gun. |
 | Training vehicle descriptor | Compact descriptor for the Training Room roster. A player vehicle uses its owned loadout. The observer uses the stock descriptor from the resource bundle. |
 | Research | An account-wide tank or module unlock bought with vehicle XP and free XP. |
 | Vehicle purchase | An atomic debit and permanent ownership grant, with optional crew, ammunition and consumables. |

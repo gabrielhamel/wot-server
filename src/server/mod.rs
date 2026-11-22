@@ -45,6 +45,17 @@ pub mod test_support {
     pub fn composition() -> super::Composition {
         super::Composition { _private: () }
     }
+
+    pub fn configure_gateway_metrics(
+        gateway: &mut crate::player_sessions::Gateway,
+        meter: &opentelemetry::metrics::Meter,
+    ) {
+        gateway.configure_metrics(meter);
+    }
+
+    pub fn configure_database_metrics(meter: &opentelemetry::metrics::Meter, pool: &sqlx::PgPool) {
+        crate::platform::observability::configure_database_metrics(meter, pool);
+    }
 }
 
 #[derive(Parser)]
@@ -72,7 +83,7 @@ pub async fn run() -> Result<()> {
         .await
         .context("Join logging initialization")??;
     tracing::info!(configuration = %path.display(), "Starting server");
-    let result = serve(config).await;
+    let result = serve(config, telemetry.as_ref().map(telemetry::Telemetry::meter)).await;
     if let Err(error) = &result {
         tracing::error!(error = %format!("{error:#}"), "Server stopped with an error");
     }
@@ -87,11 +98,14 @@ pub async fn run() -> Result<()> {
     result
 }
 
-async fn serve(config: Configuration) -> Result<()> {
+async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Meter>) -> Result<()> {
     let shutdown = shutdown_signal().context("Listen for shutdown signals")?;
     let resources = tracing::info_span!("server.load_resources", "ddd.bounded_context.name" = "server", "input.resource_dir" = %config.resource_dir.display())
         .in_scope(|| ResourceBundle::open(&config.resource_dir))?;
     let pool = connect_database(&config.database_url, config.db_connections).await?;
+    if let Some(meter) = &meter {
+        crate::platform::observability::configure_database_metrics(meter, &pool);
+    }
     let composition = Composition { _private: () };
     let account_services =
         accounts::postgres::service(&composition, pool.clone(), resources.clone()).await?;
@@ -127,6 +141,9 @@ async fn serve(config: Configuration) -> Result<()> {
         social,
         tokio::runtime::Handle::current(),
     )?;
+    if let Some(meter) = &meter {
+        gateway.configure_metrics(meter);
+    }
     let (web_stop, web_shutdown) = tokio::sync::oneshot::channel();
     let web_worker = if let Some(settings) = config.web {
         let trusted_proxies = if config.admin.is_some() {
