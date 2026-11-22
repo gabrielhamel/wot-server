@@ -13,7 +13,7 @@ use wot_resources::ResourceBundle;
 
 const FORBIDDEN_FOR_BATTLE: &str =
     "scripts/item_defs/vehicles/common/forbidden_vehicles_to_battle_config.xml";
-const MAX_PLACEHOLDER_VEHICLE_PRICE: i64 = 100;
+pub(super) const MAX_PLACEHOLDER_VEHICLE_PRICE: i64 = 100;
 const NON_GARAGE_TAGS: &[&str] = &[
     "event_battles",
     "fallout",
@@ -61,51 +61,6 @@ impl VehicleOffer {
             && (!self.is_private_or_test()
                 || (matches!(self.definition_price.currency, "gold" | "credits")
                     && self.definition_price.amount > MAX_PLACEHOLDER_VEHICLE_PRICE))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::platform::client_formats::pxml::Element;
-
-    #[test]
-    fn store_requires_private_and_test_variants_to_have_a_price_above_100() {
-        let mut vehicle = VehicleOffer {
-            key: String::new(),
-            name: String::new(),
-            price: None,
-            definition_price: ItemPrices::definition_price(&Element::new()),
-            requires_research: false,
-            level: Some(8),
-            tags: BTreeSet::new(),
-            forbidden_for_battle: false,
-            acquisition_unavailable: false,
-        };
-        let undefined = vehicle.definition_price;
-        for tag in ["private", "testTank"] {
-            vehicle.tags = BTreeSet::from([tag.to_owned()]);
-            vehicle.definition_price = undefined;
-            assert!(vehicle.grantable());
-            assert!(!vehicle.store_eligible());
-            for currency in ["gold", "credits"] {
-                for (amount, eligible) in [(1, false), (100, false), (101, true)] {
-                    vehicle.definition_price = Price { currency, amount };
-                    assert!(vehicle.grantable());
-                    assert_eq!(
-                        vehicle.store_eligible(),
-                        eligible,
-                        "{tag}: {amount} {currency}"
-                    );
-                }
-            }
-        }
-        vehicle.tags.clear();
-        vehicle.definition_price = Price {
-            currency: "gold",
-            amount: 1,
-        };
-        assert!(vehicle.store_eligible());
     }
 }
 
@@ -327,5 +282,50 @@ impl GarageCatalog {
     pub(super) fn catalog_failure(error: anyhow::Error) -> ProgressionError {
         tracing::error!(%error,"Load garage vehicle definitions failed");
         ProgressionError::CatalogUnavailable
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::client_formats::pxml::Element;
+
+    #[test]
+    fn store_requires_private_and_test_variants_to_have_a_price_above_100() {
+        let mut vehicle = VehicleOffer {
+            key: String::new(),
+            name: String::new(),
+            price: None,
+            definition_price: ItemPrices::definition_price(&Element::new()),
+            requires_research: false,
+            level: Some(8),
+            tags: BTreeSet::new(),
+            forbidden_for_battle: false,
+            acquisition_unavailable: false,
+        };
+        let undefined = vehicle.definition_price;
+        for tag in ["private", "testTank"] {
+            vehicle.tags = BTreeSet::from([tag.to_owned()]);
+            vehicle.definition_price = undefined;
+            assert!(vehicle.grantable());
+            assert!(!vehicle.store_eligible());
+            for currency in ["gold", "credits"] {
+                for (amount, eligible) in [(1, false), (100, false), (101, true)] {
+                    vehicle.definition_price = Price { currency, amount };
+                    assert!(vehicle.grantable());
+                    assert_eq!(
+                        vehicle.store_eligible(),
+                        eligible,
+                        "{tag}: {amount} {currency}"
+                    );
+                }
+            }
+        }
+        vehicle.tags.clear();
+        vehicle.definition_price = Price {
+            currency: "gold",
+            amount: 1,
+        };
+        assert!(vehicle.store_eligible());
     }
 }
