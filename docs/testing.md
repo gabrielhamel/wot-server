@@ -135,7 +135,10 @@ exercise the unavailable response.
 With the current extracted terrain tiles, two encrypted peers then exercise the native Start Battle command sequence,
 including failed guest and unready-team attempts, team unlock, handoff on the
 same channels, a common space with distinct team vehicles, readiness and
-countdown, and return to the garage after leaving. A third peer connects
+countdown, and return to the garage after leaving. The suite checks exported
+online player and running battle counts before, during and after the battle,
+along with tick duration and delay samples. A unit test checks the skipped-tick
+counter at the 100 ms deadline boundary. A third peer connects
 during the round and receives the invitation sent while offline. That peer
 finds the same room in discovery and joins through both the invitation and
 the public list. The end-of-round check verifies both outcome messages,

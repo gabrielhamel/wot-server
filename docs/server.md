@@ -110,8 +110,10 @@ headers and timeouts. With the endpoint unset, the server does not export.
 
 The collector receives server events and spans at `info` and above,
 independently of the console level. Traces cover resource loading, database
-startup and the [layered request workflows](telemetry.md); the metric `wot.server.uptime` measures
-process uptime in seconds. Exports run in the background with bounded
+startup and the [layered request workflows](telemetry.md). Metrics cover uptime,
+online players, running battles, battle tick health, PostgreSQL operations and
+connection pool occupancy. See the [metrics reference](telemetry.md#server-metrics).
+Exports run in the background with bounded
 queues. Collector outages do not stop the game server, but telemetry can be
 lost. On SIGINT or SIGTERM, the server shuts down and flushes pending exports.
 

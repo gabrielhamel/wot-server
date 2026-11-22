@@ -92,6 +92,10 @@ impl Telemetry {
         &self.logger
     }
 
+    pub(super) fn meter(&self) -> opentelemetry::metrics::Meter {
+        self.meter.meter(env!("CARGO_PKG_NAME"))
+    }
+
     pub(super) fn shutdown(self) {
         for (signal, result) in [
             ("logs", self.logger.shutdown()),

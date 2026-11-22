@@ -20,7 +20,8 @@ mode.
 
 Callers use [the published contract](mod.rs). Preparation validates the roster
 and builds the client payloads before Player Sessions acknowledges the launch.
-Activation registers the participants for routing. Once a participant leaves,
+Activation registers the participants for routing and adds the arena to the
+active count published to Player Sessions. Once a participant leaves,
 Player Sessions resets the connection for garage entry. The Battle ID is
 allocated independently of the Training Room ID. At the end of a round,
 Battles publishes the outcome and continues pose and chassis replication while

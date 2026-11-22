@@ -330,6 +330,8 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         tokio::runtime::Handle::current(),
     )
     .unwrap();
+    let metrics = telemetry_capture::GatewayMetrics::attach(&mut gateway);
+    metrics.assert_snapshot(0, 0, false);
     let store = training_battle_available.then(|| {
         gateway
             .enable_store("http://127.0.0.1:8081".to_owned())
@@ -351,6 +353,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         let mut first_peer = Peer::new(public_key.clone());
         first_peer.connect(login, &first_peer_name, "password-a");
         first_peer.until(&script, |p| p.created && p.shown);
+        metrics.assert_snapshot(1, 0, false);
         assert_eq!(
             first_peer.training_room_visible,
             Some(training_room_visible)
@@ -463,6 +466,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
                     fixture,
                     visitor_id,
                     |room_id| {
+                        metrics.assert_snapshot(2, 1, true);
                         check_store(2, axum::http::StatusCode::UNAUTHORIZED);
                         let mut visitor = Peer::new(public_key.clone());
                         visitor.connect(login, &visitor_name, "password-visitor");
@@ -476,6 +480,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
                         visitor.disconnect();
                     },
                 );
+                metrics.assert_snapshot(2, 0, true);
                 Some((router, shop_url))
             } else {
                 None
@@ -1029,7 +1034,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
 
 #[tokio::test]
 #[ignore = "Requires WG_TEST_DATABASE_URL; closes an isolated pool to verify database error telemetry"]
-async fn database_failure_records_sql_and_error_status() {
+async fn database_failure_records_sql_error_status_and_metrics() {
     telemetry_capture::exporter();
     telemetry_capture::assert_database_failure(&std::env::var("WG_TEST_DATABASE_URL").unwrap())
         .await;

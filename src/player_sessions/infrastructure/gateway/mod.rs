@@ -18,6 +18,7 @@ mod cosmetics;
 mod crew;
 mod expendables;
 mod grants;
+mod metrics;
 mod premium;
 mod progression;
 mod settings;
@@ -160,6 +161,7 @@ pub struct Gateway {
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
     battles: BattleRuntime,
+    metrics: Option<metrics::GatewayMetrics>,
     account_bootstrap: AccountBootstrap,
     training_rooms: BTreeMap<u32, training::HostedRoom>,
     last_training_room_id: u32,
@@ -247,6 +249,7 @@ impl Gateway {
             tickets: HashMap::new(),
             sessions: HashMap::new(),
             battles,
+            metrics: None,
             account_bootstrap,
             training_rooms: BTreeMap::new(),
             last_training_room_id: 0,
@@ -268,6 +271,12 @@ impl Gateway {
 
     pub fn player_grants(&self) -> crate::player_sessions::PlayerGrants {
         self.grant_handle.clone()
+    }
+
+    pub(crate) fn configure_metrics(&mut self, meter: &opentelemetry::metrics::Meter) {
+        let metrics = metrics::GatewayMetrics::new(meter);
+        metrics.record_counts(self.sessions.len(), self.battles.active_count());
+        self.metrics = Some(metrics);
     }
 
     pub fn run(mut self, stop: Arc<AtomicBool>) -> Result<()> {
@@ -323,14 +332,28 @@ impl Gateway {
                     self.remove_session(client);
                 }
                 let now = Instant::now();
-                for (client, finish) in self.battles.tick(&mut self.base, now) {
+                let tick_metrics = self
+                    .metrics
+                    .as_ref()
+                    .filter(|_| self.battles.active_count() > 0);
+                let ending = self.battles.tick(&mut self.base, now);
+                if let Some(metrics) = tick_metrics {
+                    metrics.record_battle_tick(now.duration_since(tick), now.elapsed());
+                }
+                for (client, finish) in ending {
                     finish.in_scope(|| self.return_from_battle(client));
+                }
+                if let Some(metrics) = &self.metrics {
+                    metrics.record_counts(self.sessions.len(), self.battles.active_count());
                 }
                 tick += interval;
                 if tick <= now {
                     tick = now + interval;
                 }
             }
+        }
+        if let Some(metrics) = &self.metrics {
+            metrics.record_counts(0, 0);
         }
         info!("Garage gateway stopped");
         Ok(())

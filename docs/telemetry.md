@@ -6,6 +6,38 @@ input, database work, result and response. Production sends traces to the
 configured OTLP collector. See the [server guide](server.md#logging-and-telemetry)
 for endpoint configuration, resource attributes and console filtering.
 
+## Server metrics
+
+The server exports these OpenTelemetry metrics through the configured OTLP
+collector. Each series describes one server process.
+
+| Metric | Type | Unit | Measurement |
+| --- | --- | --- | --- |
+| `wot.server.uptime` | Gauge | Seconds | Time since telemetry started. |
+| `wot.players.online` | Gauge | Players | Authenticated game sessions across the garage and battles, using the same count as in-game server stats. Pending login tickets are excluded. |
+| `wot.battles.running` | Gauge | Battles | Activated arenas with participants, from loading through the departure of the last participant, including countdown and results. |
+| `wot.battle.tick.duration` | Histogram | Seconds | Processing time for one gateway battle tick across all active arenas, including simulation and replication. |
+| `wot.battle.tick.delay` | Histogram | Seconds | Time between a scheduled tick deadline and the start of arena processing, including time spent on other gateway work. |
+| `wot.battle.tick.skipped` | Counter | Ticks | Number of subsequent deadlines the gateway discarded when a tick started at least one full interval late. The interval is 100 ms. |
+| `wot.db.operation.duration` | Histogram | Seconds | Elapsed time of each completed PostgreSQL operation observed by the shared adapter, including transaction boundaries. Sample counts give operation and error totals. |
+| `wot.db.pool.connections` | Gauge | Connections | SQLx pool occupancy by `state`, reported as `idle` or `non_idle`. The latter is the pool size minus idle connections and can include connections being opened or checked. |
+| `wot.db.pool.capacity` | Gauge | Connections | Configured maximum size of the shared SQLx pool. |
+
+The gateway refreshes both count gauges on its tick loop. Tick histograms
+record one sample per gateway tick when at least one arena is active at the
+start of processing. Duration and delay use buckets around the 100 ms interval.
+See the [metric instruments](../src/player_sessions/infrastructure/gateway/metrics.rs)
+and [gateway scheduler](../src/player_sessions/infrastructure/gateway/mod.rs).
+
+PostgreSQL operation timing starts when the adapter polls the SQLx future, so
+it includes pool acquisition time for operations that acquire a connection.
+The histogram uses `ddd.bounded_context.name`, `db.operation.name` (allowlisted
+SQL verbs with an `OTHER` fallback), and `outcome` (`success` or `error`). SQL
+text, bind parameters and error messages are absent from metric attributes.
+Pool gauges sample the shared pool at collection time. The server registers
+these metrics after connecting and applying migrations. See the
+[PostgreSQL instruments](../src/platform/infrastructure/observability/database_metrics.rs).
+
 ## Trace structure
 
 Each game command, XMPP stanza, admin request and Store request starts an operation trace.
@@ -431,8 +463,10 @@ from normal garage and XMPP flows. Regression coverage verifies same-trace
 ancestry through application, domain and repository work, complete SQL text,
 UDP socket sends, XMPP delivery and database failure status. It checks that
 the server stats trace contains its memory read and UDP send, and that invalid
-or unchanged ammunition layouts perform no SQL. The server telemetry test
-checks OTLP resource export through the server executable.
+or unchanged ammunition layouts perform no SQL. The PostgreSQL test checks
+exported operation outcomes and pool gauges across checkout, return, and pool
+closure. The server telemetry test checks OTLP resource export through the
+server executable.
 
 Contributions must extend these checks for changed workflows. The PR must
 record the request-to-response trace shape and verification results,

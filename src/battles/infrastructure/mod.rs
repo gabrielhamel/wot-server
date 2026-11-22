@@ -349,6 +349,10 @@ impl BattleRuntime {
         self.engagements.contains_key(&client)
     }
 
+    pub(crate) fn active_count(&self) -> usize {
+        self.active.len()
+    }
+
     #[tracing::instrument(name = "battles.prepare", skip_all, fields(
         ddd.bounded_context.name = "battles", input.arena_type_id = launch.arena_type,
         input.round_length.seconds = launch.duration.as_secs(), input.players.count = launch.participants.len(),

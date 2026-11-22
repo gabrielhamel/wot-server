@@ -47,7 +47,9 @@ arena handoff and restores the same membership on garage return.
 Player Sessions traces game commands, XMPP requests, worker scheduling, completion
 handling and response delivery. It retains request parents across the grant,
 crew, completion and XMPP output queues. Spans identify operations and
-ddd.bounded_context.name without architecture layer labels. See the [telemetry contract](../../docs/telemetry.md).
+ddd.bounded_context.name without architecture layer labels. The gateway exports
+its online session count, the active arena count from Battles, and shared battle
+tick timings and skipped intervals. See the [telemetry contract](../../docs/telemetry.md).
 
 The [server composition](../server/mod.rs) runs LoginApp and BaseApp together. Player Sessions uses [Platform Mercury](../platform/mercury) for shared UDP transport
 and shares the [client format codecs](../platform/infrastructure/client_formats/README.md)
