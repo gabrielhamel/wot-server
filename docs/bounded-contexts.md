@@ -26,7 +26,10 @@ Each server bounded context belongs in its own Rust library crate and Cargo
 workspace member. A library owns its domain model, use cases, adapters, and
 published contract. Context libraries, their shared dependencies, and the web
 workspace live under `src/`. The server binary composes the libraries and
-supplies their runtime dependencies.
+supplies their runtime dependencies. Organize server composition, adapters, and
+presentation under `src/server/` by responsibility. The shared browser build
+and test workspace lives in `src/server/web/`. Browser pages stay in their
+owning contexts’ presentation layers.
 
 A crate boundary lets Rust enforce visibility across contexts and lets Cargo
 check or test one context with its declared dependencies. Workspace-wide

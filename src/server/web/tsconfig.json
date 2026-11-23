@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["vite-plus/client", "node"]
   },
-  "include": ["../**/*.ts", "../**/*.tsx"]
+  "include": ["../../**/*.ts", "../../**/*.tsx"]
 }

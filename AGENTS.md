@@ -167,13 +167,19 @@ standalone utilities that the server does not depend on at runtime. The
 server, libraries, and tools inherit their release version from
 `[workspace.package]` in the root Cargo manifest.
 
+Organize `src/server/` into layers where they clarify ownership. Keep startup
+and dependency wiring in server composition, organize server-wide adapters in
+infrastructure as needed, and keep browser route composition in presentation.
+Domain rules and context-specific use cases belong to their owning libraries.
+
 ### Browser application
 
 Use strict TypeScript. Keep browser pages and components in their owning
 context's `presentation/` directory, with application contracts and HTTP
 adapters in the corresponding context layers. Keep common browser transport,
-telemetry and presentation primitives in Platform. Put route composition in
-`src/server/` and Vite+ configuration and test setup under `src/web/`.
+telemetry and presentation primitives in Platform. Put browser route composition in
+`src/server/presentation/`. Keep the browser workspace, including Vite+
+configuration and test setup, under `src/server/web/`.
 
 Use Testing Library and MSW for admin and Store regression coverage. Render
 the full page, interact through accessible controls, and assert visible

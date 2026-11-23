@@ -21,7 +21,7 @@ From the repository root, build the SPA with Node.js 22.12 or later.
 
 ```sh
 npm ci
-npm run build --workspace src/web
+npm run build --workspace src/server/web
 ```
 
 Add these top-level settings to the `server.json` beside the game server
@@ -31,7 +31,7 @@ executable for local HTTP development.
 {
   "web": {
     "bind": "127.0.0.1:8080",
-    "ui_dir": "../../src/web/dist"
+    "ui_dir": "../../src/server/web/dist"
   },
   "admin": {
     "secure_cookies": false

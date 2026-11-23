@@ -105,14 +105,14 @@ and sign in as `commander@example.test` with `demo-player`.
 ## Configuration
 
 Build the shared React project with `npm ci` and
-`npm run build --workspace src/web`. Configure the same HTTP listener used by the
+`npm run build --workspace src/server/web`. Configure the same HTTP listener used by the
 [admin dashboard](admin.md). The Store can be enabled on its own.
 
 ```json
 {
   "web": {
     "bind": "127.0.0.1:8080",
-    "ui_dir": "../../src/web/dist"
+    "ui_dir": "../../src/server/web/dist"
   },
   "store": {
     "origin": "http://127.0.0.1:8080"
