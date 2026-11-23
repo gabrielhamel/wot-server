@@ -28,6 +28,15 @@ struct Tile {
 }
 
 impl Terrain {
+    #[cfg(test)]
+    pub(super) fn empty() -> Self {
+        Self {
+            metres: DEFAULT_CHUNK_METRES,
+            tiles: HashMap::new(),
+            surfaces: HashMap::new(),
+        }
+    }
+
     #[tracing::instrument(name = "battles.load_terrain", skip_all, fields(
         ddd.bounded_context.name = "battles", input.geometry = geometry,
         output.terrain.tiles = tracing::field::Empty, output.terrain.surface_tiles = tracing::field::Empty, otel.status_code = tracing::field::Empty,

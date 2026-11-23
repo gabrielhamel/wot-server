@@ -13,7 +13,7 @@ const VEHICLE_KILLED: u32 = 1;
 const ARMOR_PIERCED_WITH_DAMAGE: u32 = 1 << 4;
 const DIRECT_PROJECTILE: u32 = 1 << 20;
 
-impl BattleRuntime {
+impl BattleSimulation {
     pub(super) fn vehicle_control_with_delivery(
         &mut self,
         delivery: &mut impl ArenaDelivery,

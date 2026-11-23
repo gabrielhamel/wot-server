@@ -1,5 +1,4 @@
 use super::*;
-use wot_battles::contract::AvatarAction;
 use wot_platform::mercury::app::entity::MethodDecodeError;
 
 const REQUEST_PREBATTLES: i16 = 520;
@@ -14,21 +13,16 @@ impl Gateway {
                 .record("user.id", session.account.snapshot.id().to_string());
         }
         if let Some(participant) = session.map(|session| ParticipantId(session.generation))
-            && self.battles.contains(participant)
+            && self.battle_participants.contains(&participant)
         {
             event.span.in_scope(|| {
                 let entity_id = event.entity.id().0;
-                if !self.battles.owns_avatar(participant, entity_id) {
-                    event.span.record("output.outcome", "entity_unavailable");
-                    return;
-                }
-                let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
-                if let Some(command) = delivery.avatar_command(&event)
-                    && let AvatarAction::Leave =
-                        self.battles
-                            .avatar_command(&mut delivery, participant, entity_id, command)
-                {
-                    self.return_from_battle(event.client);
+                let adapter = MercuryArena::new(&mut self.base, &self.battle_clients);
+                if let Some(command) = adapter.avatar_command(&event) {
+                    let result = self
+                        .battle_worker
+                        .avatar_command(participant, entity_id, command);
+                    self.handle_battle_submission(event.client, result);
                 }
             });
             return;

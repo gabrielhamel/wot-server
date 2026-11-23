@@ -40,10 +40,13 @@ component class metadata. Battles loads the arena catalog, geometry and terrain.
 vehicle simulation and native battle replication. Player Sessions submits a
 confirmed Training Room roster using the Battles launch contract and handles
 the garage handoff and return. Player Sessions maps participant IDs to live
-connections. The local Mercury adapter translates typed battle commands and
-delivers arena updates through the same BaseApp. Battles owns arena identity
-and runtime state and reports the active arena count to Player Sessions for
-telemetry.
+connections. The local Mercury adapter translates client messages into typed
+battle commands. Separate bounded in-process queues link Player Sessions to
+the Battles preparation and simulation tasks. The simulation owns live arena
+state and advances the tick.
+Player Sessions checks preparation results against the current roster and
+delivers arena updates via BaseApp. Battles reports the active
+arena count and worker tick timings for telemetry.
 
 [Social](src/social/README.md) owns directed contacts and private conversation
 membership, durable history and legacy per-player subscriptions. Accounts publishes the PlayerDirectory application contract. Social owns its

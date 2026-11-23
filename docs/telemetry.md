@@ -18,18 +18,24 @@ collector. Each series describes one server process.
 | `wot.server.uptime` | Gauge | Seconds | Time since telemetry started. |
 | `wot.players.online` | Gauge | Players | Authenticated game sessions across the garage and battles, using the same count as in-game server stats. Pending login tickets are excluded. |
 | `wot.battles.running` | Gauge | Battles | Activated arenas with participants, from loading through the departure of the last participant, including countdown and results. |
-| `wot.battle.tick.duration` | Histogram | Seconds | Processing time for one gateway battle tick across all active arenas, including simulation and replication. |
-| `wot.battle.tick.delay` | Histogram | Seconds | Time between a scheduled tick deadline and the start of arena processing, including time spent on other gateway work. |
-| `wot.battle.tick.skipped` | Counter | Ticks | Number of subsequent deadlines the gateway discarded when a tick started at least one full interval late. The interval is 100 ms. |
+| `wot.battle.tick.duration` | Histogram | Seconds | Time for the worker to advance all active arenas and enqueue their outputs, including waits for output capacity. |
+| `wot.battle.tick.delay` | Histogram | Seconds | Time between the scheduled tick deadline and the worker starting arena processing. |
+| `wot.battle.tick.skipped` | Counter | Ticks | Number of subsequent deadlines the worker discarded when a tick started at least one full interval late. The interval is 100 ms. |
 | `wot.db.operation.duration` | Histogram | Seconds | Elapsed time of each completed PostgreSQL operation observed by the shared adapter, including transaction boundaries. Sample counts give operation and error totals. |
 | `wot.db.pool.connections` | Gauge | Connections | SQLx pool occupancy by `state`, reported as `idle` or `non_idle`. The latter is the pool size minus idle connections and can include connections being opened or checked. |
 | `wot.db.pool.capacity` | Gauge | Connections | Configured maximum size of the shared SQLx pool. |
 
-The gateway refreshes both count gauges on its tick loop. Tick histograms
-record one sample per gateway tick when at least one arena is active at the
-start of processing. Duration and delay use buckets around the 100 ms interval.
-See the [metric instruments](../src/player-sessions/src/infrastructure/gateway/metrics.rs)
-and [gateway scheduler](../src/player-sessions/src/infrastructure/gateway/mod.rs).
+The gateway refreshes both count gauges on its own loop. The battle worker
+samples duration and delay when at least one arena is active at the start of
+its tick. Both histograms use buckets around the 100 ms interval. The worker
+preserves the originating span with each queued command and delivery. Arena
+preparation and its terrain and obstacle loads run in the Training launch trace.
+Player Sessions retains the launch span until it acknowledges activation or
+rejects preparation. The simulation scheduler measures its own tick timings
+independently of the preparation task. Mercury
+delivery spans and position snapshot socket outcomes are recorded in the
+gateway when it drains the queue. See the [metric instruments](../src/player-sessions/src/infrastructure/gateway/metrics.rs)
+and [battle scheduler](../src/battles/src/infrastructure/worker.rs).
 
 PostgreSQL operation timing starts when the adapter polls the SQLx future, so
 it includes pool acquisition time for operations that acquire a connection.

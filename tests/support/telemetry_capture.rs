@@ -9,7 +9,7 @@ use opentelemetry_sdk::metrics::{
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, SpanData};
 use std::{
     net::SocketAddr,
-    sync::OnceLock,
+    sync::{Mutex, OnceLock, mpsc},
     time::{Duration, Instant},
 };
 use tracing_subscriber::prelude::*;
@@ -78,6 +78,43 @@ impl GatewayMetrics {
     }
 }
 
+type PreparationGate = (mpsc::SyncSender<()>, mpsc::Receiver<()>);
+static PREPARATION_GATE: Mutex<Option<PreparationGate>> = Mutex::new(None);
+
+pub fn pause_next_arena_preparation() -> (mpsc::Receiver<()>, mpsc::SyncSender<()>) {
+    let (entered, observed) = mpsc::sync_channel(1);
+    let (resume, release) = mpsc::sync_channel(1);
+    assert!(
+        PREPARATION_GATE
+            .lock()
+            .unwrap()
+            .replace((entered, release))
+            .is_none()
+    );
+    (observed, resume)
+}
+
+struct PauseArenaPreparation;
+
+impl<S> tracing_subscriber::Layer<S> for PauseArenaPreparation
+where
+    S: tracing::Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
+{
+    fn on_enter(&self, id: &tracing::Id, context: tracing_subscriber::layer::Context<'_, S>) {
+        if !context
+            .span(id)
+            .is_some_and(|span| span.name() == "battles.prepare")
+        {
+            return;
+        }
+        let gate = PREPARATION_GATE.lock().unwrap().take();
+        if let Some((entered, release)) = gate {
+            entered.send(()).unwrap();
+            let _ = release.recv_timeout(Duration::from_secs(15));
+        }
+    }
+}
+
 pub fn exporter() -> &'static InMemorySpanExporter {
     static EXPORTER: OnceLock<InMemorySpanExporter> = OnceLock::new();
     EXPORTER.get_or_init(|| {
@@ -87,6 +124,7 @@ pub fn exporter() -> &'static InMemorySpanExporter {
             .build();
         let tracer = provider.tracer("garage-test");
         tracing_subscriber::registry()
+            .with(PauseArenaPreparation)
             .with(
                 tracing_opentelemetry::layer()
                     .with_tracer(tracer)

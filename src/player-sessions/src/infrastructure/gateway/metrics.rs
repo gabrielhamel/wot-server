@@ -15,7 +15,7 @@ impl GatewayMetrics {
         let skipped_ticks = meter
             .u64_counter("wot.battle.tick.skipped")
             .with_unit("{tick}")
-            .with_description("Scheduled battle ticks discarded by the gateway")
+            .with_description("Scheduled battle ticks discarded by the battle worker")
             .build();
         skipped_ticks.add(0, &[]);
 

@@ -1459,6 +1459,20 @@ pub fn exercise_battle(
     host.until(script, |p| p.responses.contains(&(5107, 0)));
     command(host, 5108, 411, [1, 0, 0]);
     host.until(script, |p| p.responses.contains(&(5108, 0)));
+    let (preparing, resume) = telemetry_capture::pause_next_arena_preparation();
+    command(host, 5110, 411, [2, 0, 0]);
+    preparing
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    command(host, 5111, 412, [2, 0, 0]);
+    host.until(script, |p| p.responses.contains(&(5111, 0)));
+    assert!(!host.responses.iter().any(|(request, _)| *request == 5110));
+    drop(resume);
+    host.until(script, |p| p.responses.contains(&(5110, -1)));
+    assert_eq!(host.resets, 0);
+    command(host, 5112, 411, [1, 0, 0]);
+    host.until(script, |p| p.responses.contains(&(5112, 0)));
+
     command(host, 5109, 411, [2, 0, 0]);
     host.until(script, |p| p.resets == 1);
     guest.until(script, |p| p.resets == 1);
@@ -2639,8 +2653,9 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
     assert!(has(garage_return, "output.outcome", "garage_reset"));
     let departed = traces
         .iter()
-        .find(|span| span.name == "battles.remove_participant" && child_of(span, garage_return))
-        .expect("participant removal in the leave request trace");
+        .find(|span| span.name == "battles.remove_participant" && child_of(span, leave))
+        .expect("participant removal by the battle worker in the leave request trace");
+    assert!(departed.end_time <= garage_return.start_time);
     assert!(has(departed, "ddd.bounded_context.name", "battles"));
     assert!(has(departed, "output.players.count", "1"));
     let participant =
@@ -2689,6 +2704,9 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         ("5100", guest, "not_host", "-1"),
         ("5101", host, "team_not_ready", "-1"),
         ("5109", host, "launched", "0"),
+        ("5110", host, "preparation_stale", "-1"),
+        ("5111", host, "team_unlocked", "0"),
+        ("5112", host, "team_ready", "0"),
     ] {
         let root = traces
             .iter()
@@ -2726,6 +2744,15 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
             assert!(has(arena, "ddd.bounded_context.name", "battles"));
             assert!(has(arena, "output.outcome", "prepared"));
             assert!(has(arena, "output.players.count", "2"));
+            let response = traces
+                .iter()
+                .find(|s| s.name == "mercury.response" && child_of(s, launch))
+                .unwrap();
+            let terrain = traces
+                .iter()
+                .find(|s| s.name == "battles.load_terrain" && child_of(s, arena))
+                .expect("terrain loading in the battle preparation trace");
+            assert!(terrain.end_time <= response.start_time);
             let battle_id = arena
                 .attributes
                 .iter()
@@ -2733,6 +2760,13 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
                 .expect("allocated battle ID")
                 .value
                 .to_string();
+            let activation = traces
+                .iter()
+                .find(|s| s.name == "battles.activate" && child_of(s, launch))
+                .expect("battle worker activation inside the Training launch trace");
+            assert!(has(activation, "input.battle.id", &battle_id));
+            assert!(has(activation, "input.players.count", "2"));
+            assert!(has(activation, "output.outcome", "activated"));
             let entries = traces
                 .iter()
                 .filter(|s| s.name == "battles.enter" && child_of(s, arena))

@@ -13,6 +13,16 @@ pub enum BattleMode {
     Training,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BattlePreparationId(pub u32);
+
+/// Native entity IDs reserved by the gateway for one entrant, in roster order.
+pub struct BattleEntityIds {
+    pub avatar: u32,
+    pub vehicle: u32,
+    pub info: u32,
+}
+
 pub struct BattleLaunch {
     pub arena_type: i32,
     pub duration: Duration,
