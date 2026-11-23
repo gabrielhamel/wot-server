@@ -2,8 +2,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { httpServer } from "../../../../../web/test/setup";
-import { captureTraces } from "../../../../../web/test/traces";
+import { httpServer } from "../../../../../server/infrastructure/web/test/setup";
+import { captureTraces } from "../../../../../server/infrastructure/web/test/traces";
 import type { StoreOffer } from "../../../application/store-contracts";
 import Shop from "./shop-page";
 

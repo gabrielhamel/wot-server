@@ -173,7 +173,7 @@ Use strict TypeScript. Keep browser pages and components in their owning
 context's `presentation/` directory, with application contracts and HTTP
 adapters in the corresponding context layers. Keep common browser transport,
 telemetry and presentation primitives in Platform. Put route composition in
-`src/server/` and Vite+ configuration and test setup under `src/web/`.
+`src/server/` and Vite+ configuration and test setup under `src/server/infrastructure/web/`.
 
 Use Testing Library and MSW for admin and Store regression coverage. Render
 the full page, interact through accessible controls, and assert visible

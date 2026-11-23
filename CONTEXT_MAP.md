@@ -8,7 +8,7 @@ published contracts, and storage ownership rules.
 Accounts, Social, Player Sessions, Battles, and Player Administration compile
 as separate Rust libraries under `src/`. The server binary wires their
 published contracts and adapters in [server composition](src/server/mod.rs).
-The [web workspace](src/web/package.json) bundles the context-owned browser pages.
+The [web workspace](src/server/infrastructure/web/package.json) bundles the context-owned browser pages.
 
 ![wot-server context map](docs/context-maps/generated/wot-server.svg)
 

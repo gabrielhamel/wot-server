@@ -98,6 +98,6 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run check --workspace src/web
-      - run: npm run test --workspace src/web
-      - run: npm run build --workspace src/web
+      - run: npm run check --workspace src/server/infrastructure/web
+      - run: npm run test --workspace src/server/infrastructure/web
+      - run: npm run build --workspace src/server/infrastructure/web

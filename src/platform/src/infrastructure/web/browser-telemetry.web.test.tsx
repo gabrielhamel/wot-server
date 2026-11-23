@@ -4,7 +4,7 @@ import type { ExportResult } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { ProtobufTraceSerializer } from "@opentelemetry/otlp-transformer";
 import { expect, it, vi } from "vite-plus/test";
-import { captureTraces } from "../../../../web/test/traces";
+import { captureTraces } from "../../../../server/infrastructure/web/test/traces";
 import { observeBrowserErrors } from "./browser-telemetry";
 import { webOperation, webSpan } from "./telemetry";
 import { BrowserTraceExporter } from "./trace-export";
