@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
 
-const repo = fileURLToPath(new URL("../../../../", import.meta.url));
+const repo = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.url);
 
 export default defineConfig(({ command, isPreview, mode }) => {
@@ -47,7 +47,7 @@ export default defineConfig(({ command, isPreview, mode }) => {
       root: repo,
       environment: "jsdom",
       include: ["src/**/*.web.test.tsx"],
-      setupFiles: ["src/server/infrastructure/web/test/setup.ts"],
+      setupFiles: ["src/web/test/setup.ts"],
       environmentOptions: { jsdom: { url: "http://localhost:8080/" } },
     },
   };

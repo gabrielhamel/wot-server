@@ -48,7 +48,7 @@ async function start() {
 
   try {
     if (__WEB_MOCK_API__) {
-      const { startMockApi } = await import("../../infrastructure/web/mocks/browser");
+      const { startMockApi } = await import("../../../web/mocks/browser");
       await startMockApi(route);
     }
     await initializeBrowserTelemetry(page.owner);
