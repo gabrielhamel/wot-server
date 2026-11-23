@@ -104,20 +104,21 @@ and sign in as `commander@example.test` with `demo-player`.
 
 ## Configuration
 
-The server embeds the Store UI at build time. The default origin is
-`http://127.0.0.1:8080`. The client opens `/shop/` and sends requests to
-`/api/shop/`. Pass `--disable-store` to disable the Store, or
-`--disable-admin` to run it independently of the dashboard.
+The server embeds the Store UI at build time. For local game clients it
+advertises the HTTP listener on loopback when available. For LAN game clients
+it uses the listener's private IPv4 address, choosing the interface that
+routes back to the client when listening on all interfaces. It uses the
+actual HTTP port selected by `--web-bind`. The client opens `/shop/` and sends
+requests to `/api/shop/`.
 
-For clients on a trusted LAN, pass the server's private IPv4 address, for example
-`--store-origin http://192.168.1.3:8080`. Both local and LAN clients will use
-that address. The shared HTTP listener defaults to `0.0.0.0:8080`; make sure
-port 8080 is reachable from the LAN.
+Use `--store-origin` to override the advertised address for every client.
+For example, a server behind a proxy or Docker port mapping may need an
+explicit origin that players can reach. Internet clients need a reachable HTTPS
+origin. Route `/shop`, `/shop/*`, `/assets/*` and `/api/shop/*` through the
+TLS reverse proxy. The client receives the origin when it connects.
 
-For clients connecting over the internet, pass a reachable HTTPS origin to
-`--store-origin` and route `/shop`, `/shop/*`, `/assets/*` and `/api/shop/*` to
-the HTTP listener through your TLS reverse proxy. Reconnect after changing the
-Store URL.
+Pass `--disable-store` to disable the Store, or `--disable-admin` to run the
+Store independently of the dashboard.
 
 ## Client and checkout protocol
 

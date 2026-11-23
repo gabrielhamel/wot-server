@@ -97,9 +97,9 @@ pub(crate) struct Configuration {
     #[arg(long)]
     pub disable_store: bool,
 
-    /// Store origin sent to the game client (HTTPS or HTTP on loopback or private IPv4)
-    #[arg(long, default_value = "http://127.0.0.1:8080")]
-    pub store_origin: String,
+    /// Override the automatically selected local Store origin (HTTPS or local HTTP)
+    #[arg(long)]
+    pub store_origin: Option<String>,
 }
 
 impl Configuration {
@@ -118,8 +118,10 @@ impl Configuration {
                 "--advertised-base must be a concrete address and nonzero port"
             );
         }
-        if !self.disable_store {
-            validate_store_origin(&mut self.store_origin)?;
+        if !self.disable_store
+            && let Some(origin) = &mut self.store_origin
+        {
+            validate_store_origin(origin)?;
         }
         Ok(())
     }
@@ -240,7 +242,7 @@ mod tests {
         assert_eq!(defaults.login_bind, "0.0.0.0:20016".parse().unwrap());
         assert_eq!(defaults.base_bind, "0.0.0.0:20017".parse().unwrap());
         assert_eq!(defaults.web_bind, "0.0.0.0:8080".parse().unwrap());
-        assert_eq!(defaults.store_origin, "http://127.0.0.1:8080");
+        assert!(defaults.store_origin.is_none());
         assert_eq!(
             defaults.log_level.filter(),
             tracing::level_filters::LevelFilter::DEBUG

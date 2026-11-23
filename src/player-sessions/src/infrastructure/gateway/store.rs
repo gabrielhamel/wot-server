@@ -2,15 +2,55 @@ use super::{Gateway, TracedCompletion};
 use crate::application::store::{
     StoreCustomer, StoreError, StoreReply, StoreRequest, StoreRequests,
 };
+use std::{
+    borrow::Cow,
+    net::{IpAddr, SocketAddr},
+};
 use tokio::sync::mpsc;
 use tracing::Instrument;
 use wot_accounts::contract::CommittedGarageChange;
 use wot_accounts::contract::{StoreOrder, StoreOrderError};
 
 pub(super) struct StoreAccess {
-    pub origin: String,
-    pub host: String,
+    origin: StoreOrigin,
     pub requests: mpsc::Receiver<StoreRequest>,
+}
+
+enum StoreOrigin {
+    Explicit { origin: String, host: String },
+    Listener(SocketAddr),
+}
+
+impl StoreAccess {
+    pub(super) fn origin_for(&self, client: SocketAddr) -> Option<(Cow<'_, str>, Cow<'_, str>)> {
+        self.origin.for_client(client)
+    }
+}
+
+impl StoreOrigin {
+    fn for_client(&self, client: SocketAddr) -> Option<(Cow<'_, str>, Cow<'_, str>)> {
+        match self {
+            Self::Explicit { origin, host } => Some((origin.as_str().into(), host.as_str().into())),
+            Self::Listener(bound) => {
+                let IpAddr::V4(peer) = client.ip() else {
+                    return None;
+                };
+                if !peer.is_loopback() && !peer.is_private() {
+                    return None;
+                }
+                let address = super::super::endpoint::advertised_base(None, *bound, client).ok()?;
+                if !(address.ip().is_private()
+                    || (peer.is_loopback() && address.ip().is_loopback()))
+                {
+                    return None;
+                }
+                Some((
+                    format!("http://{address}").into(),
+                    address.ip().to_string().into(),
+                ))
+            }
+        }
+    }
 }
 
 pub(super) struct Completion {
@@ -40,13 +80,19 @@ impl Gateway {
                     .is_some_and(|host| host.parse::<std::net::Ipv6Addr>().is_ok()),
             "Store origin requires an exact hostname or IP address"
         );
+        let host = host.to_ascii_lowercase();
+        Ok(self.set_store_origin(StoreOrigin::Explicit { origin, host }))
+    }
+
+    /// Advertise a local Store origin based on the bound HTTP listener and the game client.
+    pub fn configure_store_on_listener(&mut self, bound: SocketAddr) -> StoreRequests {
+        self.set_store_origin(StoreOrigin::Listener(bound))
+    }
+
+    fn set_store_origin(&mut self, origin: StoreOrigin) -> StoreRequests {
         let (handle, requests) = StoreRequests::channel();
-        self.store = Some(StoreAccess {
-            origin,
-            host: host.to_ascii_lowercase(),
-            requests,
-        });
-        Ok(handle)
+        self.store = Some(StoreAccess { origin, requests });
+        handle
     }
 
     pub(super) fn handle_store(&mut self, request: StoreRequest) {
@@ -190,5 +236,32 @@ impl Gateway {
             catalog
         });
         let _ = completion.reply.send(result);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selects_a_local_store_url_using_the_listener_and_client() {
+        let wildcard = StoreOrigin::Listener("0.0.0.0:43210".parse().unwrap());
+        let lan = StoreOrigin::Listener("192.168.50.3:8080".parse().unwrap());
+        let loopback = StoreOrigin::Listener("127.0.0.1:8080".parse().unwrap());
+        let local_client = "127.0.0.1:42000".parse().unwrap();
+        let lan_client = "192.168.50.42:42000".parse().unwrap();
+        let public_client = "198.51.100.42:42000".parse().unwrap();
+
+        assert_eq!(
+            wildcard.for_client(local_client),
+            Some(("http://127.0.0.1:43210".into(), "127.0.0.1".into()))
+        );
+        assert_eq!(
+            lan.for_client(lan_client),
+            Some(("http://192.168.50.3:8080".into(), "192.168.50.3".into()))
+        );
+        assert!(loopback.for_client(lan_client).is_none());
+        assert!(lan.for_client(public_client).is_none());
+        assert!(wildcard.for_client(public_client).is_none());
     }
 }

@@ -48,7 +48,7 @@ with `WOT_DATABASE_URL` to keep it out of process arguments, or pass
 | `--secure-cookies` | Mark admin session cookies Secure when serving the dashboard over HTTPS. |
 | `--disable-admin` | Disable the [dashboard and admin API](admin.md). |
 | `--disable-store` | Disable the in-game [Store](store.md#configuration) and its HTTP routes. |
-| `--store-origin` | `http://127.0.0.1:8080`. Pass a private IPv4 HTTP origin for LAN clients or an HTTPS origin for public access. |
+| `--store-origin` | Automatically selects loopback or a private IPv4 address for local and LAN clients. Pass an explicit origin for a proxy, port mapping or public HTTPS access. |
 
 When BaseApp listens on all interfaces or loopback, a localhost client always
 receives `127.0.0.1` and the actual bound BaseApp port, even when `--advertised-base`

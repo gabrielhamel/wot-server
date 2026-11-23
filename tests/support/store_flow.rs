@@ -132,9 +132,9 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             .enable_store("https://*.example.test".to_owned())
             .is_err()
     );
-    let router = gateway
-        .enable_store("http://192.168.1.3:8081".to_owned())
-        .unwrap();
+    let router = wot_player_sessions::store_router(
+        gateway.configure_store_on_listener("192.168.1.3:8081".parse().unwrap()),
+    );
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
     let worker = tokio::task::spawn_blocking(move || gateway.run(worker_stop));

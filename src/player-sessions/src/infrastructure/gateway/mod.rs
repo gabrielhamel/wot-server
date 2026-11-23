@@ -614,17 +614,21 @@ impl Gateway {
         if session.entity.is_some() {
             return Ok(());
         }
-        if self.store.is_some() && session.store_token.is_none() {
-            session.store_token = Some(StoreToken::generate()?);
-        }
-        let store_settings =
-            self.store
+        let store_settings = if let Some((origin, host)) = self
+            .store
+            .as_ref()
+            .and_then(|store| store.origin_for(client.addr()))
+        {
+            if session.store_token.is_none() {
+                session.store_token = Some(StoreToken::generate()?);
+            }
+            session
+                .store_token
                 .as_ref()
-                .zip(session.store_token.as_ref())
-                .map(|(store, token)| {
-                    let url = format!("{}/shop/#{}", store.origin, token.encode());
-                    (url, store.host.as_str())
-                });
+                .map(|token| (format!("{origin}/shop/#{}", token.encode()), host))
+        } else {
+            None
+        };
         let snapshot = &session.account.snapshot;
         let equipment_upgrades = self.catalog.equipment_upgrades_enabled();
         let entity = self.base.create_base_player::<Account>(
@@ -639,7 +643,7 @@ impl Gateway {
                     )?,
                     store_settings
                         .as_ref()
-                        .map(|(url, host)| (url.as_str(), *host)),
+                        .map(|(url, host)| (url.as_str(), host.as_ref())),
                     self.config.training_room_visible,
                     equipment_upgrades,
                 ),
@@ -659,7 +663,7 @@ impl Gateway {
         );
         tracing::Span::current().record("output.equipment_upgrades.enabled", equipment_upgrades);
         if let Some((_, host)) = store_settings {
-            tracing::Span::current().record("output.store.host", host);
+            tracing::Span::current().record("output.store.host", host.as_ref());
         }
         session.entity = Some(entity);
         self.base
