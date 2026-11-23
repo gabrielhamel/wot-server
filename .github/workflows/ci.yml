@@ -101,8 +101,7 @@ jobs:
                 gh run download "$run" --repo "$GITHUB_REPOSITORY" \
                   --name latest-eu-server-resources --dir "$WG_RESOURCE_DIR"
                 jq -er '"Test resource version: " + .game_version' "$WG_RESOURCE_DIR/manifest.json"
-                printf 'Resource extraction run: %s (%s)
-' "$run" "$branch"
+                printf 'Resource extraction run: %s (%s)\n' "$run" "$branch"
                 exit 0
               fi
             done
