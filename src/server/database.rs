@@ -6,7 +6,7 @@ use sqlx::{
 };
 use std::time::Duration;
 
-use crate::{accounts, platform::observability::database, social};
+use wot_platform::observability::database;
 
 #[tracing::instrument(name = "server.connect_database", skip_all, fields(ddd.bounded_context.name = "server", input.pool.max_connections = connections), err)]
 pub async fn connect_database(url: &str, connections: u32) -> Result<PgPool> {
@@ -39,19 +39,8 @@ async fn migrate(pool: &PgPool) -> Result<()> {
         )
         .await?;
     }
-    let composition = super::Composition { _private: () };
-    migrate_context(
-        &mut conn,
-        "accounts",
-        accounts::postgres::migrations(&composition),
-    )
-    .await?;
-    migrate_context(
-        &mut conn,
-        "social",
-        social::postgres::migrations(&composition),
-    )
-    .await?;
+    migrate_context(&mut conn, "accounts", wot_accounts::postgres::migrations()).await?;
+    migrate_context(&mut conn, "social", wot_social::postgres::migrations()).await?;
     conn.unlock().await?;
     Ok(())
 }
@@ -79,8 +68,8 @@ async fn migrate_context(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::social::contract::ContactChange;
     use sqlx::{ConnectOptions, postgres::PgConnectOptions};
+    use wot_social::contract::ContactChange;
 
     #[tokio::test]
     #[ignore = "Requires WG_TEST_DATABASE_URL with permission to create a test database"]
@@ -97,17 +86,15 @@ mod tests {
             .unwrap();
         let options = url.parse::<PgConnectOptions>().unwrap().database(&name);
         let database_url = options.to_url_lossy().to_string();
-        let composition = crate::server::test_support::composition();
         let initialized = connect_database(&database_url, 1).await.unwrap();
         let ids: Vec<i64> = sqlx::query_scalar("INSERT INTO accounts.accounts(username, display_name, password_hash) VALUES ('alice', 'Alice', 'fixture'), ('bob', 'Bob', 'fixture') RETURNING id")
             .fetch_all(&initialized).await.unwrap();
         let [alice, bob] = ids.as_slice() else {
             panic!("Expected two accounts")
         };
-        let social = social::postgres::service(
-            &composition,
+        let social = wot_social::postgres::service(
             initialized.clone(),
-            accounts::postgres::directory(&composition, initialized.clone()),
+            wot_accounts::postgres::directory(initialized.clone()),
         );
         social
             .change(*alice, *bob, ContactChange::Friend)
@@ -122,10 +109,9 @@ mod tests {
         initialized.close().await;
 
         let restarted = connect_database(&database_url, 1).await.unwrap();
-        let social = social::postgres::service(
-            &composition,
+        let social = wot_social::postgres::service(
             restarted.clone(),
-            accounts::postgres::directory(&composition, restarted.clone()),
+            wot_accounts::postgres::directory(restarted.clone()),
         );
         let roster = social.roster(*alice).await.unwrap();
         assert_eq!(roster[0].player.name, "Bob");

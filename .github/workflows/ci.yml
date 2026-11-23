@@ -33,7 +33,7 @@ jobs:
         run: cargo +stable clippy --locked --workspace --all-targets --features integration-test-support -- -D warnings
       - name: Test
         run: |
-          cargo +stable test --locked --doc -p wot-server
+          cargo +stable test --locked --doc --workspace
           cargo +stable test --locked --workspace --all-targets --features integration-test-support
 
   e2e:
@@ -81,8 +81,8 @@ jobs:
         run: |
           cargo +stable test --locked --lib initializes_context_storage -- --ignored
           # The access lifecycle test installs a process-wide tracing subscriber.
-          cargo +stable test --locked --lib exports_admin_http_request_inputs -- --ignored
-          cargo +stable test --locked --lib exports_admin_http_access_lifecycle -- --ignored
+          cargo +stable test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored
+          cargo +stable test --locked --features integration-test-support --test admin_traces exports_admin_http_access_lifecycle -- --ignored
           cargo +stable test --locked -p wot-server --features integration-test-support --test garage -- --ignored
 
   web:

@@ -3374,6 +3374,42 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
+name = "wot-accounts"
+version = "0.18.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "flate2",
+ "glam",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "unicode-properties",
+ "wot-platform",
+ "wot-resources",
+ "wot-shared-kernel",
+]
+
+[[package]]
+name = "wot-battles"
+version = "0.18.0"
+dependencies = [
+ "anyhow",
+ "byteorder",
+ "flate2",
+ "glam",
+ "png",
+ "tracing",
+ "wot-platform",
+ "wot-resources",
+ "wot-shared-kernel",
+]
+
+[[package]]
 name = "wot-binary-map"
 version = "0.18.0"
 dependencies = [
@@ -3428,6 +3464,89 @@ dependencies = [
 ]
 
 [[package]]
+name = "wot-platform"
+version = "0.18.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "blowfish",
+ "byteorder",
+ "glam",
+ "hyper",
+ "hyper-util",
+ "indexmap",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "paste",
+ "rsa 0.8.2",
+ "sha1",
+ "smallvec",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "wot-resources",
+]
+
+[[package]]
+name = "wot-player-administration"
+version = "0.18.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "axum",
+ "base64 0.22.1",
+ "hyper",
+ "hyper-util",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "wot-accounts",
+ "wot-platform",
+ "wot-player-sessions",
+ "wot-shared-kernel",
+]
+
+[[package]]
+name = "wot-player-sessions"
+version = "0.18.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "blowfish",
+ "chrono",
+ "crc32fast",
+ "flate2",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "quick-xml",
+ "roxmltree",
+ "rsa 0.8.2",
+ "serde",
+ "serde_json",
+ "subtle",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "wot-accounts",
+ "wot-battles",
+ "wot-platform",
+ "wot-resources",
+ "wot-shared-kernel",
+ "wot-social",
+]
+
+[[package]]
 name = "wot-replay"
 version = "0.18.0"
 dependencies = [
@@ -3453,48 +3572,61 @@ version = "0.18.0"
 dependencies = [
  "anyhow",
  "argon2",
- "async-trait",
  "axum",
  "base64 0.22.1",
- "bitflags 2.13.2",
  "blowfish",
- "byteorder",
- "chrono",
  "clap",
  "crc32fast",
  "flate2",
  "glam",
  "hyper",
  "hyper-util",
- "indexmap",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-proto",
  "opentelemetry_sdk",
- "paste",
- "png",
  "prost",
  "quick-xml",
  "reqwest",
- "roxmltree",
  "rsa 0.8.2",
  "serde",
  "serde_json",
- "sha1",
  "sha2 0.11.1",
- "smallvec",
  "sqlx",
- "subtle",
- "thiserror 1.0.69",
  "tokio",
  "tower",
  "tower-http",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "unicode-properties",
+ "wot-accounts",
+ "wot-battles",
+ "wot-platform",
+ "wot-player-administration",
+ "wot-player-sessions",
  "wot-resources",
+ "wot-social",
+]
+
+[[package]]
+name = "wot-shared-kernel"
+version = "0.18.0"
+dependencies = [
+ "glam",
+]
+
+[[package]]
+name = "wot-social"
+version = "0.18.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "sqlx",
+ "tracing",
+ "wot-accounts",
+ "wot-platform",
+ "wot-shared-kernel",
 ]
 
 [[package]]

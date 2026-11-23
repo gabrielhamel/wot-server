@@ -1,6 +1,9 @@
 import { createRoot } from "react-dom/client";
-import { initializeBrowserTelemetry } from "../../../platform/infrastructure/web/browser-telemetry";
-import { recordBrowserError, webOperation } from "../../../platform/infrastructure/web/telemetry";
+import { initializeBrowserTelemetry } from "../../../../crates/wot-platform/src/infrastructure/web/browser-telemetry";
+import {
+  recordBrowserError,
+  webOperation,
+} from "../../../../crates/wot-platform/src/infrastructure/web/telemetry";
 
 declare const __WEB_MOCK_API__: boolean;
 
@@ -8,12 +11,12 @@ const pages = {
   "/dashboard": {
     owner: "player_administration",
     title: "World of Tanks Server",
-    load: () => import("../../../player_administration/web"),
+    load: () => import("../../../../crates/wot-player-administration/src/web"),
   },
   "/shop": {
     owner: "player_sessions",
     title: "Garage Store",
-    load: () => import("../../../player_sessions/web"),
+    load: () => import("../../../../crates/wot-player-sessions/src/web"),
   },
 } as const;
 

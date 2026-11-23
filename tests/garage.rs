@@ -309,7 +309,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         .map(|key| Arc::new(rsa::RsaPublicKey::from(&**key)));
     let garage_capacity = if training_room_available { 3 } else { 2 };
     let mut gateway = Gateway::bind(
-        &wot_server::server::test_support::composition(),
+        wot_battles::mercury::bind,
         GatewayConfig {
             login_bind: "127.0.0.1:0".parse().unwrap(),
             base_bind: "0.0.0.0:0".parse().unwrap(),
@@ -323,7 +323,6 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         &resources,
         player_fixture::gateway_accounts(&repository, &catalog),
         wot_server::social::postgres::service(
-            &wot_server::server::test_support::composition(),
             repository.connection_pool(),
             wot_server::accounts::test_support::directory(repository.connection_pool()),
         ),
@@ -713,7 +712,6 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         .await
         .unwrap();
     let fresh_social = wot_server::social::postgres::service(
-        &wot_server::server::test_support::composition(),
         fresh_pool.clone(),
         wot_server::accounts::test_support::directory(fresh_pool),
     );

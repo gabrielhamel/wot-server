@@ -1,0 +1,14 @@
+[package]
+name = "wot-social"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+sqlx.workspace = true
+tracing.workspace = true
+wot-accounts.workspace = true
+wot-platform.workspace = true
+wot-shared-kernel.workspace = true

@@ -1,4 +1,0 @@
-mod application;
-mod presentation;
-
-pub(crate) use presentation::{DashboardConfig, router};

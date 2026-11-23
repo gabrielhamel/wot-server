@@ -10,7 +10,7 @@ Container builds and publishing run only when a Git tag is created; see the
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --locked --doc -p wot-server
+cargo test --locked --doc --workspace
 cargo test --workspace --all-targets --features integration-test-support
 ```
 
@@ -92,8 +92,8 @@ export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
 cargo test --locked --lib initializes_context_storage -- --ignored
-cargo test --locked --lib exports_admin_http_request_inputs -- --ignored
-cargo test --locked --lib exports_admin_http_access_lifecycle -- --ignored
+cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored
+cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_access_lifecycle -- --ignored
 cargo test --locked -p wot-server --features integration-test-support --test garage -- --ignored
 ```
 

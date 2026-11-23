@@ -1,0 +1,33 @@
+[package]
+name = "wot-platform"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+
+[features]
+integration-test-support = []
+
+[dependencies]
+axum.workspace = true
+base64.workspace = true
+blowfish.workspace = true
+byteorder.workspace = true
+glam.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+indexmap.workspace = true
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+paste.workspace = true
+rsa.workspace = true
+sha1.workspace = true
+smallvec.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+wot-resources.workspace = true
+
+[dev-dependencies]
+opentelemetry_sdk = { workspace = true, features = ["testing"] }

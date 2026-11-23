@@ -3,6 +3,22 @@ use anyhow::{Context, Result};
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{filter::Targets, prelude::*};
 
+pub fn server_targets(level: LevelFilter) -> Targets {
+    Targets::new().with_targets(
+        [
+            "wot_server",
+            "wot_accounts",
+            "wot_battles",
+            "wot_platform",
+            "wot_player_administration",
+            "wot_player_sessions",
+            "wot_shared_kernel",
+            "wot_social",
+        ]
+        .map(|target| (target, level)),
+    )
+}
+
 pub(super) fn initialize(
     level: LogLevel,
     resource_dir: &std::path::Path,
@@ -15,12 +31,10 @@ pub(super) fn initialize(
         .with_ansi(false)
         .with_writer(std::io::stderr)
         .with_filter(
-            Targets::new()
-                .with_default(level.filter().min(LevelFilter::WARN))
-                .with_target("wot_server", level.filter()),
+            server_targets(level.filter()).with_default(level.filter().min(LevelFilter::WARN)),
         );
 
-    let export_filter = || Targets::new().with_target("wot_server", LevelFilter::INFO);
+    let export_filter = || server_targets(LevelFilter::INFO);
     let traces = telemetry.as_ref().map(|telemetry| {
         tracing_opentelemetry::layer()
             .with_tracer(telemetry.tracer())

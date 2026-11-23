@@ -1,11 +1,11 @@
 import { http, HttpResponse } from "msw";
-import type { Garage } from "../../../src/player_administration/web";
+import type { Garage } from "../../../crates/wot-player-administration/src/web";
 import type {
   StoreCatalog,
   StoreOffer,
   StoreOrder,
   StorePrice,
-} from "../../../src/player_sessions/web";
+} from "../../../crates/wot-player-sessions/src/web";
 
 export const demoStoreToken = "demo".padEnd(43, "_");
 

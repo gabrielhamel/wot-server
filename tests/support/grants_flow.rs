@@ -159,7 +159,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         wot_server::player_sessions::test_support::mercury::script::load(&resources).unwrap(),
     );
     let gateway = Gateway::bind(
-        &wot_server::server::test_support::composition(),
+        wot_battles::mercury::bind,
         GatewayConfig {
             training_room_visible: true,
             periphery_id: 250,
@@ -173,7 +173,6 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         &resources,
         player_fixture::gateway_accounts(&repository, &catalog),
         wot_server::social::postgres::service(
-            &wot_server::server::test_support::composition(),
             repository.connection_pool(),
             wot_server::accounts::test_support::directory(repository.connection_pool()),
         ),

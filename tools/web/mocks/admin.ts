@@ -12,7 +12,7 @@ import type {
   PlayerRecord,
   PlayerRole,
   Registration,
-} from "../../../src/player_administration/web";
+} from "../../../crates/wot-player-administration/src/web";
 
 const endpoint = "/api/admin";
 const sessionKey = "wot-server.demo-session";

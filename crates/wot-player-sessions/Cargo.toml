@@ -1,0 +1,38 @@
+[package]
+name = "wot-player-sessions"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+
+[features]
+integration-test-support = ["wot-platform/integration-test-support"]
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+base64.workspace = true
+blowfish.workspace = true
+chrono.workspace = true
+crc32fast.workspace = true
+flate2.workspace = true
+opentelemetry.workspace = true
+quick-xml.workspace = true
+roxmltree.workspace = true
+rsa.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+wot-accounts.workspace = true
+wot-battles.workspace = true
+wot-platform.workspace = true
+wot-resources.workspace = true
+wot-shared-kernel.workspace = true
+wot-social.workspace = true
+
+[dev-dependencies]
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true

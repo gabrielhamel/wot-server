@@ -3,8 +3,14 @@ import { fileURLToPath } from "node:url";
 import { definePlugin, defineRule } from "vite-plus/lint/plugins";
 import type { ESTree } from "vite-plus/lint/plugins";
 
-const sourceRoot = fileURLToPath(new URL("../../src/", import.meta.url));
-const boundedContexts = new Set(["accounts", "player_administration", "player_sessions", "social"]);
+const sourceRoot = fileURLToPath(new URL("../../crates/", import.meta.url));
+const boundedContexts = new Set([
+  "wot-accounts",
+  "wot-battles",
+  "wot-player-administration",
+  "wot-player-sessions",
+  "wot-social",
+]);
 
 const publishedContextImport = defineRule({
   meta: {
@@ -23,7 +29,12 @@ const publishedContextImport = defineRule({
         resolve(dirname(filename), specifier.split(/[?#]/, 1)[0]),
       ).split(sep);
       if (!boundedContexts.has(owner) || importingContext === owner) return;
-      if (module.length === 1 && (module[0] === "web" || module[0] === "web.ts")) return;
+      if (
+        module.length === 2 &&
+        module[0] === "src" &&
+        (module[1] === "web" || module[1] === "web.ts")
+      )
+        return;
       context.report({ node: source, messageId: "useEntryPoint", data: { owner } });
     }
 

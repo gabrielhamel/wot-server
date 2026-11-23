@@ -79,8 +79,8 @@ Social run their own embedded SQLx migrations and track them in
 installation, start with an empty PostgreSQL database. The database role must
 be able to create schemas during the first startup.
 
-The schema and migration owners are [Accounts](../src/accounts/README.md) and
-[Social](../src/social/README.md). Player Administration and Player Sessions
+The schema and migration owners are [Accounts](../crates/wot-accounts/README.md) and
+[Social](../crates/wot-social/README.md). Player Administration and Player Sessions
 consume their application contracts. Social stores numeric player IDs and
 resolves them through the Accounts directory API. Social omits missing accounts
 from roster and conversation responses.
@@ -156,16 +156,16 @@ used for earlier observations.
 
 ## Protocol implementation
 
-The server owns its [Mercury adapter](../src/platform/mercury) for
+The server owns its [Mercury adapter](../crates/wot-platform/src/mercury) for
 UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish and dynamic
-entity dispatch. [Player Sessions](../src/player_sessions/README.md) binds
-Account RPCs for the garage. [Battles](../src/battles/README.md) binds arena
+entity dispatch. [Player Sessions](../crates/wot-player-sessions/README.md) binds
+Account RPCs for the garage. [Battles](../crates/wot-battles/README.md) binds arena
 entities and controls through its synchronous arena delivery port. The
 Mercury adapter maps participant IDs to live BaseApp connections, translates
 incoming methods into typed battle commands and publishes native arena
 updates. The gateway runs the battle tick in the same loop as the session
 transport. Both adapters validate their method tables and creation layout
-against the configured bundle. The [shared codecs](../src/platform/infrastructure/client_formats/README.md)
+against the configured bundle. The [shared codecs](../crates/wot-platform/src/infrastructure/client_formats/README.md)
 read packed resources and serialize Python values for Player Sessions and Accounts.
 
 A standalone checkout builds with `cargo build --locked`. See the

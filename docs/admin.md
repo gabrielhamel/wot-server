@@ -9,7 +9,7 @@ credentials in the game client's basic login flow immediately after creation.
 
 The catalog selects the tier I starters from regular nation tech trees and
 excludes collector vehicles. The initial settings use the
-[starter settings](../src/accounts/infrastructure/client/starter_settings.json).
+[starter settings](../crates/wot-accounts/src/infrastructure/client/starter_settings.json).
 
 Players and administrators share the **My garage** and **Store** views when
 the server enables the [Store](store.md#player-dashboard). Administrators can

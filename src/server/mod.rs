@@ -1,10 +1,4 @@
 mod database;
-use crate::{
-    accounts,
-    platform::http,
-    player_administration,
-    player_sessions::{Gateway, GatewayAccounts, GatewayConfig},
-};
 use anyhow::{Context, Result};
 use clap::Parser;
 use database::connect_database;
@@ -12,6 +6,9 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use wot_platform::http;
+use wot_player_administration::contract as player_administration;
+use wot_player_sessions::{Gateway, GatewayAccounts, GatewayConfig};
 use wot_resources::ResourceBundle;
 
 mod browser_telemetry;
@@ -22,39 +19,20 @@ mod telemetry;
 mod web;
 use configuration::{Configuration, LogLevel};
 
-/// Proof that a caller is wiring the server's composition root.
-#[doc(hidden)]
-pub struct Composition {
-    _private: (),
-}
-
-pub(crate) fn bind_battles(
-    _composition: &Composition,
-    base: &mut crate::platform::mercury::app::base::App,
-    resources: &wot_resources::ResourceBundle,
-    enabled: bool,
-) -> anyhow::Result<crate::battles::contract::BattleRuntime> {
-    crate::battles::mercury::bind(base, resources, enabled)
-}
-
 #[cfg(any(test, feature = "integration-test-support"))]
 #[doc(hidden)]
 pub mod test_support {
-    pub use super::database::connect_database;
-
-    pub fn composition() -> super::Composition {
-        super::Composition { _private: () }
-    }
+    pub use super::{database::connect_database, logging::server_targets};
 
     pub fn configure_gateway_metrics(
-        gateway: &mut crate::player_sessions::Gateway,
+        gateway: &mut wot_player_sessions::Gateway,
         meter: &opentelemetry::metrics::Meter,
     ) {
         gateway.configure_metrics(meter);
     }
 
     pub fn configure_database_metrics(meter: &opentelemetry::metrics::Meter, pool: &sqlx::PgPool) {
-        crate::platform::observability::configure_database_metrics(meter, pool);
+        wot_platform::observability::configure_database_metrics(meter, pool);
     }
 }
 
@@ -77,7 +55,7 @@ pub async fn run() -> Result<()> {
     let level = options.log_level.unwrap_or(config.log_level);
     let resource_dir = config.resource_dir.clone();
     let telemetry =
-        tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
+        tokio::task::spawn_blocking(wot_platform::observability::in_current_span(move || {
             logging::initialize(level, &resource_dir)
         }))
         .await
@@ -88,10 +66,11 @@ pub async fn run() -> Result<()> {
         tracing::error!(error = %format!("{error:#}"), "Server stopped with an error");
     }
     if let Some(telemetry) = telemetry
-        && let Err(error) = tokio::task::spawn_blocking(
-            crate::platform::observability::in_current_span(move || telemetry.shutdown()),
-        )
-        .await
+        && let Err(error) =
+            tokio::task::spawn_blocking(wot_platform::observability::in_current_span(move || {
+                telemetry.shutdown()
+            }))
+            .await
     {
         tracing::warn!(%error, "OpenTelemetry shutdown task failed");
     }
@@ -104,24 +83,19 @@ async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Mete
         .in_scope(|| ResourceBundle::open(&config.resource_dir))?;
     let pool = connect_database(&config.database_url, config.db_connections).await?;
     if let Some(meter) = &meter {
-        crate::platform::observability::configure_database_metrics(meter, &pool);
+        wot_platform::observability::configure_database_metrics(meter, &pool);
     }
-    let composition = Composition { _private: () };
-    let account_services =
-        accounts::postgres::service(&composition, pool.clone(), resources.clone()).await?;
+    let account_services = wot_accounts::postgres::service(pool.clone(), resources.clone()).await?;
     let key_path = config.private_key.clone();
     let private_key =
-        tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
+        tokio::task::spawn_blocking(wot_platform::observability::in_current_span(move || {
             login_key::load_login_key(&key_path)
         }))
         .await??;
-    let social = crate::social::postgres::service(
-        &composition,
-        pool.clone(),
-        accounts::postgres::directory(&composition, pool),
-    );
+    let social =
+        wot_social::postgres::service(pool.clone(), wot_accounts::postgres::directory(pool));
     let mut gateway = Gateway::bind(
-        &composition,
+        wot_battles::mercury::bind,
         GatewayConfig {
             login_bind: config.login_bind,
             base_bind: config.base_bind,
@@ -170,21 +144,17 @@ async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Mete
             .map(|store| gateway.configure_store(store.origin))
             .transpose()?;
         if let Some(store) = &store {
-            router = router.merge(crate::player_sessions::store_router(
-                &composition,
-                store.clone(),
-            ));
+            router = router.merge(wot_player_sessions::store_router(store.clone()));
         }
         if let Some(admin) = config.admin {
             let garage_accounts = account_services.accounts();
             let catalog = account_services.garage_queries();
             let players =
-                tokio::task::spawn_blocking(crate::platform::observability::in_current_span(
+                tokio::task::spawn_blocking(wot_platform::observability::in_current_span(
                     move || account_services.player_access(),
                 ))
                 .await??;
             router = router.merge(player_administration::router(
-                &composition,
                 players,
                 garage_accounts,
                 catalog,
@@ -212,7 +182,7 @@ async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Mete
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
     let mut worker =
-        tokio::task::spawn_blocking(crate::platform::observability::in_current_span(move || {
+        tokio::task::spawn_blocking(wot_platform::observability::in_current_span(move || {
             gateway.run(worker_stop)
         }));
     let result = tokio::select! {

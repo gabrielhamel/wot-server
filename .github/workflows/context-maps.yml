@@ -6,6 +6,7 @@ on:
     paths:
       - 'tools/**'
       - 'src/**'
+      - 'crates/**'
       - 'docs/context-maps/**'
       - '!docs/context-maps/generated/**'
       - 'CONTEXT_MAP.md'

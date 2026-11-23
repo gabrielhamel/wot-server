@@ -20,15 +20,27 @@ responsibilities recognizable to a player, operator, or domain specialist.
   discipline can have its own vocabulary and model. Use that vocabulary for a
   tool's scope and label its role in the map.
 
+## Rust workspace layout
+
+Each server bounded context belongs in its own Rust library crate and Cargo
+workspace member. A library owns its domain model, use cases, adapters, and
+published contract. Context libraries live under `crates/`. The server binary
+composes these libraries and supplies their runtime dependencies.
+
+A crate boundary lets Rust enforce visibility across contexts and lets Cargo
+check or test one context with its declared dependencies. Workspace-wide
+builds still compile the full dependency graph. For example, run
+`cargo test -p wot-battles` to test Battles and compile its dependencies.
+
 ## Where shared code goes
 
-Put a domain value in [Shared Kernel](../src/shared_kernel/README.md) when
+Put a domain value in [Shared Kernel](../crates/wot-shared-kernel/README.md) when
 multiple contexts need the same meaning and invariants. Keep the model small
 and review changes with its consumers. A context's published contract stays
 with its owner. The map shows the extracted kernel and its consumers using
 [upstream and downstream relationships](https://contextmapper.org/docs/ar-extract-shared-kernel/).
 
-Put reusable infrastructure in [Platform](../src/platform/README.md) when it
+Put reusable infrastructure in [Platform](../crates/wot-platform/README.md) when it
 works independently of a domain context. Infrastructure specific to a workflow
 stays with that workflow. Offline tools with their own inputs, outputs, and
 research vocabulary remain explicit boundaries.
@@ -41,19 +53,18 @@ and who owns its invariants. The owner runs the command and commits its changes.
 Consumers receive a result or read projection and adapt it to their own
 language. Server composition creates the adapters and injects the services.
 
-The published contract is the only dependency a consumer may take on another
-context. Internal modules, helpers, repositories, database handles, and
-persistence models are private to their owner. Rust visibility such as
-`pub(crate)` allows access within the binary. The context's entry point defines
-which operations and types it publishes across the boundary. This lets the
-owner change its implementation independently and keeps its invariants in one
-place.
+Expose the owning context's contract through its library's public API. Across
+contexts, depend only on the published operations and their input and result
+types. Keep internal modules, helpers, repositories, database handles, and
+persistence models private to the crate. Keep Cargo dependencies acyclic. If a
+context needs behavior that would introduce a cycle, define a port in the
+context that needs it and wire its implementation in server composition.
 
-Keep Rust implementations in private modules and expose narrow operation and
-projection types through the contract. PostgreSQL and gateway assembly require
-a value that only server composition can create in production. The Rust
-doctests verify that consumers cannot access representative internal types
-or construct that value. Fixture APIs are available for tests.
+Account and Social PostgreSQL factories expose opaque services and embedded
+migrations to server composition. Player Sessions accepts a Battles adapter
+binding supplied by the composition root after the shared BaseApp is ready.
+Rust doctests check that private context types and modules stay inaccessible.
+Fixtures that expose internals are gated behind `integration-test-support`.
 
 Browser contexts publish their cross-context APIs through `web.ts`. The web
 lint check enforces this entry point for relative imports, including dynamic
@@ -61,11 +72,10 @@ imports and TypeScript type imports. Pass context-specific behavior through the
 published API, such as the dashboard's HTTP transport for the embedded Store.
 
 For example, Social resolves numeric player IDs through Accounts'
-[`PlayerDirectory`](../src/accounts/contract.rs). Player Sessions submits
-revision-checked commands through [Accounts' garage API](../src/accounts/application/garage.rs)
-and delivers the committed result to the connected client. These calls cross
-the same boundaries inside one binary that they would cross after extraction.
-Player Sessions also submits a confirmed roster to the [Battles contract](../src/battles/mod.rs).
+[`PlayerDirectory`](../crates/wot-accounts/src/contract.rs). Player Sessions submits
+revision-checked commands through [Accounts' garage API](../crates/wot-accounts/src/application/garage.rs)
+and delivers the committed result to the connected client. Player Sessions
+also submits a confirmed roster to the [Battles contract](../crates/wot-battles/src/contract.rs).
 Battles owns the resulting arena and its lifecycle.
 
 ## PostgreSQL ownership and migrations

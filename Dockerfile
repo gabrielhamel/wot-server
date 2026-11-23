@@ -3,6 +3,7 @@ FROM rust:1.99-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d87168
 WORKDIR /build
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY tools/ tools/
+COPY crates/ crates/
 COPY src/ src/
 COPY tests/*.rs tests/
 
@@ -24,7 +25,9 @@ ARG WOT_SERVER_VERSION
 ARG WOT_GAME_VERSION
 RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=wot-release-target,target=/build/target,sharing=locked \
-    cargo clean --release -p wot-server -p wot-resources && \
+    cargo clean --release -p wot-server -p wot-resources \
+        -p wot-accounts -p wot-battles -p wot-platform -p wot-player-administration \
+        -p wot-player-sessions -p wot-shared-kernel -p wot-social && \
     cargo build --locked --release --bin wot-server && \
     cp target/release/wot-server /build/wot-server
 
@@ -35,7 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends jq \
 ENV CARGO_PROFILE_DEV_DEBUG=0 CARGO_INCREMENTAL=0
 RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=wot-e2e-target,target=/build/target,sharing=locked \
-    cargo clean -p wot-server -p wot-resources && \
+    cargo clean -p wot-server -p wot-resources \
+        -p wot-accounts -p wot-battles -p wot-platform -p wot-player-administration \
+        -p wot-player-sessions -p wot-shared-kernel -p wot-social && \
     cargo test --locked -p wot-server --features integration-test-support --test garage \
         --no-run --message-format=json-render-diagnostics > /tmp/e2e-build.json && \
     test_executable=$(jq -er 'select(.reason == "compiler-artifact" and .target.name == "garage" and .profile.test) | .executable | strings' /tmp/e2e-build.json) && \
@@ -55,6 +60,7 @@ COPY package.json package-lock.json ./
 COPY tools/web/package.json tools/web/package.json
 RUN npm ci
 COPY tools/web/ tools/web/
+COPY crates/ crates/
 COPY src/ src/
 ARG WOT_SERVER_VERSION
 RUN npm run build --workspace tools/web

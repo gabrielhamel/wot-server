@@ -1,0 +1,16 @@
+[package]
+name = "wot-battles"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+anyhow.workspace = true
+byteorder.workspace = true
+flate2.workspace = true
+glam.workspace = true
+png.workspace = true
+tracing.workspace = true
+wot-platform.workspace = true
+wot-resources.workspace = true
+wot-shared-kernel.workspace = true

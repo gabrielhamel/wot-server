@@ -6,6 +6,8 @@
 !build.rs
 !tools/
 !tools/**
+!crates/
+!crates/**
 !src/
 !src/**
 !tests/

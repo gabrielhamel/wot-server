@@ -90,10 +90,9 @@ pub fn exporter() -> &'static InMemorySpanExporter {
             .with(
                 tracing_opentelemetry::layer()
                     .with_tracer(tracer)
-                    .with_filter(
-                        tracing_subscriber::filter::Targets::new()
-                            .with_target("wot_server", tracing::Level::INFO),
-                    ),
+                    .with_filter(wot_server::server::test_support::server_targets(
+                        tracing::level_filters::LevelFilter::INFO,
+                    )),
             )
             .init();
         exporter
