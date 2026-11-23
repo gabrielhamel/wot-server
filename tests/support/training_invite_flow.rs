@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, ScriptDispatch, Value, dict, pickle_value};
-use wot_server::player_sessions::test_support::mercury::script::StringValue;
+use wot_platform::mercury::script::StringValue;
 
 pub const MESSAGE: &str = "Rendez-vous à Studzianki";
 const PERIPHERY: i64 = 250;
@@ -68,7 +68,7 @@ fn wait_state(
     room_id: i64,
     state: i64,
 ) -> Pickle {
-    let expected_key = wot_server::pickle!(((room_id), (PERIPHERY)));
+    let expected_key = wot_platform::pickle!(((room_id), (PERIPHERY)));
     let revision = dict(&peer.resource(219), "rev");
     let delta = |peer: &Peer| {
         peer.methods[since..].iter().find_map(|(method, args)| {

@@ -4,14 +4,12 @@ use super::{
     depot_flow::{row, send_array},
     dict, telemetry_capture,
 };
-use wot_server::accounts::test_support::decode_outfits;
-use wot_server::{
-    accounts::test_support::{
-        Inscription, InscriptionSlot, PaintRegion, ProjectionDecal, VehicleSurface,
-    },
-    pickle,
-    player_sessions::test_support::mercury::{app::dispatch::ScriptDispatch, script::StringValue},
+use wot_accounts::test_support::decode_outfits;
+use wot_accounts::test_support::{
+    Inscription, InscriptionSlot, PaintRegion, ProjectionDecal, VehicleSurface,
 };
+use wot_platform::mercury::{app::dispatch::ScriptDispatch, script::StringValue};
+use wot_platform::pickle;
 
 const SUMMER: i32 = 15_204;
 const WINTER: i32 = 15_202;
@@ -484,19 +482,17 @@ pub fn exercise_attachments(
     dispatch: &ScriptDispatch,
     before: &Pickle,
     grant: impl Fn(
-        wot_server::accounts::test_support::PlayerGrant,
+        wot_accounts::test_support::PlayerGrant,
     ) -> Result<
         (
-            wot_server::accounts::contract::AccountView,
-            wot_server::player_sessions::contract::GrantDelivery,
+            wot_accounts::contract::AccountView,
+            wot_player_sessions::contract::GrantDelivery,
         ),
-        wot_server::player_sessions::contract::GrantRequestError,
+        wot_player_sessions::contract::GrantRequestError,
     >,
 ) -> Pickle {
-    use wot_server::{
-        accounts::test_support::{Attachment, OutfitSeason, PlayerGrant},
-        player_sessions::contract::{GrantDelivery, GrantRequestError},
-    };
+    use wot_accounts::test_support::{Attachment, OutfitSeason, PlayerGrant};
+    use wot_player_sessions::contract::{GrantDelivery, GrantRequestError};
     const DRAGON_BOAT: i32 = 2033;
     const EXECUTOR: i32 = 26705;
     let Pickle::I64(revision) = dict(before, "rev") else {
@@ -624,19 +620,17 @@ pub fn exercise_stat_tracker(
     dispatch: &ScriptDispatch,
     before: &Pickle,
     grant: impl Fn(
-        wot_server::accounts::test_support::PlayerGrant,
+        wot_accounts::test_support::PlayerGrant,
     ) -> Result<
         (
-            wot_server::accounts::contract::AccountView,
-            wot_server::player_sessions::contract::GrantDelivery,
+            wot_accounts::contract::AccountView,
+            wot_player_sessions::contract::GrantDelivery,
         ),
-        wot_server::player_sessions::contract::GrantRequestError,
+        wot_player_sessions::contract::GrantRequestError,
     >,
 ) -> Pickle {
-    use wot_server::{
-        accounts::test_support::{OutfitSeason, PlayerGrant, StatTracker},
-        player_sessions::contract::{GrantDelivery, GrantRequestError},
-    };
+    use wot_accounts::test_support::{OutfitSeason, PlayerGrant, StatTracker};
+    use wot_player_sessions::contract::{GrantDelivery, GrantRequestError};
     const EXECUTOR: i32 = 26705;
     let Pickle::I64(revision) = dict(before, "rev") else {
         panic!("Missing garage revision");

@@ -6,14 +6,14 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use wot_server::platform::client_formats::pickle;
-use wot_server::player_sessions::test_support::mercury::app::{
+use wot_platform::client_formats::pickle;
+use wot_platform::mercury::app::{
     base::element as base,
     client::element as client,
     dispatch::{MethodCall, MethodDef, ScriptDispatch},
     login::element::{LoginRequest, LoginResponse},
 };
-use wot_server::player_sessions::test_support::mercury::net::{
+use wot_platform::mercury::net::{
     bundle::{Bundle, NextElementReader},
     element::{Element, ElementLength, SimpleElement},
     packet::{PACKET_HEADER_LEN, PacketConfig},
@@ -21,7 +21,7 @@ use wot_server::player_sessions::test_support::mercury::net::{
     seq::Seq,
     socket::PacketSocket,
 };
-use wot_server::player_sessions::test_support::mercury::script::{StringValue, Value};
+use wot_platform::mercury::script::{StringValue, Value};
 
 struct Method<'a> {
     methods: &'a [MethodDef],
@@ -203,10 +203,7 @@ impl Peer {
         self.handoff(success);
     }
 
-    pub fn handoff(
-        &mut self,
-        success: wot_server::player_sessions::test_support::mercury::app::login::element::LoginSuccess,
-    ) {
+    pub fn handoff(&mut self, success: wot_platform::mercury::app::login::element::LoginSuccess) {
         self.request_handoff(&success);
         let (packet, addr) = self.socket.recv().unwrap();
         let bundle = self
@@ -230,7 +227,7 @@ impl Peer {
 
     pub fn assert_handoff_rejected(
         &mut self,
-        ticket: &wot_server::player_sessions::test_support::mercury::app::login::element::LoginSuccess,
+        ticket: &wot_platform::mercury::app::login::element::LoginSuccess,
     ) {
         self.request_handoff(ticket);
         self.socket
@@ -248,7 +245,7 @@ impl Peer {
 
     fn request_handoff(
         &mut self,
-        success: &wot_server::player_sessions::test_support::mercury::app::login::element::LoginSuccess,
+        success: &wot_platform::mercury::app::login::element::LoginSuccess,
     ) {
         self.base = success.addr.addr.into();
         let mut bundle = Bundle::new();
@@ -432,11 +429,9 @@ impl Peer {
                                 properties[version_property],
                                 Value::String(StringValue::String(required_version.to_owned()))
                             );
-                            let Value::Python(
-                                wot_server::player_sessions::test_support::mercury::script::PythonValue::Decoded(
-                                    pickle::Value::Dict(settings),
-                                ),
-                            ) = &properties["initialServerSettings"]
+                            let Value::Python(wot_platform::mercury::script::PythonValue::Decoded(
+                                pickle::Value::Dict(settings),
+                            )) = &properties["initialServerSettings"]
                             else {
                                 panic!("Account initial server settings")
                             };
@@ -516,7 +511,7 @@ impl Peer {
                                 let host = url.host().unwrap().to_ascii_lowercase();
                                 assert_eq!(
                                     browser_allowlist,
-                                    Some(&wot_server::pickle!({
+                                    Some(&wot_platform::pickle!({
                                         "isEnabled": true,
                                         "defaultWhitelist": {(host.as_str())},
                                         "whitelistUrl": "",

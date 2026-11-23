@@ -25,7 +25,7 @@ use wot_player_administration::contract::{DashboardConfig, router};
 use wot_player_sessions::{
     GatewayAccounts, contract::GrantRequestError, test_support::grant_channel,
 };
-use wot_server::server::test_support::connect_database;
+use wot_server_runtime::test_support::connect_database;
 
 fn attribute(span: &SpanData, key: &str) -> Option<String> {
     span.attributes

@@ -15,8 +15,10 @@ cargo test --workspace --all-targets --features integration-test-support
 ```
 
 The server doctests check that Rust rejects access to private context APIs.
-The integration-test feature exposes fixture helpers for storage and protocol
-tests. Build the production binary with the default features.
+Integration tests import contracts and fixture helpers directly from the
+crates that own them. The `integration-test-support` feature enables the
+fixtures used by storage and protocol tests. Build the production binary
+with the default features.
 
 The integration suite builds a synthetic, rebased AMD64 PE in memory, invokes
 the real CLI and compiles its generated Rust. It verifies initializer ordering

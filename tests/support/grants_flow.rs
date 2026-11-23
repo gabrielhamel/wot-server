@@ -3,18 +3,14 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use wot_server::player_sessions::test_support::mercury::app::{
-    dispatch::ScriptDispatch, login::element::LoginResponse,
+use wot_accounts::test_support::{
+    Accounts, GarageCatalog, GrantCurrency, GrantError, PlayerGrant, PostgresAccounts,
+    ProgressionError,
 };
-use wot_server::{
-    accounts::test_support::{
-        Accounts, GarageCatalog, GrantCurrency, GrantError, PlayerGrant, PostgresAccounts,
-        ProgressionError,
-    },
-    player_sessions::{
-        Gateway, GatewayConfig,
-        contract::{GrantDelivery, GrantRequestError},
-    },
+use wot_platform::mercury::app::{dispatch::ScriptDispatch, login::element::LoginResponse};
+use wot_player_sessions::{
+    Gateway, GatewayConfig,
+    contract::{GrantDelivery, GrantRequestError},
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -27,7 +23,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
     ))
     .unwrap();
     let repository = PostgresAccounts::new(
-        wot_server::server::test_support::connect_database(&url, 4)
+        wot_server_runtime::test_support::connect_database(&url, 4)
             .await
             .unwrap(),
     );
@@ -143,9 +139,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
     let regular_equipment = catalog
         .store_offers()
         .iter()
-        .find(|offer| {
-            offer.category == wot_server::accounts::test_support::StoreCategory::Equipment
-        })
+        .find(|offer| offer.category == wot_accounts::test_support::StoreCategory::Equipment)
         .unwrap()
         .item;
     assert!(!experimental.iter().any(|(id, _)| *id == regular_equipment));
@@ -155,9 +149,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         catalog.plan_grant(at_limit, PlayerGrant::CrewBook { id: book, count: 1 }),
         Err(GrantError::DepotLimit)
     ));
-    let script = ScriptDispatch::new(
-        wot_server::player_sessions::test_support::mercury::script::load(&resources).unwrap(),
-    );
+    let script = ScriptDispatch::new(wot_platform::mercury::script::load(&resources).unwrap());
     let gateway = Gateway::bind(
         wot_battles::mercury::bind,
         GatewayConfig {
@@ -172,9 +164,9 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         },
         &resources,
         player_fixture::gateway_accounts(&repository, &catalog),
-        wot_server::social::postgres::service(
+        wot_social::postgres::service(
             repository.connection_pool(),
-            wot_server::accounts::test_support::directory(repository.connection_pool()),
+            wot_accounts::test_support::directory(repository.connection_pool()),
         ),
         tokio::runtime::Handle::current(),
     )
@@ -198,7 +190,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             panic!("Login did not return a handoff ticket");
         };
         let (after, delivery) = grant(currency(GrantCurrency::Bonds, 11)).unwrap();
-        let after = wot_server::accounts::test_support::account_snapshot(&after);
+        let after = wot_accounts::test_support::account_snapshot(&after);
         assert_eq!(delivery, GrantDelivery::OnNextSync);
         peer.handoff(ticket);
         peer.until(&script, |p| p.created && p.shown);
@@ -210,12 +202,12 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         let mut last_revision = after.revision;
         for (resource, key) in [(GrantCurrency::Credits, "credits"), (GrantCurrency::Gold, "gold"), (GrantCurrency::Bonds, "crystal"), (GrantCurrency::FreeXp, "freeXP"), (GrantCurrency::EquipmentComponents, "equipCoin")] {
             let (after, delivery) = grant(currency(resource, 31)).unwrap();
-            let after = wot_server::accounts::test_support::account_snapshot(&after);
+            let after = wot_accounts::test_support::account_snapshot(&after);
             assert_eq!(delivery, GrantDelivery::QueuedForGarage);
             peer.until(&script, |p| p.methods.iter().any(|(name, _)| name.ends_with("update")));
             let diff = ammunition_flow::update(&peer, after.revision);
             assert_eq!(dict(&diff, "prevRev"), Pickle::from(last_revision));
-            assert_eq!(dict(&diff, "stats"), wot_server::pickle!({(key): (wot_server::accounts::test_support::currency_balance(resource, &after.balances))}));
+            assert_eq!(dict(&diff, "stats"), wot_platform::pickle!({(key): (wot_accounts::test_support::currency_balance(resource, &after.balances))}));
             last_revision = after.revision;
             peer.methods.clear();
         }
@@ -245,7 +237,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             (PlayerGrant::ImprovedEquipment { id: improved_item, count: 1 }, 9, improved_item, 1),
         ] {
             let (after, delivery) = grant(request).unwrap();
-            let after = wot_server::accounts::test_support::account_snapshot(&after);
+            let after = wot_accounts::test_support::account_snapshot(&after);
             assert_eq!(delivery, GrantDelivery::QueuedForGarage);
             assert_eq!(after.revision, last_revision + 1);
             peer.until(&script, |p| p.methods.iter().any(|(name, _)| name.ends_with("update")));
@@ -267,17 +259,17 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             Err(GrantRequestError::Busy) => grant(PlayerGrant::Vehicle { vehicle: tank }).unwrap(),
             Err(error) => panic!("Grant failed: {error}"),
         };
-        let battle_vehicle = wot_server::accounts::test_support::garage_queries(catalog.clone())
+        let battle_vehicle = wot_accounts::test_support::garage_queries(catalog.clone())
             .battle_vehicle(&after, 2)
             .unwrap()
             .expect("Granted vehicle can enter a Training Battle");
         assert!(battle_vehicle.health > 0);
-        let decoded = wot_server::accounts::test_support::decode_outfits(
+        let decoded = wot_accounts::test_support::decode_outfits(
             &[15], [battle_vehicle.outfit.as_slice()].into_iter(), None,
         ).unwrap();
-        assert_eq!(decoded[&wot_server::accounts::test_support::OutfitSeason::Common].style, Some(986));
-        let outfit_row = wot_server::pickle!({15: (Pickle::Bytes(battle_vehicle.outfit))});
-        let after = wot_server::accounts::test_support::account_snapshot(&after);
+        assert_eq!(decoded[&wot_accounts::test_support::OutfitSeason::Common].style, Some(986));
+        let outfit_row = wot_platform::pickle!({15: (Pickle::Bytes(battle_vehicle.outfit))});
+        let after = wot_accounts::test_support::account_snapshot(&after);
         if peer.responses.contains(&(301, -5)) {
             purchase(&mut peer, 302);
             peer.until(&script, |p| p.responses.contains(&(302, 0)));

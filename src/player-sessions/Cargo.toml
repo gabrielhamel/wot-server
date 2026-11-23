@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT"
 
 [features]
-integration-test-support = ["wot-platform/integration-test-support"]
+integration-test-support = []
 
 [dependencies]
 anyhow.workspace = true

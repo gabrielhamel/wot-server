@@ -1,4 +1,4 @@
-use wot_server::accounts::test_support::*;
+use wot_accounts::test_support::*;
 
 fn snapshot() -> AccountSnapshot {
     AccountSnapshot {

@@ -1,5 +1,5 @@
 use std::time::{Duration, Instant};
-use wot_server::social::contract::{Conversations, RequestBudget};
+use wot_social::contract::{Conversations, RequestBudget};
 
 #[test]
 fn private_rooms_authorize_both_participants_bound_capacity_and_reclaim_disconnects() {

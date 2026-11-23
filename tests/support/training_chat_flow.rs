@@ -1,8 +1,7 @@
 use super::{Peer, ScriptDispatch, Value};
 use std::collections::BTreeMap;
-use wot_server::{
-    platform::client_formats::pickle, player_sessions::test_support::mercury::script::StringValue,
-};
+use wot_platform::client_formats::pickle;
+use wot_platform::mercury::script::StringValue;
 
 type Args = BTreeMap<std::sync::Arc<str>, Value>;
 

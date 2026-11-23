@@ -8,13 +8,9 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use wot_server::{
-    accounts::test_support::{GarageCatalog, PostgresAccounts},
-    player_sessions::{
-        Gateway, GatewayConfig,
-        test_support::mercury::{app::dispatch::ScriptDispatch, script::StringValue},
-    },
-};
+use wot_accounts::test_support::{GarageCatalog, PostgresAccounts};
+use wot_platform::mercury::{app::dispatch::ScriptDispatch, script::StringValue};
+use wot_player_sessions::{Gateway, GatewayConfig};
 
 pub fn assert_kicked(peer: &mut Peer, script: &ScriptDispatch) {
     peer.until(script, |p| {
@@ -47,7 +43,7 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
     let directory = std::env::var("WG_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&directory)).unwrap();
     let repository = PostgresAccounts::new(
-        wot_server::server::test_support::connect_database(&url, 6)
+        wot_server_runtime::test_support::connect_database(&url, 6)
             .await
             .unwrap(),
     );
@@ -67,9 +63,7 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
     .await
     .unwrap();
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &starter).unwrap());
-    let script = ScriptDispatch::new(
-        wot_server::player_sessions::test_support::mercury::script::load(&resources).unwrap(),
-    );
+    let script = ScriptDispatch::new(wot_platform::mercury::script::load(&resources).unwrap());
     let gateway = Gateway::bind(
         wot_battles::mercury::bind,
         GatewayConfig {
@@ -84,9 +78,9 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
         },
         &resources,
         player_fixture::gateway_accounts(&repository, &catalog),
-        wot_server::social::postgres::service(
+        wot_social::postgres::service(
             repository.connection_pool(),
-            wot_server::accounts::test_support::directory(repository.connection_pool()),
+            wot_accounts::test_support::directory(repository.connection_pool()),
         ),
         tokio::runtime::Handle::current(),
     )
@@ -129,7 +123,7 @@ async fn replacement_waits_for_account_write_and_loads_its_revision() {
         let state = equipment_flow::full_cache(&mut replacement, &script);
         assert_eq!(
             dict(&state, "intUserSettings"),
-            wot_server::pickle!({12: 22})
+            wot_platform::pickle!({12: 22})
         );
         assert_eq!(dict(&state, "rev"), Pickle::I64(2));
         assert_kicked(&mut original, &script);

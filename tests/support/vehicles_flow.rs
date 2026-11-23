@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, Value, dict};
-use wot_server::player_sessions::test_support::mercury::app::dispatch::ScriptDispatch;
+use wot_platform::mercury::app::dispatch::ScriptDispatch;
 
 pub const M14_41: i32 = 673;
 pub const SMALL_REPAIR_KIT: i32 = (4 << 8) | 0xfb;
@@ -38,15 +38,15 @@ pub fn buy_with_consumables(peer: &mut Peer, dispatch: &ScriptDispatch, before: 
     let vehicles = &inventory[&Pickle::from(1)];
     assert_eq!(
         dict(vehicles, "shells"),
-        wot_server::pickle!({3: [522154, 228, 522410, 0, 522666, 12]}),
+        wot_platform::pickle!({3: [522154, 228, 522410, 0, 522666, 12]}),
     );
     assert_eq!(
         dict(vehicles, "eqs"),
-        wot_server::pickle!({3: [(SMALL_REPAIR_KIT)]})
+        wot_platform::pickle!({3: [(SMALL_REPAIR_KIT)]})
     );
     assert_eq!(
         dict(vehicles, "eqsLayout"),
-        wot_server::pickle!({3: [[(SMALL_REPAIR_KIT)]]}),
+        wot_platform::pickle!({3: [[(SMALL_REPAIR_KIT)]]}),
     );
     let Pickle::Dict(crews) = dict(vehicles, "crew") else {
         panic!("New vehicle crew")
@@ -270,7 +270,7 @@ pub fn exercise(peer: &mut Peer, dispatch: &ScriptDispatch, previous: &Pickle) -
     };
     assert_eq!(
         shells[&Pickle::from(2)],
-        wot_server::pickle!([119066, 520, 119322, 0])
+        wot_platform::pickle!([119066, 520, 119322, 0])
     );
     let Pickle::Dict(tankmen) = dict(&inventory[&Pickle::from(8)], "compDescr") else {
         panic!("tankmen")

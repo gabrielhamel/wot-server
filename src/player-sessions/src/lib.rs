@@ -16,7 +16,6 @@ pub use infrastructure::{BindBattles, Gateway, GatewayAccounts, GatewayConfig};
 #[doc(hidden)]
 pub mod test_support {
     pub use crate::application::grants::GrantRequest;
-    pub use wot_platform::mercury;
 
     pub fn grant_channel() -> (
         super::PlayerGrants,
