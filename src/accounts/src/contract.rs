@@ -17,8 +17,9 @@ pub use super::domain::{
     is_registration_username,
 };
 pub use super::infrastructure::client::{
-    CosmeticGrantEntry, StoreAvailability, StoreCatalog, StoreCategory, StoreListing, StoreOffer,
-    StoreOrder, StoreOrderError, StorePrice, VehicleCatalogEntry,
+    CosmeticGrantEntry, SpecialRecruitCountry, SpecialRecruitGrantEntry, StoreAvailability,
+    StoreCatalog, StoreCategory, StoreListing, StoreOffer, StoreOrder, StoreOrderError, StorePrice,
+    VehicleCatalogEntry,
 };
 
 use super::AccountSnapshot;

@@ -1,7 +1,7 @@
 use super::{
     BTreeMap, BTreeSet, CosmeticCatalog, CosmeticDefinition, CosmeticKind, CosmeticPlacement,
-    CosmeticRule, Element, OutfitSeason, Result, STYLE_TYPE, VehicleFilter, cosmetic_definitions,
-    cosmetic_descriptor,
+    CosmeticRule, Element, OutfitSeason, Result, STYLE_TYPE, StyleDimension, VehicleFilter,
+    cosmetic_definitions, cosmetic_descriptor, style_display_name,
 };
 use crate::infrastructure::client::item_prices::ItemPrices;
 use crate::infrastructure::client::store::{StoreCategory, StoreOffer, StorePrice, listing};
@@ -62,6 +62,7 @@ pub(super) fn load(
     catalog: &mut CosmeticCatalog,
     styles: &Element,
     prices: &mut ItemPrices,
+    names: &BTreeMap<String, String>,
 ) -> Result<()> {
     let offers: BTreeMap<_, _> = OFFERS
         .iter()
@@ -69,33 +70,25 @@ pub(super) fn load(
         .collect();
     for (id, style, group) in cosmetic_definitions(styles, "style") {
         let id = id?;
-        let Some(&(name, price)) = offers.get(&id) else {
-            continue;
-        };
         let tags: BTreeSet<_> = style
             .get_child_string("tags")
             .or_else(|| group.get_child_string("tags"))
             .unwrap_or_default()
             .split_whitespace()
             .collect();
-        if [
-            "hiddenInUI",
-            "lockedOnVehicle",
-            "styleProgression",
-            "styleSerialNumber",
-        ]
-        .iter()
-        .any(|tag| tags.contains(tag))
-        {
+        if tags.contains("hiddenInUI") || tags.contains("lockedOnVehicle") {
             continue;
         }
-        let category = if tags.contains("c11n3D") {
-            StoreCategory::Styles3d
+        let (category, dimension) = if tags.contains("c11n3D") {
+            (StoreCategory::Styles3d, StyleDimension::Three)
         } else if tags.contains("c11n2D") {
-            StoreCategory::Styles2d
+            (StoreCategory::Styles2d, StyleDimension::Two)
         } else {
             continue;
         };
+        let store_offer = offers
+            .get(&id)
+            .filter(|_| !tags.contains("styleProgression") && !tags.contains("styleSerialNumber"));
         let mut include = Vec::new();
         let mut exclude = Vec::new();
         if let Some(filter) = style
@@ -133,13 +126,29 @@ pub(super) fn load(
         // The client enumerates style inventory through shop-price membership.
         // An empty price entry exposes the item without enabling native checkout.
         prices.catalog_only.push(descriptor);
-        let item = i32::try_from(descriptor.to_int())?;
-        catalog.store_styles.push(listing(
-            item,
-            name.to_owned(),
-            category,
-            StorePrice::Bonds(price),
-        ));
+        catalog.style_dimensions.insert(id, dimension);
+        let mut name = style_display_name(style, names);
+        let color = [
+            ("blackVictim", "Black"),
+            ("redVictim", "Red"),
+            ("goldVictim", "Gold"),
+            ("silverVictim", "Silver"),
+        ]
+        .into_iter()
+        .find_map(|(tag, color)| tags.contains(tag).then_some(color));
+        if let Some(color) = color {
+            name = format!("{name} · {color}");
+        }
+        catalog.grant_names.insert((CosmeticKind::Style, id), name);
+        if let Some(&(name, price)) = store_offer {
+            let item = i32::try_from(descriptor.to_int())?;
+            catalog.store_styles.push(listing(
+                item,
+                name.to_owned(),
+                category,
+                StorePrice::Bonds(price),
+            ));
+        }
     }
     Ok(())
 }

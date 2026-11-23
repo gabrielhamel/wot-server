@@ -95,6 +95,12 @@ request continues through account provisioning and its SQL transaction.
 The browser sends the generated password to the creation API and the server
 stores its hash. Neither the password nor the hash is a trace attribute.
 
+Admin grants retain the browser trace parent through authentication, the
+grant queue, Accounts planning, the PostgreSQL write and garage delivery.
+The new grant paths record the style, skin or recruit catalog ID. Successful
+style planning records the resulting total copies, and special-recruit planning
+records the new crew member inventory ID.
+
 A Store checkout joins the HTTP request to the account transaction and garage
 delivery even though they run on separate workers.
 

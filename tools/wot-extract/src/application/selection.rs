@@ -127,11 +127,13 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
                     | "text/lc_messages/crew_books.mo"
                     | "text/lc_messages/nations.mo"
                     | "text/lc_messages/gb_vehicles.mo"
+                    | "text/lc_messages/gb_crew.mo"
             )
             || NATIONS.iter().any(|nation| {
                 path == format!("scripts/item_defs/tankmen/{nation}.xml")
                     || path == format!("gui/flash/techtree/{nation}-tree.xml")
                     || path == format!("text/lc_messages/{nation}_vehicles.mo")
+                    || path == format!("text/lc_messages/{nation}_crew.mo")
             }))
 }
 

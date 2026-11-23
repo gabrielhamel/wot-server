@@ -1,4 +1,4 @@
-mod store_styles;
+mod styles;
 
 use super::{
     GarageCatalog, item_defs,
@@ -43,6 +43,13 @@ pub(super) struct CosmeticCatalog {
     grant_names: BTreeMap<CosmeticItem, String>,
     store_styles: Vec<super::StoreOffer>,
     locked_styles: Vec<LockedStyle>,
+    style_dimensions: BTreeMap<u16, StyleDimension>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum StyleDimension {
+    Two,
+    Three,
 }
 
 struct LockedStyle {
@@ -56,6 +63,50 @@ struct CosmeticDefinition {
     available_for_custom_outfits: bool,
     include: Vec<VehicleFilter>,
     exclude: Vec<VehicleFilter>,
+}
+
+impl CosmeticDefinition {
+    fn matches_vehicle(&self, key: &str, nation: &str, vehicle: &VehicleOffer) -> bool {
+        let matches = |filter: &VehicleFilter| filter.matches(key, nation, vehicle);
+        (self.include.is_empty() || self.include.iter().any(matches))
+            && !self.exclude.iter().any(matches)
+    }
+
+    fn nation_and_tier_label(&self, nation_names: &BTreeMap<String, String>) -> Option<String> {
+        if self.include.is_empty() {
+            return None;
+        }
+        let mut labels = Vec::new();
+        if self.include.iter().all(|filter| !filter.nations.is_empty()) {
+            let names: BTreeSet<_> = self
+                .include
+                .iter()
+                .flat_map(|filter| &filter.nations)
+                .map(|nation| {
+                    nation_names
+                        .get(nation)
+                        .cloned()
+                        .unwrap_or_else(|| super::localization::humanize_item_name(nation))
+                })
+                .collect();
+            labels.push(names.into_iter().collect::<Vec<_>>().join(", "));
+        }
+        if self.include.iter().all(|filter| !filter.levels.is_empty()) {
+            let levels: BTreeSet<_> = self
+                .include
+                .iter()
+                .flat_map(|filter| &filter.levels)
+                .collect();
+            let list = levels
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let unit = if levels.len() == 1 { "Tier" } else { "Tiers" };
+            labels.push(format!("{unit} {list}"));
+        }
+        (!labels.is_empty()).then(|| labels.join(" · "))
+    }
 }
 
 #[derive(Default)]
@@ -155,6 +206,27 @@ pub(super) fn index_exterior_shop(fs: &ResourceBundle, prices: &mut ItemPrices) 
             .map(|(subtype, id)| cosmetic_descriptor(subtype, id)),
     );
     Ok(())
+}
+
+fn style_display_name(style: &Element, names: &BTreeMap<String, String>) -> String {
+    let key = style
+        .get_child_string("userString")
+        .and_then(|label| label.strip_prefix("#vehicle_customization:"))
+        .unwrap_or_default();
+    names
+        .get(key)
+        .map(|name| {
+            name.strip_prefix('#')
+                .and_then(|reference| reference.split_once(':').map(|(_, label)| label))
+                .unwrap_or(name)
+        })
+        .filter(|name| !name.trim().is_empty() && *name != "?empty?")
+        .map(str::to_owned)
+        .or_else(|| {
+            key.rsplit_once('/')
+                .map(|(_, name)| super::localization::humanize_item_name(name))
+        })
+        .unwrap_or_else(|| "Unnamed style".to_owned())
 }
 
 fn cosmetic_definitions<'a>(
@@ -278,7 +350,7 @@ impl CosmeticCatalog {
         if fs.has_file(STYLES) {
             let styles = item_defs::read_xml(fs, STYLES)?;
             catalog.read_locked_styles(&styles)?;
-            store_styles::load(&mut catalog, &styles, prices)?;
+            styles::load(&mut catalog, &styles, prices, &names)?;
         }
         Ok(catalog)
     }
@@ -293,6 +365,94 @@ impl CosmeticCatalog {
                 let rule = self.grantable_rule(item)?;
                 Some((item.1, name.as_str(), rule.max_owned))
             })
+    }
+
+    pub(super) fn style_dimension(&self, id: u16) -> Option<StyleDimension> {
+        self.style_dimensions.get(&id).copied()
+    }
+
+    pub(super) fn style_grant_limit(
+        &self,
+        id: u16,
+        dimension: StyleDimension,
+    ) -> Option<Option<u32>> {
+        if self.style_dimension(id) != Some(dimension) {
+            return None;
+        }
+        self.grantable_rule((CosmeticKind::Style, id))
+            .map(|rule| rule.max_owned)
+    }
+
+    pub(super) fn label_style_grants(
+        &mut self,
+        vehicles: &BTreeMap<i32, VehicleOffer>,
+        fs: &ResourceBundle,
+    ) {
+        let nations = localized_names(fs, "text/lc_messages/nations.mo").unwrap_or_default();
+        for (&id, &dimension) in &self.style_dimensions {
+            let item = (CosmeticKind::Style, id);
+            let Some(definition) = self.definitions.get(&item) else {
+                continue;
+            };
+            let targets_specific_vehicles = !definition.include.is_empty()
+                && definition
+                    .include
+                    .iter()
+                    .all(|filter| !filter.vehicles.is_empty());
+            if dimension == StyleDimension::Two && !targets_specific_vehicles {
+                if let Some(name) = self.grant_names.get_mut(&item)
+                    && let Some(compatibility) = definition.nation_and_tier_label(&nations)
+                {
+                    *name = format!("{name} ({compatibility})");
+                }
+                continue;
+            }
+            let mut compatible = BTreeSet::new();
+            let mut locked = BTreeSet::new();
+            for vehicle in vehicles.values() {
+                let Some((nation, _)) = vehicle.key.split_once(':') else {
+                    continue;
+                };
+                if !definition.matches_vehicle(&vehicle.key, nation, vehicle) {
+                    continue;
+                }
+                if allows_custom_outfit(vehicle) {
+                    compatible.insert(vehicle.name.as_str());
+                } else {
+                    locked.insert(vehicle.name.as_str());
+                }
+            }
+            if let Some(name) = self.grant_names.get_mut(&item) {
+                let description = if !compatible.is_empty() {
+                    compatible.into_iter().collect::<Vec<_>>().join(", ")
+                } else if !locked.is_empty() {
+                    format!(
+                        "{}, outfit locked",
+                        locked.into_iter().collect::<Vec<_>>().join(", ")
+                    )
+                } else {
+                    "No compatible tank in catalog".to_owned()
+                };
+                *name = format!("{name} ({description})");
+            }
+        }
+        let mut counts = BTreeMap::new();
+        for (&id, &dimension) in &self.style_dimensions {
+            if let Some(name) = self.grant_names.get(&(CosmeticKind::Style, id)) {
+                *counts.entry((dimension, name.clone())).or_insert(0) += 1;
+            }
+        }
+        let mut variants = BTreeMap::new();
+        for (&id, &dimension) in &self.style_dimensions {
+            if let Some(name) = self.grant_names.get_mut(&(CosmeticKind::Style, id)) {
+                let key = (dimension, name.clone());
+                if counts.get(&key).is_some_and(|&count| count > 1) {
+                    let variant = variants.entry(key).or_insert(0);
+                    *variant += 1;
+                    *name = format!("{name} · Variant {variant}");
+                }
+            }
+        }
     }
 
     pub(super) fn grantable_rule(&self, item: CosmeticItem) -> Option<&CosmeticRule> {
@@ -373,20 +533,15 @@ impl CosmeticCatalog {
         exterior: &VehicleCosmeticSlots,
         kind: Option<CosmeticKind>,
     ) -> BTreeMap<CosmeticItem, CosmeticRule> {
-        if ["lockOutfit", "lockExceptProgression", "event_battles"]
-            .iter()
-            .any(|tag| vehicle.tags.contains(*tag))
-        {
+        if !allows_custom_outfit(vehicle) {
             return BTreeMap::new();
         }
         self.definitions
             .iter()
             .filter(|(item, _)| kind.is_none_or(|kind| item.0 == kind))
             .filter_map(|(&id, definition)| {
-                let matches = |filter: &VehicleFilter| filter.matches(key, nation, vehicle);
                 if !definition.available_for_custom_outfits
-                    || (!definition.include.is_empty() && !definition.include.iter().any(matches))
-                    || definition.exclude.iter().any(matches)
+                    || !definition.matches_vehicle(key, nation, vehicle)
                 {
                     return None;
                 }
@@ -421,6 +576,12 @@ impl CosmeticCatalog {
             })
             .collect()
     }
+}
+
+fn allows_custom_outfit(vehicle: &VehicleOffer) -> bool {
+    !["lockOutfit", "lockExceptProgression", "event_battles"]
+        .iter()
+        .any(|tag| vehicle.tags.contains(*tag))
 }
 
 pub(super) fn has_camouflage_area(part: &Element, area: &str) -> bool {

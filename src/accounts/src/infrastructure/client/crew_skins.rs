@@ -11,12 +11,14 @@ use wot_platform::client_formats::pickle::Value;
 use wot_resources::ResourceBundle;
 
 pub(super) struct CrewSkin {
+    pub(super) name: String,
+    pub(super) eu: bool,
     nation: Option<u8>,
-    female_only: bool,
-    max_owned: Option<u32>,
+    female: Option<bool>,
+    pub(super) max_owned: Option<u32>,
 }
 
-fn descriptor(skin: u16) -> IntCompactDescr {
+pub(super) fn descriptor(skin: u16) -> IntCompactDescr {
     IntCompactDescr {
         item_type: item_type::CREW_SKIN,
         nation: 1,
@@ -34,6 +36,8 @@ pub(super) fn load(
         .iter_child_elements()
         .filter_map(|(_, group)| Some((group.get_child_string("name")?.trim(), group)))
         .collect();
+    let names = super::localization::localized_names(fs, "text/lc_messages/crew_skins.mo")
+        .unwrap_or_default();
     let mut result = BTreeMap::new();
     for (_, skin) in skins.iter_child_elements() {
         let id = u16::try_from(
@@ -50,14 +54,13 @@ pub(super) fn load(
                 .get(group.trim())
                 .context("Unknown crew skin price group")?,
         );
-        if skin.get_child_boolean("notInShop") == Some(true)
-            || skin.get_child_string("realms").is_some_and(|realms| {
-                !realms.trim().is_empty()
-                    && !realms
-                        .split_whitespace()
-                        .any(|realm| realm.eq_ignore_ascii_case("eu"))
-            })
-        {
+        let eu = skin.get_child_string("realms").is_none_or(|realms| {
+            realms.trim().is_empty()
+                || realms
+                    .split_whitespace()
+                    .any(|realm| realm.eq_ignore_ascii_case("eu"))
+        });
+        if super::item_defs::xml_flag(skin, "notInShop") || !eu {
             prices.not_in_shop.push(cd);
         }
         let filters = skin.get_child_element("filters");
@@ -73,15 +76,21 @@ pub(super) fn load(
                     .context("Unknown crew skin nation")
             })
             .transpose()?;
-        let female_only = filters
+        let female = match filters
             .and_then(|filters| filters.get_child_string("sex"))
             .map(str::trim)
-            == Some("female");
+        {
+            Some("female") => Some(true),
+            Some("male") => Some(false),
+            _ => None,
+        };
         result.insert(
             id,
             CrewSkin {
+                name: display_name(skin, id, &names),
+                eu,
                 nation,
-                female_only,
+                female,
                 max_owned: skin
                     .get_child_integer("maxCount")
                     .map(u32::try_from)
@@ -106,11 +115,17 @@ impl GarageCatalog {
             return Ok(());
         }
         if let Some(skin) = skin {
+            if self.recruit_passport_locked(tankman) {
+                return Err(ProgressionError::InvalidRequest);
+            }
             let def = self
                 .crew_skins
                 .get(&skin)
                 .ok_or(ProgressionError::InvalidRequest)?;
-            if def.female_only || def.nation.is_some_and(|nation| nation != tankman.nation) {
+            if !def.eu
+                || def.female.is_some_and(|female| female != tankman.female)
+                || def.nation.is_some_and(|nation| nation != tankman.nation)
+            {
                 return Err(ProgressionError::InvalidRequest);
             }
             let id = descriptor(skin).to_int() as i32;
@@ -197,48 +212,90 @@ const STORE_SKINS: &[(u16, &str)] = &[
     (124, "Arengee Penetrael"),
 ];
 
-pub(super) fn store_offers(
-    fs: &ResourceBundle,
-    prices: &ItemPrices,
-) -> Result<Vec<super::StoreOffer>> {
-    use super::store::{StoreCategory, StorePrice, listing};
-    let names = super::localization::localized_names(fs, "text/lc_messages/crew_skins.mo")
-        .unwrap_or_default();
-    let skins = read_xml(fs, "scripts/item_defs/crewSkins/crewSkins.xml")?;
-    let offers: BTreeMap<_, _> = STORE_SKINS.iter().copied().collect();
-    let mut result = Vec::new();
-    for (_, skin) in skins.iter_child_elements() {
-        let Some(id) = skin.get_child_integer("id") else {
-            continue;
-        };
-        let id = u16::try_from(id)?;
-        let cd = descriptor(id);
-        let Some(&fallback) = offers
-            .get(&id)
-            .filter(|_| !prices.not_in_shop.contains(&cd))
-        else {
-            continue;
-        };
-        let name = |field| {
-            skin.get_child_string(field)
-                .and_then(|label| label.strip_prefix("#crew_skins:"))
-                .and_then(|label| names.get(label))
-        };
-        let name = name("firstName").zip(name("lastName")).map_or_else(
-            || fallback.to_owned(),
-            |(first, last)| format!("{first} {last}"),
-        );
-        result.push(listing(
-            i32::try_from(cd.to_int())?,
-            name,
-            StoreCategory::CrewSkins,
-            StorePrice::Gold(200),
-        ));
+fn display_name(
+    skin: &wot_platform::client_formats::pxml::Element,
+    id: u16,
+    names: &BTreeMap<String, String>,
+) -> String {
+    let localized = ["firstName", "lastName"]
+        .into_iter()
+        .filter_map(|field| skin.get_child_string(field)?.strip_prefix("#crew_skins:"))
+        .filter_map(|key| names.get(key).map(String::as_str))
+        .map(str::trim)
+        .filter(|name| !name.is_empty() && *name != "?empty?")
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !localized.is_empty() {
+        return localized;
     }
-    Ok(result)
+    if let Some((_, name)) = STORE_SKINS.iter().find(|(key, _)| *key == id) {
+        return (*name).to_owned();
+    }
+    skin.get_child_string("icon")
+        .map(super::localization::humanize_item_name)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "Unnamed crew skin".to_owned())
+}
+
+pub(super) fn store_offers(
+    skins: &BTreeMap<u16, CrewSkin>,
+    prices: &ItemPrices,
+) -> Vec<super::StoreOffer> {
+    use super::store::{StoreCategory, StorePrice, listing};
+    prices
+        .prices
+        .iter()
+        .filter_map(|(cd, price)| {
+            if cd.item_type != item_type::CREW_SKIN
+                || prices.not_in_shop.contains(cd)
+                || prices.not_for_sale.contains(cd)
+            {
+                return None;
+            }
+            let skin = skins.get(&cd.id)?;
+            let price = if STORE_SKINS.iter().any(|(id, _)| *id == cd.id) {
+                StorePrice::Gold(200)
+            } else {
+                if price.amount <= 0 {
+                    return None;
+                }
+                match price.currency {
+                    "credits" => StorePrice::Credits(price.amount),
+                    "gold" => StorePrice::Gold(price.amount),
+                    "crystal" => StorePrice::Bonds(price.amount),
+                    _ => return None,
+                }
+            };
+            Some(listing(
+                cd.to_int() as i32,
+                skin.name.clone(),
+                StoreCategory::CrewSkins,
+                price,
+            ))
+        })
+        .collect()
 }
 
 impl GarageCatalog {
+    pub(crate) fn crew_skin_counts(&self, snapshot: &crate::AccountSnapshot) -> BTreeMap<u16, u32> {
+        let mut counts = BTreeMap::new();
+        for (&item, &count) in &snapshot.progression.depot {
+            let cd = IntCompactDescr::from_int(i64::from(item));
+            if cd.item_type == item_type::CREW_SKIN && descriptor(cd.id) == cd {
+                counts.insert(cd.id, count);
+            }
+        }
+        if let Some(crew) = &snapshot.crew {
+            for member in crew.members.values() {
+                if let Some(id) = member.skin {
+                    let count = counts.entry(id).or_insert(0);
+                    *count = count.saturating_add(1);
+                }
+            }
+        }
+        counts
+    }
+
     #[tracing::instrument(name = "accounts.crew_skins.check_purchase_limit", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.item = item, input.count = count), err)]
     pub(super) fn check_crew_skin_limit(
         &self,

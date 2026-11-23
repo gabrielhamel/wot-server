@@ -41,6 +41,7 @@ formats.
 | Revision | Monotonically increasing version changed with persisted preferences, research or inventory. |
 | Cosmetic ownership | Total copies of an exterior item, including applied copies. Stat trackers are bound to a vehicle type. |
 | Outfit | Vehicle appearance for a season, including styles, camouflage, projected decals, inscriptions and effects. |
+| Special recruit | Crew member granted to the barracks from a national premium passport group. |
 | Locked style | A catalog-defined outfit supplied with its vehicle in garage and battle projections. |
 | Shell layout | Ordered compatible shell/count pairs loaded on one vehicle. |
 | Depot stock | Shared unmounted shells, modules, equipment, directives and consumables. Sales debit these counts and credit the account in the same revision. |
@@ -93,8 +94,9 @@ creation hashes the password with Argon2id and commits the identity and starter
 garage in one PostgreSQL transaction. Bootstrap authorizes first-admin creation
 only in an empty database. The role transaction rechecks the actor, prevents
 self-role changes, and revokes sessions on demotion.
-Player Administration reads garage projections and grant catalogs. Player Sessions uses the same
-revision-checked progression transaction for player grants, garage purchases and
+Player Administration reads garage projections and grant catalogs, including styles, crew skins and
+special recruits. Player Sessions uses the same revision-checked progression transaction for
+player grants, garage purchases and
 [Store checkout](../../docs/store.md).
 
 Accounts emits application, domain decision, catalog and repository spans.

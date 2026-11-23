@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   CardContent,
+  createFilterOptions,
   Stack,
   TextField,
   Typography,
@@ -25,17 +26,26 @@ interface CosmeticGrantProps {
   api: AdminDataProvider;
   busy: boolean;
   onGrant: (grant: Grant) => Promise<boolean>;
-  kind: "attachment" | "stat_tracker";
+  kind: keyof typeof catalogOptions;
   owned?: OwnedCosmetics;
   vehicles?: GarageVehicle[];
 }
 
 const maxGrantCount = 100;
+const filterLargeCatalog = createFilterOptions<Cosmetic>({ limit: 100 });
+
+const catalogOptions = {
+  attachment: ["3D attachment", "attachment", "getAttachmentCatalog"],
+  stat_tracker: ["Stat tracker", "stat tracker", "getStatTrackerCatalog"],
+  style2d: ["2D style", "2D style", "get2dStyleCatalog"],
+  style3d: ["3D style", "3D style", "get3dStyleCatalog"],
+  crew_skin: ["Crew skin", "crew skin", "getCrewSkinCatalog"],
+} as const;
 
 export function CosmeticGrant({ api, busy, kind, owned, vehicles, onGrant }: CosmeticGrantProps) {
   const bound = kind === "stat_tracker";
-  const title = bound ? "Stat tracker" : "3D attachment";
-  const itemLabel = bound ? "stat tracker" : "attachment";
+  const style = kind === "style2d" || kind === "style3d";
+  const [title, itemLabel, catalogMethod] = catalogOptions[kind];
   const [catalog, setCatalog] = useState<Cosmetic[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState<number | null>(null);
@@ -44,14 +54,13 @@ export function CosmeticGrant({ api, busy, kind, owned, vehicles, onGrant }: Cos
 
   useEffect(() => {
     const controller = new AbortController();
-    const load = bound ? api.getStatTrackerCatalog : api.getAttachmentCatalog;
-    load(controller.signal)
+    api[catalogMethod](controller.signal)
       .then(setCatalog)
       .catch((error) => {
         if (!controller.signal.aborted) setLoadError(errorMessage(error));
       });
     return () => controller.abort();
-  }, [api, bound]);
+  }, [api, catalogMethod]);
 
   const compatibleVehicles =
     vehicles?.filter((tank) => Object.keys(tank.stat_trackers ?? {}).length > 0) ?? [];
@@ -71,11 +80,13 @@ export function CosmeticGrant({ api, busy, kind, owned, vehicles, onGrant }: Cos
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (busy || !item || !valid) return;
-    if (bound && !vehicle) return;
-    const grant: Grant =
-      bound && vehicle
-        ? { kind: "stat_tracker", vehicle: vehicle.inventory_id, id: item.id, count: value }
-        : { kind: "attachment", id: item.id, count: value };
+    let grant: Grant;
+    if (kind === "stat_tracker") {
+      if (!vehicle) return;
+      grant = { kind, vehicle: vehicle.inventory_id, id: item.id, count: value };
+    } else {
+      grant = { kind, id: item.id, count: value };
+    }
     if (await onGrant(grant)) {
       setSelected(null);
       setCount("1");
@@ -86,7 +97,7 @@ export function CosmeticGrant({ api, busy, kind, owned, vehicles, onGrant }: Cos
     <Card component="form" onSubmit={submit}>
       <CardContent component={Stack} spacing={2}>
         <Typography variant="h6" component="h2">
-          Grant a {bound ? itemLabel : title}
+          Grant a {kind === "attachment" ? title : itemLabel}
         </Typography>
         {loadError && <Alert severity="error">{loadError}</Alert>}
         {bound && (
@@ -110,6 +121,7 @@ export function CosmeticGrant({ api, busy, kind, owned, vehicles, onGrant }: Cos
         )}
         <Autocomplete
           options={options}
+          filterOptions={style ? filterLargeCatalog : undefined}
           value={item}
           onChange={(_, selection) => {
             setSelected(selection?.id ?? null);
@@ -140,7 +152,11 @@ export function CosmeticGrant({ api, busy, kind, owned, vehicles, onGrant }: Cos
             );
           }}
           renderInput={(params) => (
-            <TextField {...params} label={title} placeholder="Search by name" />
+            <TextField
+              {...params}
+              label={title}
+              placeholder={style ? "Search by style, tank or nation" : "Search by name"}
+            />
           )}
         />
         <TextField

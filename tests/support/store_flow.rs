@@ -210,8 +210,8 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         let offer = find_offer(&catalog, item);
         assert_eq!(offer["in_depot"], 0);
         assert_eq!(offer["price"], json!({"currency": "credits", "amount": credits}));
-        assert!(catalog.get("credits").is_none());
         let cost = credits;
+        assert!(catalog.get("credits").is_none());
         let revision: i64 = catalog["revision"].as_str().unwrap().parse().unwrap();
         let order = json!({"item": item, "price": offer["price"], "revision": catalog["revision"]});
         let mut wrong_price = order.clone();
@@ -276,7 +276,6 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         for (category, count) in [
             ("premium_account", 8),
             ("collectors_vehicles", 91),
-            ("crew_skins", 25),
             ("equipment", 42),
             ("consumables", 19),
             ("crew_directives", 9),
@@ -289,6 +288,10 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
                 "{category} offer count",
             );
         }
+        let crew_skins = offers.iter().filter(|offer| offer["category"] == "crew_skins");
+        assert_eq!(crew_skins.clone().filter(|offer| offer["price"]["currency"] == "gold").count(), 25);
+        assert!(crew_skins.clone().any(|offer| offer["name"] == "Birthday Skill4ltu"
+            && offer["price"] == json!({"currency": "credits", "amount": 50000})));
         let improved_offers = offers.iter().filter(|offer| offer["category"] == "improved_equipment");
         assert!(improved_offers.clone().count() > 8);
         assert!(improved_offers.clone().all(|offer| offer["price"]["currency"] == "bonds"));
@@ -439,7 +442,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
 
         let near_expiry = i64::try_from(std::time::UNIX_EPOCH.elapsed().unwrap().as_secs()).unwrap() + 5;
         runtime.block_on(
-            sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = $3, bonds = $4 WHERE id = $1")
+            sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{premium_expires_at}', to_jsonb($2::bigint)), gold = $3, bonds = $4, credits = 50000 WHERE id = $1")
                 .bind(account_id)
                 .bind(near_expiry)
                 .bind(1350)
@@ -517,6 +520,20 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         assert_eq!(saved.balances.gold, persisted.balances.gold);
         assert_store_unavailable_trace(account_id, test_tank, 100);
         assert_store_unavailable_trace(account_id, t22, 5);
+
+        let skin_catalog = request(Some(&expiry_token), None).1;
+        let birthday = skin_catalog["offers"].as_array().unwrap().iter()
+            .find(|offer| offer["name"] == "Birthday Skill4ltu").unwrap();
+        let birthday_item = birthday["item"].as_i64().unwrap();
+        let before = runtime.block_on(accounts.snapshot(account_id)).unwrap();
+        let buy_birthday = json!({"item": birthday_item, "price": birthday["price"], "revision": skin_catalog["revision"]});
+        let (status, with_skin) = request(Some(&expiry_token), Some(&buy_birthday));
+        assert_eq!(status, StatusCode::OK, "{with_skin}");
+        assert_eq!(find_offer(&with_skin, birthday_item)["in_depot"], 1);
+        let diff = next_update(&mut expiring, &dispatch, before.revision + 1);
+        assert_eq!(dict(&dict(&diff, "stats"), "credits"), Pickle::I64(before.balances.credits - 50_000));
+        assert_eq!(request(Some(&expiry_token), Some(&buy_birthday)).0, StatusCode::CONFLICT);
+        assert_store_traces(account_id, birthday_item, "credits", 50_000);
 
         expiring.disconnect();
         assert_tech_tree_traces(account_id);

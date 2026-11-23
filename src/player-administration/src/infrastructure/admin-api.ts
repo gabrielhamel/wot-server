@@ -12,6 +12,7 @@ import type {
   CatalogVehicle,
   Cosmetic,
   DepotItem,
+  SpecialRecruit,
   DepotGrantKind,
   Garage,
   Grant,
@@ -186,6 +187,12 @@ function grantInputs(grant: Grant): Attributes {
     case "improved_equipment":
     case "bounty_equipment":
       return { "input.item": grant.id, "input.count": grant.count };
+    case "special_recruit":
+      return { "input.item": grant.id };
+    case "style2d":
+    case "style3d":
+    case "crew_skin":
+      return { "input.item": grant.id, "input.count": grant.count };
     case "attachment":
       return { "input.attachment_id": grant.id, "input.count": grant.count };
     case "stat_tracker":
@@ -234,6 +241,18 @@ const garageApi = {
   getAttachmentCatalog(signal?: AbortSignal) {
     return loadCatalog<Cosmetic>("attachments", signal);
   },
+  get2dStyleCatalog(signal?: AbortSignal) {
+    return loadCatalog<Cosmetic>("styles-2d", signal);
+  },
+  get3dStyleCatalog(signal?: AbortSignal) {
+    return loadCatalog<Cosmetic>("styles-3d", signal);
+  },
+  getCrewSkinCatalog(signal?: AbortSignal) {
+    return loadCatalog<Cosmetic>("crew-skins", signal);
+  },
+  getSpecialRecruitCatalog(signal?: AbortSignal) {
+    return loadCatalog<SpecialRecruit>("special-recruits", signal);
+  },
   getStatTrackerCatalog(signal?: AbortSignal) {
     return loadCatalog<Cosmetic>("stat-trackers", signal);
   },
@@ -259,7 +278,15 @@ const garageApi = {
 };
 
 function loadCatalog<T>(
-  catalog: "vehicles" | "attachments" | "stat-trackers" | (typeof depotCatalogs)[DepotGrantKind],
+  catalog:
+    | "vehicles"
+    | "attachments"
+    | "stat-trackers"
+    | "styles-2d"
+    | "styles-3d"
+    | "crew-skins"
+    | "special-recruits"
+    | (typeof depotCatalogs)[DepotGrantKind],
   signal?: AbortSignal,
 ) {
   return webOperation(

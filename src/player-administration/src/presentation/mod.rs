@@ -82,6 +82,10 @@ pub fn router(
         )
         .route("/bounty-equipment", get(garage::bounty_equipment_catalog))
         .route("/attachments", get(garage::attachment_catalog))
+        .route("/styles-2d", get(garage::style_2d_catalog))
+        .route("/styles-3d", get(garage::style_3d_catalog))
+        .route("/crew-skins", get(garage::crew_skin_catalog))
+        .route("/special-recruits", get(garage::special_recruit_catalog))
         .route("/stat-trackers", get(garage::stat_tracker_catalog))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

@@ -1011,6 +1011,87 @@ async fn exports_admin_http_access_lifecycle() {
     let [book, equipment, bounty, improved] = depot_ids[..] else {
         panic!("Expected each depot catalog selection");
     };
+    let mut cosmetics = Vec::new();
+    for (path, name) in [
+        ("/styles-2d", "Veteran (Carro da Combattimento 45 t)"),
+        ("/styles-3d", "Proserpina ("),
+        ("/crew-skins", "Birthday Skill4ltu"),
+        ("/special-recruits", "Miho Nishizumi"),
+    ] {
+        assert_eq!(
+            send("GET", path, &player_cookie, "")
+                .await
+                .unwrap()
+                .status(),
+            401
+        );
+        let response = send("GET", path, &owner_cookie, "").await.unwrap();
+        assert_eq!(response.status(), 200);
+        let entries = json(response).await;
+        let item = entries
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| {
+                item["name"]
+                    .as_str()
+                    .is_some_and(|value| value.starts_with(name))
+            })
+            .unwrap_or_else(|| panic!("Missing {name} in {path}"));
+        if path == "/styles-2d" || path == "/styles-3d" {
+            let names = entries
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|style| style["name"].as_str().unwrap())
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(
+                names.len(),
+                entries.as_array().unwrap().len(),
+                "style picker labels are unique"
+            );
+            if path == "/styles-2d" {
+                assert!(names.contains("Black Widow (France)"));
+                assert!(names.contains("Black Widow (Germany)"));
+                assert_eq!(
+                    names
+                        .iter()
+                        .filter(|name| name.starts_with("Black Widow ("))
+                        .count(),
+                    11
+                );
+                assert!(names.contains("Hunt · Red (France)"));
+            }
+        }
+        if path == "/styles-3d" {
+            assert_eq!(item["name"], "Proserpina (Carro da Combattimento 45 t)");
+            assert!(entries.as_array().unwrap().iter().any(|style| {
+                style["name"]
+                    .as_str()
+                    .is_some_and(|name| name.ends_with("(M4A3E8 Sherman, outfit locked)"))
+            }));
+        }
+        if path == "/special-recruits" {
+            let list = entries.as_array().unwrap();
+            let birthday: Vec<_> = list
+                .iter()
+                .filter(|entry| entry["name"] == "Claudia Cat")
+                .collect();
+            assert_eq!(birthday.len(), 1);
+            let countries = birthday[0]["countries"].as_array().unwrap();
+            assert!(countries.iter().any(|country| country["name"] == "France"));
+            assert!(countries.iter().any(|country| country["name"] == "Germany"));
+            let countries = item["countries"].as_array().unwrap();
+            assert_eq!(countries.len(), 1);
+            assert_eq!(countries[0]["name"], "Germany");
+            cosmetics.push(countries[0]["id"].as_i64().unwrap());
+        } else {
+            cosmetics.push(item["id"].as_i64().unwrap());
+        }
+    }
+    let [style_2d, style, skin, recruit] = cosmetics[..] else {
+        panic!("Expected new grant catalogs")
+    };
     let grant_path = format!("/players/{player_id}/grants");
     let components = r#"{"kind":"currency","currency":"equipment_components","amount":71}"#;
     assert_eq!(
@@ -1060,6 +1141,41 @@ async fn exports_admin_http_access_lifecycle() {
             serde_json::json!({"kind": "bounty_equipment", "id": equipment, "count": 1}),
             422,
             serde_json::json!({"message": "Select Bounty Equipment from the installed catalog."}),
+        ),
+        (
+            serde_json::json!({"kind": "style2d", "id": style_2d, "count": 1}),
+            200,
+            serde_json::json!({"styles_2d": {style_2d.to_string(): 1}, "styles_3d": {}}),
+        ),
+        (
+            serde_json::json!({"kind": "style2d", "id": style, "count": 1}),
+            422,
+            serde_json::json!({"message": "Select a style of the requested type from the installed catalog."}),
+        ),
+        (
+            serde_json::json!({"kind": "style3d", "id": style, "count": 1}),
+            200,
+            serde_json::json!({"styles_3d": {style.to_string(): 1}}),
+        ),
+        (
+            serde_json::json!({"kind": "style3d", "id": style, "count": 1}),
+            422,
+            serde_json::json!({"message": "The grant would exceed the style ownership limit."}),
+        ),
+        (
+            serde_json::json!({"kind": "crew_skin", "id": skin, "count": 1}),
+            200,
+            serde_json::json!({"crew_skins": {skin.to_string(): 1}}),
+        ),
+        (
+            serde_json::json!({"kind": "special_recruit", "id": recruit}),
+            200,
+            serde_json::json!({"special_recruits": {recruit.to_string(): 1}}),
+        ),
+        (
+            serde_json::json!({"kind": "special_recruit", "id": recruit}),
+            409,
+            serde_json::json!({"message": "The player already has this special recruit."}),
         ),
     ] {
         let response = send("POST", &grant_path, &owner_cookie, &body.to_string())
@@ -1403,6 +1519,13 @@ async fn exports_admin_http_access_lifecycle() {
         ("bounty_equipment", Some(equipment), "1", "422"),
         ("improved_equipment", Some(improved), "1", "200"),
         ("improved_equipment", Some(equipment), "1", "422"),
+        ("style2d", Some(style_2d), "1", "200"),
+        ("style2d", Some(style), "1", "422"),
+        ("style3d", Some(style), "1", "200"),
+        ("style3d", Some(style), "1", "422"),
+        ("crew_skin", Some(skin), "1", "200"),
+        ("special_recruit", Some(recruit), "", "200"),
+        ("special_recruit", Some(recruit), "", "409"),
     ] {
         let root = spans
             .iter()
@@ -1422,7 +1545,10 @@ async fn exports_admin_http_access_lifecycle() {
         );
         if let Some(item) = item {
             assert_eq!(attribute(root, "input.item"), Some(item.to_string()));
-            assert_eq!(attribute(root, "input.count").as_deref(), Some(count));
+            assert_eq!(
+                attribute(root, "input.count").as_deref(),
+                (!count.is_empty()).then_some(count)
+            );
         } else {
             assert_eq!(
                 attribute(root, "input.grant.currency").as_deref(),

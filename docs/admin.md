@@ -96,6 +96,20 @@ personal crew books, **Grant Bounty Equipment** for Basic and Upgraded
 pieces, and **Grant Experimental Equipment** for tiers 1–3. These pickers
 show the player's unmounted depot stock.
 
+Use **Grant a 2D style** or **Grant a 3D style** for selectable styles such as
+Veteran and Proserpina. The 3D picker shows compatible tank names in parentheses
+and accepts searches by style or tank name. Styles restricted to outfit-locked
+tanks show that restriction alongside the tank name. The 2D picker also labels
+nation or tier restrictions, such as **Black Widow (France)**, and known color
+variants. Entries with the same remaining label get a variant number. Use
+**Grant a crew skin** for EU skins such as Birthday Skill4ltu. The pickers show
+total ownership, including copies in use. Use **Grant a special recruit** to
+add an event or other special crew member to the player's barracks. The
+recruit picker lists each catalog group once. Choose a country from that
+recruit's available countries. The picker preselects a single eligible country
+and disables country options the player already owns. A special recruit uses
+one berth and is limited to one copy per nation and group.
+
 For remote administration, serve the dashboard through an HTTPS reverse
 proxy and start the server with `--secure-cookies`. Route
 `/dashboard/`, `/assets/*` and `/api/admin/*` to the web listener. By default,
@@ -154,10 +168,12 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | `GET /api/admin/players?page=1&per_page=25` | `200 OK` with `{ "data": [player records], "total": 2 }`. Pages start at 1. Page size is 1–100. Defaults are page 1 and 25 records. |
 | `POST /api/admin/players` | `201 Created` with the new player record. The new account has the `player` role. |
 | `POST /api/admin/players/{id}/role` | Accepts `{ "role": "admin" }` or `{ "role": "player" }` and returns `204 No Content`. Self-role changes return `403 Forbidden`. |
-| `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks, an `attachments` map from item ID to total owned copies, and a `depot` map from grantable crew book, Bounty Equipment and Experimental Equipment IDs to depot counts. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
+| `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks, an `attachments` map from item ID to total owned copies, and a `depot` map from grantable crew book, Bounty Equipment and Experimental Equipment IDs to depot counts. The `styles_2d`, `styles_3d`, `crew_skins` and `special_recruits` maps track owned copies. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |
 | `GET /api/admin/crew-books`, `GET /api/admin/improved-equipment`, `GET /api/admin/bounty-equipment`, `GET /api/admin/experimental-equipment` | `200 OK` with grantable depot items containing `id` and `name`. |
 | `GET /api/admin/attachments` | `200 OK` with grantable 3D attachments containing `id`, `name`, and `max_owned` (null if the catalog sets no limit). |
+| `GET /api/admin/styles-2d`, `GET /api/admin/styles-3d`, `GET /api/admin/crew-skins` | `200 OK` with grantable items containing `id`, `name`, and `max_owned`. The grant request kinds are `style2d`, `style3d` and `crew_skin`, each with an `id` and `count`. |
+| `GET /api/admin/special-recruits` | `200 OK` with each recruit group's `id`, `name`, and `countries` (each with an `id` and `name`). The `special_recruit` grant takes the selected country's `id`. An already-owned group returns `409 Conflict`. |
 | `GET /api/admin/stat-trackers` | `200 OK` with grantable trackers containing `id`, `name`, and `max_owned`. |
 | `POST /api/admin/players/{id}/grants` | `200 OK` with `garage` and `delivery` after commit. |
 

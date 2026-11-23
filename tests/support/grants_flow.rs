@@ -1,4 +1,6 @@
-use super::{Peer, Pickle, Value, ammunition_flow, dict, player_fixture, telemetry_capture};
+use super::{
+    Peer, Pickle, Value, ammunition_flow, camouflage_flow, dict, player_fixture, telemetry_capture,
+};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -149,6 +151,118 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         catalog.plan_grant(at_limit, PlayerGrant::CrewBook { id: book, count: 1 }),
         Err(GrantError::DepotLimit)
     ));
+    let carro = catalog
+        .vehicle_catalog_entry("italy:It20_Carro_Combattimento_45t")
+        .expect("The Carro is available")
+        .id;
+    let style = catalog
+        .grantable_styles_3d()
+        .find(|style| style.id == 506)
+        .expect("Proserpina is available as a grant");
+    assert_eq!(style.max_owned, Some(1));
+    let veteran = catalog
+        .grantable_styles_2d()
+        .find(|style| style.id == 644)
+        .expect("The Carro's Veteran style is grantable")
+        .id;
+    assert!(
+        catalog
+            .grantable_styles_3d()
+            .all(|style| style.id != veteran)
+    );
+    let skin = catalog
+        .grantable_crew_skins()
+        .find(|skin| skin.id == 197)
+        .expect("Birthday Skill4ltu is available as a grant");
+    let skin_offer = catalog
+        .store_offers()
+        .iter()
+        .find(|offer| {
+            offer.name == skin.name
+                && offer.category == wot_accounts::test_support::StoreCategory::CrewSkins
+        })
+        .expect("The catalog credit price enables a Store purchase");
+    let skin_item = skin_offer.item;
+    assert_eq!(skin_offer.price.currency(), "credits");
+    assert_eq!(skin_offer.price.amount(), 50_000);
+    let bought = catalog
+        .plan_store_purchase(
+            snapshot.clone(),
+            wot_accounts::contract::StoreOrder {
+                item: skin_item,
+                price: skin_offer.price,
+                revision: snapshot.revision,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        bought.snapshot.balances.credits,
+        snapshot.balances.credits - 50_000
+    );
+    assert_eq!(bought.snapshot.progression.depot.get(&skin_item), Some(&1));
+    let female = catalog
+        .grantable_special_recruits()
+        .into_iter()
+        .find(|entry| entry.name == "Female recruit")
+        .and_then(|entry| {
+            entry
+                .countries
+                .into_iter()
+                .find(|country| country.name == "France")
+        })
+        .expect("The generic premium female group is grantable in France")
+        .id;
+    let female_recruit = catalog
+        .plan_grant(snapshot.clone(), PlayerGrant::SpecialRecruit { id: female })
+        .unwrap();
+    let member = female_recruit.hired_crew_member.unwrap();
+    let mut crew_with_skins = female_recruit.snapshot;
+    for id in [110, 197] {
+        crew_with_skins = catalog
+            .plan_grant(crew_with_skins, PlayerGrant::CrewSkin { id, count: 1 })
+            .unwrap()
+            .snapshot;
+    }
+    let apply_skin = |snapshot, member, skin| {
+        catalog.plan_progression(
+            snapshot,
+            wot_accounts::test_support::ProgressionCommand::Crew(
+                wot_accounts::test_support::CrewCommand::EquipSkin {
+                    member,
+                    skin: Some(skin),
+                },
+            ),
+        )
+    };
+    assert!(matches!(
+        apply_skin(crew_with_skins.clone(), member, 197),
+        Err(ProgressionError::InvalidRequest)
+    ));
+    assert!(matches!(
+        apply_skin(crew_with_skins.clone(), 1, 110),
+        Err(ProgressionError::InvalidRequest)
+    ));
+    let equipped = apply_skin(crew_with_skins, member, 110).unwrap();
+    assert_eq!(
+        equipped.snapshot.crew.unwrap().members[&member].skin,
+        Some(110)
+    );
+    let recruit = catalog
+        .grantable_special_recruits()
+        .into_iter()
+        .find(|entry| {
+            entry.name.starts_with("Miho Nishizumi")
+                || entry.name.starts_with("Girls und panzer nishizumi")
+        })
+        .and_then(|entry| {
+            entry
+                .countries
+                .into_iter()
+                .find(|country| country.name == "Germany")
+        })
+        .expect("Miho is available for Germany")
+        .id;
+
     let script = ScriptDispatch::new(wot_platform::mercury::script::load(&resources).unwrap());
     let gateway = Gateway::bind(
         wot_battles::mercury::bind,
@@ -248,6 +362,48 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             peer.methods.clear();
         }
 
+        let mut member_id = None;
+        for (request, item_type) in [
+            (PlayerGrant::Style2d { id: veteran, count: 1 }, 12),
+            (PlayerGrant::Style3d { id: 506, count: 1 }, 12),
+            (PlayerGrant::CrewSkin { id: 197, count: 1 }, 13),
+            (PlayerGrant::SpecialRecruit { id: recruit }, 8),
+        ] {
+            let (after, delivery) = grant(request).unwrap();
+            let after = wot_accounts::test_support::account_snapshot(&after);
+            assert_eq!(delivery, GrantDelivery::QueuedForGarage);
+            assert_eq!(after.revision, last_revision + 1);
+            peer.until(&script, |p| p.methods.iter().any(|(name, _)| name.ends_with("update")));
+            let diff = ammunition_flow::update(&peer, after.revision);
+            let Pickle::Dict(inventory) = dict(&diff, "inventory") else { panic!("Inventory delta") };
+            assert!(inventory.contains_key(&Pickle::from(item_type)));
+            match request {
+                PlayerGrant::Style2d { id, .. } |
+                PlayerGrant::Style3d { id, .. } => assert_eq!(after.progression.cosmetics.owned().get(&wot_accounts::test_support::CosmeticKind::Style).unwrap().get(&id), Some(&1)),
+                PlayerGrant::CrewSkin { .. } => assert_eq!(after.progression.depot.get(&skin_item), Some(&1)),
+                PlayerGrant::SpecialRecruit { .. } => {
+                    member_id = after.crew.as_ref().unwrap().members.iter().find(|(_, member)| member.special_recruit.is_some()).map(|(&id, member)| {
+                        assert!(member.seat.is_none());
+                        assert_eq!(member.passport.portrait, 15_531);
+                        id
+                    });
+                    let Pickle::Dict(rows) = dict(&inventory[&Pickle::from(8)], "compDescr") else {
+                        panic!("Missing crew descriptors");
+                    };
+                    let Pickle::Bytes(descriptor) = &rows[&Pickle::from(member_id.unwrap())] else {
+                        panic!("Missing special recruit descriptor");
+                    };
+                    assert_eq!(descriptor[1] & 0x60, 0x60);
+                    assert!(member_id.is_some());
+                }
+                _ => unreachable!(),
+            }
+            last_revision = after.revision;
+            peer.methods.clear();
+        }
+        assert!(matches!(grant(PlayerGrant::Style3d { id: 506, count: 1 }), Err(GrantRequestError::Rejected(GrantError::StyleLimit))));
+        assert!(matches!(grant(PlayerGrant::SpecialRecruit { id: recruit }), Err(GrantRequestError::Rejected(GrantError::SpecialRecruitOwned))));
+
         let purchase = |peer: &mut Peer, request| peer.command(&script, "doCmdInt3", vec![
             Value::Int16(request), Value::Int16(205), Value::Int64(1), Value::Int64(0), Value::Int64(0),
         ]);
@@ -297,6 +453,8 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         assert_eq!(persisted.balances.slots, 101);
         assert_eq!(persisted.balances.equipment_components, 31);
         assert_eq!(persisted.progression.depot.get(&book), Some(&5));
+        assert_eq!(persisted.progression.depot.get(&skin_item), Some(&1));
+        assert!(persisted.crew.as_ref().unwrap().members.contains_key(&member_id.unwrap()));
         assert_eq!(persisted.progression.depot.get(&equipment), Some(&1));
         assert_eq!(persisted.balances.credits, 100_000_031 - 250_000);
         assert_eq!(persisted.vehicles[1].catalog_key, tank_key);
@@ -320,6 +478,31 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
         let Pickle::Dict(granted) = dict(tanks, "compDescr") else { panic!("Granted tank") };
         assert_eq!(owned.len(), 2);
         assert_eq!(owned[&Pickle::from(2)], granted[&Pickle::from(2)]);
+        let proserpina = [4, 16, 250, 3];
+        let rows = [(15, proserpina.as_slice())];
+        camouflage_flow::send_outfits(&mut peer, &script, 321, 1, &rows, -1);
+        peer.methods.clear();
+        let (after, delivery) = grant(PlayerGrant::Vehicle { vehicle: carro }).unwrap();
+        assert_eq!(delivery, GrantDelivery::QueuedForGarage);
+        let after = wot_accounts::test_support::account_snapshot(&after);
+        let carro = after.vehicles.iter().find(|vehicle| vehicle.catalog_key == "italy:It20_Carro_Combattimento_45t").unwrap();
+        peer.until(&script, |p| p.methods.iter().any(|(name, _)| name.ends_with("update")));
+        peer.methods.clear();
+        camouflage_flow::send_outfits(&mut peer, &script, 329, carro.inventory_id, &rows, 0);
+        peer.until(&script, |p| p.methods.iter().any(|(name, _)| name.ends_with("update")));
+        let fitted = runtime.block_on(accounts.snapshot(id)).unwrap();
+        assert!(fitted.progression.cosmetics.mounted().any(|(vehicle, (kind, item), _)| {
+            vehicle == carro.inventory_id && kind == wot_accounts::test_support::CosmeticKind::Style && item == 506
+        }));
+        let veteran_outfit = [4, 16, 132, 5];
+        peer.methods.clear();
+        camouflage_flow::send_outfits(&mut peer, &script, 330, carro.inventory_id, &[(15, veteran_outfit.as_slice())], 0);
+        peer.until(&script, |p| p.methods.iter().any(|(name, _)| name.ends_with("update")));
+        let fitted = runtime.block_on(accounts.snapshot(id)).unwrap();
+        assert!(fitted.progression.cosmetics.mounted().any(|(vehicle, (kind, item), _)| {
+            vehicle == carro.inventory_id && kind == wot_accounts::test_support::CosmeticKind::Style && item == veteran
+        }));
+
     }).await;
     stop.store(true, Ordering::Relaxed);
     worker.await.unwrap().unwrap();
@@ -331,6 +514,7 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
     test.unwrap();
     let spans = exporter.get_finished_spans().unwrap();
     assert_depot_grant_trace(id, book, &spans);
+    assert_new_grant_traces(veteran, skin_item, &spans);
     let vehicle_plans: Vec<_> = spans
         .iter()
         .filter(|span| {
@@ -375,6 +559,67 @@ fn depot_count(cache: &Pickle, item_type: i32, id: i32) -> i64 {
         panic!("Missing depot stock");
     };
     quantity
+}
+
+fn assert_new_grant_traces(
+    veteran: u16,
+    skin_item: i32,
+    spans: &[opentelemetry_sdk::trace::SpanData],
+) {
+    let has = |span: &opentelemetry_sdk::trace::SpanData, key: &str, expected: &str| {
+        span.attributes
+            .iter()
+            .any(|attr| attr.key.as_str() == key && attr.value.to_string() == expected)
+    };
+    for (operation, item_attribute, item) in [
+        ("accounts.cosmetics.add_style", "input.style_id", "506"),
+        (
+            "accounts.cosmetics.add_style",
+            "input.style_id",
+            &veteran.to_string(),
+        ),
+        (
+            "accounts.grants.grant_depot_stock",
+            "input.item",
+            &skin_item.to_string(),
+        ),
+        ("accounts.grants.add_special_recruit", "output.member", ""),
+    ] {
+        let gateway = spans
+            .iter()
+            .filter(|span| span.name == "player_sessions.gateway.grant")
+            .find(|gateway| {
+                spans.iter().any(|plan| {
+                    plan.name == "accounts.grants.plan_grant"
+                        && plan.parent_span_id == gateway.span_context.span_id()
+                        && spans.iter().any(|child| {
+                            child.parent_span_id == plan.span_context.span_id()
+                                && child.name == operation
+                                && !matches!(
+                                    child.status,
+                                    opentelemetry::trace::Status::Error { .. }
+                                )
+                                && if item.is_empty() {
+                                    child
+                                        .attributes
+                                        .iter()
+                                        .any(|attr| attr.key.as_str() == item_attribute)
+                                } else {
+                                    has(child, item_attribute, item)
+                                }
+                        })
+                })
+            })
+            .unwrap_or_else(|| panic!("Missing live grant trace for {operation}"));
+        let response = spans
+            .iter()
+            .find(|span| {
+                span.parent_span_id == gateway.span_context.span_id()
+                    && span.name == "player_sessions.gateway.grant_response"
+            })
+            .unwrap();
+        assert!(has(response, "output.success", "true"));
+    }
 }
 
 fn assert_depot_grant_trace(account: i64, item: i32, spans: &[opentelemetry_sdk::trace::SpanData]) {

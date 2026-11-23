@@ -37,6 +37,10 @@ const garage: Garage = {
   equipment_components: "40",
   slots: 3,
   attachments: { 12: 1 },
+  styles_2d: {},
+  styles_3d: {},
+  crew_skins: {},
+  special_recruits: {},
   depot: { 286: 2 },
   vehicles: [
     {
@@ -806,6 +810,136 @@ describe("Server Administration", () => {
         "input.grant.kind": "stat_tracker",
         "output.delivery": "queued_for_garage",
       });
+    } finally {
+      await telemetry.stop();
+    }
+  });
+
+  it("grants 2D and 3D styles, crew skins and special recruits with traced requests", async () => {
+    const telemetry = captureTraces();
+    const grants: Array<{ body: Grant; trace: string | null }> = [];
+    const snapshot = structuredClone(garage);
+    snapshot.special_recruits[190] = 1;
+    const paths = [
+      ["styles-2d", { id: 36, name: "Black Widow (France)", max_owned: 1 }],
+      ["styles-3d", { id: 506, name: "Proserpina (Carro da Combattimento 45 t)", max_owned: 1 }],
+      ["crew-skins", { id: 197, name: "Birthday Skill4ltu", max_owned: null }],
+      [
+        "special-recruits",
+        { id: 74, name: "Miho Nishizumi", countries: [{ id: 74, name: "Germany" }] },
+      ],
+    ] as const;
+    httpServer.use(
+      players(),
+      http.get(`${origin}/players/123/garage`, () => HttpResponse.json(snapshot)),
+      ...[
+        "vehicles",
+        "attachments",
+        "stat-trackers",
+        "crew-books",
+        "experimental-equipment",
+        "bounty-equipment",
+        "improved-equipment",
+      ].map((path) => http.get(`${origin}/${path}`, () => HttpResponse.json([]))),
+      ...paths.map(([path, entry]) =>
+        http.get(`${origin}/${path}`, () =>
+          HttpResponse.json(
+            path === "special-recruits"
+              ? [
+                  ...Array.from({ length: 101 }, (_, index) => ({
+                    id: 200 + index,
+                    name: `Recruit ${index}`,
+                    countries: [{ id: 200 + index, name: "France" }],
+                  })),
+                  entry,
+                  {
+                    id: 190,
+                    name: "Birthday14 cat",
+                    countries: [
+                      { id: 190, name: "France" },
+                      { id: 191, name: "Germany" },
+                    ],
+                  },
+                ]
+              : path === "styles-2d"
+                ? [{ id: 37, name: "Black Widow (Germany)", max_owned: 1 }, entry]
+                : [entry],
+          ),
+        ),
+      ),
+      http.post(`${origin}/players/123/grants`, async ({ request }) => {
+        const body = (await request.json()) as Grant;
+        grants.push({ body, trace: request.headers.get("traceparent") });
+        if (body.kind === "special_recruit" && grants.length === 4)
+          return HttpResponse.json({ message: "The player's barracks are full." }, { status: 409 });
+        if (body.kind === "style2d") snapshot.styles_2d[body.id] = body.count;
+        if (body.kind === "style3d") snapshot.styles_3d[body.id] = body.count;
+        if (body.kind === "crew_skin") snapshot.crew_skins[body.id] = body.count;
+        if (body.kind === "special_recruit") snapshot.special_recruits[body.id] = 1;
+        return HttpResponse.json({ garage: snapshot, delivery: "on_next_sync" });
+      }),
+    );
+    try {
+      const { user } = openAdmin(true);
+      await user.click(await screen.findByRole("tab", { name: "Admin" }));
+      await user.click(await screen.findByText(player.display_name));
+      for (const [label, name] of [
+        ["2D style", /Black Widow \(France\)/],
+        ["3D style", /Proserpina \(Carro da Combattimento 45 t\)/],
+        ["Crew skin", /Birthday Skill4ltu/],
+        ["Special recruit", /Miho Nishizumi/],
+      ] as const) {
+        const picker = await screen.findByRole("combobox", { name: label });
+        await user.click(picker);
+        if (label === "Special recruit") await user.type(picker, "Miho");
+        if (label === "2D style") await user.type(picker, "France");
+        if (label === "3D style") await user.type(picker, "Carro");
+
+        await user.click(await screen.findByRole("option", { name }));
+        await user.click(screen.getByRole("button", { name: new RegExp(`^Grant ${label}$`, "i") }));
+        if (label !== "Special recruit")
+          expect(await screen.findByText(/Grant applied/)).toBeVisible();
+      }
+      expect(await screen.findByText("The player's barracks are full.")).toBeVisible();
+      expect(screen.getByRole("combobox", { name: "Country" })).toHaveTextContent("Germany");
+      await user.click(screen.getByRole("button", { name: "Grant special recruit" }));
+      expect(await screen.findByText(/Grant applied/)).toBeVisible();
+      await user.type(screen.getByRole("combobox", { name: "Special recruit" }), "Miho");
+      expect(await screen.findByRole("option", { name: /Miho Nishizumi/ })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      const recruitPicker = screen.getByRole("combobox", { name: "Special recruit" });
+      await user.clear(recruitPicker);
+      await user.type(recruitPicker, "Birthday14");
+      await user.click(await screen.findByRole("option", { name: "Birthday14 cat" }));
+      const grantRecruit = screen.getByRole("button", { name: "Grant special recruit" });
+      expect(grantRecruit).toBeDisabled();
+      await user.click(screen.getByRole("combobox", { name: "Country" }));
+      expect(screen.getByRole("option", { name: "France · Owned" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      await user.click(screen.getByRole("option", { name: "Germany" }));
+      await user.click(grantRecruit);
+      expect(await screen.findByText(/Grant applied/)).toBeVisible();
+      expect(grants.map(({ body }) => body)).toEqual([
+        { kind: "style2d", id: 36, count: 1 },
+        { kind: "style3d", id: 506, count: 1 },
+        { kind: "crew_skin", id: 197, count: 1 },
+        { kind: "special_recruit", id: 74 },
+        { kind: "special_recruit", id: 74 },
+        { kind: "special_recruit", id: 191 },
+      ]);
+      for (const [index, { body, trace }] of grants.entries()) {
+        const grant = telemetry.expectRequest(
+          trace,
+          "web.admin.grant",
+          "/api/admin/players/{id}/grants",
+          index === 3 ? 409 : 200,
+        );
+        expect(grant.parent?.attributes["input.grant.kind"]).toBe(body.kind);
+      }
     } finally {
       await telemetry.stop();
     }
