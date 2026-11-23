@@ -819,6 +819,7 @@ mod tests {
             yaw: 0.756306,
             half_size: Vec2::new(1.5504, 3.264),
             offset: Vec2::new(0.002, -0.064),
+            body: None,
         };
         let candidate = Hull {
             yaw: current.yaw + 0.04,
@@ -845,6 +846,7 @@ mod tests {
             yaw: -2.691,
             half_size: Vec2::new(1.625, 3.356),
             offset: Vec2::new(0.0, -0.0406),
+            body: None,
         };
         let travel = Vec2::new(-0.445, -0.919);
         let intact = scene.sweep_hull(hull, travel).unwrap();
@@ -908,6 +910,7 @@ mod tests {
                                     yaw: forward.x.atan2(forward.y),
                                     half_size: Vec2::splat(0.4),
                                     offset: Vec2::ZERO,
+                                    body: None,
                                 };
                                 if scene
                                     .sweep_hull(body, forward * 2.0)
@@ -996,6 +999,7 @@ mod tests {
                     yaw: 0.0,
                     half_size: Vec2::splat(0.6),
                     offset: Vec2::ZERO,
+                    body: None,
                 };
                 let travel = Vec2::Y * 3.5;
                 let fragment = scene.sweep_hull(hull, travel)?.fragment?;
@@ -1144,6 +1148,7 @@ mod tests {
             yaw: 0.0,
             half_size: Vec2::new(1.0, 2.0),
             offset: Vec2::ZERO,
+            body: None,
         };
         let hit = obstacles.sweep_hull(hull, Vec2::Y * 10.0).unwrap().contact;
         assert!((hit.fraction - 0.3).abs() < 0.0001);

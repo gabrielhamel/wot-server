@@ -1,4 +1,4 @@
-use glam::{Vec2, Vec3, Vec3Swizzles};
+use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 
 pub(crate) const CONTACT_SKIN: f32 = 0.025;
 pub(crate) const HULL_HEIGHT: f32 = 2.0;
@@ -9,6 +9,28 @@ pub(crate) struct Hull {
     pub yaw: f32,
     pub half_size: Vec2,
     pub offset: Vec2,
+    pub body: Option<VehicleBody>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct VehicleBody {
+    pub origin: Vec3,
+    pub tilt: Vec2,
+    pub center: Vec3,
+    pub half_size: Vec3,
+}
+
+struct ContactBox {
+    center: Vec3,
+    half_size: Vec3,
+    axes: [Vec3; 3],
+}
+
+impl ContactBox {
+    fn radius(&self, axis: Vec3) -> f32 {
+        let projections = Vec3::from_array(self.axes.map(|basis| basis.dot(axis).abs()));
+        self.half_size.dot(projections)
+    }
 }
 
 impl Hull {
@@ -32,9 +54,19 @@ impl Hull {
         )
     }
 
-    fn radius(self, axis: Vec2) -> f32 {
-        let [right, forward] = self.axes();
-        right.dot(axis).abs() * self.half_size.x + forward.dot(axis).abs() * self.half_size.y
+    fn contact_box(self) -> ContactBox {
+        let body = self.body.unwrap_or(VehicleBody {
+            origin: self.position,
+            tilt: Vec2::ZERO,
+            center: Vec3::new(self.offset.x, HULL_HEIGHT * 0.5, self.offset.y),
+            half_size: Vec3::new(self.half_size.x, HULL_HEIGHT * 0.5, self.half_size.y),
+        });
+        let rotation = Quat::from_euler(EulerRot::YXZ, self.yaw, body.tilt.y, body.tilt.x);
+        ContactBox {
+            center: body.origin + rotation * body.center,
+            half_size: body.half_size,
+            axes: [Vec3::X, Vec3::Y, Vec3::Z].map(|axis| rotation * axis),
+        }
     }
 
     pub fn sweep_triangle(self, vertices: [Vec3; 3], travel: Vec2) -> Option<Contact> {
@@ -121,28 +153,45 @@ pub(crate) fn vehicle_contact(
     first_travel: Vec2,
     other_travel: Vec2,
 ) -> Option<(Contact, f32)> {
-    if (first.position.y - other.position.y).abs() >= HULL_HEIGHT {
-        return None;
-    }
-    let displacement = other.center().xz() - first.center().xz();
+    let first = first.contact_box();
+    let other = other.contact_box();
+    let displacement = other.center - first.center;
     let relative_travel = first_travel - other_travel;
-    let reach = first.half_size.length() + other.half_size.length() + CONTACT_SKIN;
+    let travel = Vec3::new(relative_travel.x, 0.0, relative_travel.y);
+    let reach = first.half_size.length() + other.half_size.length();
     if displacement
         .abs()
-        .cmpgt(relative_travel.abs() + Vec2::splat(reach))
+        .cmpgt(travel.abs() + Vec3::splat(reach))
         .any()
     {
         return None;
     }
+    let cross_axes = first
+        .axes
+        .into_iter()
+        .flat_map(|axis| other.axes.map(|basis| axis.cross(basis)));
     let mut sweep = Sweep::new();
-    for axis in first.axes().into_iter().chain(other.axes()) {
+    for axis in first.axes.into_iter().chain(other.axes).chain(cross_axes) {
+        if axis.length_squared() < 1e-8 {
+            continue;
+        }
+        let axis = axis.normalize();
         let center = displacement.dot(axis);
-        let radius = first.radius(axis) + other.radius(axis) + CONTACT_SKIN;
+        let radius = first.radius(axis) + other.radius(axis);
+        let horizontal = axis.xz().length();
+        if horizontal < 1e-4 {
+            if center.abs() >= radius {
+                return None;
+            }
+            continue;
+        }
+        // Measure penetration along the horizontal correction the solver can apply.
+        let planar_axis = Vec3::new(axis.x, 0.0, axis.z) / horizontal;
         if !sweep.clip(
-            center - radius,
-            center + radius,
-            relative_travel.dot(axis),
-            Vec3::new(axis.x, 0.0, axis.y),
+            (center - radius) / horizontal,
+            (center + radius) / horizontal,
+            travel.dot(planar_axis),
+            planar_axis,
         ) {
             return None;
         }
@@ -311,6 +360,7 @@ mod tests {
             yaw,
             half_size: Vec2::new(1.0, 2.0),
             offset: Vec2::ZERO,
+            body: None,
         }
     }
 
@@ -335,11 +385,41 @@ mod tests {
         let b = hull(6.0, 0.0, std::f32::consts::FRAC_PI_2);
         let travel = Vec2::new(10.0, 0.0);
         let (contact, correction) = vehicle_contact(a, b, travel, Vec2::ZERO).unwrap();
-        assert!((contact.fraction - (3.0 - CONTACT_SKIN) / 10.0).abs() < 1e-5);
+        assert!((contact.fraction - 3.0 / 10.0).abs() < 1e-5);
         assert_eq!(contact.normal, -Vec2::X);
-        assert!((correction - (7.0 + CONTACT_SKIN)).abs() < 1e-5);
+        assert!((correction - 7.0).abs() < 1e-5);
         assert!(vehicle_contact(a, hull(1.5, 0.0, 0.0), -travel, Vec2::ZERO).is_none());
         assert!(vehicle_contact(a, hull(6.0, HULL_HEIGHT, 0.0), travel, Vec2::ZERO).is_none());
+    }
+
+    #[test]
+    fn pitched_amx_30_b_bodies_close_to_their_end_faces_on_a_slope() {
+        let min = Vec3::new(-1.55, 0.01, -3.328);
+        let max = Vec3::new(1.55, 1.658, 3.200);
+        let pitch = -0.3;
+        let body = VehicleBody {
+            origin: Vec3::ZERO,
+            tilt: Vec2::new(0.0, pitch),
+            center: (min + max) * 0.5,
+            half_size: (max - min) * 0.5,
+        };
+        let first = Hull {
+            body: Some(body),
+            ..hull(0.0, 0.0, 0.0)
+        };
+        let touch = Quat::from_rotation_x(pitch) * Vec3::Z * (max.z - min.z);
+        let origin = touch + Vec3::Z * 0.05;
+        let second = Hull {
+            position: origin,
+            body: Some(VehicleBody { origin, ..body }),
+            ..first
+        };
+        assert!(vehicle_contact(first, second, Vec2::Y * 0.04, Vec2::ZERO).is_none());
+
+        let (hit, correction) = vehicle_contact(first, second, Vec2::Y * 0.1, Vec2::ZERO).unwrap();
+        assert!((hit.fraction - 0.5).abs() < 1e-4);
+        assert!((correction - 0.05).abs() < 1e-4);
+        assert!(hit.normal.abs_diff_eq(-Vec2::Y, 1e-5));
     }
 
     #[test]

@@ -20,7 +20,7 @@ pub struct Mobility {
     pub rolling_friction: [f32; 3],
     pub track_half_width: f32,
     pub track_half_length: f32,
-    pub collision_bounds: Option<[glam::Vec2; 2]>,
+    pub collision_bounds: Option<[Vec3; 2]>,
     pub wheels: Vec<Wheel>,
     pub turns_in_place: bool,
     pub rotation_around_center: bool,

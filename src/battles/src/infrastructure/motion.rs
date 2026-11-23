@@ -26,13 +26,57 @@ pub(super) struct VehicleMotion {
     scenery_impulse: Vec2,
     vehicle_normal: Option<Vec2>,
     vehicle_contacts: u32,
-    turn_contact: bool,
-    scenery_speed_scale: f32,
+    scenery: SceneryMotion,
+    drive_pressure: Vec2,
+    pushed_pressure: Vec2,
     impulse: Vec2,
     slid: bool,
-    pub scenery_breaks: Vec<Breakage>,
-    pub scenery_cause: BreakageCause,
     pileup_held: bool,
+}
+
+impl VehicleMotion {
+    pub(super) fn breakages(&self) -> (&[Breakage], BreakageCause) {
+        (&self.scenery.broken, self.scenery.fall)
+    }
+
+    fn pressure_towards(&self, direction: Vec2) -> Vec2 {
+        direction
+            * self
+                .drive_pressure
+                .dot(direction)
+                .max(self.pushed_pressure.dot(direction))
+                .max(0.0)
+    }
+
+    fn resolve_push(
+        &mut self,
+        obstacles: &mut Scenery,
+        bounds: [Vec2; 2],
+        push: Vec2,
+        pressure: Vec2,
+        can_damage: bool,
+    ) {
+        let wanted = self.travel + push;
+        let breaks_before = self.scenery.broken.len();
+        if can_damage {
+            let probe = wanted + pressure.normalize_or_zero() * PRESS_REACH;
+            let origin = self.hull.position.xz();
+            let probe = (origin + probe).clamp(bounds[0], bounds[1]) - origin;
+            self.scenery
+                .push(obstacles, self.hull, probe, wanted, pressure);
+        }
+        let (allowed, contact) = constrain(obstacles, self.hull, wanted, bounds);
+        self.travel = allowed;
+        if self.scenery.broken.len() != breaks_before {
+            self.scenery_normal = contact;
+            self.scenery_impulse = Vec2::ZERO;
+        } else {
+            self.scenery_normal = contact.or(self.scenery_normal);
+        }
+        if pressure.length_squared() > self.pushed_pressure.length_squared() {
+            self.pushed_pressure = pressure;
+        }
+    }
 }
 
 impl Battle {
@@ -53,6 +97,7 @@ impl Battle {
             })
             .collect();
         let mut moves = Vec::with_capacity(ids.len());
+        let can_damage = self.round.phase == RoundPhase::Battle;
         for client in ids {
             let Some(player) = self.players.get_mut(&client) else {
                 continue;
@@ -69,7 +114,7 @@ impl Battle {
             let mut scenery_impulse = Vec2::ZERO;
             let mut slid = false;
             let mut scenery = SceneryMotion::new(inverse_mass, seconds);
-            let mut turn_contact = false;
+            let mut drive_pressure = Vec2::ZERO;
             if inverse_mass == 0.0 {
                 tank.stop_motion();
             } else {
@@ -95,7 +140,6 @@ impl Battle {
                 let (passive, sliding) = tank.passive_travel(support.xy(), ground, seconds);
                 slid = sliding;
                 travel = tank.position.xz() - hull.position.xz() + passive;
-                let can_damage = self.round.phase == RoundPhase::Battle;
                 (hull, scenery_normal) = scenery.turn(
                     &mut self.obstacles,
                     hull,
@@ -104,10 +148,10 @@ impl Battle {
                     can_damage,
                 );
                 tank.yaw = hull.yaw;
-                turn_contact = scenery.turn_contact;
                 if can_damage {
                     let pressure = tank.scenery_push_load(seconds, false);
                     let direction = tank.scenery_push_direction();
+                    drive_pressure = direction * pressure;
                     let probe = travel + direction * if pressure > 0.0 { PRESS_REACH } else { 0.0 };
                     let probe = (hull.position.xz() + probe)
                         .clamp(self.map.bounds[0], self.map.bounds[1])
@@ -125,10 +169,9 @@ impl Battle {
                             hull,
                             probe * reachable,
                             travel * reachable,
-                            direction * pressure,
+                            drive_pressure,
                         );
                     }
-                    tank.apply_scenery_drag(scenery.speed_scale);
                 }
                 let (allowed, contact) = constrain(&self.obstacles, hull, travel, self.map.bounds);
                 if let Some(normal) = contact {
@@ -151,17 +194,22 @@ impl Battle {
                 scenery_impulse,
                 vehicle_normal: None,
                 vehicle_contacts: 0,
-                turn_contact,
-                scenery_speed_scale: scenery.speed_scale,
+                scenery,
+                drive_pressure,
+                pushed_pressure: Vec2::ZERO,
                 impulse: Vec2::ZERO,
                 slid,
-                scenery_breaks: scenery.broken,
-                scenery_cause: scenery.fall,
                 pileup_held: false,
             });
         }
 
-        resolve_contacts(&mut moves, &self.obstacles, self.map.bounds, seconds);
+        resolve_contacts(
+            &mut moves,
+            &mut self.obstacles,
+            self.map.bounds,
+            seconds,
+            can_damage,
+        );
         for motion in &mut moves {
             let Some(player) = self.players.get_mut(&motion.client) else {
                 continue;
@@ -170,6 +218,7 @@ impl Battle {
                 continue;
             }
             let tank = &mut player.tank;
+            tank.apply_scenery_drag(motion.scenery.speed_scale);
             if motion.pileup_held {
                 tank.yaw = motion.hull.yaw;
                 tank.hold_world_position();
@@ -214,7 +263,7 @@ impl Battle {
                 _ if motion.scenery_normal.is_some() || motion.vehicle_contacts != 0 => {
                     Some("contact")
                 }
-                _ if !motion.scenery_breaks.is_empty() => Some("scenery_destroyed"),
+                _ if !motion.scenery.broken.is_empty() => Some("scenery_destroyed"),
                 _ if motion.slid => Some("slide"),
                 _ if deck && motion.changed => Some("supported"),
                 _ => None,
@@ -230,9 +279,9 @@ impl Battle {
                     "output.world.displacement_metres" = motion.travel.length(),
                     "output.world.roll_radians" = direction.x,
                     "output.world.scenery_support" = deck,
-                    "output.world.fragments_destroyed" = motion.scenery_breaks.len(),
-                    "output.world.turn_contact" = motion.turn_contact,
-                    "output.world.scenery_speed_scale" = motion.scenery_speed_scale,
+                    "output.world.fragments_destroyed" = motion.scenery.broken.len(),
+                    "output.world.turn_contact" = motion.scenery.turn_contact,
+                    "output.world.scenery_speed_scale" = motion.scenery.speed_scale,
                     "output.outcome" = outcome,
                 );
                 motion.parent = Some(span);
@@ -277,9 +326,10 @@ fn surface_pose(
 
 fn resolve_contacts(
     moves: &mut [VehicleMotion],
-    obstacles: &Scenery,
+    obstacles: &mut Scenery,
     bounds: [Vec2; 2],
     seconds: f32,
+    can_damage: bool,
 ) {
     let mut groups: Vec<_> = (0..moves.len()).collect();
     let mut seen = HashSet::new();
@@ -319,9 +369,11 @@ fn resolve_contacts(
                 let other_share = other.inverse_mass / total;
                 let closing = -(first.travel - other.travel).dot(hit.normal) / seconds;
                 let cause = first.parent.clone().or_else(|| other.parent.clone());
-                for (motion, normal, share) in [
-                    (&mut *first, hit.normal, first_share),
-                    (&mut *other, -hit.normal, other_share),
+                let first_load = other.pressure_towards(hit.normal);
+                let other_load = first.pressure_towards(-hit.normal);
+                for (motion, normal, share, load) in [
+                    (&mut *first, hit.normal, first_share, first_load),
+                    (&mut *other, -hit.normal, other_share, other_load),
                 ] {
                     if share == 0.0 {
                         continue;
@@ -332,10 +384,13 @@ fn resolve_contacts(
                         motion.vehicle_contacts += 1;
                     }
                     motion.vehicle_normal = Some(normal);
-                    let wanted = motion.travel + normal * correction * share;
-                    let (allowed, contact) = constrain(obstacles, motion.hull, wanted, bounds);
-                    motion.travel = allowed;
-                    motion.scenery_normal = contact.or(motion.scenery_normal);
+                    motion.resolve_push(
+                        obstacles,
+                        bounds,
+                        normal * correction * share,
+                        load,
+                        can_damage,
+                    );
                 }
 
                 // If a wall, wreck or boundary denied one body's share, the other

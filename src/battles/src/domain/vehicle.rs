@@ -1,7 +1,7 @@
 use super::{
     ammunition::{Ammunition, Reload},
     movement::{Drive, GRAVITY, GroundContact, approach},
-    world::{Hull, WorldMotion},
+    world::{HULL_HEIGHT, Hull, VehicleBody, WorldMotion},
 };
 use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 use std::time::Instant;
@@ -126,19 +126,19 @@ impl Tank {
 
     pub fn collision_hull(&self) -> Hull {
         let mobility = self.performance.as_ref().map(|p| &p.mobility);
-        let (half_size, offset) = mobility
+        let [min, max] = mobility
             .and_then(|profile| profile.collision_bounds)
-            .map_or_else(
-                || {
-                    (
-                        mobility.map_or(Vec2::new(1.25, 2.5), |profile| {
-                            Vec2::new(profile.track_half_width, profile.track_half_length)
-                        }),
-                        Vec2::ZERO,
-                    )
-                },
-                |[min, max]| ((max - min) * 0.5, (max + min) * 0.5),
-            );
+            .unwrap_or_else(|| {
+                let size = mobility.map_or(Vec2::new(1.25, 2.5), |profile| {
+                    Vec2::new(profile.track_half_width, profile.track_half_length)
+                });
+                [
+                    Vec3::new(-size.x, 0.0, -size.y),
+                    Vec3::new(size.x, HULL_HEIGHT, size.y),
+                ]
+            });
+        let half_size = (max - min) * 0.5;
+        let center = (max + min) * 0.5;
         let mut position = self.position;
         if self.world.is_tipped() {
             position.y -= (half_size.x - 0.35).max(0.0);
@@ -146,8 +146,14 @@ impl Tank {
         Hull {
             position,
             yaw: self.yaw,
-            half_size,
-            offset,
+            half_size: half_size.xz(),
+            offset: center.xz(),
+            body: Some(VehicleBody {
+                origin: self.position,
+                tilt: self.hull_tilt,
+                center,
+                half_size,
+            }),
         }
     }
 

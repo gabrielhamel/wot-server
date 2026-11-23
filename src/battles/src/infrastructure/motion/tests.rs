@@ -21,7 +21,7 @@ fn child_of(span: &SpanData, parent: &SpanData) -> bool {
 
 #[test]
 #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
-fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
+fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_command() {
     let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
     let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
     let dispatch = Arc::new(ScriptDispatch::new(script::load(&resources).unwrap()));
@@ -30,7 +30,7 @@ fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
     let map = runtime.maps.get_mut(&arena).unwrap().as_mut().unwrap();
     let start = map.spawns[0];
     let forward = (map.spawns[1] - start).normalize();
-    map.spawns[1] = start + forward * 5.03;
+    map.spawns[1] = start + forward * 5.001;
     let vehicle = || VehicleLoadout {
         descriptor: vec![1],
         outfit: Vec::new(),
@@ -114,6 +114,22 @@ fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
         player.entered = true;
     }
     let initial = battle.players[&ParticipantId(2)].vehicle.position;
+    let pusher_start = battle.players[&ParticipantId(1)].vehicle.position;
+    let along = Vec3::new(forward.x, 0.0, forward.y);
+    let side = Vec3::new(forward.y, 0.0, -forward.x);
+    let wall = initial + along * 2.525;
+    battle.obstacles = Scenery::test_numbered_mesh(
+        Some(0x7f7f_0002),
+        vec![(
+            [
+                wall - side * 4.0 - Vec3::Y,
+                wall + side * 4.0 - Vec3::Y,
+                wall + Vec3::Y * 4.0,
+            ],
+            Some((1, 1)),
+        )],
+    );
+    battle.areas.assign(&battle.obstacles, || 100);
     let next = battle.started_at + Duration::from_millis(100);
     let (outbox, mut received) = tokio::sync::mpsc::channel(128);
     let mut delivery = QueuedDelivery {
@@ -144,6 +160,12 @@ fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
         drive(&mut simulation, &mut delivery, 1);
         simulation.tick_with_delivery(&mut delivery, next);
         let battle = simulation.active.get_mut(&id).unwrap();
+        assert!(
+            battle
+                .obstacles
+                .intersect(initial + Vec3::Y, along, 5.0)
+                .is_none()
+        );
         battle.players.get_mut(&ParticipantId(2)).unwrap().observer = true;
         let player = battle.players.get_mut(&ParticipantId(1)).unwrap();
         player.tank.hold_world_position();
@@ -219,6 +241,13 @@ fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
         .unwrap()
         .position;
     assert!((pushed.xz() - initial.xz()).dot(forward) > 0.0);
+    let pusher = positions
+        .vehicles
+        .iter()
+        .find(|v| v.entity_id == 12)
+        .unwrap()
+        .position;
+    assert!((pusher.xz() - pusher_start.xz()).dot(forward) > 0.0);
     drop(positions);
     drop(received);
     drop(simulation);
@@ -246,8 +275,12 @@ fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
                 && child_of(span, control)
         })
         .unwrap();
+    assert!(has_field(contact, "output.world.fragments_destroyed", "1"));
     assert!(spans.iter().any(|span| span.name == "battles.replication"
         && has_field(span, "input.entity_id", "22")
+        && child_of(span, contact)));
+    assert!(spans.iter().any(|span| span.name == "battles.scenery"
+        && has_field(span, "output.scenery.deliveries.count", "2")
         && child_of(span, contact)));
     let fracture = spans
         .iter()
@@ -290,6 +323,7 @@ fn vehicle_motion(id: u64, distance: f32, travel: f32, inverse_mass: f32) -> Veh
             yaw: 0.0,
             half_size: Vec2::new(1.0, 2.0),
             offset: Vec2::ZERO,
+            body: None,
         },
         travel: Vec2::Y * travel,
         inverse_mass,
@@ -297,15 +331,11 @@ fn vehicle_motion(id: u64, distance: f32, travel: f32, inverse_mass: f32) -> Veh
         scenery_impulse: Vec2::ZERO,
         vehicle_normal: None,
         vehicle_contacts: 0,
-        turn_contact: false,
-        scenery_speed_scale: 1.0,
+        scenery: SceneryMotion::new(inverse_mass, 0.1),
+        drive_pressure: Vec2::ZERO,
+        pushed_pressure: Vec2::ZERO,
         impulse: Vec2::ZERO,
         slid: false,
-        scenery_breaks: Vec::new(),
-        scenery_cause: BreakageCause::Contact {
-            yaw: 0.0,
-            speed: 0.0,
-        },
         pileup_held: false,
     }
 }
@@ -315,17 +345,50 @@ fn heavier_tank_pushes_a_lighter_tank_and_stops_at_an_immovable_wreck() {
     let bounds = [Vec2::splat(-40.0), Vec2::splat(40.0)];
     let heavy = || vehicle_motion(1, 0.0, 4.0, 1.0 / 60_000.0);
     let mut vehicles = [heavy(), vehicle_motion(2, 5.0, 0.0, 1.0 / 20_000.0)];
-    resolve_contacts(&mut vehicles, &Scenery::default(), bounds, 0.1);
+    resolve_contacts(&mut vehicles, &mut Scenery::default(), bounds, 0.1, true);
     let [pusher, pushed] = vehicles;
     assert!(pushed.travel.y > 2.0 && pushed.travel.y < pusher.travel.y);
     assert!(pushed.impulse.y > 0.0);
     assert!(5.0 + pushed.travel.y - pusher.travel.y >= 4.0);
 
     let mut vehicles = [heavy(), vehicle_motion(2, 5.0, 0.0, 0.0)];
-    resolve_contacts(&mut vehicles, &Scenery::default(), bounds, 0.1);
+    resolve_contacts(&mut vehicles, &mut Scenery::default(), bounds, 0.1, true);
     let [pusher, wreck] = vehicles;
-    assert!((pusher.travel.y - (1.0 - CONTACT_SKIN)).abs() < 0.001);
+    assert!((pusher.travel.y - 1.0).abs() < 0.001);
     assert_eq!(wreck.travel, Vec2::ZERO);
+}
+
+#[test]
+fn engine_pressure_through_a_parked_tank_breaks_the_wall_and_both_advance() {
+    let bounds = [Vec2::splat(-40.0), Vec2::splat(40.0)];
+    let wall = [
+        Vec3::new(-4.0, -2.0, 6.0),
+        Vec3::new(4.0, -2.0, 6.0),
+        Vec3::new(0.0, 4.0, 6.0),
+    ];
+    let pair = || {
+        let mut pusher = vehicle_motion(1, 0.0, 0.02, 1.0 / 36_000.0);
+        pusher.drive_pressure = Vec2::Y * 12.0;
+        [pusher, vehicle_motion(2, 4.0, 0.0, 1.0 / 36_000.0)]
+    };
+    let mut scenery = Scenery::test_mesh(vec![(wall, Some((17, 18)))]);
+    let mut blocked = pair();
+    resolve_contacts(&mut blocked, &mut scenery, bounds, 0.1, true);
+    assert!(blocked.iter().all(|tank| tank.travel.length() < 0.001));
+    assert!(blocked.iter().all(|tank| tank.breakages().0.is_empty()));
+
+    let mut released = pair();
+    resolve_contacts(&mut released, &mut scenery, bounds, 0.1, true);
+    let [pusher, pushed] = released;
+    assert!(pusher.breakages().0.is_empty());
+    assert_eq!(pushed.breakages().0.len(), 1);
+    assert!(pusher.travel.y > 0.009 && pushed.travel.y > 0.009);
+    assert!(pushed.scenery_normal.is_none());
+
+    let mut solid = Scenery::test_mesh(vec![(wall, None)]);
+    let mut blocked = pair();
+    resolve_contacts(&mut blocked, &mut solid, bounds, 0.1, true);
+    assert!(blocked.iter().all(|tank| tank.travel.length() < 0.001));
 }
 
 #[test]
@@ -340,6 +403,7 @@ fn steering_into_a_parallel_wall_can_fracture_it_without_translation() {
         yaw: 0.0,
         half_size: Vec2::new(1.0, 2.5),
         offset: Vec2::ZERO,
+        body: None,
     };
     let mut solid = Scenery::test_mesh(vec![(wall, None)]);
     let turn = 0.2;
@@ -379,6 +443,7 @@ fn engine_pressure_breaks_from_rest_and_light_vehicles_lose_more_speed() {
         yaw: 0.0,
         half_size: Vec2::new(1.0, 2.0),
         offset: Vec2::ZERO,
+        body: None,
     };
     let apply = |mass: f32, reach, travel, press| {
         let mut scene = Scenery::test_mesh(vec![(wall, Some((73, 12)))]);
@@ -429,6 +494,7 @@ fn scenery_fracture_is_local_and_removes_only_the_hit_fragment() {
         yaw: 0.0,
         half_size: Vec2::ONE,
         offset: Vec2::ZERO,
+        body: None,
     };
     let mut motion = SceneryMotion::new(1.0 / 30_000.0, 0.1);
     motion.push(&mut scene, hull, Vec2::Y * 3.0, Vec2::Y * 3.0, Vec2::ZERO);
@@ -469,6 +535,7 @@ fn ramps_can_be_climbed_and_bridge_support_respects_the_underpass() {
         yaw: std::f32::consts::FRAC_PI_2,
         half_size: Vec2::new(1.0, 1.5),
         offset: Vec2::ZERO,
+        body: None,
     };
     for _ in 0..12 {
         let travel = Vec2::X;
@@ -495,7 +562,7 @@ fn a_pileup_against_a_wreck_does_not_compress_or_stop_unrelated_tanks() {
             let inverse_mass = if i == 9 { 0.0 } else { 1.0 / 30_000.0 };
             vehicle_motion(
                 i,
-                i as f32 * (4.0 + CONTACT_SKIN),
+                i as f32 * 4.0,
                 3.0 * f32::from(u8::from(i == 0)),
                 inverse_mass,
             )
@@ -504,7 +571,7 @@ fn a_pileup_against_a_wreck_does_not_compress_or_stop_unrelated_tanks() {
     let mut unrelated = vehicle_motion(10, 0.0, 3.0, 1.0 / 30_000.0);
     unrelated.hull.position.x = 20.0;
     moves.push(unrelated);
-    resolve_contacts(&mut moves, &Scenery::default(), bounds, 0.1);
+    resolve_contacts(&mut moves, &mut Scenery::default(), bounds, 0.1, true);
     for pair in moves[..10].windows(2) {
         let [first, other] = pair else { unreachable!() };
         let gap = other.hull.position.z + other.travel.y - first.hull.position.z - first.travel.y;
@@ -533,6 +600,7 @@ fn extracted_serene_coast_bridge_keeps_its_deck_separate_from_the_terrain() {
         yaw: 0.0,
         half_size: Vec2::new(1.0, 2.0),
         offset: Vec2::ZERO,
+        body: None,
     };
     let (deck, _, elevated) = surface_pose(&terrain, &scenery, hull, Vec2::ZERO).unwrap();
     assert!(elevated);

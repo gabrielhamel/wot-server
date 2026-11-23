@@ -172,15 +172,9 @@ impl Battle {
         let motions = self.advance_world(seconds);
         for motion in motions {
             let client = motion.client;
-            if !motion.scenery_breaks.is_empty() {
-                let mut publish = || {
-                    self.publish_breakages(
-                        delivery,
-                        wire,
-                        &motion.scenery_breaks,
-                        motion.scenery_cause,
-                    )
-                };
+            let (breakages, cause) = motion.breakages();
+            if !breakages.is_empty() {
+                let mut publish = || self.publish_breakages(delivery, wire, breakages, cause);
                 match &motion.parent {
                     Some(parent) => parent.in_scope(publish),
                     None => publish(),

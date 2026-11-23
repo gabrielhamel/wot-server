@@ -10,7 +10,7 @@ use crate::{
     VehicleSurface,
 };
 use anyhow::{Context, Result};
-use glam::{Vec3, Vec3Swizzles};
+use glam::Vec3;
 use std::collections::{BTreeMap, BTreeSet};
 use wot_platform::client_formats::pxml::Element;
 use wot_resources::ResourceBundle;
@@ -325,11 +325,10 @@ impl VehicleModules {
                         .zip(hull_position)
                         .map(|(bounds, position)| bounds.map(|point| point + position));
                     mobility.collision_bounds = match (chassis_bounds, mounted_hull) {
-                        (Some([chassis_min, chassis_max]), Some([hull_min, hull_max])) => Some([
-                            chassis_min.min(hull_min).xz(),
-                            chassis_max.max(hull_max).xz(),
-                        ]),
-                        (Some(bounds), None) => Some(bounds.map(|point| point.xz())),
+                        (Some([chassis_min, chassis_max]), Some([hull_min, hull_max])) => {
+                            Some([chassis_min.min(hull_min), chassis_max.max(hull_max)])
+                        }
+                        (Some(bounds), None) => Some(bounds),
                         (None, _) => None,
                     };
                     chassis_mobility.insert(id, mobility);

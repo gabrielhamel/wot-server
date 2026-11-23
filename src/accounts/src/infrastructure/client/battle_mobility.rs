@@ -350,8 +350,9 @@ mod tests {
             .unwrap()
             .mobility;
         let [rear, front] = mobility.collision_bounds.unwrap();
-        assert!(rear.y < -3.3 && front.y > 3.1);
-        assert!(rear.y < -mobility.track_half_length - 1.0);
+        assert!(rear.z < -3.3 && front.z > 3.1);
+        assert!(rear.z < -mobility.track_half_length - 1.0);
+        assert!(rear.y < 0.05 && (1.5..2.0).contains(&front.y));
     }
     #[test]
     #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]

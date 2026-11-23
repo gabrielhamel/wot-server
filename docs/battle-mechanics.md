@@ -265,14 +265,17 @@ The extractor reads Havok collision data for placed models through its
 data. Server contact tests run in Rust. The native client runs its own
 destruction effects.
 
-Tank contact uses swept oriented footprints and rejects pairs at different
-heights. The server alternates pair order across bounded solver passes.
-Installed vehicle and equipment mass determines how much each tank moves.
-An unattended tank can be pushed, while a wreck acts as an immovable hull.
-Displacements are checked against scenery and arena bounds before
-replication. If a pileup still overlaps after the solver budget, the affected
-group holds its previous horizontal pose for that tick. Other groups can
-continue moving.
+Tank contact sweeps the full chassis and mounted hull bounds in three
+dimensions, using each tank's current pitch, roll, and yaw. Contact starts
+at the bounds without extra tank-to-tank clearance. Translation during the
+sweep is horizontal. The server alternates pair order across bounded solver
+passes. Installed vehicle and equipment mass determines how much each tank
+moves. An unattended tank can be pushed, while a wreck acts as an immovable
+hull. The pushed hull can damage scenery with its resulting motion and engine
+pressure transmitted along the contact normal. The solver checks the proposed
+displacement against the remaining scenery and arena bounds in the same tick.
+If a pileup still overlaps after the solver budget, the affected group holds
+its previous horizontal pose for that tick. Other groups can continue moving.
 
 On steep surfaces, gravity can overcome material-dependent grip. The vehicle
 then slides downhill even without a drive command. Side slopes, hard turns
@@ -284,15 +287,17 @@ This is Training server policy modeled on Wargaming's published recovery
 rules, which introduced auto-flipping in Random Battles. [EU recovery notes][eu-recovery]
 
 The Lakeville bundle regression starts two tanks facing each other and runs
-a drive command through the arena tick. It verifies that both viewers are
-queued the pushed tank's new position, both tanks retain their health, and
-the pushed tank's contact and position spans descend from the initiating drive.
-The same regression breaks a scenery obstacle and checks that its contact
-state and replicated movement retain the drive's trace. The Serene Coast
+a drive command through the arena tick. It pushes the parked tank through a
+numbered wall and verifies that both tanks advance and retain their health.
+Both viewers are queued the updated positions and fracture under the
+initiating drive trace. The same regression checks a separate steering
+fracture and resulting tree fall. The Serene Coast
 bundle regression samples the `hd_env_UNI_036_Bridge` deck near
 `(-143.73, 102.71)` in world X/Z and checks that the ground below stays a
 separate driving surface. Synthetic regressions cover ramp traversal,
-partial structure damage, independent rounds, and a ten-tank pileup.
+partial structure damage, independent rounds, a ten-tank pileup, and AMX 30 B
+bounds meeting on a slope. The powered push test covers repeated pressure
+against a breakable wall and a solid wall that holds both tanks.
 The fresh bundle from the recorded executable produced 806 collision models
 with destructible triangles, including 25 with cascade dependencies. The
 Ensk regression traces a ray into a real numbered fragment, confirms its
@@ -326,7 +331,7 @@ the Toolkit's matching captured battle in its `WGDE` decoder and
 
 | Remaining gap | What is missing |
 | --- | --- |
-| Scenery and ground contact fidelity | The solver uses oriented chassis and hull envelopes, an estimated hull height and upward triangles for support. Dedicated movement materials, exact suspension contact, continuous angular sweeps, airborne collision and fully coupled 3D pileups remain open. |
+| Scenery and ground contact fidelity | The solver uses chassis and hull envelopes for tank contact, an estimated height for the scenery sweep and upward triangles for support. Dedicated movement materials, exact suspension contact, continuous angular sweeps, airborne collision and fully coupled 3D pileups remain open. |
 | Destruction coverage and fidelity | Unnumbered scenery lacks native synchronization. Trunk shapes, contact loads and pitch limits are estimates. Fall collisions with tanks and other trees, authoritative debris motion, and foliage concealment from standing and fallen vegetation remain open. Exact shell damage rules, shell continuation through broken cover and splash destruction remain open. |
 | Rollover fidelity and feedback | The current model tips onto a side. Full rotational dynamics, tumbles onto the roof, rollover destruction rules and native recovery HUD messages remain open. Ramming damage is outside this work. |
 | Environmental hazards | Airborne motion lands on the height map or a supporting surface. Landing and fall damage, water volumes and depth, drowning warnings and timers, and their battle outcomes remain open. |
