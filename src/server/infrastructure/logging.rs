@@ -19,7 +19,7 @@ pub fn server_targets(level: LevelFilter) -> Targets {
     )
 }
 
-pub(super) fn initialize(
+pub(in crate::server) fn initialize(
     level: LogLevel,
     resource_dir: &std::path::Path,
 ) -> Result<Option<Telemetry>> {

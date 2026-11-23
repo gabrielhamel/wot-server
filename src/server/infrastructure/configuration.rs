@@ -8,7 +8,7 @@ use std::{
 
 #[derive(Clone, Copy, Default, Deserialize, Serialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
-pub(super) enum LogLevel {
+pub(in crate::server) enum LogLevel {
     Error,
     #[default]
     Warn,
@@ -31,7 +31,7 @@ impl LogLevel {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct AdminConfiguration {
+pub(in crate::server) struct AdminConfiguration {
     #[serde(default = "default_web_bind")]
     pub bind: SocketAddrV4,
     #[serde(default = "secure_admin_cookies")]
@@ -49,7 +49,7 @@ fn default_web_bind() -> SocketAddrV4 {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct WebConfiguration {
+pub(in crate::server) struct WebConfiguration {
     #[serde(default = "default_web_bind")]
     pub bind: SocketAddrV4,
     pub ui_dir: Option<PathBuf>,
@@ -57,7 +57,7 @@ pub(super) struct WebConfiguration {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct StoreConfiguration {
+pub(in crate::server) struct StoreConfiguration {
     bind: Option<SocketAddrV4>,
     pub origin: String,
 }
@@ -86,7 +86,7 @@ impl StoreConfiguration {
 
 #[derive(Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct Configuration {
+pub(in crate::server) struct Configuration {
     pub resource_dir: PathBuf,
     pub database_url: String,
     pub login_bind: SocketAddrV4,
@@ -128,7 +128,7 @@ impl Default for Configuration {
 }
 
 impl Configuration {
-    pub(super) fn load(path: &Path) -> Result<Self> {
+    pub(in crate::server) fn load(path: &Path) -> Result<Self> {
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -220,7 +220,7 @@ impl Configuration {
     }
 }
 
-pub(super) fn admin_trusted_proxy_ips() -> Result<Vec<std::net::IpAddr>> {
+pub(in crate::server) fn admin_trusted_proxy_ips() -> Result<Vec<std::net::IpAddr>> {
     match std::env::var("WOT_ADMIN_TRUSTED_PROXY_IPS") {
         Ok(value) => parse_trusted_proxy_ips(&value),
         Err(std::env::VarError::NotPresent) => Ok(Vec::new()),

@@ -1,7 +1,5 @@
-mod database;
 use anyhow::{Context, Result};
 use clap::Parser;
-use database::connect_database;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -11,18 +9,19 @@ use wot_player_administration::contract as player_administration;
 use wot_player_sessions::{Gateway, GatewayAccounts, GatewayConfig};
 use wot_resources::ResourceBundle;
 
-mod browser_telemetry;
-mod configuration;
-mod logging;
-mod login_key;
-mod telemetry;
-mod web;
-use configuration::{Configuration, LogLevel};
+mod infrastructure;
+
+use infrastructure::{
+    browser_telemetry,
+    configuration::{self, Configuration, LogLevel},
+    database::connect_database,
+    logging, login_key, telemetry, web,
+};
 
 #[cfg(any(test, feature = "integration-test-support"))]
 #[doc(hidden)]
 pub mod test_support {
-    pub use super::{database::connect_database, logging::server_targets};
+    pub use super::infrastructure::{database::connect_database, logging::server_targets};
 
     pub fn configure_gateway_metrics(
         gateway: &mut wot_player_sessions::Gateway,

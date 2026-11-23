@@ -154,6 +154,16 @@ the latest client remains a research question. The
 [client validation record](client-validation.md) identifies the executable
 used for earlier observations.
 
+## Server source layout
+
+[Server composition](../src/server/mod.rs) handles startup, dependency wiring,
+and graceful shutdown. [Server infrastructure](../src/server/infrastructure)
+contains configuration I/O, PostgreSQL connection and migration orchestration,
+login key storage, console and OTLP export, browser telemetry ingestion, and
+static UI serving. Browser routing lives in
+[server presentation](../src/server/presentation/web/main.tsx), and the
+[web workspace](../src/server/web/package.json) bundles the browser application.
+
 ## Protocol implementation
 
 The server owns its [Mercury adapter](../src/platform/src/mercury) for

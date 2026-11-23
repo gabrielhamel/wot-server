@@ -18,7 +18,7 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 
 Supporting sources: [Admin HTTP middleware](../src/player-administration/src/presentation/mod.rs),
 [Store API middleware](../src/player-sessions/src/presentation/store/mod.rs),
-[Web UI middleware](../src/server/web.rs),
+[Web UI middleware](../src/server/infrastructure/web.rs),
 [HTTP address validation](../src/platform/src/infrastructure/http.rs),
 [Mercury gateway](../src/player-sessions/src/infrastructure/gateway/mod.rs), and
 [XMPP listener](../src/player-sessions/src/infrastructure/xmpp/mod.rs).
@@ -333,8 +333,8 @@ meanings on different operations; those differences are listed explicitly.
 | Attribute | Meaning and emission |
 | --- | --- |
 | [`input.resource_dir`](../src/server/mod.rs) | Configured extracted server resource-bundle path loaded at startup. |
-| [`input.pool.max_connections`](../src/server/database.rs) | Configured maximum PostgreSQL pool connections on `server.connect_database`. |
-| [`input.schema`](../src/server/database.rs) | Owning PostgreSQL schema selected for a context's embedded migrations. |
+| [`input.pool.max_connections`](../src/server/infrastructure/database.rs) | Configured maximum PostgreSQL pool connections on `server.connect_database`. |
+| [`input.schema`](../src/server/infrastructure/database.rs) | Owning PostgreSQL schema selected for a context's embedded migrations. |
 | [`input.ids.count`](../src/accounts/src/infrastructure/directory.rs) | Number of account IDs supplied to the published directory lookup. |
 | [`db.system.name`](../src/platform/src/infrastructure/observability.rs) | Database system, always `postgresql` in the shared database tracing adapter. |
 | [`db.operation.name`](../src/platform/src/infrastructure/observability.rs) | First SQL statement token, such as `SELECT`, `UPDATE`, `BEGIN`, or `COMMIT`; falls back to `QUERY` for an empty statement. |
@@ -358,7 +358,7 @@ fields. If the export filter is expanded, the following fields become relevant:
 
 ## Metadata added by the tracing library
 
-[Logging initialization](../src/server/logging.rs) uses the defaults of the
+[Logging initialization](../src/server/infrastructure/logging.rs) uses the defaults of the
 `tracing-opentelemetry` version pinned in [Cargo.lock](../Cargo.lock) (currently
 0.34.0). Its span metadata is independent of the explicit field inventory above.
 Source locations describe where a span is created, not a distributed stack trace.
@@ -389,7 +389,7 @@ by the bridge.
 
 These describe the exporting process/resource, not individual operations. The
 same resource accompanies logs and metrics. Source:
-[telemetry initialization](../src/server/telemetry.rs).
+[telemetry initialization](../src/server/infrastructure/telemetry.rs).
 
 | Attribute | Meaning and emission |
 | --- | --- |
@@ -460,14 +460,14 @@ Supporting sources include the [browser HTTP adapter](../src/platform/src/infras
 [Store API adapter](../src/player-sessions/src/infrastructure/store-api.ts),
 [browser exception observer](../src/platform/src/infrastructure/web/browser-telemetry.ts),
 [entry point](../src/server/presentation/web/main.tsx) and
-[OTLP relay](../src/server/browser_telemetry.rs).
+[OTLP relay](../src/server/infrastructure/browser_telemetry.rs).
 
 ### Browser telemetry relay
 
 `browser.telemetry.ingest` is a Rust server span for a browser OTLP POST. It
 has `ddd.bounded_context.name=server` and covers forwarding through the
 HTTP response. It omits browser span contents, origins and collector URLs.
-[Relay implementation](../src/server/browser_telemetry.rs)
+[Relay implementation](../src/server/infrastructure/browser_telemetry.rs)
 
 | Attribute | Meaning and emission |
 | --- | --- |

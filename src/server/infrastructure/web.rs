@@ -14,7 +14,7 @@ use std::{
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::{Span, field::Empty};
 
-pub(super) fn pages(
+pub(in crate::server) fn pages(
     directory: &Path,
     dashboard: bool,
     shop: bool,
@@ -65,7 +65,7 @@ async fn serve_page(State(proxies): State<Vec<IpAddr>>, request: Request, next: 
     let dashboard = matches!(request.uri().path(), "/dashboard" | "/dashboard/");
     let span = Span::current();
     if let Some(peer) = request.extensions().get::<SocketAddr>().copied() {
-        super::http::record_client_address(peer, request.headers(), &proxies);
+        wot_platform::http::record_client_address(peer, request.headers(), &proxies);
     }
     let mut response = next.run(request).await;
     span.record("http.response.status_code", response.status().as_u16());

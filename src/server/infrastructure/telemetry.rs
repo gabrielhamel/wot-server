@@ -5,7 +5,7 @@ use opentelemetry_sdk::{
 };
 use std::{env, path::Path, time::Instant};
 
-pub(super) struct Telemetry {
+pub(in crate::server) struct Telemetry {
     logger: SdkLoggerProvider,
     tracer: SdkTracerProvider,
     meter: SdkMeterProvider,
@@ -92,11 +92,11 @@ impl Telemetry {
         &self.logger
     }
 
-    pub(super) fn meter(&self) -> opentelemetry::metrics::Meter {
+    pub(in crate::server) fn meter(&self) -> opentelemetry::metrics::Meter {
         self.meter.meter(env!("CARGO_PKG_NAME"))
     }
 
-    pub(super) fn shutdown(self) {
+    pub(in crate::server) fn shutdown(self) {
         for (signal, result) in [
             ("logs", self.logger.shutdown()),
             ("traces", self.tracer.shutdown()),
