@@ -24,8 +24,9 @@ responsibilities recognizable to a player, operator, or domain specialist.
 
 Each server bounded context belongs in its own Rust library crate and Cargo
 workspace member. A library owns its domain model, use cases, adapters, and
-published contract. Context libraries live under `crates/`. The server binary
-composes these libraries and supplies their runtime dependencies.
+published contract. Context libraries, their shared dependencies, and the web
+workspace live under `src/`. The server binary composes the libraries and
+supplies their runtime dependencies.
 
 A crate boundary lets Rust enforce visibility across contexts and lets Cargo
 check or test one context with its declared dependencies. Workspace-wide
@@ -34,13 +35,13 @@ builds still compile the full dependency graph. For example, run
 
 ## Where shared code goes
 
-Put a domain value in [Shared Kernel](../crates/wot-shared-kernel/README.md) when
+Put a domain value in [Shared Kernel](../src/shared-kernel/README.md) when
 multiple contexts need the same meaning and invariants. Keep the model small
 and review changes with its consumers. A context's published contract stays
 with its owner. The map shows the extracted kernel and its consumers using
 [upstream and downstream relationships](https://contextmapper.org/docs/ar-extract-shared-kernel/).
 
-Put reusable infrastructure in [Platform](../crates/wot-platform/README.md) when it
+Put reusable infrastructure in [Platform](../src/platform/README.md) when it
 works independently of a domain context. Infrastructure specific to a workflow
 stays with that workflow. Offline tools with their own inputs, outputs, and
 research vocabulary remain explicit boundaries.
@@ -72,10 +73,10 @@ imports and TypeScript type imports. Pass context-specific behavior through the
 published API, such as the dashboard's HTTP transport for the embedded Store.
 
 For example, Social resolves numeric player IDs through Accounts'
-[`PlayerDirectory`](../crates/wot-accounts/src/contract.rs). Player Sessions submits
-revision-checked commands through [Accounts' garage API](../crates/wot-accounts/src/application/garage.rs)
+[`PlayerDirectory`](../src/accounts/src/contract.rs). Player Sessions submits
+revision-checked commands through [Accounts' garage API](../src/accounts/src/application/garage.rs)
 and delivers the committed result to the connected client. Player Sessions
-also submits a confirmed roster to the [Battles contract](../crates/wot-battles/src/contract.rs).
+also submits a confirmed roster to the [Battles contract](../src/battles/src/contract.rs).
 Battles owns the resulting arena and its lifecycle.
 
 ## PostgreSQL ownership and migrations

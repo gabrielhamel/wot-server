@@ -191,14 +191,14 @@ successful TCP connection alone does not establish that Contacts initialized.
 
 ## Boundaries, limits and failure behavior
 
-[Social](../crates/wot-social/README.md) owns directory-backed contacts, durable private
+[Social](../src/social/README.md) owns directory-backed contacts, durable private
 pairs and message history. Its PostgreSQL adapter serializes both participants in
 ID order, checks ignores in both directions within the write transaction, enforces
 saved-pair and retention limits, and commits before reporting success. Account
 names come from Accounts' published `PlayerDirectory` API. Supplied `from`
 attributes are never trusted as message authors.
 
-[Player Sessions](../crates/wot-player-sessions/README.md) owns XMPP framing, token admission, roster and WG
+[Player Sessions](../src/player-sessions/README.md) owns XMPP framing, token admission, roster and WG
 extension translation, presence fanout and live sockets. The TCP task limit equals
 `max_clients`; each session processes one stanza at a time. Incoming XML is bounded
 to 32 KiB, depth 16, and 64 socket reads per incomplete frame. DTDs are rejected.

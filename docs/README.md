@@ -38,7 +38,7 @@ establish compatibility with the current client.
 | Buying and mounting consumables and setting auto-resupply | [Garage consumables](consumables.md) |
 | Seasonal camouflage, paint, decals, inscriptions, effects and 3D attachments | [Garage camouflage and exterior customization](camouflage.md) |
 | Buying and mounting equipment and crew directives | [Garage directives](directives.md) |
-| Arena lifecycle, round state and battle ownership | [Battles](../crates/wot-battles/README.md) |
+| Arena lifecycle, round state and battle ownership | [Battles](../src/battles/README.md) |
 | Inspecting official-client battle recordings and measuring movement | [Battle replay research](battle-replays.md) |
 | Managing crew, perks, training and barracks | [Garage crew](crew.md) |
 | Viewing and selling unmounted stock | [Garage Depot](depot.md) |
@@ -63,5 +63,6 @@ Architecture rules and documentation maintenance requirements are in
 [AGENTS.md](../AGENTS.md). The toolkit map records its audit baseline; its future
 contexts remain planning material. The runtime contexts are Accounts, Social,
 Player Sessions, Battles, and Player Administration. Each has its own Rust
-library crate. Shared Kernel and Platform provide shared support as libraries. Binary Mapping and Resource Extraction run offline as workspace
-packages under `tools/`.
+library crate under `src/`, alongside the shared libraries and web workspace.
+Binary Mapping and Resource Extraction run offline as workspace packages under
+`tools/`.

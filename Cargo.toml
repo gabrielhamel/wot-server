@@ -1,18 +1,18 @@
 [workspace]
 members = [
-  "crates/wot-accounts",
-  "crates/wot-battles",
-  "crates/wot-platform",
-  "crates/wot-player-administration",
-  "crates/wot-player-sessions",
-  "crates/wot-shared-kernel",
-  "crates/wot-social",
+  "src/accounts",
+  "src/battles",
+  "src/platform",
+  "src/player-administration",
+  "src/player-sessions",
+  "src/resources",
+  "src/shared-kernel",
+  "src/social",
   "tools/wot-binary-map",
   "tools/wot-context-maps",
   "tools/wot-extract",
   "tools/wot-game-client",
   "tools/wot-replay",
-  "tools/wot-resources",
 ]
 resolver = "3"
 
@@ -85,14 +85,14 @@ tracing = "0.1"
 tracing-opentelemetry = { version = "0.34", default-features = false }
 tracing-subscriber = "0.3"
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
-wot-accounts = { path = "crates/wot-accounts" }
-wot-battles = { path = "crates/wot-battles" }
-wot-platform = { path = "crates/wot-platform" }
-wot-player-administration = { path = "crates/wot-player-administration" }
-wot-player-sessions = { path = "crates/wot-player-sessions" }
-wot-resources = { path = "tools/wot-resources" }
-wot-shared-kernel = { path = "crates/wot-shared-kernel" }
-wot-social = { path = "crates/wot-social" }
+wot-accounts = { path = "src/accounts" }
+wot-battles = { path = "src/battles" }
+wot-platform = { path = "src/platform" }
+wot-player-administration = { path = "src/player-administration" }
+wot-player-sessions = { path = "src/player-sessions" }
+wot-resources = { path = "src/resources" }
+wot-shared-kernel = { path = "src/shared-kernel" }
+wot-social = { path = "src/social" }
 
 [package]
 name = "wot-server"
@@ -100,6 +100,7 @@ version.workspace = true
 edition = "2024"
 license = "MIT"
 default-run = "wot-server"
+build = "src/server/build.rs"
 
 [features]
 integration-test-support = [

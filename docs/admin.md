@@ -9,7 +9,7 @@ credentials in the game client's basic login flow immediately after creation.
 
 The catalog selects the tier I starters from regular nation tech trees and
 excludes collector vehicles. The initial settings use the
-[starter settings](../crates/wot-accounts/src/infrastructure/client/starter_settings.json).
+[starter settings](../src/accounts/src/infrastructure/client/starter_settings.json).
 
 Players and administrators share the **My garage** and **Store** views when
 the server enables the [Store](store.md#player-dashboard). Administrators can
@@ -21,7 +21,7 @@ From the repository root, build the SPA with Node.js 22.12 or later.
 
 ```sh
 npm ci
-npm run build --workspace tools/web
+npm run build --workspace src/web
 ```
 
 Add these top-level settings to the `server.json` beside the game server
@@ -31,7 +31,7 @@ executable for local HTTP development.
 {
   "web": {
     "bind": "127.0.0.1:8080",
-    "ui_dir": "../../tools/web/dist"
+    "ui_dir": "../../src/web/dist"
   },
   "admin": {
     "secure_cookies": false

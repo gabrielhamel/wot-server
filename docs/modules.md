@@ -93,9 +93,9 @@ Implementation ownership:
 
 | Source | Responsibility |
 | --- | --- |
-| `crates/wot-accounts/src/domain/modules.rs` | Progression, research, installation and stock rules. |
-| `crates/wot-accounts/src/application/mod.rs` | Module command/proposal and repository contract. |
-| `crates/wot-accounts/src/infrastructure/client/module_defs.rs` | Versioned resource translation, research indices and gun-specific ammunition. |
-| `crates/wot-accounts/src/infrastructure/client/progression.rs` | Catalog-backed planning and client cache deltas. |
-| `crates/wot-accounts/src/infrastructure/postgres.rs` | Coherent reads and atomic persistence. |
-| `crates/wot-player-sessions/src/infrastructure/gateway/progression.rs` | Bounded command execution and completion responses. |
+| `src/accounts/src/domain/modules.rs` | Progression, research, installation and stock rules. |
+| `src/accounts/src/application/mod.rs` | Module command/proposal and repository contract. |
+| `src/accounts/src/infrastructure/client/module_defs.rs` | Versioned resource translation, research indices and gun-specific ammunition. |
+| `src/accounts/src/infrastructure/client/progression.rs` | Catalog-backed planning and client cache deltas. |
+| `src/accounts/src/infrastructure/postgres.rs` | Coherent reads and atomic persistence. |
+| `src/player-sessions/src/infrastructure/gateway/progression.rs` | Bounded command execution and completion responses. |

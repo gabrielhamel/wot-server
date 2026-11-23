@@ -125,8 +125,8 @@ Use technical names for adapters and implementation details. See the
 storage ownership.
 
 Put shared domain concepts with the same meaning and invariants in
-`crates/wot-shared-kernel/`. Put reusable infrastructure independent of the domain in
-`crates/wot-platform/`. Keep context-specific policies and published integration
+`src/shared-kernel/`. Put reusable infrastructure independent of the domain in
+`src/platform/`. Keep context-specific policies and published integration
 contracts with the context that owns them.
 
 ### Cross-context contracts and persistence
@@ -161,11 +161,11 @@ context. Create only the layers the context uses.
 Keep executable bootstrapping small, use focused modules with clear ownership,
 and expose context entry points instead of reaching into another context's
 internals. Keep protocol wire representations separate from domain models.
-Keep server composition in the root `src/`. Put context libraries and shared
-support libraries under `crates/`. Give standalone
-tools their own workspace packages under `tools/`. The server, context
-libraries, and tools inherit their release version from `[workspace.package]`
-in the root Cargo manifest.
+Keep all server sources under `src/`, including composition, context
+libraries, shared libraries, and the web workspace. Reserve `tools/` for
+standalone utilities that the server does not depend on at runtime. The
+server, libraries, and tools inherit their release version from
+`[workspace.package]` in the root Cargo manifest.
 
 ### Browser application
 
@@ -173,7 +173,7 @@ Use strict TypeScript. Keep browser pages and components in their owning
 context's `presentation/` directory, with application contracts and HTTP
 adapters in the corresponding context layers. Keep common browser transport,
 telemetry and presentation primitives in Platform. Put route composition in
-`src/server/` and Vite+ configuration and test setup under `tools/web/`.
+`src/server/` and Vite+ configuration and test setup under `src/web/`.
 
 Use Testing Library and MSW for admin and Store regression coverage. Render
 the full page, interact through accessible controls, and assert visible

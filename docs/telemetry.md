@@ -28,8 +28,8 @@ collector. Each series describes one server process.
 The gateway refreshes both count gauges on its tick loop. Tick histograms
 record one sample per gateway tick when at least one arena is active at the
 start of processing. Duration and delay use buckets around the 100 ms interval.
-See the [metric instruments](../crates/wot-player-sessions/src/infrastructure/gateway/metrics.rs)
-and [gateway scheduler](../crates/wot-player-sessions/src/infrastructure/gateway/mod.rs).
+See the [metric instruments](../src/player-sessions/src/infrastructure/gateway/metrics.rs)
+and [gateway scheduler](../src/player-sessions/src/infrastructure/gateway/mod.rs).
 
 PostgreSQL operation timing starts when the adapter polls the SQLx future, so
 it includes pool acquisition time for operations that acquire a connection.
@@ -38,7 +38,7 @@ SQL verbs with an `OTHER` fallback), and `outcome` (`success` or `error`). SQL
 text, bind parameters and error messages are absent from metric attributes.
 Pool gauges sample the shared pool at collection time. The server registers
 these metrics after connecting and applying migrations. See the
-[PostgreSQL instruments](../crates/wot-platform/src/infrastructure/observability/database_metrics.rs).
+[PostgreSQL instruments](../src/platform/src/infrastructure/observability/database_metrics.rs).
 
 ## Trace structure
 
@@ -426,7 +426,7 @@ even when writing its protocol error response succeeds.
 
 ## PostgreSQL
 
-The [Platform database tracing adapter](../crates/wot-platform/src/infrastructure/observability.rs)
+The [Platform database tracing adapter](../src/platform/src/infrastructure/observability.rs)
 awaits application-issued queries and explicit transaction boundaries inside
 `postgresql.query` spans. It records the context of the caller.
 

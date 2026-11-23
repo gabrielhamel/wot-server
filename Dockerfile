@@ -1,9 +1,8 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.99-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07 AS rust-source
 WORKDIR /build
-COPY Cargo.toml Cargo.lock build.rs ./
+COPY Cargo.toml Cargo.lock ./
 COPY tools/ tools/
-COPY crates/ crates/
 COPY src/ src/
 COPY tests/*.rs tests/
 
@@ -57,13 +56,11 @@ ENTRYPOINT ["/usr/local/bin/wot-e2e"]
 FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS web-build
 WORKDIR /build
 COPY package.json package-lock.json ./
-COPY tools/web/package.json tools/web/package.json
+COPY src/web/package.json src/web/package.json
 RUN npm ci
-COPY tools/web/ tools/web/
-COPY crates/ crates/
 COPY src/ src/
 ARG WOT_SERVER_VERSION
-RUN npm run build --workspace tools/web
+RUN npm run build --workspace src/web
 
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 WORKDIR /opt/wot-server
@@ -72,7 +69,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && chown 10001:10001 .
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/licenses/wot-server/
 COPY --from=server-build /build/wot-server ./
-COPY --from=web-build /build/tools/web/dist/ ./web/
+COPY --from=web-build /build/src/web/dist/ ./web/
 RUN ln -s web dashboard
 COPY resources/ ./resources/
 USER 10001:10001
