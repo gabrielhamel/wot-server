@@ -10,7 +10,7 @@ Packed XML reader for the client's destruction definitions.
 | --- | --- |
 | `presentation/` | Parse input and output paths and report the extraction result. |
 | `application/` | Select definitions, derive component class metadata and write a new bundle. |
-| `infrastructure/` | Index client packages and loose files, copy selected bytes, and publish collision meshes, structure dependencies and numbered SpeedTree placements. |
+| `infrastructure/` | Index client packages and loose files, copy selected bytes, and publish vehicle armor meshes, scenery collision meshes, structure dependencies and numbered SpeedTree placements. |
 
 | Term | Meaning |
 | --- | --- |

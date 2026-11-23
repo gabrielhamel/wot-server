@@ -1,4 +1,5 @@
 use super::{
+    battle_armor::{ArmorMaterials, shell_ballistics},
     battle_performance,
     item_defs::{self, VehicleDef},
     item_prices::ItemPrices,
@@ -11,10 +12,13 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use glam::Vec3;
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use wot_platform::client_formats::pxml::Element;
 use wot_resources::ResourceBundle;
-use wot_shared_kernel::{GunPerformance, Mobility, VehiclePerformance};
+use wot_shared_kernel::{ArmorMesh, GunPerformance, Mobility, MountedArmor, VehiclePerformance};
 
 const METRIC_HORSEPOWER_TO_WATTS: f32 = 735.5;
 
@@ -30,6 +34,10 @@ pub(super) struct VehicleModules {
     hull_positions: BTreeMap<i32, Vec3>,
     turret_position: Option<Vec3>,
     gun_performance: BTreeMap<(i32, i32), GunPerformance>,
+    hull_armor: Option<Arc<ArmorMesh>>,
+    chassis_armor: BTreeMap<i32, Arc<ArmorMesh>>,
+    turret_armor: BTreeMap<i32, Arc<ArmorMesh>>,
+    gun_armor: BTreeMap<(i32, i32), MountedArmor>,
     pub(super) training_health: BTreeMap<i32, i16>,
 }
 
@@ -46,13 +54,27 @@ impl VehicleModules {
         let [forward_speed, reverse_speed] = self.speed_limits?;
         let chassis = modules.get(&ModuleKind::Chassis)?;
         let hull_traverse = *self.hull_traverse.get(chassis)?;
-        let gun = self
-            .gun_performance
-            .get(&(
-                *modules.get(&ModuleKind::Turret)?,
-                *modules.get(&ModuleKind::Gun)?,
-            ))?
-            .clone();
+        let turret = *modules.get(&ModuleKind::Turret)?;
+        let gun_id = *modules.get(&ModuleKind::Gun)?;
+        let gun = self.gun_performance.get(&(turret, gun_id))?.clone();
+        let mounted = |mesh: Option<&Arc<ArmorMesh>>, offset| {
+            mesh.map(|mesh| MountedArmor {
+                offset,
+                mesh: mesh.clone(),
+            })
+        };
+        let armor = [
+            mounted(self.chassis_armor.get(chassis), Vec3::ZERO),
+            mounted(
+                self.hull_armor.as_ref(),
+                self.hull_positions
+                    .get(chassis)
+                    .copied()
+                    .unwrap_or_default(),
+            ),
+            mounted(self.turret_armor.get(&turret), Vec3::ZERO),
+            self.gun_armor.get(&(turret, gun_id)).cloned(),
+        ];
         let mut mobility = self
             .chassis_mobility
             .get(chassis)
@@ -97,6 +119,7 @@ impl VehicleModules {
                 .zip(self.turret_position)
                 .map(|(hull, turret)| hull + turret),
             gun,
+            armor,
         })
     }
 
@@ -135,6 +158,7 @@ impl VehicleModules {
         Some(exterior)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn load(
         fs: &ResourceBundle,
         nation: &str,
@@ -143,6 +167,7 @@ impl VehicleModules {
         prices: &ItemPrices,
         shell_prices: &BTreeMap<i32, ShellPrice>,
         effects: &super::shell_effects::ShellEffectCatalog,
+        armor: &ArmorMaterials,
     ) -> Result<Self> {
         let dir = item_defs::vehicle_dirs(fs, nation)
             .into_iter()
@@ -244,6 +269,13 @@ impl VehicleModules {
         let mut chassis_mobility = BTreeMap::new();
         let mut engine_power_hp = BTreeMap::new();
         let mut hull_positions = BTreeMap::new();
+        let mut chassis_armor = BTreeMap::new();
+        let mut turret_armor = BTreeMap::new();
+        let mut gun_armor = BTreeMap::new();
+        let hull_armor = match vehicle.get_child_element("hull") {
+            Some(hull) => armor.mesh(fs, None, hull)?,
+            None => None,
+        };
         let hull_bounds = match vehicle.get_child_element("hull") {
             Some(hull) => battle_performance::collision_bounds(fs, None, hull)?,
             None => None,
@@ -320,6 +352,9 @@ impl VehicleModules {
                     if let Some(position) = hull_position {
                         hull_positions.insert(id, position);
                     }
+                    if let Some(mesh) = armor.mesh(fs, local, base)? {
+                        chassis_armor.insert(id, mesh);
+                    }
                     let chassis_bounds = battle_performance::collision_bounds(fs, local, base)?;
                     let mounted_hull = hull_bounds
                         .zip(hull_position)
@@ -348,6 +383,9 @@ impl VehicleModules {
                     );
                 }
                 if kind == 3 {
+                    if let Some(mesh) = armor.mesh(fs, local, base)? {
+                        turret_armor.insert(id, mesh);
+                    }
                     let gun_position = battle_performance::vector(local, base, "gunPosition");
                     if let Some(health) = hull_health
                         .zip(number("maxHealth"))
@@ -371,6 +409,11 @@ impl VehicleModules {
                             .and_then(|xml| xml.get_child_element(name));
                         let gun_base =
                             gun_shared.or(gun_local).context("Missing gun definition")?;
+                        if let Some((mesh, offset)) =
+                            armor.mesh(fs, gun_local, gun_base)?.zip(gun_position)
+                        {
+                            gun_armor.insert((id, gun), MountedArmor { mesh, offset });
+                        }
                         let surfaces = [
                             (VehicleSurface::Hull, hull_camouflage),
                             (
@@ -481,6 +524,7 @@ impl VehicleModules {
                         let mut shell_damage = BTreeMap::new();
                         let mut shell_ranges = BTreeMap::new();
                         let mut shell_effects = BTreeMap::new();
+                        let mut ballistics = BTreeMap::new();
                         for (name, shot) in shots.iter_children_all() {
                             let shell = shells
                                 .get_child_element(name)
@@ -508,11 +552,19 @@ impl VehicleModules {
                             if let Some(range) = battle_performance::shell_range(local, shared) {
                                 shell_ranges.insert(shell_id, range);
                             }
+                            if let Some(profile) = shell_ballistics(
+                                local,
+                                shared,
+                                shell,
+                                armor.projectile_speed_factor,
+                            ) {
+                                ballistics.insert(shell_id, profile);
+                            }
                             if let Some(effect) = effects.resolve(local.or(shared), shell) {
                                 shell_effects.insert(shell_id, effect);
                             }
                         }
-                        if let Some(performance) = battle_performance::traverse(local, base)
+                        if let Some(mut performance) = battle_performance::traverse(local, base)
                             .and_then(|traverse| {
                                 battle_performance::gun(
                                     gun_local,
@@ -525,6 +577,7 @@ impl VehicleModules {
                                 )
                             })
                         {
+                            performance.shell_ballistics = ballistics;
                             gun_performance.insert((id, gun), performance);
                         }
                         let total: u64 = defaults.iter().map(|(_, n)| u64::from(*n)).sum();
@@ -591,6 +644,10 @@ impl VehicleModules {
             exterior_slots,
             chassis_exteriors,
             training_health,
+            hull_armor,
+            chassis_armor,
+            turret_armor,
+            gun_armor,
             speed_limits,
             hull_traverse,
             chassis_mobility,

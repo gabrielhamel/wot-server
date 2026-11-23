@@ -134,18 +134,21 @@ fn read_collision(
         .and_then(|tagfile| collision::triangles(&tagfile, model, railway_stock)))
 }
 
-pub(crate) fn is_vehicle_contact_model(path: &str) -> bool {
+pub(crate) fn is_vehicle_collision_model(path: &str) -> bool {
     path.starts_with("vehicles/")
         && path
             .rsplit_once("/collision_client/")
             .is_some_and(|(_, file)| {
                 file.strip_suffix(".havok").is_some_and(|name| {
-                    !name.contains('/') && (name.starts_with("Chassis") || name.starts_with("Hull"))
+                    !name.contains('/')
+                        && ["Chassis", "Hull", "Turret", "Gun"]
+                            .iter()
+                            .any(|part| name.starts_with(part))
                 })
             })
 }
 
-pub(crate) fn extract_vehicle_bounds(
+pub(crate) fn extract_vehicle_collision(
     client: &mut ClientResources,
     paths: &[String],
     root: &Path,
@@ -154,10 +157,10 @@ pub(crate) fn extract_vehicle_bounds(
     let mut bytes = 0;
     for path in paths {
         let data = client.read_bounded(path, 16 * 1024 * 1024)?;
-        let Some(bounds) = tagfile::Tagfile::from_bytes(&data)
-            .ok()
-            .and_then(|tag| collision::bounds(&tag))
-        else {
+        let Ok(tag) = tagfile::Tagfile::from_bytes(&data) else {
+            continue;
+        };
+        let Some(bounds) = collision::bounds(&tag) else {
             continue;
         };
         let dest = root.join(path).with_extension("bounds");
@@ -169,6 +172,28 @@ pub(crate) fn extract_vehicle_bounds(
         file.write_all(b"WVB1")?;
         for value in bounds.into_iter().flat_map(|point| point.to_array()) {
             file.write_f32::<LE>(value)?;
+        }
+        file.flush()?;
+        count += 1;
+        bytes += dest.metadata()?.len();
+        let Some(triangles) =
+            collision::triangles(&tag, None, false).filter(|triangles| !triangles.is_empty())
+        else {
+            continue;
+        };
+        let dest = dest.with_extension("armor");
+        let mut file = BufWriter::new(File::create(&dest)?);
+        file.write_all(b"WVA1")?;
+        file.write_u32::<LE>(triangles.len().try_into()?)?;
+        for triangle in triangles {
+            file.write_u32::<LE>(triangle.material)?;
+            for value in triangle
+                .vertices
+                .into_iter()
+                .flat_map(|point| point.to_array())
+            {
+                file.write_f32::<LE>(value)?;
+            }
         }
         file.flush()?;
         count += 1;

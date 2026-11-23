@@ -1,4 +1,5 @@
 mod ammunition;
+pub(crate) mod armor;
 pub(super) mod movement;
 
 pub(super) mod round;

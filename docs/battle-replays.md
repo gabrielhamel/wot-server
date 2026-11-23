@@ -351,7 +351,7 @@ heightfield, placed obstacle meshes, and eligible vehicles. The heightfield
 uses a one-metre search and a binary refinement. The server bounds the
 obstacle search with the nearer of the terrain and vehicle candidates. It
 sends the tracer and muzzle event at launch, then resolves contact once the
-distance divided by the advertised 450 m/s has elapsed. For a scene impact,
+distance divided by the advertised shell speed has elapsed. For a scene impact,
 `explodeProjectile` carries the collision point, material effect index and
 loaded shell data. Contacts use the poses at launch and
 are processed on the battle clock. The trajectory is straight.
@@ -439,7 +439,7 @@ replicated partway through flight. The direct hit at 87.74 s in replay
 defines the earlier endpoint.
 
 Training uses the equipped gun's nominal `maxDistance` for the loaded shell
-and retains the straight-ray simulation at 450 m/s. Every tracer advertises
+and retains a straight-ray simulation using the equipped shell’s speed. Every tracer advertises
 that range. A miss has no impact message. An invalid or missing range rejects the shot before
 consuming ammunition. The parser accepts positive distances through 10 km,
 the largest value present in the reference shot definitions, which bounds

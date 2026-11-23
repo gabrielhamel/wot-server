@@ -33,9 +33,10 @@ activation, renewal and expiry to the garage. Both contexts use the shared
 [Resource Extraction](tools/wot-extract/README.md) runs offline and publishes
 the [bundle contract](src/resources/README.md) to Accounts, Player Sessions and Battles. The
 extractor reads installed client packages and loose files. Accounts loads the
-garage catalog from the bundle, and Player Sessions loads its ABI definitions and
-component class metadata. Battles loads the arena catalog, terrain and scenery
-collision meshes with destructible fragments and vehicle contact bounds.
+garage catalog, vehicle contact bounds and armor meshes from the bundle. Player
+Sessions loads ABI definitions and component class metadata. Battles loads the
+arena catalog, terrain and scenery collision meshes with destructible fragments,
+and receives the equipped armor meshes and shell ballistics through the launch contract.
 
 [Battles](src/battles/README.md) owns live arenas, round phases, participants,
 vehicle simulation and native battle replication. Player Sessions submits a

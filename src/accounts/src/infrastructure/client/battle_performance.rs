@@ -4,15 +4,21 @@ use wot_platform::client_formats::pxml::{Element, Value};
 use wot_resources::ResourceBundle;
 use wot_shared_kernel::{GunLoading, GunPerformance, Mobility, ShellEffects, Wheel};
 
+pub(super) fn collision_model<'a>(
+    local: Option<&'a Element>,
+    base: &'a Element,
+) -> Option<&'a str> {
+    field(local, base, &["hitTester", "collisionModelClient"])
+        .and_then(Value::as_string)
+        .and_then(|path| path.trim().strip_suffix(".model"))
+}
+
 pub(super) fn collision_bounds(
     fs: &ResourceBundle,
     local: Option<&Element>,
     base: &Element,
 ) -> anyhow::Result<Option<[Vec3; 2]>> {
-    let Some(model) = field(local, base, &["hitTester", "collisionModelClient"])
-        .and_then(Value::as_string)
-        .and_then(|path| path.strip_suffix(".model"))
-    else {
+    let Some(model) = collision_model(local, base) else {
         return Ok(None);
     };
     let path = format!("{model}.bounds");
@@ -221,6 +227,7 @@ pub(super) fn gun(
         shell_damage,
         shell_ranges,
         shell_effects,
+        shell_ballistics: BTreeMap::new(),
     })
 }
 
@@ -345,6 +352,29 @@ mod tests {
                 .battle_performance(&vehicle.modules.rules.stock)
                 .unwrap()
         };
+
+        let t1 = performance("usa:A01_T1_Cunningham");
+        assert!(t1.armor.iter().all(Option::is_some));
+        let hull = &t1.armor[1].as_ref().unwrap().mesh;
+        assert!(
+            hull.triangles
+                .iter()
+                .any(|t| t.plate.damage_factor == 1.0 && t.plate.thickness_mm > 0.0)
+        );
+        assert!(
+            t1.armor[0]
+                .as_ref()
+                .unwrap()
+                .mesh
+                .triangles
+                .iter()
+                .all(|t| t.plate.damage_factor == 0.0 && t.plate.thickness_mm > 0.0)
+        );
+        assert!(t1.gun.shell_ballistics.values().any(|shell| matches!(shell.kind,
+            wot_shared_kernel::ShellKind::HighExplosive { spall_damage, shield_penetration: true, .. }
+                if spall_damage > 0.0
+        )));
+        assert_eq!(t1.gun.shell_ballistics.len(), t1.gun.shell_damage.len());
 
         let su85 = performance("ussr:R02_SU-85");
         let [left, right] = su85.gun.yaw_limits.unwrap();

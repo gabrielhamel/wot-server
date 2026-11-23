@@ -1,5 +1,5 @@
 use glam::Vec3;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub struct VehiclePerformance {
@@ -9,6 +9,7 @@ pub struct VehiclePerformance {
     pub mobility: Mobility,
     pub turret_pivot: Option<Vec3>,
     pub gun: GunPerformance,
+    pub armor: [Option<MountedArmor>; 4],
 }
 
 #[derive(Clone, Debug)]
@@ -70,6 +71,7 @@ pub struct GunPerformance {
     pub shell_damage: BTreeMap<i32, u16>,
     pub shell_ranges: BTreeMap<i32, f32>,
     pub shell_effects: BTreeMap<i32, ShellEffects>,
+    pub shell_ballistics: BTreeMap<i32, ShellBallistics>,
 }
 
 #[derive(Clone, Debug)]
@@ -104,4 +106,66 @@ impl Default for ShellEffects {
             pierced_sticker: None,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct MountedArmor {
+    pub offset: Vec3,
+    pub mesh: Arc<ArmorMesh>,
+}
+
+#[derive(Debug)]
+pub struct ArmorMesh {
+    pub bounds: [Vec3; 2],
+    pub triangles: Vec<ArmorTriangle>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ArmorTriangle {
+    pub vertices: [Vec3; 3],
+    pub material: u32,
+    pub plate: ArmorPlate,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ArmorPlate {
+    pub thickness_mm: f32,
+    pub damage_factor: f32,
+    pub angled: bool,
+    pub ricochets: bool,
+    pub caliber_ricochet: bool,
+    pub caliber_normalization: bool,
+    pub once: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ShellKind {
+    ArmorPiercing,
+    HollowCharge {
+        jet_loss_per_metre: f32,
+    },
+    HighExplosive {
+        spall_damage: f32,
+        shield_penetration: bool,
+        obstacle_penetration: bool,
+    },
+    Other,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ShellBallistics {
+    pub kind: ShellKind,
+    pub caliber_mm: f32,
+    pub penetration_mm: [f32; 2],
+    pub penetration_randomization: f32,
+    pub damage_randomization: f32,
+    pub uniform_penetration: bool,
+    pub uniform_damage: bool,
+    pub far_damage: f32,
+    pub speed: f32,
+    pub normalization: f32,
+    pub ricochet_cos: f32,
+    pub trace_ricochet: bool,
+    pub obstacle_damage: Option<f32>,
+    pub obstacle_penetration_loss: f32,
 }

@@ -67,9 +67,14 @@ exported server span continues that remote parent into downstream work.
 
 ## E2E Tests
 
+When a PR changes the extractor or needs new resource files, dispatch
+**Latest client E2E** on its branch. Once the workflow uploads its bundle,
+rerun the PR E2E job. Fork PRs use the default branch bundle.
+
 The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL
 service and runs the checked-out Rust code against the EU client resources
-from the latest published server image. The job logs the bundle version used
+from the latest-client workflow. It prefers an extraction run for the PR branch
+in this repository and falls back to the default branch. The job logs the bundle version used
 for the run. Publishing separately updates the client from the EU production
 channel, boots the final image and runs the E2E suite with the resources
 copied from that image before pushing any tags. The E2E suite checks the
@@ -78,7 +83,7 @@ property name on the trace that delivers `showGUI`.
 
 The [Latest client E2E workflow](../.github/workflows/latest-client-e2e.yml) runs
 daily at 08:00 Europe/Paris. It updates the cached EU production client on
-the dedicated runner, extracts a fresh resource bundle, and runs E2E against
+the dedicated runner, uploads a fresh resource bundle for pull-request CI, and runs E2E against
 the latest default-branch server code and a fresh PostgreSQL database.
 The run summary records the extracted version. The workflow can also run from
 the Actions tab and has read-only repository permissions.
