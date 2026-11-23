@@ -16,12 +16,10 @@ pub(super) fn traverse(local: Option<&Element>, base: &Element) -> Option<f32> {
     non_negative(rotation)
 }
 
-pub(super) fn hull_traverse(local: Option<&Element>, base: &Element) -> Option<f32> {
-    let traverse = traverse(local, base)?;
-    let limit = number(local, base, "rotationSpeedLimit")
+pub(super) fn hull_traverse_limit(local: Option<&Element>, base: &Element) -> Option<f32> {
+    number(local, base, "rotationSpeedLimit")
         .and_then(non_negative)
-        .map_or(traverse, f32::to_radians);
-    Some(traverse.min(limit))
+        .map(f32::to_radians)
 }
 
 pub(super) fn mobility(
@@ -30,7 +28,16 @@ pub(super) fn mobility(
     physics: Option<&Element>,
     wheeled: bool,
 ) -> Mobility {
-    let mut mobility = Mobility::default();
+    let mut mobility = Mobility {
+        traverse_limit: hull_traverse_limit(local, base),
+        max_climb_angle: number(local, base, "maxClimbAngle")
+            .filter(|angle| (0.0..90.0).contains(angle))
+            .map(f32::to_radians),
+        rotation_around_center: field(local, base, &["rotationIsAroundCenter"])
+            .and_then(Value::as_boolean)
+            .unwrap_or(true),
+        ..Mobility::default()
+    };
     if let Some(resistance) = vector(local, base, "terrainResistance")
         .filter(|value| value.min_element() >= 0.05 && value.max_element() <= 20.0)
     {
@@ -50,6 +57,9 @@ pub(super) fn mobility(
         .filter(|point| (0.1..=5.0).contains(&point.x))
     {
         mobility.track_half_width = point.x;
+        if (0.5..=10.0).contains(&point.y) {
+            mobility.track_half_length = point.y;
+        }
     }
     if let Some(wheels) = local
         .and_then(|chassis| chassis.get_child_element("wheels"))

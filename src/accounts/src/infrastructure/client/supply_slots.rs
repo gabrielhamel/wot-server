@@ -1,12 +1,12 @@
 use super::item_defs::read_xml;
 use anyhow::{Context, Result};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use wot_platform::client_formats::pxml::Element;
 use wot_resources::ResourceBundle;
 
 #[derive(Default)]
 pub(super) struct SupplySlots {
-    optional_devices: BTreeSet<i64>,
+    optional_devices: BTreeMap<i64, BTreeSet<String>>,
     consumables: BTreeSet<i64>,
     directives: BTreeSet<i64>,
 }
@@ -14,6 +14,7 @@ pub(super) struct SupplySlots {
 #[derive(Debug, Clone, Default)]
 pub(super) struct VehicleSupplySlots {
     pub optional_devices: usize,
+    pub optional_device_categories: Vec<BTreeSet<String>>,
     pub consumables: usize,
     pub directives: usize,
 }
@@ -35,7 +36,9 @@ impl SupplySlots {
             if slot.get_child_string("type") == Some("optionalDevice")
                 || slot.get_child_string("slotClass") == Some("OptionalDeviceSlot")
             {
-                result.optional_devices.insert(id);
+                result
+                    .optional_devices
+                    .insert(id, super::equipment::words(slot, "categories"));
             } else if let Some(meta) = slot.get_child_element("meta") {
                 match meta.get_child_string("equipmentType") {
                     Some("regular") => {
@@ -59,7 +62,10 @@ impl SupplySlots {
             .split_whitespace()
         {
             let id = id.parse()?;
-            slots.optional_devices += usize::from(self.optional_devices.contains(&id));
+            if let Some(categories) = self.optional_devices.get(&id) {
+                slots.optional_devices += 1;
+                slots.optional_device_categories.push(categories.clone());
+            }
             slots.consumables += usize::from(self.consumables.contains(&id));
             slots.directives += usize::from(self.directives.contains(&id));
         }

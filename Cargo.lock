@@ -3402,10 +3402,14 @@ dependencies = [
  "byteorder",
  "flate2",
  "glam",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "png",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
  "wot-platform",
  "wot-resources",
  "wot-shared-kernel",
@@ -3448,6 +3452,7 @@ dependencies = [
  "glam",
  "roxmltree",
  "thiserror 1.0.69",
+ "wot-platform",
  "wot-resources",
 ]
 

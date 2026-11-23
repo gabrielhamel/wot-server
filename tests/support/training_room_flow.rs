@@ -2295,6 +2295,25 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         child.parent_span_id == parent.span_context.span_id()
             && child.span_context.trace_id() == parent.span_context.trace_id()
     };
+    assert!(traces.iter().any(|mobility| {
+        mobility.name == "accounts.battle_mobility"
+            && has(mobility, "ddd.bounded_context.name", "accounts")
+            && attribute(mobility, "input.inventory_id").is_some()
+            && [
+                "output.mobility.power_watts_per_kg",
+                "output.mobility.forward_speed_mps",
+                "output.mobility.reverse_speed_mps",
+            ]
+            .into_iter()
+            .all(|key| {
+                attribute(mobility, key)
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .is_some_and(|v| v.is_finite() && v > 0.0)
+            })
+            && traces.iter().any(|loadout| {
+                loadout.name == "accounts.battle_vehicle" && child_of(mobility, loadout)
+            })
+    }));
     assert!(traces.iter().any(|update| {
         has(update, "input.replication.kind", "hull_aim")
             && has(update, "output.delivered.count", "1")
@@ -2313,6 +2332,8 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
             && traces.iter().any(|step| {
                 step.name == "battles.drive_vehicle"
                     && child_of(step, drive)
+                    && has(step, "input.drive.airborne", "false")
+                    && has(step, "output.drive.track_locked", "false")
                     && step
                         .attributes
                         .iter()

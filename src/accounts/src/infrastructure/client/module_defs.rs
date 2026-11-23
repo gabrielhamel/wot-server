@@ -16,6 +16,8 @@ use wot_platform::client_formats::pxml::Element;
 use wot_resources::ResourceBundle;
 use wot_shared_kernel::{GunPerformance, Mobility, VehiclePerformance};
 
+const METRIC_HORSEPOWER_TO_WATTS: f32 = 735.5;
+
 pub(super) struct VehicleModules {
     pub rules: ModuleRules,
     pub ammunition: BTreeMap<(i32, i32), AmmunitionRules>,
@@ -62,12 +64,31 @@ impl VehicleModules {
             .zip(self.rules.loadout_weight(modules))
             .filter(|(_, mass)| mass.is_finite() && *mass > 0.0)
         {
-            mobility.power_per_kg = (power * 745.7 / mass).clamp(1.0, 100.0);
+            mobility.mass_kg = mass;
+            mobility.power_per_kg = (power * METRIC_HORSEPOWER_TO_WATTS / mass).clamp(1.0, 100.0);
         }
+        let stock_mass = self.rules.loadout_weight(&self.rules.stock);
+        let installed_mass = self.rules.loadout_weight(modules);
+        let stock_power = self
+            .rules
+            .stock
+            .get(&ModuleKind::Engine)
+            .and_then(|id| self.engine_power_hp.get(id));
+        let installed_power = modules
+            .get(&ModuleKind::Engine)
+            .and_then(|id| self.engine_power_hp.get(id));
+        let traverse = match (stock_mass, installed_mass, stock_power, installed_power) {
+            (Some(stock_mass), Some(mass), Some(&stock_power), Some(&power))
+                if stock_mass > 0.0 && mass > 0.0 && stock_power > 0.0 =>
+            {
+                hull_traverse * (power / stock_power * stock_mass / mass).clamp(0.1, 4.0)
+            }
+            _ => hull_traverse,
+        };
         Some(VehiclePerformance {
             forward_speed,
             reverse_speed,
-            hull_traverse,
+            hull_traverse: traverse,
             mobility,
             turret_pivot: self
                 .hull_positions
@@ -206,11 +227,16 @@ impl VehicleModules {
             .get_child_element("hull")
             .and_then(|hull| hull.get_child_integer("maxHealth"));
         let speed_limits = battle_performance::speed_limits(&vehicle);
-        let wheeled = components
+        let tags = components
             .get(&1)
             .and_then(|list| list.get_child_element(name))
             .and_then(|entry| entry.get_child_string("tags"))
-            .is_some_and(|tags| tags.split_whitespace().any(|tag| tag == "wheeledVehicle"));
+            .unwrap_or_default();
+        let wheeled = tags.split_whitespace().any(|tag| tag == "wheeledVehicle");
+        let track_lock = !wheeled
+            && tags
+                .split_whitespace()
+                .any(|tag| matches!(tag, "lightTank" | "mediumTank" | "heavyTank"));
         let mut hull_traverse = BTreeMap::new();
         let detailed = vehicle
             .get_child_element("physics")
@@ -284,15 +310,14 @@ impl VehicleModules {
                     let physics = detailed
                         .and_then(|physics| physics.get_child_element("chassis"))
                         .and_then(|chassis| chassis.get_child_element(name));
-                    chassis_mobility.insert(
-                        id,
-                        battle_performance::mobility(local, base, physics, wheeled),
-                    );
+                    let mut mobility = battle_performance::mobility(local, base, physics, wheeled);
+                    mobility.track_lock = track_lock;
+                    chassis_mobility.insert(id, mobility);
                     if let Some(position) = battle_performance::vector(local, base, "hullPosition")
                     {
                         hull_positions.insert(id, position);
                     }
-                    if let Some(traverse) = battle_performance::hull_traverse(local, base) {
+                    if let Some(traverse) = battle_performance::traverse(local, base) {
                         hull_traverse.insert(id, traverse);
                     }
                     chassis_exteriors.insert(

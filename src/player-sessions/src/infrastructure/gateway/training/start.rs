@@ -430,7 +430,12 @@ impl Gateway {
         Ok(true)
     }
 
-    fn launch_training_battle(&mut self, room_id: u32, battle: PreparedBattle, start: BattleStart) {
+    fn launch_training_battle(
+        &mut self,
+        room_id: u32,
+        mut battle: PreparedBattle,
+        start: BattleStart,
+    ) {
         let Some(room) = self.training_rooms.get_mut(&room_id) else {
             return;
         };
@@ -474,6 +479,7 @@ impl Gateway {
             None,
         );
         room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), None);
+        battle.assign_scenery_entities(|| self.base.arena_entity_id());
         start.start(battle);
     }
 }

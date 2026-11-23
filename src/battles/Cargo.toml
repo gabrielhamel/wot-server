@@ -16,3 +16,9 @@ tracing.workspace = true
 wot-platform.workspace = true
 wot-resources.workspace = true
 wot-shared-kernel.workspace = true
+
+[dev-dependencies]
+opentelemetry.workspace = true
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true

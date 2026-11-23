@@ -325,7 +325,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn live_arena_ticks_while_preparation_is_blocked() {
-        use super::super::{Battle, Round, maps::ArenaMap, obstacles::Obstacles, terrain::Terrain};
+        use super::super::{Battle, Round, maps::ArenaMap, obstacles::Scenery, terrain::Terrain};
         use crate::application::BattleMode;
         use glam::Vec2;
 
@@ -354,7 +354,8 @@ mod tests {
                     bounds: [Vec2::ZERO; 2],
                 },
                 ground: Arc::new(Terrain::empty()),
-                obstacles: Arc::new(Obstacles::default()),
+                obstacles: Scenery::default(),
+                areas: Default::default(),
                 arena_type: 1,
                 players: Default::default(),
                 started_at: now,

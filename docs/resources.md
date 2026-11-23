@@ -43,11 +43,23 @@ server. Older manifests without the field remain supported.
   bundles use medium ground everywhere.
 - **Battles** reads the generated `spaces/<map>/collision.bin` placement
   files and shared `collision-models/*.mesh` triangle data for projectile
-  impacts. The extractor derives these from the compiled space and its
+  impacts and lateral hull contacts with scenery. The extractor derives
+  these from the compiled space and its
   referenced Havok meshes. It omits the original assets and reports the
   number of missing or unsupported collision models. Each placement stores
-  a mesh reference, visibility mask and affine transform. Each mesh stores
-  triangles and their material IDs. Battles uses
+  a mesh reference, visibility mask and affine transform. `WCP2` adds the
+  native chunk and object index from the compiled space's `WGDE` section.
+  `WCM3` meshes store triangle materials, native fragment kinds, initial
+  health and the transitive dependency mask from `scripts/destructibles.xml`.
+  Re-extract the installed EU client to enable native destruction updates
+  and cascades. Older `WCP1` placements with `WCM2` files retain independent
+  fragment damage. `WCM1` files use solid collision geometry.
+  The optional `spaces/<map>/trees.bin` (`WCT1`) stores each numbered SpeedTree's
+  `WGDE` identity, scaled health, foot position, scale and fall height. The
+  extractor joins `SpTr` placements to `scripts/destructibles.xml` and excludes
+  entries in `vegetation/bushes.xml`. Re-extract to enable tree contact and
+  native fall replication.
+  Battles uses
   `system/data/material_kinds.xml` to resolve the client effect index.
   **Accounts** reads the legacy and prefab shot effect tables and the common
   vehicle defaults. It uses `damage_stickers.xml` together with the loaded

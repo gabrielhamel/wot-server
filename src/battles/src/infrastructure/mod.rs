@@ -42,9 +42,11 @@ mod controls;
 mod delivery;
 mod maps;
 pub(crate) mod mercury;
+mod motion;
 mod obstacles;
 mod preparation;
 mod projectiles;
+mod scenery;
 mod terrain;
 mod wire;
 mod worker;
@@ -118,7 +120,8 @@ impl Entrant {
 struct Battle {
     map: ArenaMap,
     ground: Arc<terrain::Terrain>,
-    obstacles: Arc<obstacles::Obstacles>,
+    obstacles: obstacles::Scenery,
+    areas: scenery::SceneryAreas,
     arena_type: i32,
     players: HashMap<ParticipantId, Participant>,
     started_at: Instant,
@@ -304,6 +307,11 @@ pub struct PreparedBattle {
 }
 
 impl PreparedBattle {
+    /// Allocate native chunk controllers from the gateway's arena entity ID sequence.
+    pub fn assign_scenery_entities(&mut self, allocate: impl FnMut() -> u32) {
+        self.battle.areas.assign(&self.battle.obstacles, allocate);
+    }
+
     pub fn contains(&self, client: ParticipantId) -> bool {
         self.battle.players.contains_key(&client)
     }
@@ -494,7 +502,8 @@ impl BattleRuntime {
             battle: Battle {
                 map: map.clone(),
                 ground,
-                obstacles,
+                obstacles: obstacles::Scenery::new(obstacles),
+                areas: scenery::SceneryAreas::default(),
                 arena_type,
                 players,
                 started_at: now,
@@ -560,6 +569,7 @@ impl BattleSimulation {
             "input.entity_id" = player.avatar_id,
             "output.players.count" = battle.players.len(),
             "output.avatar_control" = tracing::field::Empty,
+            "output.scenery.snapshot_chunks.count" = tracing::field::Empty,
             "output.outcome" = tracing::field::Empty,
             "otel.status_code" = tracing::field::Empty,
         );
@@ -578,6 +588,8 @@ impl BattleSimulation {
             )?;
             span.record("output.avatar_control", "server");
             if let Some(wire) = &self.wire {
+                let scenery_chunks = battle.areas.snapshot(delivery, wire, client)?;
+                span.record("output.scenery.snapshot_chunks.count", scenery_chunks);
                 for other in battle.players.values() {
                     if other.tank.health != other.tank.max_health {
                         wire.vehicle_properties(

@@ -25,7 +25,7 @@ pub(super) struct PendingImpact {
 }
 
 enum Contact {
-    Scene(Option<u32>),
+    Scene(Option<obstacles::ObstacleHit>),
     Vehicle {
         participant: ParticipantId,
         id: u32,
@@ -54,6 +54,7 @@ impl Battle {
         output.damage_stickers.count = tracing::field::Empty,
         output.scene_impact.distance_metres = tracing::field::Empty,
         output.obstacle.material_kind = tracing::field::Empty,
+        output.obstacle.fragment_destroyed = tracing::field::Empty,
         output.shot.id = tracing::field::Empty,
         output.target.entity_id = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.hit_direction.radians = tracing::field::Empty,
@@ -127,14 +128,14 @@ impl Battle {
             self.obstacles
                 .intersect(shot.origin, shot.direction, ground.unwrap_or(range));
         let scene = obstacle
-            .map(|hit| (hit.distance, Some(hit.material)))
+            .map(|hit| (hit.distance, Some(hit)))
             .or_else(|| ground.map(|distance| (distance, None)));
-        let contact = if let Some((distance, material)) = scene {
+        let contact = if let Some((distance, obstacle)) = scene {
             span.record("output.scene_impact.distance_metres", distance);
-            if let Some(material) = material {
-                span.record("output.obstacle.material_kind", material);
+            if let Some(hit) = obstacle {
+                span.record("output.obstacle.material_kind", hit.material);
             }
-            Some((distance, Contact::Scene(material)))
+            Some((distance, Contact::Scene(obstacle)))
         } else {
             target.map(|(participant, id, distance, yaw)| {
                 let local_direction = glam::Quat::from_rotation_y(-yaw) * shot.direction;
@@ -258,8 +259,24 @@ impl Battle {
         } = *impact;
         let mut defeated = false;
         let mut vehicle_hit = None;
+        let mut destructibles = Vec::new();
         let outcome = match impact.contact {
-            Contact::Scene(Some(_)) => "obstacle_impact",
+            Contact::Scene(Some(hit)) => {
+                if let Some(fragment) = hit.fragment {
+                    let broken = self.obstacles.damage(fragment, u32::from(shot.damage));
+                    span.record("output.obstacle.fragment_destroyed", !broken.is_empty());
+                    if !broken.is_empty() {
+                        let yaw = shot.direction.x.atan2(shot.direction.z);
+                        destructibles = self.publish_breakages(
+                            delivery,
+                            wire,
+                            &broken,
+                            scenery::BreakageCause::Shot { yaw },
+                        );
+                    }
+                }
+                "obstacle_impact"
+            }
             Contact::Scene(None) => "ground_impact",
             Contact::Vehicle {
                 participant,
@@ -313,9 +330,15 @@ impl Battle {
         span.record("output.outcome", outcome);
         for (&peer, participant) in self.players.iter().filter(|(_, player)| player.entered) {
             let result = (|| -> Result<()> {
-                if let Contact::Scene(material) = impact.contact {
-                    return wire
-                        .show_scene_impact(delivery, peer, shot_id, shot, distance, material);
+                if let Contact::Scene(obstacle) = impact.contact {
+                    return wire.show_scene_impact(
+                        delivery,
+                        peer,
+                        shot_id,
+                        shot,
+                        distance,
+                        (obstacle.map(|hit| hit.material), &destructibles),
+                    );
                 }
                 delivery.send_avatar(
                     peer,

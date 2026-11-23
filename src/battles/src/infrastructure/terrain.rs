@@ -29,6 +29,27 @@ struct Tile {
 
 impl Terrain {
     #[cfg(test)]
+    pub(super) fn flat() -> Self {
+        Self {
+            tiles: (-1..=0)
+                .flat_map(|x| {
+                    (-1..=0).map(move |z| {
+                        (
+                            (x, z),
+                            Tile {
+                                width: 8,
+                                depth: 8,
+                                millimetres: vec![0; 64],
+                            },
+                        )
+                    })
+                })
+                .collect(),
+            ..Self::empty()
+        }
+    }
+
+    #[cfg(test)]
     pub(super) fn empty() -> Self {
         Self {
             metres: DEFAULT_CHUNK_METRES,
@@ -165,29 +186,44 @@ impl Terrain {
 
     pub(super) fn vehicle_pose(&self, point: Vec2, yaw: f32) -> Option<(Vec3, Vec3)> {
         let center = self.height_at(point)?;
-        let forward = Vec2::new(yaw.sin(), yaw.cos()) * TRACK_HALF_LENGTH;
-        let right = Vec2::new(yaw.cos(), -yaw.sin()) * TRACK_HALF_WIDTH;
-        let height = |offset| self.height_at(point + offset).unwrap_or(center);
-        let front_left = height(forward - right);
-        let front_right = height(forward + right);
-        let rear_left = height(-forward - right);
-        let rear_right = height(-forward + right);
-        let rise_right = (front_right + rear_right - front_left - rear_left) * 0.25;
-        let rise_forward = (front_left + front_right - rear_left - rear_right) * 0.25;
-        let y = center
-            .max(front_left + rise_right - rise_forward)
-            .max(front_right - rise_right - rise_forward)
-            .max(rear_left + rise_right + rise_forward)
-            .max(rear_right - rise_right + rise_forward);
-        Some((
-            Vec3::new(point.x, y, point.y),
-            Vec3::new(
-                (rise_right / TRACK_HALF_WIDTH).atan(),
-                (-rise_forward / TRACK_HALF_LENGTH).atan(),
-                yaw,
-            ),
+        Some(pose_from_samples(
+            point,
+            yaw,
+            Vec2::new(TRACK_HALF_WIDTH, TRACK_HALF_LENGTH),
+            center,
+            |sample| self.height_at(sample).unwrap_or(center),
         ))
     }
+}
+
+pub(super) fn pose_from_samples(
+    point: Vec2,
+    yaw: f32,
+    half_size: Vec2,
+    center: f32,
+    height: impl Fn(Vec2) -> f32,
+) -> (Vec3, Vec3) {
+    let forward = Vec2::new(yaw.sin(), yaw.cos()) * half_size.y;
+    let right = Vec2::new(yaw.cos(), -yaw.sin()) * half_size.x;
+    let front_left = height(point + forward - right);
+    let front_right = height(point + forward + right);
+    let rear_left = height(point - forward - right);
+    let rear_right = height(point - forward + right);
+    let rise_right = (front_right + rear_right - front_left - rear_left) * 0.25;
+    let rise_forward = (front_left + front_right - rear_left - rear_right) * 0.25;
+    let y = center
+        .max(front_left + rise_right - rise_forward)
+        .max(front_right - rise_right - rise_forward)
+        .max(rear_left + rise_right + rise_forward)
+        .max(rear_right - rise_right + rise_forward);
+    (
+        Vec3::new(point.x, y, point.y),
+        Vec3::new(
+            (rise_right / half_size.x).atan(),
+            (-rise_forward / half_size.y).atan(),
+            yaw,
+        ),
+    )
 }
 
 fn tile_coordinates(name: &str) -> Option<(i16, i16)> {

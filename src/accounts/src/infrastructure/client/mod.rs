@@ -1,4 +1,5 @@
 mod account;
+mod battle_mobility;
 mod battle_performance;
 mod cosmetic_catalog;
 mod cosmetic_inventory;
@@ -64,6 +65,7 @@ pub struct GarageCatalog {
     shell_effects: shell_effects::ShellEffectCatalog,
     equipment: crate::EquipmentRules,
     equipment_grants: equipment::EquipmentGrantCatalog,
+    battle_mobility: battle_mobility::BattleMobility,
     store_offers: Vec<StoreOffer>,
     directives: crate::DirectiveRules,
     consumables: crate::ConsumableRules,
@@ -193,13 +195,26 @@ impl GarageCatalog {
             tracing::error!("Training vehicle has no health definition");
             return Ok(None);
         };
-        let Some(performance) = catalog.modules.battle_performance(&loadout) else {
+        let Some(mut performance) = catalog.modules.battle_performance(&loadout) else {
             span.record("output.outcome", "performance_unavailable");
             span.record("otel.status_code", "ERROR");
             tracing::error!("Missing equipped vehicle performance");
             return Ok(None);
         };
         let projected = catalog.project(owned, snapshot)?;
+        let legacy_crew = if snapshot.crew.is_none() && owned.has_crew {
+            Some(self.crew_roster(snapshot)?)
+        } else {
+            None
+        };
+        self.battle_mobility.apply(
+            &mut performance,
+            &projected,
+            &catalog,
+            snapshot.crew.as_ref().or(legacy_crew.as_ref()),
+            inventory_id,
+            &loadout,
+        );
         let outfit = projected
             .locked_style
             .map_or_else(Vec::new, outfit::encode_style);
@@ -237,6 +252,7 @@ impl GarageCatalog {
         let (equipment, equipment_grants) = equipment::load(&fs, &prices)?;
         let directives = directives::load(&fs, &prices)?;
         let consumables = consumables::load(&fs, &prices)?;
+        let battle_mobility = battle_mobility::BattleMobility::load(&fs)?;
         let supply_slots = supply_slots::SupplySlots::load(&fs)?;
         // The client reserves tree IDs starting at 10000 for vehicle skill trees.
         let progression_trees = item_defs::read_xml(
@@ -309,6 +325,7 @@ impl GarageCatalog {
             shell_effects,
             equipment,
             equipment_grants,
+            battle_mobility,
             store_offers: Vec::new(),
             directives,
             consumables,

@@ -34,7 +34,8 @@ activation, renewal and expiry to the garage. Both contexts use the shared
 the [bundle contract](src/resources/README.md) to Accounts, Player Sessions and Battles. The
 extractor reads installed client packages and loose files. Accounts loads the
 garage catalog from the bundle, and Player Sessions loads its ABI definitions and
-component class metadata. Battles loads the arena catalog, geometry and terrain.
+component class metadata. Battles loads the arena catalog, terrain and scenery
+collision meshes with destructible fragments.
 
 [Battles](src/battles/README.md) owns live arenas, round phases, participants,
 vehicle simulation and native battle replication. Player Sessions submits a
@@ -44,8 +45,8 @@ connections. The local Mercury adapter translates client messages into typed
 battle commands. Separate bounded in-process queues link Player Sessions to
 the Battles preparation and simulation tasks. The simulation owns live arena
 state and advances the tick.
-Player Sessions checks preparation results against the current roster and
-delivers arena updates via BaseApp. Battles reports the active
+Player Sessions checks preparation results against the current roster,
+assigns scenery controller IDs and delivers arena updates via BaseApp. Battles reports the active
 arena count and worker tick timings for telemetry.
 
 [Social](src/social/README.md) owns directed contacts and private conversation

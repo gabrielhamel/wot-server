@@ -12,9 +12,13 @@ use super::tagfile::{Node, Tagfile};
 pub(super) struct Triangle {
     pub vertices: [Vec3; 3],
     pub material: u32,
+    pub fragment: Option<super::destructibles::Fragment>,
 }
 
-pub(super) fn triangles(tagfile: &Tagfile) -> Option<Vec<Triangle>> {
+pub(super) fn triangles(
+    tagfile: &Tagfile,
+    model: Option<&super::destructibles::Model>,
+) -> Option<Vec<Triangle>> {
     let mut triangles = Vec::new();
     for named in tagfile.root()?.get("namedVariants")?.elements()? {
         let handles: Vec<_> = named
@@ -59,6 +63,7 @@ pub(super) fn triangles(tagfile: &Tagfile) -> Option<Vec<Triangle>> {
             if name.starts_with("c_") || flags & 2 != 0 {
                 continue;
             }
+            let fragment = model.and_then(|model| model.fragment(name, material));
             let shape = body.get("shape")?.deref()?;
             if shape.type_name() == "hknpCompressedMeshShape" {
                 let mesh = compressed_mesh_triangles(shape)?;
@@ -68,7 +73,11 @@ pub(super) fn triangles(tagfile: &Tagfile) -> Option<Vec<Triangle>> {
                 triangles.extend(
                     mesh.into_iter()
                         .filter(|vertices| vertices.iter().all(|vertex| vertex.is_finite()))
-                        .map(|vertices| Triangle { vertices, material }),
+                        .map(|vertices| Triangle {
+                            vertices,
+                            material,
+                            fragment,
+                        }),
                 );
             }
         }
