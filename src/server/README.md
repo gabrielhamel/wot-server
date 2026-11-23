@@ -8,8 +8,8 @@ rules. The runtime connects their published contracts to the process adapters.
 | Source | Responsibility |
 | --- | --- |
 | [Composition](src/lib.rs) | Load startup settings, construct shared dependencies, start the game gateway and web listener, and coordinate shutdown. |
-| [Infrastructure](src/infrastructure) | Configuration I/O, PostgreSQL connection and migrations, login key storage, console and OTLP export, browser telemetry ingestion, and static asset serving. |
-| [Presentation](src/presentation/web) | Web entry point, browser routes, bundling, and test fixtures. The admin and Store pages live in their owning contexts. |
+| [Infrastructure](src/infrastructure) | Configuration I/O, PostgreSQL setup, login key storage, logging, OTLP, static asset serving, and the [web build and test workspace](src/infrastructure/web). |
+| [Presentation](src/presentation/web) | Browser route composition. The admin and Store pages live in their owning contexts. |
 
 | Term | Meaning |
 | --- | --- |

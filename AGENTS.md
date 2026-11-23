@@ -169,8 +169,8 @@ server, libraries, and tools inherit their release version from
 
 Keep the server composition in a dedicated Rust library at `src/server/`. Its
 entry point owns startup and dependency wiring. Organize server-wide adapters
-in its infrastructure layer, and browser route composition and the web
-workspace in its presentation layer.
+and the web build workspace in infrastructure. Keep browser route
+composition in presentation.
 Domain rules and context-specific use cases belong to their owning libraries.
 
 ### Browser application
@@ -180,7 +180,7 @@ context's `presentation/` directory, with application contracts and HTTP
 adapters in the corresponding context layers. Keep common browser transport,
 telemetry and presentation primitives in Platform. Put browser route composition in
 `src/server/src/presentation/`. Keep the browser workspace, including Vite+
-configuration and test setup, under `src/server/src/presentation/web/`.
+configuration and test setup, under `src/server/src/infrastructure/web/`.
 
 Use Testing Library and MSW for admin and Store regression coverage. Render
 the full page, interact through accessible controls, and assert visible

@@ -162,7 +162,7 @@ contains configuration I/O, PostgreSQL connection and migration orchestration,
 login key storage, console and OTLP export, browser telemetry ingestion, and
 static UI serving. Browser routing lives in
 [server presentation](../src/server/src/presentation/web/main.tsx), and the
-[web workspace](../src/server/src/presentation/web/package.json) bundles the browser application.
+[web workspace](../src/server/src/infrastructure/web/package.json) bundles the browser application.
 
 ## Protocol implementation
 

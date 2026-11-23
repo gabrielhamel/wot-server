@@ -47,14 +47,14 @@ From the repository root, use Node 22.22.2 or a newer supported LTS and run:
 
 ```sh
 npm ci
-npm run check --workspace src/server/src/presentation/web
-npm run test --workspace src/server/src/presentation/web
-npm run build --workspace src/server/src/presentation/web
+npm run check --workspace src/server/src/infrastructure/web
+npm run test --workspace src/server/src/infrastructure/web
+npm run build --workspace src/server/src/infrastructure/web
 ```
 
 Vite+ runs formatting and lint checks and executes the Testing Library suites.
 TypeScript runs in strict mode. Update formatting with
-`npm run format --workspace src/server/src/presentation/web`. The tests render the real administration
+`npm run format --workspace src/server/src/infrastructure/web`. The tests render the real administration
 and Store pages, use the accessible controls, and intercept HTTP at the
 network boundary with MSW. They cover admin sign-in, player creation, garage
 grants, Store catalog and checkout, stale offer recovery and browser exception

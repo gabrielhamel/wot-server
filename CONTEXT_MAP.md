@@ -9,7 +9,7 @@ Accounts, Social, Player Sessions, Battles, and Player Administration compile
 as separate Rust libraries under `src/`. The server binary starts the [server
 runtime library](src/server/README.md), which wires the contexts’ published
 contracts and adapters.
-The [web workspace](src/server/src/presentation/web/package.json) bundles the context-owned browser pages.
+The [web workspace](src/server/src/infrastructure/web/package.json) bundles the context-owned browser pages.
 
 ![wot-server context map](docs/context-maps/generated/wot-server.svg)
 

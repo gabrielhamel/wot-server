@@ -28,9 +28,9 @@ published contract. Context libraries, their shared dependencies, and the web
 workspace live under `src/`. The server binary composes the libraries and
 supplies their runtime dependencies through the [server runtime library](../src/server/README.md).
 The library owns composition and keeps adapters and presentation in their
-respective layers. The shared browser build
-and test workspace lives in `src/server/src/presentation/web/`. Browser pages stay in their
-owning contexts’ presentation layers.
+respective layers. The shared browser build and test workspace lives in
+`src/server/src/infrastructure/web/`. Browser pages stay in their owning
+contexts’ presentation layers.
 
 A crate boundary lets Rust enforce visibility across contexts and lets Cargo
 check or test one context with its declared dependencies. Workspace-wide

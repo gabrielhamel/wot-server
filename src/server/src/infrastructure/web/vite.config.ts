@@ -47,7 +47,7 @@ export default defineConfig(({ command, isPreview, mode }) => {
       root: repo,
       environment: "jsdom",
       include: ["src/**/*.web.test.tsx"],
-      setupFiles: ["src/server/src/presentation/web/test/setup.ts"],
+      setupFiles: ["src/server/src/infrastructure/web/test/setup.ts"],
       environmentOptions: { jsdom: { url: "http://localhost:8080/" } },
     },
   };
