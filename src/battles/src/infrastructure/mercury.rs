@@ -1,18 +1,10 @@
 //! Adapts the gateway's live Mercury connection to the in-memory Battles contract.
 
 use super::avatar::Avatar;
-use super::{ArenaDelivery, AvatarUpdate, BattleRuntime, ParticipantId, ScriptValue};
-use crate::contract::{
-    AvatarAction, AvatarCommand, BattleLaunch, ParticipantDeparture, PreparedBattle,
-    VehicleCommand, VehicleControl,
-};
+use super::{AvatarUpdate, BattleRuntime, ParticipantId, ScriptValue};
+use crate::contract::{AvatarCommand, VehicleCommand, VehicleControl};
 use anyhow::{Context, Result};
-use std::{
-    collections::HashMap,
-    io,
-    net::{SocketAddr, SocketAddrV4},
-    time::Instant,
-};
+use std::{collections::HashMap, io};
 use wot_platform::mercury::{
     app::{
         base::{self, ClientKey},
@@ -55,9 +47,28 @@ impl<'a> MercuryArena<'a> {
         })
     }
 
+    pub(super) fn has_client(&self, participant: ParticipantId) -> bool {
+        self.clients.contains_key(&participant)
+    }
+
+    pub(super) fn deliver_positions(
+        &mut self,
+        participant: ParticipantId,
+        tick: u8,
+        avatar: AvatarPosition,
+        vehicles: impl Iterator<Item = VehiclePosition>,
+    ) -> io::Result<()> {
+        let client = self.client(participant)?;
+        self.base.arena_tick(client, tick, avatar, vehicles)
+    }
+
     pub fn avatar_command(&self, event: &base::BaseMethodEvent) -> Option<AvatarCommand> {
         use super::avatar::AvatarBase;
 
+        if !self.base.is_player_entity(event.client, event.entity) {
+            event.span.record("output.outcome", "entity_unavailable");
+            return None;
+        }
         match self.base.decode::<AvatarBase>(event.entity, &event.call) {
             Ok((_, AvatarBase::SetClientReady {})) => Some(AvatarCommand::Ready),
             Ok((_, AvatarBase::LeaveArena {})) => Some(AvatarCommand::Leave),
@@ -123,28 +134,14 @@ impl<'a> MercuryArena<'a> {
     }
 }
 
-impl ArenaDelivery for MercuryArena<'_> {
-    fn reserve_entity_id(&mut self) -> u32 {
-        self.base.arena_entity_id()
-    }
-
-    fn geometry_address(&self) -> io::Result<SocketAddrV4> {
-        match self.base.addr()? {
-            SocketAddr::V4(address) => Ok(address),
-            SocketAddr::V6(_) => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "arena requires an IPv4 BaseApp",
-            )),
-        }
-    }
-
-    fn disconnect(&mut self, participant: ParticipantId) {
+impl MercuryArena<'_> {
+    pub(super) fn disconnect(&mut self, participant: ParticipantId) {
         if let Some(&client) = self.clients.get(&participant) {
             self.base.disconnect_client(client);
         }
     }
 
-    fn create_avatar(
+    pub(super) fn create_avatar(
         &mut self,
         participant: ParticipantId,
         id: u32,
@@ -156,18 +153,26 @@ impl ArenaDelivery for MercuryArena<'_> {
         Ok(())
     }
 
-    fn enable_arena_cell(&mut self, participant: ParticipantId, vehicle_id: u32) -> io::Result<()> {
+    pub(super) fn enable_arena_cell(
+        &mut self,
+        participant: ParticipantId,
+        vehicle_id: u32,
+    ) -> io::Result<()> {
         let client = self.client(participant)?;
         self.base.enable_arena_cell(client, vehicle_id);
         Ok(())
     }
 
-    fn send_avatar(&mut self, participant: ParticipantId, update: AvatarUpdate) -> io::Result<()> {
+    pub(super) fn send_avatar(
+        &mut self,
+        participant: ParticipantId,
+        update: AvatarUpdate,
+    ) -> io::Result<()> {
         let client = self.client(participant)?;
         update.send(self.base.player::<Avatar>(client)?)
     }
 
-    fn send_arena_element<E: SimpleElement>(
+    pub(super) fn send_arena_element<E: SimpleElement + Send + 'static>(
         &mut self,
         participant: ParticipantId,
         element: E,
@@ -176,19 +181,19 @@ impl ArenaDelivery for MercuryArena<'_> {
         self.base.send_arena_element(client, element)
     }
 
-    fn send_arena_property(
+    pub(super) fn send_arena_property(
         &mut self,
         participant: ParticipantId,
         entity_id: Option<u32>,
         element_id: u8,
-        property: impl Element<()>,
+        property: impl Element<()> + Send + 'static,
     ) -> io::Result<()> {
         let client = self.client(participant)?;
         self.base
             .send_arena_property(client, entity_id, element_id, property)
     }
 
-    fn arena_vehicle_method(
+    pub(super) fn arena_vehicle_method(
         &mut self,
         participant: ParticipantId,
         entity_id: u32,
@@ -198,64 +203,5 @@ impl ArenaDelivery for MercuryArena<'_> {
         let client = self.client(participant)?;
         self.base
             .arena_vehicle_method(client, entity_id, name, args)
-    }
-
-    fn arena_tick(
-        &mut self,
-        participant: ParticipantId,
-        tick: u8,
-        avatar: AvatarPosition,
-        vehicles: impl Iterator<Item = VehiclePosition>,
-    ) -> io::Result<()> {
-        let client = self.client(participant)?;
-        self.base.arena_tick(client, tick, avatar, vehicles)
-    }
-}
-
-impl BattleRuntime {
-    pub fn prepare(
-        &mut self,
-        delivery: &mut MercuryArena<'_>,
-        launch: BattleLaunch,
-    ) -> Result<Option<PreparedBattle>> {
-        self.prepare_with_delivery(delivery, launch)
-    }
-
-    pub fn enter(
-        &mut self,
-        delivery: &mut MercuryArena<'_>,
-        participant: ParticipantId,
-    ) -> Result<()> {
-        self.enter_with_delivery(delivery, participant)
-    }
-
-    pub fn avatar_command(
-        &mut self,
-        delivery: &mut MercuryArena<'_>,
-        participant: ParticipantId,
-        entity_id: u32,
-        command: AvatarCommand,
-    ) -> AvatarAction {
-        self.avatar_command_with_delivery(delivery, participant, entity_id, command)
-    }
-
-    pub fn vehicle_control(&mut self, delivery: &mut MercuryArena<'_>, control: VehicleControl) {
-        self.vehicle_control_with_delivery(delivery, control);
-    }
-
-    pub fn tick(
-        &mut self,
-        delivery: &mut MercuryArena<'_>,
-        now: Instant,
-    ) -> Vec<(ParticipantId, tracing::Span)> {
-        self.tick_with_delivery(delivery, now)
-    }
-
-    pub fn remove_participant(
-        &mut self,
-        delivery: &mut MercuryArena<'_>,
-        participant: ParticipantId,
-    ) -> Option<ParticipantDeparture> {
-        self.remove_participant_with_delivery(delivery, participant)
     }
 }

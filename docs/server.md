@@ -161,11 +161,13 @@ The server owns its [Mercury adapter](../src/shared-infrastructure/src/mercury) 
 UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish and dynamic
 entity dispatch. [Player Sessions](../src/player-sessions/README.md) binds
 Account RPCs for the garage. [Battles](../src/battles/README.md) binds arena
-entities and controls through its synchronous arena delivery port. The
-Mercury adapter maps participant IDs to live BaseApp connections, translates
-incoming methods into typed battle commands and publishes native arena
-updates. The gateway runs the battle tick in the same loop as the session
-transport. Both adapters validate their method tables and creation layout
+entities and controls through its arena delivery port. The Mercury adapter
+maps participant IDs to live BaseApp connections and translates incoming
+methods into typed battle commands. Dedicated in-process tasks load arena
+geometry and prepare launches independently of the battle tick. Each task
+has its own bounded Rust request and output queues. The gateway revalidates
+the roster before the arena handoff and owns UDP delivery.
+Both adapters validate their method tables and creation layout
 against the configured bundle. The [shared codecs](../src/shared-infrastructure/src/infrastructure/client_formats/README.md)
 read packed resources and serialize Python values for Player Sessions and Accounts.
 

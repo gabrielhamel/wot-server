@@ -26,12 +26,26 @@ mapping to the live Mercury client. The Mercury adapter translates incoming
 methods into typed commands and applies outputs from the arena delivery port.
 The runtime holds participant IDs and arena entity IDs. The adapter owns
 access to the live BaseApp, including entity creation and packet delivery.
-The runtime and adapter run synchronously in the same gateway loop.
+The simulation task in [worker.rs](src/infrastructure/worker.rs) owns live
+arena state and the 100 ms tick. A bounded queue carries activation, entry,
+Avatar and vehicle commands, and disconnects. A bounded FIFO carries Mercury
+deliveries and garage returns to Player Sessions. Position snapshots are sent
+as unreliable UDP. Under output pressure the simulation task drops position
+snapshots and waits for space to enqueue ordered deliveries. The gateway
+disconnects a participant whose command cannot be queued and retries cleanup
+as capacity becomes available.
 
-Preparation validates the roster and builds the client payloads before Player
-Sessions acknowledges the launch.
-Activation registers the participants for routing and adds the arena to the
-active count published to Player Sessions. Once a participant leaves,
+Player Sessions submits the roster and reserved entity IDs to the dedicated
+[preparation task](src/infrastructure/preparation.rs). Its bounded request
+and result queues are independent of simulation delivery. It validates the
+launch, loads terrain and collision geometry, and builds the client payloads
+while the gateway handles requests and the simulation runs existing arenas.
+Player Sessions revalidates the room and account snapshots before acknowledging
+the launch and passing the prepared arena to the simulation task. Both tasks
+share the server process. Each queued operation retains its originating span.
+The simulation starts the arena clock and increments its active count on
+activation.
+Once a participant leaves,
 Player Sessions resets the connection for garage entry. The Battle ID is
 allocated independently of the Training Room ID. At the end of a round,
 Battles publishes the outcome and continues pose and chassis replication while

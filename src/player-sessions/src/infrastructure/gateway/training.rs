@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use wot_platform::mercury::app::entity::EntityId;
 
 mod start;
-pub(super) use start::{TEAM_NOT_READY, TEAM_READY};
+pub(super) use start::{PendingTrainingBattle, TEAM_NOT_READY, TEAM_READY};
 mod chat;
 mod invites;
 pub(super) use chat::CHAT_BROADCAST;
@@ -164,7 +164,7 @@ fn voice_chat_index(mode: VoiceChatMode) -> i32 {
 
 fn apply_setting(
     settings: &mut TrainingRoomSettings,
-    battles: &BattleRuntime,
+    battles: &BattleWorker,
     command: i16,
     argument: SettingArgument<'_>,
 ) -> Option<(&'static str, Value)> {
@@ -330,7 +330,7 @@ impl Gateway {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
         };
-        if !self.config.training_room_visible || !self.battles.has_maps() {
+        if !self.config.training_room_visible || !self.battle_worker.has_maps() {
             span.record("output.outcome", "unavailable");
             self.base
                 .entity(entity)?
@@ -339,7 +339,7 @@ impl Gateway {
         }
         let settings = std::str::from_utf8(comment)
             .ok()
-            .filter(|_| is_opened <= 1 && self.battles.has_map(arena_type_id))
+            .filter(|_| is_opened <= 1 && self.battle_worker.has_map(arena_type_id))
             .and_then(|comment| {
                 TrainingRoomSettings::new(arena_type_id, round_length, is_opened == 1, comment)
             });
@@ -893,7 +893,8 @@ impl Gateway {
             return Ok(());
         }
         let mut next = room.settings.clone();
-        let Some((key, value)) = apply_setting(&mut next, &self.battles, command, argument) else {
+        let Some((key, value)) = apply_setting(&mut next, &self.battle_worker, command, argument)
+        else {
             span.record("output.outcome", "invalid_request");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,

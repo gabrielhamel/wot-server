@@ -1140,6 +1140,11 @@ impl App {
         Ok(key)
     }
 
+    pub fn is_player_entity(&self, client: ClientKey, entity: EntityKey<AnyEntity>) -> bool {
+        self.client(client)
+            .is_ok_and(|state| state.player == Some(entity))
+    }
+
     pub fn player<T: EntitySchema>(&mut self, client: ClientKey) -> io::Result<T::View<'_>> {
         let entity = self
             .client(client)?

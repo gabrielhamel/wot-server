@@ -26,9 +26,10 @@ for returns scheduled by Battles.
 | `domain/training.rs` | Training Room duration and comment limits. |
 | `application/` | Credential input policy, preferences, and garage command translation and dispatch to Accounts' published application contract. |
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
+| `infrastructure/gateway/battles.rs` | Submit typed battle work, deliver queued outputs through the live BaseApp, and reset sessions for garage entry. |
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
 | `infrastructure/gateway/training.rs` | Check map IDs through Battles and manage shared room settings, membership, roster, readiness and deletion. |
-| `infrastructure/gateway/training/start.rs` | Validate team confirmation, prepare the roster through the Battles contract using participant IDs, and hand off eligible sessions. |
+| `infrastructure/gateway/training/start.rs` | Validate team confirmation, submit the roster for asynchronous arena preparation, and revalidate the room and account snapshots before handing off sessions. |
 | `infrastructure/gateway/training/chat.rs` | Open and close the native Training channel and relay messages to the active room roster. |
 | `infrastructure/gateway/training/invites.rs` | Keep active invitations by account ID and deliver them immediately or on garage sync. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
@@ -52,7 +53,7 @@ for returns scheduled by Battles.
 
 Player Sessions traces game commands, XMPP requests, worker scheduling, completion
 handling and response delivery. It retains request parents across the grant,
-crew, completion and XMPP output queues. Spans identify operations and
+crew, completion, battle and XMPP output queues. Spans identify operations and
 ddd.bounded_context.name without architecture layer labels. The gateway exports
 its online session count, the active arena count from Battles, and shared battle
 tick timings and skipped intervals. See the [telemetry contract](../../docs/telemetry.md).

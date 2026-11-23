@@ -2,12 +2,38 @@
 
 use super::*;
 use wot_battles::contract::{
-    BattleLaunch, BattleMode, BattleParticipant, PreparedBattle, VehicleLoadout,
+    BattleEntityIds, BattleLaunch, BattleMode, BattleParticipant, BattlePreparationId,
+    BattleQueueError, BattleStart, PreparedBattle, VehicleLoadout,
 };
 
 pub(in crate::infrastructure::gateway) const TEAM_READY: i16 = 411;
 pub(in crate::infrastructure::gateway) const TEAM_NOT_READY: i16 = 412;
 const TEAM_STATES: u8 = 6;
+
+pub(in crate::infrastructure::gateway) struct PendingTrainingBattle {
+    client: ClientKey,
+    entity: EntityKey<Account>,
+    request_id: i16,
+    roster: TrainingLaunchRoster,
+    launch: tracing::Span,
+}
+
+#[derive(PartialEq, Eq)]
+struct TrainingLaunchRoster {
+    arena_type: i32,
+    duration: Duration,
+    entrants: Vec<TrainingEntrant>,
+}
+
+#[derive(PartialEq, Eq)]
+struct TrainingEntrant {
+    client: ClientKey,
+    participant: ParticipantId,
+    entity_id: u32,
+    inventory_id: i64,
+    team: u8,
+    revision: i64,
+}
 
 impl HostedRoom {
     fn set_team_ready(&mut self, team: u8, ready: bool) {
@@ -81,6 +107,18 @@ impl Gateway {
             span.record("output.outcome", "team_unlocked");
             return Ok(());
         }
+        if self.pending_battle_launches.contains_key(&room_id)
+            || self
+                .pending_battle_launches
+                .values()
+                .any(|pending| pending.client == client)
+        {
+            return reject(
+                &mut self.base,
+                "preparation_in_progress",
+                "A training arena is already being prepared",
+            );
+        }
         let has_team = |wanted| {
             room.members.values().any(|p| {
                 team_of(p.roster) == Some(wanted)
@@ -108,9 +146,36 @@ impl Gateway {
             span.record("output.outcome", "team_ready");
             return Ok(());
         }
-        let battle = match self.prepare_training_battle(room_id) {
-            Ok(Some(battle)) => battle,
-            Ok(None) => {
+        let Some(roster) = self.training_battle_roster(room_id) else {
+            self.unlock_training_teams(room_id);
+            return reject(
+                &mut self.base,
+                "roster_or_map_unavailable",
+                "The map or a team's assigned vehicles are unavailable",
+            );
+        };
+        if self.pending_battle_launches.len() >= self.config.max_clients {
+            self.unlock_training_teams(room_id);
+            return reject(
+                &mut self.base,
+                "preparation_in_progress",
+                "The battle server is busy",
+            );
+        }
+        match self.queue_training_preparation(room_id, &roster) {
+            Ok(true) => {
+                self.pending_battle_launches.insert(
+                    room_id,
+                    PendingTrainingBattle {
+                        client,
+                        entity,
+                        request_id,
+                        roster,
+                        launch: span,
+                    },
+                );
+            }
+            Ok(false) => {
                 self.unlock_training_teams(room_id);
                 return reject(
                     &mut self.base,
@@ -120,25 +185,118 @@ impl Gateway {
             }
             Err(error) => {
                 self.unlock_training_teams(room_id);
-                reject(
+                span.record("otel.status_code", "ERROR");
+                error!(%error, room_id, "Could not queue training arena preparation");
+                if error.is::<BattleQueueError>() {
+                    return reject(
+                        &mut self.base,
+                        "battle_queue_unavailable",
+                        "The battle server is unavailable",
+                    );
+                }
+                return reject(
                     &mut self.base,
                     "preparation_failed",
                     "The training arena could not be prepared",
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub(in crate::infrastructure::gateway) fn complete_training_preparation(
+        &mut self,
+        room_id: u32,
+        result: Result<Option<Box<PreparedBattle>>>,
+    ) {
+        let Some(pending) = self.pending_battle_launches.remove(&room_id) else {
+            return;
+        };
+        let launch = pending.launch.clone();
+        launch.in_scope(|| {
+            if let Err(error) = self.finish_training_preparation(room_id, pending, result) {
+                launch.record("otel.status_code", "ERROR");
+                error!(%error, room_id, "Could not complete training arena launch");
+            }
+        });
+    }
+
+    fn finish_training_preparation(
+        &mut self,
+        room_id: u32,
+        pending: PendingTrainingBattle,
+        result: Result<Option<Box<PreparedBattle>>>,
+    ) -> Result<()> {
+        let span = tracing::Span::current();
+        let reject = |gateway: &mut Self, outcome, message: &str| -> Result<()> {
+            gateway.unlock_training_teams(room_id);
+            span.record("output.outcome", outcome);
+            if gateway
+                .sessions
+                .get(&pending.client)
+                .is_some_and(|session| session.entity == Some(pending.entity))
+            {
+                gateway.base.entity(pending.entity)?.onCmdResponse(
+                    pending.request_id,
+                    FAILURE,
+                    message.to_owned(),
                 )?;
+            }
+            Ok(())
+        };
+        let battle = match result {
+            Ok(Some(battle)) => battle,
+            Ok(None) => {
+                return reject(
+                    self,
+                    "roster_or_map_unavailable",
+                    "The map or a team's assigned vehicles are unavailable",
+                );
+            }
+            Err(error) => {
                 span.record("otel.status_code", "ERROR");
-                return Err(error);
+                error!(%error, room_id, "Training arena preparation failed");
+                return reject(
+                    self,
+                    "preparation_failed",
+                    "The training arena could not be prepared",
+                );
+            }
+        };
+        if self.training_battle_roster(room_id).as_ref() != Some(&pending.roster)
+            || !self
+                .training_rooms
+                .get(&room_id)
+                .is_some_and(|room| room.host == pending.client)
+        {
+            return reject(
+                self,
+                "preparation_stale",
+                "The roster or settings changed while the arena was being prepared",
+            );
+        }
+        let start = match self.battle_worker.reserve_start() {
+            Ok(start) => start,
+            Err(error) => {
+                span.record("otel.status_code", "ERROR");
+                error!(%error, room_id, "Could not queue training arena activation");
+                return reject(
+                    self,
+                    "battle_queue_unavailable",
+                    "The battle server is unavailable",
+                );
             }
         };
         span.record("output.players.count", battle.participant_count());
         if let Err(error) = self
             .base
-            .entity(entity)
-            .and_then(|mut entity| entity.onCmdResponse(request_id, SUCCESS, String::new()))
+            .entity(pending.entity)
+            .and_then(|mut entity| entity.onCmdResponse(pending.request_id, SUCCESS, String::new()))
         {
             self.unlock_training_teams(room_id);
             return Err(error.into());
         }
-        self.launch_training_battle(room_id, battle);
+        self.launch_training_battle(room_id, *battle, start);
         span.record("output.outcome", "launched");
         Ok(())
     }
@@ -149,25 +307,68 @@ impl Gateway {
         }
     }
 
-    #[tracing::instrument(name = "player_sessions.prepare_training_battle", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.room.id = room_id, output.players.count = tracing::field::Empty), err)]
-    fn prepare_training_battle(&mut self, room_id: u32) -> Result<Option<PreparedBattle>> {
-        let Some(room) = self.training_rooms.get(&room_id) else {
-            return Ok(None);
-        };
-        let mut members = room.members.iter().collect::<Vec<_>>();
-        members.sort_by_key(|(_, player)| player.entity.id().0);
+    fn training_battle_roster(&self, room_id: u32) -> Option<TrainingLaunchRoster> {
+        let room = self.training_rooms.get(&room_id)?;
+        if room.teams_ready != (true, true) {
+            return None;
+        }
         let mut entrants = Vec::new();
-        for (&client, member) in members {
+        for (&client, member) in &room.members {
             let Some(team) = team_of(member.roster) else {
                 continue;
             };
-            let Some(inventory_id) = member.ready_inventory else {
-                return Ok(None);
-            };
-            let Some(session) = self.sessions.get(&client).filter(|session| {
+            let inventory_id = member.ready_inventory?;
+            let session = self.sessions.get(&client).filter(|session| {
                 session.entity == Some(member.entity) && !session.saving && !session.crew_running
-            }) else {
-                return Ok(None);
+            })?;
+            let participant = ParticipantId(session.generation);
+            if member.in_battle || self.battle_participants.contains(&participant) {
+                return None;
+            }
+            entrants.push(TrainingEntrant {
+                client,
+                participant,
+                entity_id: member.entity.id().0,
+                inventory_id,
+                team,
+                revision: session.account.snapshot.revision(),
+            });
+        }
+        if !entrants.iter().any(|entrant| entrant.client == room.host)
+            || entrants.len() + self.battle_participants.len() > self.config.max_clients
+        {
+            return None;
+        }
+        entrants.sort_unstable_by_key(|entrant| entrant.entity_id);
+        Some(TrainingLaunchRoster {
+            arena_type: room.settings.arena_type_id,
+            duration: Duration::from_secs(u64::try_from(room.settings.duration_seconds).ok()?),
+            entrants,
+        })
+    }
+
+    #[tracing::instrument(name = "player_sessions.prepare_training_battle", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.room.id = room_id, output.players.count = tracing::field::Empty), err)]
+    fn queue_training_preparation(
+        &mut self,
+        room_id: u32,
+        roster: &TrainingLaunchRoster,
+    ) -> Result<bool> {
+        let Some(room) = self.training_rooms.get(&room_id) else {
+            return Ok(false);
+        };
+        let mut entrants = Vec::with_capacity(roster.entrants.len());
+        for &TrainingEntrant {
+            client,
+            participant,
+            inventory_id,
+            team,
+            ..
+        } in &roster.entrants
+        {
+            let (Some(member), Some(session)) =
+                (room.members.get(&client), self.sessions.get(&client))
+            else {
+                return Ok(false);
             };
             let observer = inventory_id == OBSERVER_INVENTORY_ID;
             let vehicle = if observer {
@@ -194,10 +395,10 @@ impl Gateway {
                     })
             };
             let Some(vehicle) = vehicle else {
-                return Ok(None);
+                return Ok(false);
             };
             entrants.push(BattleParticipant {
-                id: ParticipantId(session.generation),
+                id: participant,
                 account_id: member.account_id,
                 name: member.name.clone(),
                 team,
@@ -207,26 +408,29 @@ impl Gateway {
                 vehicle,
             });
         }
-        if !entrants.iter().any(|entrant| entrant.is_host) {
-            return Ok(None);
-        }
-        let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
-        let prepared = self.battles.prepare(
-            &mut delivery,
+        let entity_ids = entrants
+            .iter()
+            .map(|_| BattleEntityIds {
+                avatar: self.base.arena_entity_id(),
+                vehicle: self.base.arena_entity_id(),
+                info: self.base.arena_entity_id(),
+            })
+            .collect();
+        tracing::Span::current().record("output.players.count", entrants.len());
+        self.battle_worker.prepare(
+            BattlePreparationId(room_id),
             BattleLaunch {
-                arena_type: room.settings.arena_type_id,
-                duration: Duration::from_secs(u64::try_from(room.settings.duration_seconds)?),
+                arena_type: roster.arena_type,
+                duration: roster.duration,
                 mode: BattleMode::Training,
                 participants: entrants,
             },
+            entity_ids,
         )?;
-        if let Some(battle) = &prepared {
-            tracing::Span::current().record("output.players.count", battle.participant_count());
-        }
-        Ok(prepared)
+        Ok(true)
     }
 
-    fn launch_training_battle(&mut self, room_id: u32, battle: PreparedBattle) {
+    fn launch_training_battle(&mut self, room_id: u32, battle: PreparedBattle, start: BattleStart) {
         let Some(room) = self.training_rooms.get_mut(&room_id) else {
             return;
         };
@@ -247,6 +451,8 @@ impl Gateway {
             else {
                 continue;
             };
+            self.battle_participants
+                .insert(ParticipantId(session.generation));
             member.in_battle = true;
             session.entity = None;
             session.garage_synced = false;
@@ -268,7 +474,7 @@ impl Gateway {
             None,
         );
         room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), None);
-        self.battles.start(battle);
+        start.start(battle);
     }
 }
 

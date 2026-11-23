@@ -8,12 +8,13 @@ use blowfish::{Blowfish, cipher::KeyInit};
 use rsa::RsaPrivateKey;
 use wot_accounts::contract::{GameAccounts, GarageCommands, GarageQueries, PreparedAccount};
 use wot_battles::{
-    contract::{BattleRuntime, ParticipantDeparture, ParticipantId, TICK},
+    contract::{BattleRuntime, BattleWorker, ParticipantId},
     mercury::MercuryArena,
 };
 mod account_updates;
 mod admission;
 mod ammunition;
+mod battles;
 mod commands;
 mod cosmetics;
 mod crew;
@@ -64,6 +65,7 @@ const FAILURE: i16 = -1;
 const SET_ACTIVE_VEHICLE_SEASON: i16 = 121;
 const RESET_SESSION_STATS: i16 = 10035;
 const REQUEST_NO_RESPONSE: i16 = 202;
+const MAINTENANCE_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Attaches the Battles adapter once the shared BaseApp is ready.
 pub type BindBattles = fn(&mut base::App, &ResourceBundle, bool) -> Result<BattleRuntime>;
@@ -164,7 +166,10 @@ pub struct Gateway {
     deferred_logins: HashMap<SocketAddr, DeferredLogin>,
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
-    battles: BattleRuntime,
+    battle_worker: BattleWorker,
+    pending_battle_launches: HashMap<u32, training::PendingTrainingBattle>,
+    battle_participants: HashSet<ParticipantId>,
+    battle_departures: VecDeque<(ParticipantId, tracing::Span)>,
     battle_clients: HashMap<ParticipantId, ClientKey>,
     metrics: Option<metrics::GatewayMetrics>,
     account_bootstrap: AccountBootstrap,
@@ -218,11 +223,6 @@ impl Gateway {
         let account_bootstrap =
             AccountBootstrap::bind(base.dispatch()).context("Bind garage Account creation data")?;
         let battles = bind_battles(&mut base, resources, config.training_room_visible)?;
-        if config.training_room_visible && !battles.has_maps() {
-            tracing::warn!(
-                "Training Room creation is unavailable. Re-extract the resource bundle with arena definitions."
-            );
-        }
         let (sender, completions) = mpsc::sync_channel(config.max_pending + 2 * config.max_clients);
         let workers = Arc::new(Semaphore::new(config.max_pending));
         let (grant_handle, grants) = crate::PlayerGrants::channel();
@@ -233,7 +233,16 @@ impl Gateway {
             config.max_clients,
             &runtime,
         )?;
-        info!(login = %login.addr()?, base = %base.addr()?, advertised_base = ?config.advertised_base, "Garage gateway ready");
+        let SocketAddr::V4(base_address) = base.addr()? else {
+            anyhow::bail!("Arena replication requires an IPv4 BaseApp");
+        };
+        info!(login = %login.addr()?, base = %base_address, advertised_base = ?config.advertised_base, "Garage gateway ready");
+        let battle_worker = battles.spawn_worker(&runtime, base_address);
+        if config.training_room_visible && !battle_worker.has_maps() {
+            tracing::warn!(
+                "Training Room creation is unavailable. Re-extract the resource bundle with arena definitions."
+            );
+        }
         Ok(Self {
             xmpp,
             social,
@@ -248,7 +257,10 @@ impl Gateway {
             deferred_logins: HashMap::new(),
             tickets: HashMap::new(),
             sessions: HashMap::new(),
-            battles,
+            battle_worker,
+            pending_battle_launches: HashMap::new(),
+            battle_participants: HashSet::new(),
+            battle_departures: VecDeque::new(),
             battle_clients: HashMap::new(),
             metrics: None,
             account_bootstrap,
@@ -276,14 +288,18 @@ impl Gateway {
 
     pub fn configure_metrics(&mut self, meter: &opentelemetry::metrics::Meter) {
         let metrics = metrics::GatewayMetrics::new(meter);
-        metrics.record_counts(self.sessions.len(), self.battles.active_count());
+        metrics.record_counts(self.sessions.len(), self.battle_worker.active_count());
         self.metrics = Some(metrics);
     }
 
     pub fn run(mut self, stop: Arc<AtomicBool>) -> Result<()> {
-        let interval = TICK;
+        let interval = MAINTENANCE_INTERVAL;
         let mut tick = Instant::now() + interval;
         while !stop.load(Ordering::Relaxed) {
+            for client in self.base.take_disconnected_clients() {
+                self.remove_session(client);
+            }
+            self.poll_battles();
             while let Ok(completion) = self.completions.try_recv() {
                 let TracedCompletion { parent, value } = completion;
                 parent.in_scope(|| self.complete(value));
@@ -322,43 +338,16 @@ impl Gateway {
                     }
                 }
                 base::Event::BaseMethod(event) => self.handle_base_method(event),
-                base::Event::CellMethod(event) => {
-                    if let Some(session) = self.sessions.get(&event.client) {
-                        let participant = ParticipantId(session.generation);
-                        let control = MercuryArena::vehicle_control(participant, &event);
-                        event.span.in_scope(|| {
-                            let mut delivery =
-                                MercuryArena::new(&mut self.base, &self.battle_clients);
-                            self.battles.vehicle_control(&mut delivery, control);
-                        });
-                    }
-                }
+                base::Event::CellMethod(event) => self.handle_battle_control(event),
                 base::Event::IoError(error) => error!(error = %error.error, "Base packet failed"),
                 _ => {}
             }
             if Instant::now() >= tick {
                 self.expire_premium();
                 self.base.disconnect_idle_clients(Duration::from_secs(120));
-                for client in self.base.take_disconnected_clients() {
-                    self.remove_session(client);
-                }
                 let now = Instant::now();
-                let tick_metrics = self
-                    .metrics
-                    .as_ref()
-                    .filter(|_| self.battles.active_count() > 0);
-                let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
-                let ending = self.battles.tick(&mut delivery, now);
-                if let Some(metrics) = tick_metrics {
-                    metrics.record_battle_tick(now.duration_since(tick), now.elapsed());
-                }
-                for (participant, finish) in ending {
-                    if let Some(&client) = self.battle_clients.get(&participant) {
-                        finish.in_scope(|| self.return_from_battle(client));
-                    }
-                }
                 if let Some(metrics) = &self.metrics {
-                    metrics.record_counts(self.sessions.len(), self.battles.active_count());
+                    metrics.record_counts(self.sessions.len(), self.battle_worker.active_count());
                 }
                 tick += interval;
                 if tick <= now {
@@ -369,41 +358,11 @@ impl Gateway {
         if let Some(metrics) = &self.metrics {
             metrics.record_counts(0, 0);
         }
+        if let Err(error) = self.battle_worker.shutdown(&self.runtime) {
+            error!(%error, "Battle worker failed");
+        }
         info!("Garage gateway stopped");
         Ok(())
-    }
-
-    #[tracing::instrument(name = "player_sessions.return_from_battle", skip_all, fields(
-        ddd.bounded_context.name = "player_sessions", input.client.address = %client,
-        output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
-    ))]
-    fn return_from_battle(&mut self, client: ClientKey) {
-        let span = tracing::Span::current();
-        let departure = self.sessions.get(&client).and_then(|session| {
-            let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
-            self.battles
-                .remove_participant(&mut delivery, ParticipantId(session.generation))
-        });
-        match departure {
-            Some(ParticipantDeparture::Entered) => match self.base.reset_player(client) {
-                Ok(()) => {
-                    span.record("output.outcome", "garage_reset");
-                }
-                Err(error) => {
-                    span.record("output.outcome", "return_failed");
-                    span.record("otel.status_code", "ERROR");
-                    error!(%error, "Could not return to the garage");
-                    self.base.disconnect_client(client);
-                }
-            },
-            Some(ParticipantDeparture::Loading) => {
-                self.base.disconnect_client(client);
-                span.record("output.outcome", "handoff_aborted");
-            }
-            None => {
-                span.record("output.outcome", "already_left");
-            }
-        }
     }
 
     fn authenticate(&mut self, event: login::LoginEvent) {
@@ -601,15 +560,16 @@ impl Gateway {
         }
     }
 
-    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.account.version_property = tracing::field::Empty, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty, output.training_room.description_enabled = tracing::field::Empty, output.equipment_upgrades.enabled = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.account.version_property = tracing::field::Empty, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty, output.training_room.description_enabled = tracing::field::Empty, output.equipment_upgrades.enabled = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     fn enable(&mut self, client: ClientKey) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
         };
         let participant = ParticipantId(session.generation);
-        if self.battles.contains(participant) {
-            let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
-            return self.battles.enter(&mut delivery, participant);
+        if self.battle_participants.contains(&participant) {
+            let result = self.battle_worker.enter(participant);
+            self.handle_battle_submission(client, result);
+            return Ok(());
         }
         if session.entity.is_some() {
             return Ok(());
