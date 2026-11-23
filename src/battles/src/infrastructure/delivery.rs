@@ -86,18 +86,25 @@ impl BattlePositions {
             position: glam::Vec3::ZERO,
             direction: glam::Vec3::ZERO,
         };
+        let replication = self
+            .spans
+            .first()
+            .cloned()
+            .unwrap_or_else(tracing::Span::none);
         let mut attempted = 0;
         for &participant in &self.recipients {
             if !adapter.has_client(participant) {
                 continue;
             }
             attempted += 1;
-            let result = adapter.deliver_positions(
-                participant,
-                self.tick,
-                avatar.clone(),
-                self.vehicles.iter().cloned(),
-            );
+            let result = replication.in_scope(|| {
+                adapter.deliver_positions(
+                    participant,
+                    self.tick,
+                    avatar.clone(),
+                    self.vehicles.iter().cloned(),
+                )
+            });
             match result {
                 Ok(()) => delivered += 1,
                 Err(error) => {

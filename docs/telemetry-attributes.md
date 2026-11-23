@@ -12,8 +12,8 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 | --- | --- |
 | `client.address` | Caller IP without port on `admin.http.request`, `game.authenticate`, `game.command`, `xmpp.request`, and `web.ui.request`. Store API requests record their immediate network peer. Admin HTTP and shared UI requests use a valid single `X-Forwarded-For` IP only from a configured trusted peer; otherwise the socket IP. Omitted only when an HTTP request has no socket metadata (for example, an in-process router call). |
 | `client.port` | Caller source port, in TCP/UDP port units, on the same roots when the socket identifies the caller. Omitted for forwarded HTTP callers because the header supplies no source port. |
-| `network.peer.address` | Immediate socket peer IP without port on those roots and `store.http.request` or `web.ui.request`; remains the proxy address for forwarded HTTP requests. |
-| `network.peer.port` | Immediate socket peer TCP/UDP source port on those roots and `store.http.request` or `web.ui.request`. |
+| `network.peer.address` | Immediate socket peer IP without port on those roots, `store.http.request`, `web.ui.request` and `mercury.arena_snapshot`. Remains the proxy address for forwarded HTTP requests. |
+| `network.peer.port` | Immediate socket peer TCP/UDP port on those roots, `store.http.request`, `web.ui.request` and `mercury.arena_snapshot`. |
 | `input.web.asset_source` | Static UI asset source on `web.ui.request`. `bundle` means embedded in the server executable and `directory` means a configured filesystem override. |
 | `network.transport` | `tcp` for HTTP/XMPP and `udp` for Mercury on those roots and `store.http.request` or `web.ui.request` as applicable. |
 
@@ -171,6 +171,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.aim.server_marker`](../src/battles/src/infrastructure/controls.rs) | Boolean supplied by the Avatar's server reticle setting command. |
 | [`input.replication.kind`](../src/battles/src/infrastructure/controls.rs) | Arena delivery kind, including `position`, `hull_aim` (driver orientation and track motion), `engine_mode`, `wheels_scroll`, `steering_angles`, `gun_angles`, `gun_marker` and `ammunition`. |
 | [`input.arena.tick`](../src/battles/src/infrastructure/mod.rs) | Full arena tick count for the first position snapshot carrying a drive command's change. One unit is 100 ms. |
+| [`input.arena.tick`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Low 8 bits of the arena tick written into the snapshot's TickSync element. One unit is 100 ms. |
 | [`input.geometry`](../src/battles/src/infrastructure/terrain.rs) | Bundle geometry path when loading terrain or obstacles for the selected arena. |
 | [`input.roster.row`](../src/battles/src/infrastructure/mod.rs) | Zero-based row index when updating a player's ready state in the arena roster. |
 | [`input.players.count`](../src/battles/src/infrastructure/mod.rs) | Roster size during preparation and activation, or current participant count on a period transition. |
@@ -371,7 +372,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.session_count`](../src/accounts/src/infrastructure/player_access.rs) | Number of sessions removed by a sign-out request with a well-formed cookie. |
 | [`output.delivery`](../src/player-sessions/src/infrastructure/gateway/progression.rs) | Garage completion reports response enqueue (`queued`), absent session or entity (`unavailable`), or failure to enqueue (`failed`). XMPP enqueue reports `queued`, `offline` or `enqueue_failed`. |
 | [`output.delivery`](../src/shared-infrastructure/src/mercury/app/outbox.rs) | Mercury transport records `sent` on a successful socket write, `send_failed` on write failure, `enqueue_failed` on method encoding or enqueue failure, or `discarded` on removal of an unsent bundle. Login responses record `sent` or `send_failed`. |
-| [`output.packet.sequence`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | 28-bit unreliable Mercury sequence number after an arena acknowledgement datagram is sent. |
+| [`output.delivery`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | `mercury.arena_snapshot` records `sent` after the socket write or `failed` if session lookup, encoding or delivery fails. |
+| [`output.packet.sequence`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | First 28-bit unreliable Mercury sequence number of a sent arena snapshot. |
 | [`output.response_code`](../src/shared-infrastructure/src/mercury/app/entity.rs) | On-wire result from `onCmdResponse`, `onCmdResponseExt`, or the LoginApp reply. |
 | [`output.players.online`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Number of current gateway sessions returned as cluster and region CCU by command 501. |
 | [`output.revision`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Current in-memory garage revision returned by the sync check. Grant planning records the planned revision and the HTTP grant handler records the committed revision. |

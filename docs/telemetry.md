@@ -267,7 +267,9 @@ to the requested aim, with a child span for each resulting angle or server
 marker update. Enabling the marker parents its first delivery. The marker
 replicates to the owner and the packed angle replicates to battle peers.
 Position replication records the tick and counts the recipients and successful
-socket writes of the shared timestamped snapshot. The driving command also
+socket writes of the shared timestamped snapshot. `mercury.arena_snapshot`
+records the peer, wire tick, sequence number and delivery result for the
+datagram that also carries any pending acknowledgements. The driving command also
 parents `battles.drive_vehicle` for the first simulation step, the driver's
 `hull_aim` update, and any changed `engine_mode`, `wheels_scroll` and
 `steering_angles` deliveries to battle peers. The step records the sampled

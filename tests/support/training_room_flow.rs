@@ -1605,7 +1605,7 @@ pub fn exercise_battle(
     host.command(script, "setClientReady", vec![]);
     let host_ready_ack = host.last_sent_reliable + 1;
     host.until(script, |p| {
-        p.ack_only_through
+        p.snapshot_ack_through
             .is_some_and(|ack| ack.wrapping_cmp(host_ready_ack).is_ge())
     });
     host.until(script, |p| p.avatar_position_frames >= 2);
@@ -1645,8 +1645,11 @@ pub fn exercise_battle(
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     guest.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     for peer in [&mut *host, &mut *guest] {
+        let drive_ack = peer.last_sent_reliable + 1;
         peer.until(script, |p| {
-            p.positions.get(&first).is_some_and(|p| *p != initial_host)
+            p.snapshot_ack_through
+                .is_some_and(|ack| ack.wrapping_cmp(drive_ack).is_ge())
+                && p.positions.get(&first).is_some_and(|p| *p != initial_host)
                 && p.positions
                     .get(&second)
                     .is_some_and(|p| *p != initial_guest)
@@ -2677,16 +2680,20 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         );
     }
 
-    assert!(
-        traces
-            .iter()
-            .any(|span| span.name == "mercury.acknowledge_arena_packet"
-                && has(span, "output.delivery", "sent")
-                && span.attributes.iter().any(|attribute| {
-                    attribute.key.as_str() == "output.packet.sequence"
-                        && matches!(attribute.value, opentelemetry::Value::I64(0..=0x0fff_ffff))
-                }))
-    );
+    assert!(traces.iter().any(|span| {
+        span.name == "mercury.arena_snapshot"
+            && traces.iter().any(|replication| {
+                replication.name == "battles.replication"
+                    && has(replication, "input.replication.kind", "position")
+                    && child_of(span, replication)
+            })
+            && has(span, "ddd.bounded_context.name", "player_sessions")
+            && has(span, "output.delivery", "sent")
+            && span.attributes.iter().any(|attribute| {
+                attribute.key.as_str() == "output.packet.sequence"
+                    && matches!(attribute.value, opentelemetry::Value::I64(0..=0x0fff_ffff))
+            })
+    }));
     let readiness: Vec<_> = traces
         .iter()
         .filter(|span| span.name == "battles.roster_ready" && has(span, "input.ready", "true"))
