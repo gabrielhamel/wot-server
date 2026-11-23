@@ -85,6 +85,12 @@ pub(crate) fn extract(
                     Some(_) => None,
                     None => {
                         unsupported += 1;
+                        let reason = if client.contains(model_path) {
+                            "unsupported Havok mesh"
+                        } else {
+                            "asset unavailable in the client resource index"
+                        };
+                        eprintln!("Skipped obstacle collision model {model_path}: {reason}");
                         None
                     }
                 };
@@ -169,4 +175,36 @@ pub(crate) fn extract_vehicle_bounds(
         bytes += dest.metadata()?.len();
     }
     Ok((count, bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "Requires WOT_GAME_DIR with the installed EU client"]
+    fn eu_bbox_assets_and_buildings_decode_without_skipping_collision() {
+        let root = std::env::var_os("WOT_GAME_DIR").unwrap();
+        let mut client = ClientResources::open(Path::new(&root)).unwrap();
+        for path in [
+            "objects/misc/bbox/building_cylinder.havok",
+            "objects/misc/bbox/building_wall1.havok",
+            "objects/misc/bbox/building_wall2.havok",
+            "objects/misc/bbox/building_wall3.havok",
+            "content/Buildings/hd_bld_EU_011_TownHall/normal/lod0/hd_bld_EU_011_TownHall_01.havok",
+            "content/Buildings/hd_bld_EU_011_TownHall/normal/lod0/hd_bld_EU_011_TownHall_02.havok",
+            "content/Buildings/hd_bld_EU_220_VHouse/normal/lod0/hd_bld_EU_220_VHouse_01.havok",
+            "content/Buildings/hd_bld_SU_013_Thouse_01/normal/lod0/hd_bld_SU_013_Thouse_01.havok",
+            "content/Buildings/hd_bld_SU_029_MinskConstructor/normal/lod0/hd_bld_SU_029_MinskConstructor_Wall_01.havok",
+        ] {
+            let triangles = read_collision(&mut client, path, None)
+                .unwrap()
+                .expect(path);
+            assert!(!triangles.is_empty(), "{path} has no active triangles");
+        }
+        let camera = read_collision(&mut client, "objects/misc/bbox/no_camera_box.havok", None)
+            .unwrap()
+            .unwrap();
+        assert!(camera.is_empty());
+    }
 }

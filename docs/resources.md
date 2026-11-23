@@ -44,9 +44,12 @@ server. Older manifests without the field remain supported.
 - **Battles** reads the generated `spaces/<map>/collision.bin` placement
   files and shared `collision-models/*.mesh` triangle data for projectile
   impacts and lateral hull contacts with scenery. The extractor derives
-  these from the compiled space and its
-  referenced Havok meshes. It omits the original assets and reports the
-  number of missing or unsupported collision models. Each placement stores
+  these from the compiled space and the Havok meshes it references, including
+  the proxy shapes under `objects/misc/bbox/`. It omits the original
+  assets and reports the path and reason for each missing or unsupported
+  collision model. The mesh decoder ignores disabled `DE AD DE AD` primitive
+  slots and keeps the remaining triangles. Camera-only proxies contribute
+  no vehicle or projectile geometry. Each placement stores
   a mesh reference, visibility mask and affine transform. `WCP2` adds the
   native chunk and object index from the compiled space's `WGDE` section.
   `WCM3` meshes store triangle materials, native fragment kinds, initial

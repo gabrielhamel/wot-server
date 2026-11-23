@@ -32,19 +32,29 @@ impl Hull {
         )
     }
 
-    pub fn reach(self, axis: Vec2) -> f32 {
-        let [right, forward] = self.axes();
-        (right * self.offset.x + forward * self.offset.y).dot(axis) + self.radius(axis)
-    }
-
     fn radius(self, axis: Vec2) -> f32 {
         let [right, forward] = self.axes();
         right.dot(axis).abs() * self.half_size.x + forward.dot(axis).abs() * self.half_size.y
     }
 
+    pub fn sweep_triangle(self, vertices: [Vec3; 3], travel: Vec2) -> Option<Contact> {
+        let (contact, overlap) = self.triangle_contact(vertices, travel)?;
+        let blocks = if travel == Vec2::ZERO {
+            overlap > CONTACT_SKIN
+        } else {
+            travel.dot(contact.normal) < -0.0001
+        };
+        blocks.then_some(contact)
+    }
+
+    pub fn triangle_overlap(self, vertices: [Vec3; 3]) -> Option<(Vec2, f32)> {
+        let (contact, depth) = self.triangle_contact(vertices, Vec2::ZERO)?;
+        Some((contact.normal, depth))
+    }
+
     // The box is expressed in hull coordinates so each triangle can be swept
     // against it with the box axes, face normal and edge cross products.
-    pub fn sweep_triangle(self, vertices: [Vec3; 3], travel: Vec2) -> Option<Contact> {
+    fn triangle_contact(self, vertices: [Vec3; 3], travel: Vec2) -> Option<(Contact, f32)> {
         let [right, forward] = self.axes();
         let to_local = |v: Vec3| Vec3::new(v.xz().dot(right), v.y, v.xz().dot(forward));
         let center = self.center() + Vec3::Y * (HULL_HEIGHT * 0.5);
@@ -57,6 +67,8 @@ impl Hull {
         let half = Vec3::new(self.half_size.x, HULL_HEIGHT * 0.5, self.half_size.y);
         let velocity = to_local(Vec3::new(travel.x, 0.0, travel.y));
         let mut sweep = Sweep::new();
+        let mut horizontal_overlap = f32::INFINITY;
+        let mut horizontal_normal = Vec3::ZERO;
         let box_axes = [Vec3::X, Vec3::Y, Vec3::Z];
         let cross_axes = edges
             .into_iter()
@@ -68,20 +80,31 @@ impl Hull {
             }
             let [first, second, third] = [a.dot(axis), b.dot(axis), c.dot(axis)];
             let radius = half.dot(axis.abs());
-            if !sweep.clip(
-                first.min(second).min(third) - radius,
-                first.max(second).max(third) + radius,
-                velocity.dot(axis),
-                axis,
-            ) {
+            let low = first.min(second).min(third) - radius;
+            let high = first.max(second).max(third) + radius;
+            if !sweep.clip(low, high, velocity.dot(axis), axis) {
                 return None;
             }
+            if travel == Vec2::ZERO {
+                // Vertical separation is already checked by SAT. A pivot can only
+                // resolve a contact by moving the hull horizontally.
+                let horizontal = axis.xz().length();
+                if horizontal > 1e-4 {
+                    let depth = (-low).min(high) / horizontal;
+                    if depth < horizontal_overlap {
+                        horizontal_overlap = depth;
+                        horizontal_normal = if -low < high { -axis } else { axis };
+                    }
+                }
+            }
         }
-        let (fraction, local_normal, overlap) = sweep.finish()?;
+        let (fraction, local_normal, overlap) = if travel == Vec2::ZERO {
+            (0.0, horizontal_normal, horizontal_overlap)
+        } else {
+            sweep.finish()?
+        };
         let normal = (right * local_normal.x + forward * local_normal.z).normalize_or_zero();
-        (normal != Vec2::ZERO
-            && (travel.dot(normal) < -0.0001 || (travel == Vec2::ZERO && overlap > CONTACT_SKIN)))
-            .then_some(Contact { fraction, normal })
+        (normal != Vec2::ZERO).then_some((Contact { fraction, normal }, overlap))
     }
 }
 

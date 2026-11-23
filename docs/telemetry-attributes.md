@@ -137,7 +137,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.world.scenery_contact`](../src/battles/src/infrastructure/motion.rs) | Whether scenery constrained this vehicle's movement or rotation on a world-motion event. |
 | [`output.world.scenery_support`](../src/battles/src/infrastructure/motion.rs) | Whether the hull's destination support comes from scenery geometry on a world-motion event. |
 | [`output.world.fragments_destroyed`](../src/battles/src/infrastructure/motion.rs) | Number of scenery fragments destroyed by this hull's movement during the tick. |
-| [`output.world.turn_contact`](../src/battles/src/infrastructure/motion.rs) | Whether a sampled orientation during a turn overlapped a scenery contact surface. |
+| [`output.world.turn_contact`](../src/battles/src/infrastructure/motion.rs) | Whether a sampled turn increased the hull’s horizontal penetration of a scenery contact surface enough to require contact resolution. |
 | [`output.world.scenery_speed_scale`](../src/battles/src/infrastructure/motion.rs) | Unitless retained longitudinal speed multiplier after breaking scenery during this tick. One indicates full retention. |
 | [`output.obstacle.fragment_destroyed`](../src/battles/src/infrastructure/projectiles.rs) | Whether a projectile impact depleted a scenery fragment's health. Omitted for static scenery and terrain. |
 | [`input.scenery.source`](../src/battles/src/infrastructure/scenery/mod.rs) | Cause of the fracture batch, `contact` or `shot`. |

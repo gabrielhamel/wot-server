@@ -4,6 +4,8 @@ use glam::Vec3;
 
 use super::tagfile::Node;
 
+const DISABLED_PRIMITIVE: [u8; 4] = [0xde, 0xad, 0xde, 0xad];
+
 /// The triangles of a `hknpCompressedMeshShape`, `None` if malformed.
 ///
 /// Its mesh tree is split in sections, each with its vertices packed in a `u32` as
@@ -68,9 +70,13 @@ pub fn compressed_mesh_triangles(shape: Node) -> Option<Vec<[Vec3; 3]>> {
             }
             let mut index = [0; 4];
             for (i, element) in index.iter_mut().zip(indices) {
-                *i = element.as_int()? as usize;
+                *i = u8::try_from(element.as_int()?).ok()?;
             }
-            let [a, b, c, d] = index.map(vertex);
+            // Edited meshes leave disabled slots in the section's primitive range.
+            if index == DISABLED_PRIMITIVE {
+                continue;
+            }
+            let [a, b, c, d] = index.map(|index| vertex(usize::from(index)));
             let (a, b, c) = (a?, b?, c?);
             triangles.push([a, b, c]);
             if index[2] != index[3] {

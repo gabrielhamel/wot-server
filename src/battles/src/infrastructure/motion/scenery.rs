@@ -52,18 +52,11 @@ impl SceneryMotion {
                     - PI,
                 ..hull
             };
-            while let Some(hit) = scenery.sweep_hull(candidate, Vec2::ZERO) {
+            while let Some((hit, closing)) = scenery.turn_contact(hull, candidate) {
                 self.turn_contact = true;
                 let normal = hit.contact.normal;
-                let closing = candidate.reach(-normal) - hull.reach(-normal);
-                if closing <= 0.0 && scenery.sweep_hull(hull, Vec2::ZERO).is_some() {
-                    break;
-                }
                 let speed = (closing * f32::from(samples) / self.seconds).clamp(0.0, 25.0);
-                if closing <= 0.0
-                    || !can_damage
-                    || !self.damage(scenery, hit, speed, pressure, false)
-                {
+                if !can_damage || !self.damage(scenery, hit, speed, pressure, false) {
                     return (hull, Some(normal));
                 }
             }

@@ -227,8 +227,11 @@ after destruction. The [Widepark capture](battle-replays.md#widepark-training-ca
 locates the stock Leopard 1 stop beside a flat carriage.
 Numbered placements scale base fragment
 health by the square of the model scale. Drive contact estimates scenery damage
-from mass and contact speed. The solver samples a turning hull's contact
-envelope, so steering alone can damage a wall when a corner closes on it.
+from mass and contact speed. At each angular sample, the solver compares
+horizontal penetration of the same surface before and after rotation.
+This detects a corner entering a fence panel even when the overall hull
+projection toward the contact normal decreases. Steering alone can damage
+such a wall, and a turn that clears an existing contact can continue.
 Powered input adds sustained pressure at contact even while the hull is
 stationary. Breaking scenery consumes a bounded share of the assumed impact
 energy, so a light vehicle can lose more speed than a heavier one at the same

@@ -97,6 +97,31 @@ the visual body breaks so the same approach stays blocked. The replay
 does not establish how the native server treats the helper after damage.
 
 
+## Widepark LAN pivot capture from 2026-11-23
+
+User-supplied `replay_last_battle.wotreplay` records a Widepark Training match
+on the development server at 19:41:02. The replay reports the EU client
+`v.2.4.1.1 #993`, executable label `2.4.1.0`, and contains 4,812 type-`0x0a`
+position records with 45-byte payloads. The raw SHA-256 is
+`26de01f6666bb95641eb7a83c5de424905160d250a5d82a071136be2d74e1d36`.
+
+The recording AMX 30 B, entity `1963090098`, is at
+`(246.39528, 7.99810, -33.58478)` with yaw `0.756306` rad at 132.91 s.
+This is position record offset 476216. The position remains fixed during
+the surrounding turn samples. The replay records state updates for the
+destruction controller centered at `(254.28, 0, -48.61)`. Its cumulative
+fragile-object list adds fence index `46` at 127.91 s and index `40` at
+129.51 s. Index `45` appears at 137.01 s at stream offset 491130.
+The position records do not establish how long the steering key was held.
+
+With the two earlier breaks applied to the arena, the recorded hull pose
+and a 0.04 rad turn increase horizontal overlap with fence panel `45`
+in WGDE chunk `0x817e`. The previous code compared the footprint's global
+reach along a single normal and could reject this corner contact before
+applying scenery damage. The bundle-backed regression verifies that the
+per-triangle test selects the panel and clears the contact after fracture.
+
+
 ## EU capture evidence from 2026-11-21
 
 All four recordings report `v.2.4.1.1 #993` from XML and `2.4.1.0` from the

@@ -97,6 +97,39 @@ impl Scenery {
         self.geometry.sweep_hull(hull, travel, &self.damage)
     }
 
+    pub fn turn_contact(&self, current: Hull, candidate: Hull) -> Option<(HullHit, f32)> {
+        let (min, max) = candidate.bounds();
+        let mut blocking = None;
+        self.geometry.visit_hull_triangles(
+            Bounds { min, max },
+            &self.damage,
+            |vertices, fragment| {
+                if let Some((normal, depth)) = candidate.triangle_overlap(vertices)
+                    && depth > crate::domain::world::CONTACT_SKIN
+                {
+                    let before = current
+                        .triangle_overlap(vertices)
+                        .map_or(0.0, |(_, depth)| depth);
+                    let closing = depth - before;
+                    if closing > 0.0001 && blocking.is_none_or(|(_, best)| closing > best) {
+                        blocking = Some((
+                            HullHit {
+                                contact: Contact {
+                                    fraction: 0.0,
+                                    normal,
+                                },
+                                fragment,
+                            },
+                            closing,
+                        ));
+                    }
+                }
+                true
+            },
+        );
+        blocking
+    }
+
     pub fn chunks(&self) -> impl Iterator<Item = u16> + '_ {
         self.geometry.instances.iter().filter_map(|instance| {
             instance
@@ -342,47 +375,59 @@ impl Obstacles {
             max: max.max(max + offset),
         };
         let mut closest: Option<HullHit> = None;
-        self.index
-            .as_ref()?
-            .visit(&self.instances, swept, &mut |instance| {
-                let model_to_world = instance.world_to_model.inverse();
-                let local_bounds = swept.transform(instance.world_to_model);
-                for triangle in &self.meshes[instance.mesh].triangles {
-                    if triangle.pass_flags & VEHICLES_PASS != 0 {
+        self.visit_hull_triangles(swept, damage, |vertices, fragment| {
+            if let Some(hit) = hull.sweep_triangle(vertices, travel)
+                && closest.is_none_or(|closest| hit.fraction < closest.contact.fraction)
+            {
+                closest = Some(HullHit {
+                    contact: hit,
+                    fragment,
+                });
+                return hit.fraction != 0.0;
+            }
+            true
+        });
+        closest
+    }
+
+    fn visit_hull_triangles(
+        &self,
+        area: Bounds,
+        damage: &Damage,
+        mut visit: impl FnMut([Vec3; 3], Option<Fragment>) -> bool,
+    ) {
+        let Some(index) = &self.index else { return };
+        index.visit(&self.instances, area, &mut |instance| {
+            let model_to_world = instance.world_to_model.inverse();
+            let local_bounds = area.transform(instance.world_to_model);
+            for triangle in &self.meshes[instance.mesh].triangles {
+                if triangle.pass_flags & VEHICLES_PASS != 0 {
+                    continue;
+                }
+                let mut fragment = triangle.fragment(instance);
+                if damage.destroyed(fragment) {
+                    if triangle.pass_flags & RETAIN_VEHICLE_WALL == 0 {
                         continue;
                     }
-                    let mut fragment = triangle.fragment(instance);
-                    if damage.destroyed(fragment) {
-                        if triangle.pass_flags & RETAIN_VEHICLE_WALL == 0 {
-                            continue;
-                        }
-                        fragment = None;
-                    }
-                    let [a, b, c] = triangle.vertices;
-                    let triangle_bounds = Bounds {
-                        min: a.min(b).min(c),
-                        max: a.max(b).max(c),
-                    };
-                    if local_bounds.overlaps(triangle_bounds)
-                        && let Some(hit) = hull.sweep_triangle(
-                            triangle
-                                .vertices
-                                .map(|vertex| model_to_world.transform_point3(vertex)),
-                            travel,
-                        )
-                        && closest.is_none_or(|closest| hit.fraction < closest.contact.fraction)
-                    {
-                        closest = Some(HullHit {
-                            contact: hit,
-                            fragment,
-                        });
-                        if hit.fraction == 0.0 {
-                            break;
-                        }
-                    }
+                    fragment = None;
                 }
-            });
-        closest
+                let [a, b, c] = triangle.vertices;
+                let triangle_bounds = Bounds {
+                    min: a.min(b).min(c),
+                    max: a.max(b).max(c),
+                };
+                if local_bounds.overlaps(triangle_bounds)
+                    && !visit(
+                        triangle
+                            .vertices
+                            .map(|vertex| model_to_world.transform_point3(vertex)),
+                        fragment,
+                    )
+                {
+                    break;
+                }
+            }
+        });
     }
 }
 
@@ -754,6 +799,38 @@ fn visibility_mask(resources: &ResourceBundle, geometry: &str, arena_type: i32) 
 mod tests {
     use super::*;
     use glam::Vec3Swizzles;
+
+    #[test]
+    #[ignore = "Requires WG_RESOURCE_DIR with Widepark scenery"]
+    fn widepark_replay_detects_the_next_fence_panel_during_a_pivot() {
+        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
+        let geometry = Arc::new(Obstacles::load(&resources, "spaces/17_munchen", 17).unwrap());
+        let mut scene = Scenery::new(geometry);
+        for index in [0x28, 0x2e] {
+            scene
+                .damage
+                .0
+                .insert((Object::Native(0x817e_0000 | index), 1), 0);
+        }
+        // Position in the LAN replay at 132.91 s, after two nearby panels broke.
+        let current = Hull {
+            position: Vec3::new(246.39528, 7.9981, -33.58478),
+            yaw: 0.756306,
+            half_size: Vec2::new(1.5504, 3.264),
+            offset: Vec2::new(0.002, -0.064),
+        };
+        let candidate = Hull {
+            yaw: current.yaw + 0.04,
+            ..current
+        };
+        let (contact, closing) = scene.turn_contact(current, candidate).unwrap();
+        let fragment = contact.fragment.unwrap();
+        assert!(matches!(fragment.object, Object::Native(0x817e_002d)));
+        assert!(closing > 0.0);
+        assert_eq!(scene.damage(fragment, 10).len(), 1);
+        assert!(scene.turn_contact(current, candidate).is_none());
+    }
 
     #[test]
     #[ignore = "Requires freshly extracted EU Widepark railway geometry"]
