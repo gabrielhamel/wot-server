@@ -1,0 +1,9 @@
+[package]
+name = "wot-web-build"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow.workspace = true

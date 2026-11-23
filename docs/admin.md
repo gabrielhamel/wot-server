@@ -9,7 +9,7 @@ credentials in the game client's basic login flow immediately after creation.
 
 The catalog selects the tier I starters from regular nation tech trees and
 excludes collector vehicles. The initial settings use the
-[starter settings](../src/accounts/infrastructure/client/starter_settings.json).
+[starter settings](../src/accounts/src/infrastructure/client/starter_settings.json).
 
 Players and administrators share the **My garage** and **Store** views when
 the server enables the [Store](store.md#player-dashboard). Administrators can
@@ -17,33 +17,21 @@ open player management and grants from the **Admin** tab.
 
 ## Enable the dashboard
 
-From the repository root, build the SPA with Node.js 22.12 or later.
+Cargo builds the dashboard and Store bundle when building the server. To build
+just the browser bundle, run this command from the repository root:
 
 ```sh
-npm ci
-npm run build --workspace tools/web
+cargo web-build
 ```
 
-Add these top-level settings to the `server.json` beside the game server
-executable for local HTTP development.
+Both builds require Node.js and npm. Use Node.js 22.22.2 or a newer supported
+release. Cargo installs the locked dependencies as needed and writes the
+browser bundle to `src/server-runtime/src/infrastructure/web/dist/`.
 
-```json
-{
-  "web": {
-    "bind": "127.0.0.1:8080",
-    "ui_dir": "../../tools/web/dist"
-  },
-  "admin": {
-    "secure_cookies": false
-  }
-}
-```
-
-The relative UI path works with the executable in `target/debug/` or
-`target/release/`. Use `web.ui_dir` to point to the built web project. Omit it
-for admin API-only mode. The shared listener defaults to `127.0.0.1:8080`.
-Legacy `admin.bind` and `admin.dashboard_dir` still supply the listener
-settings when there is no `web` object.
+The dashboard listens on all IPv4 interfaces at port 8080 by default. Pass
+`--web-bind 127.0.0.1:8080` to limit it to the local machine. Pass
+`--web-ui-dir /path/to/dist` to serve a separate build, or `--disable-admin`
+to disable the dashboard and admin API.
 
 Restart the server and open <http://127.0.0.1:8080/dashboard/>. If the database has
 no players, the dashboard opens the first administrator form. Enter an email
@@ -109,10 +97,9 @@ pieces, and **Grant Experimental Equipment** for tiers 1–3. These pickers
 show the player's unmounted depot stock.
 
 For remote administration, serve the dashboard through an HTTPS reverse
-proxy and use `"admin": {}` in `server.json`. Route `/dashboard/`,
-`/assets/*` and `/api/admin/*` to the web listener. Secure cookies are enabled
-by default. Use `"secure_cookies": false` only when accessing the listener over
-local HTTP, including an SSH tunnel to the loopback listener.
+proxy and start the server with `--secure-cookies`. Route
+`/dashboard/`, `/assets/*` and `/api/admin/*` to the web listener. By default,
+the dashboard supports sign-in over HTTP.
 
 ### Upgrade an existing database
 

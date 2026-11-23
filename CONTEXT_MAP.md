@@ -3,18 +3,24 @@
 See the [bounded context guide](docs/bounded-contexts.md) for naming criteria,
 published contracts, and storage ownership rules.
 
-## wot-server
+## wot-server workspace
+
+Accounts, Social, Player Sessions, Battles, and Player Administration compile
+as separate Rust libraries under `src/`. The server binary starts the [server
+runtime library](src/server-runtime/README.md), which wires the contexts’ published
+contracts and adapters.
+The [web workspace](src/server-runtime/src/infrastructure/web/package.json) bundles the context-owned browser pages.
 
 ![wot-server context map](docs/context-maps/generated/wot-server.svg)
 
-[Shared Kernel](src/shared_kernel/README.md) supplies the account ID model to
+[Shared Kernel](src/shared-kernel/README.md) supplies the account ID model to
 Player Administration, Player Sessions, and Social.
-[Platform](src/platform/README.md) supplies shared codecs to Accounts and
+[Platform](src/shared-infrastructure/README.md) supplies shared codecs to Accounts and
 Player Sessions, shared Mercury transport to Player Sessions and Battles, bounded HTTP serving to the shared web listener, and
 tracing adapters to runtime infrastructure and server composition. The admin and Store browser views use Platform's TypeScript HTTP transport, telemetry and theme. Both support boundaries are independent of their consumers.
 
 [Accounts](src/accounts/README.md) publishes commands, read operations and an
-opaque account view upstream of [Player Sessions](src/player_sessions/README.md), which adapts them into login
+opaque account view upstream of [Player Sessions](src/player-sessions/README.md), which adapts them into login
 and garage sessions. Both translate external client data through anti-corruption
 layers. Accounts' PostgreSQL adapter persists user state, including revision-checked
 ammunition, tank/module research, vehicle purchases and module, equipment, consumable and directive loadouts, cosmetic ownership and outfits, shared depot stock, balances and Premium Account expiration. Its resource adapter builds the garage projection. Player Sessions adapts shell, equipment, consumable, directive, camouflage, module and tank progression requests and publishes committed
@@ -22,10 +28,10 @@ inventory/balance changes and purchase receipts. Player Sessions binds garage RP
 uses the live garage session to publish Accounts offers and route checkout through
 the revision-checked account transaction. Player Sessions publishes Premium Account
 activation, renewal and expiry to the garage. Both contexts use the shared
-[client formats](src/platform/infrastructure/client_formats/README.md) infrastructure.
+[client formats](src/shared-infrastructure/src/infrastructure/client_formats/README.md) infrastructure.
 
 [Resource Extraction](tools/wot-extract/README.md) runs offline and publishes
-the [bundle contract](tools/wot-resources/README.md) to Accounts, Player Sessions and Battles. The
+the [bundle contract](src/resources/README.md) to Accounts, Player Sessions and Battles. The
 extractor reads installed client packages and loose files. Accounts loads the
 garage catalog from the bundle, and Player Sessions loads its ABI definitions and
 component class metadata. Battles loads the arena catalog, geometry and terrain.
@@ -46,7 +52,7 @@ run independent SQLx migrations on one shared pool. Player Sessions
 consumes Social application operations and adapts native XMPP, both legacy
 messenger RPC versions, presence and committed participant delivery. See [social protocol](docs/social.md).
 
-[Player Administration](src/player_administration/README.md) authenticates operators and adapts Accounts' player
+[Player Administration](src/player-administration/README.md) authenticates operators and adapts Accounts' player
 listing, bootstrap, provisioning, roles, garage inspection and dashboard sessions to HTTP and the React Admin dashboard. It submits
 currency, vehicle and cosmetic grants through Player Sessions for serialized
 garage updates and supplies the embedded Store's dashboard HTTP transport.

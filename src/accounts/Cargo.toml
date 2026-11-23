@@ -1,0 +1,25 @@
+[package]
+name = "wot-accounts"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+
+[features]
+integration-test-support = []
+
+[dependencies]
+anyhow.workspace = true
+argon2.workspace = true
+async-trait.workspace = true
+flate2.workspace = true
+glam.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+unicode-properties.workspace = true
+wot-platform.workspace = true
+wot-resources.workspace = true
+wot-shared-kernel.workspace = true

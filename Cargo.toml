@@ -1,16 +1,103 @@
 [workspace]
 members = [
+  "src/accounts",
+  "src/battles",
+  "src/player-administration",
+  "src/player-sessions",
+  "src/resources",
+  "src/server-runtime",
+  "src/server-runtime/src/infrastructure/web",
+  "src/shared-infrastructure",
+  "src/shared-kernel",
+  "src/social",
   "tools/wot-binary-map",
   "tools/wot-context-maps",
   "tools/wot-extract",
   "tools/wot-game-client",
   "tools/wot-replay",
-  "tools/wot-resources",
 ]
 resolver = "3"
 
 [workspace.package]
-version = "0.18.0"
+version = "0.19.0"
+
+[workspace.dependencies]
+anyhow = "1.0.104"
+argon2 = "0.5"
+async-trait = "0.1.92"
+axum = { version = "0.8", default-features = false, features = [
+  "http1",
+  "json",
+  "matched-path",
+  "query",
+  "tokio",
+] }
+base64 = "0.22"
+blowfish = "0.9"
+byteorder = "1.5"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+clap = { version = "4.6.7", features = ["derive"] }
+crc32fast = "1.4"
+flate2 = "1"
+glam = "0.29"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1.21", features = ["service", "tokio"] }
+indexmap = "2.6"
+opentelemetry = "0.33"
+opentelemetry-appender-tracing = "0.33"
+opentelemetry-otlp = { version = "0.33", features = ["reqwest-rustls"] }
+opentelemetry-proto = { version = "0.33", default-features = false, features = [
+  "gen-tonic-messages",
+  "trace",
+] }
+opentelemetry_sdk = "0.33"
+paste = "1"
+png = "0.17"
+prost = "0.14"
+quick-xml = "0.38"
+reqwest = { version = "0.13", default-features = false }
+roxmltree = "0.20"
+rsa = "0.8"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha1 = "0.10"
+sha2 = "0.11.1"
+smallvec = "1.13"
+sqlx = { version = "0.8", default-features = false, features = [
+  "runtime-tokio",
+  "tls-rustls-ring",
+  "postgres",
+  "migrate",
+  "macros",
+  "json",
+] }
+subtle = "2.6"
+thiserror = "1"
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "signal",
+  "sync",
+  "time",
+  "net",
+  "io-util",
+] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6.11", features = ["fs"] }
+tracing = "0.1"
+tracing-opentelemetry = { version = "0.34", default-features = false }
+tracing-subscriber = "0.3"
+unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
+wot-accounts = { path = "src/accounts" }
+wot-battles = { path = "src/battles" }
+wot-platform = { path = "src/shared-infrastructure" }
+wot-player-administration = { path = "src/player-administration" }
+wot-player-sessions = { path = "src/player-sessions" }
+wot-resources = { path = "src/resources" }
+wot-server-runtime = { path = "src/server-runtime" }
+wot-shared-kernel = { path = "src/shared-kernel" }
+wot-social = { path = "src/social" }
+wot-web-build = { path = "src/server-runtime/src/infrastructure/web" }
 
 [package]
 name = "wot-server"
@@ -20,7 +107,16 @@ license = "MIT"
 default-run = "wot-server"
 
 [features]
-integration-test-support = []
+integration-test-support = [
+  "wot-accounts/integration-test-support",
+  "wot-platform/integration-test-support",
+  "wot-player-sessions/integration-test-support",
+  "wot-server-runtime/integration-test-support",
+]
+
+[[test]]
+name = "admin_traces"
+required-features = ["integration-test-support"]
 
 [[test]]
 name = "ammunition"
@@ -47,79 +143,38 @@ name = "vehicles"
 required-features = ["integration-test-support"]
 
 [dependencies]
-wot-resources = { path = "tools/wot-resources" }
-anyhow = "1.0.104"
-clap = { version = "4.6.7", features = ["derive"] }
-serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.154"
-sha2 = "0.11.1"
-
-argon2 = "0.5"
-async-trait = "0.1.92"
-blowfish = "0.9"
-crc32fast = "1.4"
-flate2 = "1"
-png = "0.17"
-
-rsa = "0.8"
-sqlx = { version = "0.8", default-features = false, features = [
-  "runtime-tokio",
-  "tls-rustls-ring",
-  "postgres",
-  "migrate",
-  "macros",
-  "json",
-] }
-tokio = { version = "1", features = [
-  "rt-multi-thread",
-  "macros",
-  "signal",
-  "sync",
-  "time",
-  "net",
-  "io-util",
-] }
-tracing = "0.1"
-tracing-subscriber = "0.3"
-opentelemetry = "0.33"
-opentelemetry-appender-tracing = "0.33"
-opentelemetry-otlp = { version = "0.33", features = ["reqwest-rustls"] }
-opentelemetry_sdk = "0.33"
-tracing-opentelemetry = { version = "0.34", default-features = false }
-bitflags = "2.6"
-byteorder = "1.5"
-glam = "0.29"
-indexmap = "2.6"
-paste = "1"
-sha1 = "0.10"
-smallvec = "1.13"
-thiserror = "1"
-unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
-
-base64 = "0.22"
-quick-xml = "0.38"
-roxmltree = "0.20"
-chrono = { version = "0.4", default-features = false, features = ["std"] }
-axum = { version = "0.8", default-features = false, features = [
-  "http1",
-  "json",
-  "matched-path",
-  "query",
-  "tokio",
-] }
-hyper = { version = "1", features = ["http1", "server"] }
-hyper-util = { version = "0.1.21", features = ["service", "tokio"] }
-tower-http = { version = "0.6.11", features = ["fs"] }
-subtle = "2.6"
-reqwest = { version = "0.13", default-features = false }
-opentelemetry-proto = { version = "0.33", default-features = false, features = [
-  "gen-tonic-messages",
-  "trace",
-] }
-prost = "0.14"
+anyhow.workspace = true
+tokio.workspace = true
+wot-server-runtime.workspace = true
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
+axum.workspace = true
+tower.workspace = true
+opentelemetry.workspace = true
+prost.workspace = true
+rsa.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
+wot-accounts.workspace = true
+wot-battles.workspace = true
+wot-platform.workspace = true
+wot-player-administration.workspace = true
+wot-player-sessions.workspace = true
+wot-resources.workspace = true
+wot-social.workspace = true
+glam.workspace = true
+flate2.workspace = true
+base64.workspace = true
+argon2.workspace = true
+blowfish.workspace = true
+crc32fast.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+quick-xml.workspace = true
+sha2.workspace = true
 opentelemetry-proto = { version = "0.33", default-features = false, features = [
   "gen-tonic-messages",
   "trace",

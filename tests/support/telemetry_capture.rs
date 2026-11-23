@@ -20,12 +20,12 @@ pub struct GatewayMetrics {
 }
 
 impl GatewayMetrics {
-    pub fn attach(gateway: &mut wot_server::player_sessions::Gateway) -> Self {
+    pub fn attach(gateway: &mut wot_player_sessions::Gateway) -> Self {
         let exporter = InMemoryMetricExporter::default();
         let provider = SdkMeterProvider::builder()
             .with_periodic_exporter(exporter.clone())
             .build();
-        wot_server::server::test_support::configure_gateway_metrics(
+        wot_server_runtime::test_support::configure_gateway_metrics(
             gateway,
             &provider.meter("garage-test"),
         );
@@ -90,10 +90,9 @@ pub fn exporter() -> &'static InMemorySpanExporter {
             .with(
                 tracing_opentelemetry::layer()
                     .with_tracer(tracer)
-                    .with_filter(
-                        tracing_subscriber::filter::Targets::new()
-                            .with_target("wot_server", tracing::Level::INFO),
-                    ),
+                    .with_filter(wot_server_runtime::test_support::server_targets(
+                        tracing::level_filters::LevelFilter::INFO,
+                    )),
             )
             .init();
         exporter
@@ -928,9 +927,9 @@ pub fn assert_operation_traces(account: i64, research_account: i64, online_playe
 }
 
 pub async fn assert_database_failure(url: &str) {
-    use wot_server::accounts::test_support::{AccountRepository, PostgresAccounts};
+    use wot_accounts::test_support::{AccountRepository, PostgresAccounts};
     let repository = PostgresAccounts::new(
-        wot_server::server::test_support::connect_database(url, 1)
+        wot_server_runtime::test_support::connect_database(url, 1)
             .await
             .unwrap(),
     );
@@ -939,7 +938,7 @@ pub async fn assert_database_failure(url: &str) {
     let provider = SdkMeterProvider::builder()
         .with_periodic_exporter(metric_exporter.clone())
         .build();
-    wot_server::server::test_support::configure_database_metrics(
+    wot_server_runtime::test_support::configure_database_metrics(
         &provider.meter("database-test"),
         &pool,
     );

@@ -13,6 +13,10 @@ cover local setup and test fixtures.
 - Identify the owning bounded context in the [context map](CONTEXT_MAP.md) and
   use its glossary in code, tests, documentation, and the PR description.
   Define shared terms where the owning context documents them.
+- Use a dedicated Rust library crate for each new or extracted server bounded
+  context. Expose its integration contract through the library's public API and
+  wire its dependencies in server composition. See the
+  [bounded context guide](docs/bounded-contexts.md#rust-workspace-layout).
 - Put business rules in the domain, use cases in the application layer, and
   storage, transport, and presentation concerns in their respective adapters.
   Depend inward, integrate through context entry points, and keep wire types

@@ -2,7 +2,7 @@ use super::{
     Peer, Pickle, ScriptDispatch, Value, ammunition_flow::pickle_value, dict, telemetry_capture,
 };
 use opentelemetry_sdk::trace::SpanData;
-use wot_server::player_sessions::test_support::mercury::script::StringValue;
+use wot_platform::mercury::script::StringValue;
 
 #[path = "training_chat_flow.rs"]
 mod chat;
@@ -61,7 +61,7 @@ pub fn exercise(
         ("bonusType", Pickle::I64(2)),
         (
             "limits",
-            wot_server::pickle!({0: {"maxCount": (20, 30), "maxCountTotal": 30}}),
+            wot_platform::pickle!({0: {"maxCount": (20, 30), "maxCountTotal": 30}}),
         ),
         ("arenaTypeID", Pickle::I64(83)),
         ("roundLength", Pickle::I64(900)),
@@ -393,7 +393,7 @@ fn exercise_settings(peer: &mut Peer, script: &ScriptDispatch, settings: &mut Pi
         assert_eq!(args[0], Value::UInt8(8));
         assert_eq!(
             pickle_value(&args[1]),
-            wot_server::pickle!(("arenaVoipChannels", (index)))
+            wot_platform::pickle!(("arenaVoipChannels", (index)))
         );
         assert_eq!(response, "onCmdResponse");
     }
@@ -576,7 +576,7 @@ pub fn exercise_shared(
     assert_eq!(args[0], Value::UInt8(8));
     assert_eq!(
         pickle_value(&args[1]),
-        wot_server::pickle!(("comment", (EDITED_DESCRIPTION)))
+        wot_platform::pickle!(("comment", (EDITED_DESCRIPTION)))
     );
     let (total, entries) = training_list(guest, script, 0, 50);
     assert_eq!(total, 1);
@@ -607,7 +607,7 @@ pub fn exercise_shared(
     assert_eq!(args[0], Value::UInt8(3));
     assert_eq!(
         pickle_value(&args[1]),
-        wot_server::pickle!(((guest_entity), 18))
+        wot_platform::pickle!(((guest_entity), 18))
     );
     chat::assert_closed(guest, script, guest_before);
     let guest_before = guest.methods.len();
@@ -655,7 +655,7 @@ pub fn exercise_shared(
     assert_eq!(args[0], Value::UInt8(3));
     assert_eq!(
         pickle_value(&args[1]),
-        wot_server::pickle!(((guest_entity), 2))
+        wot_platform::pickle!(((guest_entity), 2))
     );
     chat::assert_closed(guest, script, guest_before);
     assert_eq!(
@@ -1312,7 +1312,7 @@ pub struct BattleFixture {
 }
 
 pub fn battle_fixture(resources: &wot_resources::ResourceBundle) -> BattleFixture {
-    use wot_server::platform::client_formats::pxml;
+    use wot_platform::client_formats::pxml;
 
     let shells = resources
         .read("scripts/item_defs/vehicles/usa/components/shells.xml")
@@ -1468,7 +1468,7 @@ pub fn exercise_battle(
             .iter()
             .any(|(name, args)| name == "updatePrebattle"
                 && args[0].as_i64() == Some(6)
-                && pickle_value(&args[1]) == wot_server::pickle!((2, 2)))
+                && pickle_value(&args[1]) == wot_platform::pickle!((2, 2)))
     );
     for (peer, before) in [(&*host, first_host_message), (&*guest, first_guest_message)] {
         assert!(
@@ -1508,7 +1508,7 @@ pub fn exercise_battle(
     let vehicle_type = script.entity_from_name("Vehicle").unwrap().0;
     for (peer, cell, team, display_type) in [(&*host, host_cell, 1, 1), (&*guest, guest_cell, 2, 2)]
     {
-        use wot_server::player_sessions::test_support::mercury::net::codec::Codec;
+        use wot_platform::mercury::net::codec::Codec;
         let mut blob = cell.properties.as_slice();
         let Value::Dict(properties) = Value::read(&mut blob, &avatar_schema.cell_data_ty).unwrap()
         else {
@@ -1593,7 +1593,7 @@ pub fn exercise_battle(
         p.methods.iter().any(|(name, args)| {
         if name != "updateArena" || args[0].as_i64() != Some(3) { return false; }
         let Value::String(StringValue::Raw(data)) = &args[1] else { return false; };
-        matches!(wot_server::platform::client_formats::pickle::from_reader(flate2::read::ZlibDecoder::new(data.as_slice())),
+        matches!(wot_platform::client_formats::pickle::from_reader(flate2::read::ZlibDecoder::new(data.as_slice())),
             Ok(Pickle::Tuple(fields)) if fields.first() == Some(&Pickle::I64(3)))
     })
     };
@@ -1845,7 +1845,7 @@ pub fn exercise_battle(
         .unwrap();
     let node = (1026 + reload_index as u16).to_be_bytes();
     let reload_times = |peer: &Peer| {
-        use wot_server::player_sessions::test_support::mercury::net::codec::Codec;
+        use wot_platform::mercury::net::codec::Codec;
         peer.nrl_updates
             .iter()
             .filter_map(|record| {
@@ -1969,10 +1969,10 @@ pub fn exercise_battle(
             let Value::String(StringValue::Raw(data)) = &args[1] else {
                 return false;
             };
-            matches!(wot_server::platform::client_formats::pickle::from_reader(
+            matches!(wot_platform::client_formats::pickle::from_reader(
                 flate2::read::ZlibDecoder::new(data.as_slice())),
                 Ok(Pickle::Tuple(fields)) if fields.first() == Some(&Pickle::I64(4))
-                    && fields.last() == Some(&wot_server::pickle!((1, 1))))
+                    && fields.last() == Some(&wot_platform::pickle!((1, 1))))
         })
     });
     assert_eq!(host.resets, 1);
@@ -2154,7 +2154,7 @@ fn assert_gun_marker(
 }
 
 fn gun_markers(peer: &Peer, script: &ScriptDispatch) -> Vec<(glam::Vec3, glam::Vec3, f32)> {
-    use wot_server::player_sessions::test_support::mercury::net::codec::Codec;
+    use wot_platform::mercury::net::codec::Codec;
     let (_, schema) = script.entity_from_name("GunMarkerComponent").unwrap();
     let (index, property) = schema
         .properties
@@ -2184,7 +2184,7 @@ fn gun_markers(peer: &Peer, script: &ScriptDispatch) -> Vec<(glam::Vec3, glam::V
 }
 
 fn assert_roster_ready(script: &ScriptDispatch, updates: &[Vec<u8>]) {
-    use wot_server::player_sessions::test_support::mercury::script::{Ty, TyKind};
+    use wot_platform::mercury::script::{Ty, TyKind};
     fn unalias(ty: &Ty) -> &TyKind {
         match ty.kind() {
             TyKind::Alias(inner) => unalias(inner),

@@ -3,7 +3,6 @@
 !Cargo.lock
 !LICENSE
 !THIRD_PARTY_NOTICES.md
-!build.rs
 !tools/
 !tools/**
 !src/
@@ -14,8 +13,8 @@
 !tests/support/**/*.rs
 !package.json
 !package-lock.json
-tools/web/node_modules/
-tools/web/dist/
+src/server-runtime/src/infrastructure/web/node_modules/
+src/server-runtime/src/infrastructure/web/dist/
 !resources/
 resources/*
 !resources/manifest.json

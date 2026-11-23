@@ -4,7 +4,8 @@ use super::{
     depot_flow::{row, send_array, send_four},
     dict,
 };
-use wot_server::{pickle, player_sessions::test_support::mercury::app::dispatch::ScriptDispatch};
+use wot_platform::mercury::app::dispatch::ScriptDispatch;
+use wot_platform::pickle;
 
 const FIREFIGHTING: i32 = (113 << 8) | 0xfb;
 const OPTICS: i32 = (106 << 8) | 0xfb;

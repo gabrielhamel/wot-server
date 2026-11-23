@@ -114,22 +114,28 @@ principles, with domain concepts separated from application orchestration and
 infrastructure concerns. Keep dependencies directed toward the domain and make
 boundaries between contexts explicit.
 
+Give each server bounded context its own Rust library crate in the Cargo
+workspace. Keep its domain, application, and adapters in that crate. The
+server binary is the composition root and wires the context libraries together.
+Apply this layout when adding a context or extracting an existing one.
+
 Name bounded contexts after the responsibilities and vocabulary of the domain.
 Use technical names for adapters and implementation details. See the
 [bounded context guide](docs/bounded-contexts.md) for naming, contracts, and
 storage ownership.
 
 Put shared domain concepts with the same meaning and invariants in
-`src/shared_kernel/`. Put reusable infrastructure independent of the domain in
-`src/platform/`. Keep context-specific policies and published integration
-contracts with the context that owns them.
+`src/shared-kernel/`. Put reusable infrastructure independent of the domain in
+`src/shared-infrastructure/`. Keep context-specific policies and published
+integration contracts with the context that owns them.
 
 ### Cross-context contracts and persistence
 
-- Put each cross-context contract at the owning context's entry point. Limit
-  consumers to the published commands, queries, and result types. Cross-context
-  access to internal modules, helpers, repositories, database handles, and
-  transaction steps is prohibited. Wire services and adapters in `src/server/`.
+- Publish each cross-context contract through the owning library's public API.
+  Limit consumers to the published operations and their input and result types.
+  Keep internal modules, helpers, repositories, database handles, and transaction
+  steps private to the owning crate. Keep crate dependencies acyclic and wire
+  services and adapters in `src/server-runtime/`.
 - Give every persistent context its own PostgreSQL schema, embedded migration
   directory, and SQLx migration history. Use schema-qualified SQL against
   objects owned by the context. Runtime contexts share the server's database
@@ -151,24 +157,31 @@ At the root of each bounded context's directory, maintain a `README.md` that:
 
 Organize production code by bounded context first, then by `domain/`,
 `application/`, `infrastructure/`, and `presentation/` where needed inside each
-context. Do not create crate-wide layer directories or empty layers for
-symmetry. Use `tools/` when introducing workspace package boundaries; choose
-packages for real responsibilities rather than making every context a crate.
+context. Create only the layers the context uses.
 Keep executable bootstrapping small, use focused modules with clear ownership,
 and expose context entry points instead of reaching into another context's
 internals. Keep protocol wire representations separate from domain models.
-Keep the root `src/` for server contexts, their shared support, and server
-composition. Give standalone tools their own workspace packages under
-`tools/`. The server and tools inherit their release version from
+Keep all server sources under `src/`, including composition, context
+libraries, shared libraries, and the web workspace. Reserve `tools/` for
+standalone utilities that the server does not depend on at runtime. The
+server, libraries, and tools inherit their release version from
 `[workspace.package]` in the root Cargo manifest.
+
+The server composition library at `src/server-runtime/` owns startup and
+dependency wiring. Organize server-wide adapters and the web build workspace
+in infrastructure. Keep browser route composition in presentation.
+Domain rules and context-specific use cases belong to their owning libraries.
 
 ### Browser application
 
 Use strict TypeScript. Keep browser pages and components in their owning
 context's `presentation/` directory, with application contracts and HTTP
 adapters in the corresponding context layers. Keep common browser transport,
-telemetry and presentation primitives in Platform. Put route composition in
-`src/server/` and Vite+ configuration and test setup under `tools/web/`.
+telemetry and presentation primitives in Platform. Put browser route composition in
+`src/server-runtime/src/presentation/`. Keep the browser workspace, including Vite+
+configuration and test setup, under `src/server-runtime/src/infrastructure/web/`.
+Use `cargo web-build` to build the browser bundle alone. Server source builds
+use the same web build with the locked npm dependencies.
 
 Use Testing Library and MSW for admin and Store regression coverage. Render
 the full page, interact through accessible controls, and assert visible

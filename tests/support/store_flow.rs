@@ -16,17 +16,13 @@ use std::{
     },
 };
 use tower::ServiceExt;
-use wot_server::{
-    accounts::test_support::{Accounts, GarageCatalog, PostgresAccounts},
-    platform::client_formats::pickle::Value as Pickle,
-    player_sessions::{
-        Gateway, GatewayConfig,
-        test_support::mercury::{
-            app::{dispatch::ScriptDispatch, login::element::LoginResponse},
-            script::Value as WireValue,
-        },
-    },
+use wot_accounts::test_support::{Accounts, GarageCatalog, PostgresAccounts};
+use wot_platform::client_formats::pickle::Value as Pickle;
+use wot_platform::mercury::{
+    app::{dispatch::ScriptDispatch, login::element::LoginResponse},
+    script::Value as WireValue,
 };
+use wot_player_sessions::{Gateway, GatewayConfig};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR"]
@@ -36,7 +32,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     let resource_dir = std::env::var("WG_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&resource_dir)).unwrap();
     let repository = PostgresAccounts::new(
-        wot_server::server::test_support::connect_database(&database_url, 4)
+        wot_server_runtime::test_support::connect_database(&database_url, 4)
             .await
             .unwrap(),
     );
@@ -94,7 +90,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         .iter()
         .find(|offer| offer.item == (111 << 8) | 0xf9)
         .filter(|offer| {
-            offer.category == wot_server::accounts::test_support::StoreCategory::ImprovedEquipment
+            offer.category == wot_accounts::test_support::StoreCategory::ImprovedEquipment
         })
         .expect("Improved Compressor from the client definitions");
     let improved_item = i64::from(improved.item);
@@ -108,11 +104,9 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     .execute(&repository.connection_pool())
     .await
     .unwrap();
-    let dispatch = ScriptDispatch::new(
-        wot_server::player_sessions::test_support::mercury::script::load(&resources).unwrap(),
-    );
+    let dispatch = ScriptDispatch::new(wot_platform::mercury::script::load(&resources).unwrap());
     let mut gateway = Gateway::bind(
-        &wot_server::server::test_support::composition(),
+        wot_battles::mercury::bind,
         GatewayConfig {
             training_room_visible: true,
             periphery_id: 250,
@@ -125,10 +119,9 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         },
         &resources,
         player_fixture::gateway_accounts(&repository, &catalog),
-        wot_server::social::postgres::service(
-            &wot_server::server::test_support::composition(),
+        wot_social::postgres::service(
             repository.connection_pool(),
-            wot_server::accounts::test_support::directory(repository.connection_pool()),
+            wot_accounts::test_support::directory(repository.connection_pool()),
         ),
         tokio::runtime::Handle::current(),
     )
@@ -139,9 +132,9 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             .enable_store("https://*.example.test".to_owned())
             .is_err()
     );
-    let router = gateway
-        .enable_store("http://127.0.0.1:8081".to_owned())
-        .unwrap();
+    let router = wot_player_sessions::store_router(
+        gateway.configure_store_on_listener("192.168.1.3:8081".parse().unwrap()),
+    );
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
     let worker = tokio::task::spawn_blocking(move || gateway.run(worker_stop));
@@ -164,7 +157,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
                 .shop_url
                 .as_ref()
                 .unwrap()
-                .strip_prefix("http://127.0.0.1:8081/shop/#")
+                .strip_prefix("http://192.168.1.3:8081/shop/#")
                 .unwrap()
                 .to_owned();
             (peer, token, state)
@@ -841,7 +834,7 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
         spans
             .iter()
             .any(|span| span.name == "player_sessions.enable"
-                && has(span, "output.store.host", "127.0.0.1"))
+                && has(span, "output.store.host", "192.168.1.3"))
     );
     let success = root("success");
     let stale = root("stale");

@@ -166,7 +166,7 @@ The client receives the same route-selected or explicitly advertised endpoint,
 including the localhost shortcut. The XMPP virtual domain is `wot-server.local`;
 explicit connection settings supply its reachable IP, so DNS is not required.
 Remote clients need TCP forwarding/firewall access as well as the existing UDP
-ports. An `advertised_base` override must expose both transports at that port.
+ports. A `--advertised-base` override must expose both transports at that port.
 
 The authenticated Account's token request type 1 mints 256 random bits. Tokens
 bind the account to its game-session source IP and admit a chat connection for
@@ -198,7 +198,7 @@ saved-pair and retention limits, and commits before reporting success. Account
 names come from Accounts' published `PlayerDirectory` API. Supplied `from`
 attributes are never trusted as message authors.
 
-[Player Sessions](../src/player_sessions/README.md) owns XMPP framing, token admission, roster and WG
+[Player Sessions](../src/player-sessions/README.md) owns XMPP framing, token admission, roster and WG
 extension translation, presence fanout and live sockets. The TCP task limit equals
 `max_clients`; each session processes one stanza at a time. Incoming XML is bounded
 to 32 KiB, depth 16, and 64 socket reads per incomplete frame. DTDs are rejected.

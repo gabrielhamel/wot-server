@@ -1,0 +1,8 @@
+[package]
+name = "wot-shared-kernel"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+glam.workspace = true

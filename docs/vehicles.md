@@ -221,12 +221,12 @@ reconnect, and inventory ID allocation after a sale.
 
 | Source | Responsibility |
 | --- | --- |
-| `src/accounts/domain/modules.rs` | Shared research/progression state and module installation rules. |
-| `src/accounts/domain/vehicles.rs` | Vehicle purchase rules, costs, capacity and options. |
-| `src/accounts/application/mod.rs` | Progression command/proposal and persistence port. |
-| `src/accounts/infrastructure/client/vehicle_defs.rs` | Resource-backed offers and purchase definitions. |
-| `src/accounts/infrastructure/client/mod.rs` | Lazy template cache and account projection. |
-| `src/accounts/infrastructure/client/progression.rs` | Research/purchase coordination and cache deltas. |
-| `src/accounts/infrastructure/client/vehicle_sales.rs` | Resource-backed vehicle and fitting valuation, crew disposition and sale planning. |
-| `src/accounts/infrastructure/postgres.rs` | Atomic progression and ownership persistence. |
-| `src/player_sessions/infrastructure/gateway/progression.rs` | Native request decoding and bounded persistence jobs. |
+| `src/accounts/src/domain/modules.rs` | Shared research/progression state and module installation rules. |
+| `src/accounts/src/domain/vehicles.rs` | Vehicle purchase rules, costs, capacity and options. |
+| `src/accounts/src/application/mod.rs` | Progression command/proposal and persistence port. |
+| `src/accounts/src/infrastructure/client/vehicle_defs.rs` | Resource-backed offers and purchase definitions. |
+| `src/accounts/src/infrastructure/client/mod.rs` | Lazy template cache and account projection. |
+| `src/accounts/src/infrastructure/client/progression.rs` | Research/purchase coordination and cache deltas. |
+| `src/accounts/src/infrastructure/client/vehicle_sales.rs` | Resource-backed vehicle and fitting valuation, crew disposition and sale planning. |
+| `src/accounts/src/infrastructure/postgres.rs` | Atomic progression and ownership persistence. |
+| `src/player-sessions/src/infrastructure/gateway/progression.rs` | Native request decoding and bounded persistence jobs. |

@@ -8,55 +8,50 @@ Offline binary mapping remains available as a separate development tool.
 
 ## Running
 
-Generate a bundle with [wot-extract](resources.md) and place it under
-`target/release/resources` or set `resource_dir` to its location. From the
-repository root, start the server:
+Generate a bundle with [wot-extract](resources.md). From the repository root,
+start the server with the resource directory, PostgreSQL connection URL and RSA
+private key path. A source build requires Node.js and npm to build the
+dashboard and Store bundle. This example uses the local Compose database.
 
 ```sh
-cargo run --release
+export WOT_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
+mkdir -p .local
+cargo run --release -- --resource-dir resources --private-key .local/login.pem
 ```
 
-The built binary also starts directly:
+Run the built binary with the same arguments.
 
 ```sh
-./target/release/wot-server
+./target/release/wot-server --resource-dir resources --private-key .local/login.pem
 ```
 
-On first start, the server creates **`server.json` beside the executable**, then
-starts using its defaults. Existing configuration files are never overwritten.
-With Cargo the file is `target/release/server.json`; moving the binary to its own
-folder makes that folder the server's home. Relative resource and key paths resolve
-against this folder, independently of the shell's working directory. Restart after
-editing the file. See [logging and telemetry](#logging-and-telemetry) for the
-console option and the OpenTelemetry environment variables.
+Relative paths resolve from the working directory. Supply the PostgreSQL URL
+with `WOT_DATABASE_URL` to keep it out of process arguments, or pass
+`--database-url` to override it. Run `wot-server --help` for the complete flag list.
 
-The generated JSON contains the following settings:
-
-| Field | Default / meaning |
+| Option | Default / meaning |
 | --- | --- |
-| `resource_dir` | `resources`; directory containing the generated bundle manifest and `res/` |
-| `database_url` | `postgresql://wot_server:local-development@127.0.0.1:54329/wot_server` |
-| `login_bind` | `0.0.0.0:20016` UDP |
-| `base_bind` | `0.0.0.0:20017` UDP for BaseApp and TCP for native XMPP. Port zero selects a port available on both transports. |
-| `advertised_base` | `null`: automatically choose the route to each client; set e.g. `"192.168.1.10:20017"` for an explicit non-local handoff destination |
-| `private_key` | `login.pem`; its public key is exported as `login.pubkey` |
-| `db_connections` | `16`, allowed range 1–256 |
-| `max_clients` | `256`, admitted/pending handoff capacity, allowed range 1–256 |
-| `max_pending` | `32`, authentication worker capacity, allowed range 1–256 |
-| `training_room_visible` | `true`. Advertises the Training Room card at login and allows room creation when the resource bundle contains arena definitions. Set to `false` and restart the server to disable creation and hide the card for new logins. |
-| `periphery_id` | `250`. Local server ID used for Training Room invitations. Match the `periphery_id` on the clients' server-list entry so the game accepts the invitation on the current server. |
-| `log_level` | `"warn"`; also accepts `"error"`, `"info"`, `"debug"`, `"trace"` |
-| `web` | `null`; shared HTTP bind and compiled UI directory for `/dashboard/` and `/shop/` |
-| `admin` | `null`; set to `{}` to enable the [admin API](admin.md) with secure session cookies by default |
-| `store` | `null`; set a [Store origin](store.md#configuration) to enable the in-game Store |
-
-Unknown fields, invalid types and invalid limits stop startup with a diagnostic.
-Missing fields use defaults. In an existing configuration, replace `game_dir`
-with `resource_dir` and point it to the generated bundle. The configuration contains the database password;
-new files have owner-only permissions on Unix. Do not commit or share this file.
+| `--resource-dir` | Required. Directory containing the generated bundle manifest and `res/`. |
+| `--database-url` | Required unless `WOT_DATABASE_URL` is set. PostgreSQL connection URL. |
+| `--private-key` | Required. Path to the RSA login key. Its public key is exported alongside it with a `.pubkey` extension. |
+| `--login-bind` | `0.0.0.0:20016` UDP. |
+| `--base-bind` | `0.0.0.0:20017` UDP for BaseApp and TCP for native XMPP. Port zero selects a port available on both transports. |
+| `--advertised-base` | Automatically choose the route to each client. Pass an address such as `192.168.1.10:20017` for an explicit handoff destination. |
+| `--db-connections` | `16` maximum PostgreSQL connections, allowed range 1–256. |
+| `--max-clients` | `256` admitted clients and pending session handoffs, allowed range 1–256. |
+| `--max-pending` | `32` pending login requests, allowed range 1–256. |
+| `--disable-training-room` | Hide the Training Room card and disable room creation. With arena definitions available, both are enabled by default. |
+| `--periphery-id` | `250`. Match the `periphery_id` on the clients' server-list entry for Training Room invitations. |
+| `--log-level` | `debug`. Also accepts `error`, `warn`, `info`, and `trace`. |
+| `--web-bind` | `0.0.0.0:8080` for the shared HTTP listener. |
+| `--web-ui-dir` | The dashboard and Store are embedded by Cargo. Pass a directory to serve a separate build. |
+| `--secure-cookies` | Mark admin session cookies Secure when serving the dashboard over HTTPS. |
+| `--disable-admin` | Disable the [dashboard and admin API](admin.md). |
+| `--disable-store` | Disable the in-game [Store](store.md#configuration) and its HTTP routes. |
+| `--store-origin` | Automatically selects loopback or a private IPv4 address for local and LAN clients. Pass an explicit origin for a proxy, port mapping or public HTTPS access. |
 
 When BaseApp listens on all interfaces or loopback, a localhost client always
-receives `127.0.0.1` and the actual bound BaseApp port, even when `advertised_base`
+receives `127.0.0.1` and the actual bound BaseApp port, even when `--advertised-base`
 is configured. This avoids sending local sessions through the router's public
 address. Other clients receive the explicit destination when configured, or the
 route-selected interface address otherwise. A concrete non-loopback BaseApp bind
@@ -87,19 +82,15 @@ from roster and conversation responses.
 
 ### Logging and telemetry
 
-The server writes warnings and errors to stderr by default. To include startup
-and session events use `info`; use `debug` for protocol method names and
-transfer sizes, or `trace` for packet diagnostics. The CLI overrides
-`log_level` in `server.json`; `RUST_LOG` is not read.
+The console defaults to `debug` on stderr, including protocol method names and
+transfer sizes. Pass `--log-level info` for startup and session events with less
+detail or `--log-level trace` for packet diagnostics.
+
+To export logs, traces and metrics, set the collector's OTLP/HTTP base URL.
 
 ```sh
-cargo run --release -- --log-level debug
-```
-
-To export logs, traces and metrics, set the collector's OTLP/HTTP base URL:
-
-```sh
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 ./target/release/wot-server
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 ./target/release/wot-server \
+  --resource-dir resources --private-key .local/login.pem --log-level info
 ```
 
 Use the ingestion endpoint, not the Grafana URL. The server uses
@@ -154,18 +145,28 @@ the latest client remains a research question. The
 [client validation record](client-validation.md) identifies the executable
 used for earlier observations.
 
+## Server source layout
+
+[Server composition](../src/server-runtime/src/lib.rs) handles startup, dependency wiring,
+and graceful shutdown. [Server infrastructure](../src/server-runtime/src/infrastructure)
+contains command-line configuration, PostgreSQL connection and migration orchestration,
+login key storage, console and OTLP export, browser telemetry ingestion, and
+static UI serving. Browser routing lives in
+[server presentation](../src/server-runtime/src/presentation/web/main.tsx), and the
+[web workspace](../src/server-runtime/src/infrastructure/web/package.json) bundles the browser application.
+
 ## Protocol implementation
 
-The server owns its [Mercury adapter](../src/platform/mercury) for
+The server owns its [Mercury adapter](../src/shared-infrastructure/src/mercury) for
 UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish and dynamic
-entity dispatch. [Player Sessions](../src/player_sessions/README.md) binds
+entity dispatch. [Player Sessions](../src/player-sessions/README.md) binds
 Account RPCs for the garage. [Battles](../src/battles/README.md) binds arena
 entities and controls through its synchronous arena delivery port. The
 Mercury adapter maps participant IDs to live BaseApp connections, translates
 incoming methods into typed battle commands and publishes native arena
 updates. The gateway runs the battle tick in the same loop as the session
 transport. Both adapters validate their method tables and creation layout
-against the configured bundle. The [shared codecs](../src/platform/infrastructure/client_formats/README.md)
+against the configured bundle. The [shared codecs](../src/shared-infrastructure/src/infrastructure/client_formats/README.md)
 read packed resources and serialize Python values for Player Sessions and Accounts.
 
 A standalone checkout builds with `cargo build --locked`. See the
@@ -183,15 +184,11 @@ The binary does not automatically change client files. The installed client was
 configured and tested separately; see [live validation](client-validation.md).
 
 RSA-encrypted login is enabled by default. Startup reuses the configured
-`private_key` and exports its matching public key alongside it with a `.pubkey`
-extension. If absent, it generates a 2048-bit PKCS#8 key with owner-only permissions
-on Unix; existing keys are never replaced. Preserve the key when moving the server.
-For this already-configured installation, the saved `.local/login.pem` identity
-is selected directly by `private_key` in `target/release/server.json`, preserving
-the game client's matching public key. Keep the identity outside `target/`: cleaning
-build outputs must not remove the key. The default `login.pem` is appropriate when
-the binary lives in a persistent server folder. A missing key generates a new
-identity, which requires updating the public key in all configured clients.
+`--private-key` file and exports its matching public key alongside it with a
+`.pubkey` extension. If the file is absent, the server generates a 2048-bit
+PKCS#8 key with owner-only permissions on Unix. Keep the key in a persistent
+location such as `.local/login.pem` to preserve the game client's matching
+public key across builds and deployments.
 
 The [validated client entry](client-validation.md) references a file in the
 client's `res/` directory that must match the exported public key. The existing

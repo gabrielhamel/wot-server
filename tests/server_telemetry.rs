@@ -30,11 +30,6 @@ impl ServerHome {
         )));
         fs::create_dir(&home.0).unwrap();
         fs::copy(env!("CARGO_BIN_EXE_wot-server"), home.executable()).unwrap();
-        fs::write(
-            home.0.join("server.json"),
-            r#"{"resource_dir":"resources","database_url":"invalid"}"#,
-        )
-        .unwrap();
         fs::create_dir(home.0.join("resources")).unwrap();
         fs::write(
             home.0.join("resources/manifest.json"),
@@ -51,7 +46,12 @@ impl ServerHome {
 
     async fn run(&self, args: &[&str], endpoint: Option<String>) -> Output {
         let mut command = Command::new(self.executable());
-        command.args(args).env("NO_PROXY", "127.0.0.1");
+        command
+            .current_dir(&self.0)
+            .args(["--resource-dir", "resources", "--private-key", "login.pem"])
+            .args(args)
+            .env("WOT_DATABASE_URL", "invalid")
+            .env("NO_PROXY", "127.0.0.1");
         for (name, _) in std::env::vars_os() {
             if name.to_string_lossy().starts_with("OTEL_") {
                 command.env_remove(name);
@@ -84,12 +84,40 @@ impl Drop for ServerHome {
     }
 }
 
+#[test]
+fn cli_requires_startup_inputs_and_hides_the_database_environment_value() {
+    let execute = |args: &[&str], database_url: Option<&str>| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_wot-server"));
+        command.args(args).env_remove("WOT_DATABASE_URL");
+        if let Some(url) = database_url {
+            command.env("WOT_DATABASE_URL", url);
+        }
+        command.output().unwrap()
+    };
+
+    let missing = execute(&[], None);
+    assert_eq!(missing.status.code(), Some(2));
+    let diagnostics = String::from_utf8(missing.stderr).unwrap();
+    for flag in ["--resource-dir", "--database-url", "--private-key"] {
+        assert!(diagnostics.contains(flag), "{diagnostics}");
+    }
+
+    let credential = "postgresql://example:private-password@localhost/example";
+    let help = execute(&["--help"], Some(credential));
+    assert!(help.status.success());
+    let help = String::from_utf8(help.stdout).unwrap();
+    assert!(help.contains("WOT_DATABASE_URL"));
+    assert!(!help.contains(credential));
+}
+
 #[tokio::test]
 async fn console_filter_is_independent_of_otlp() {
     let home = ServerHome::new();
     let info = home.run(&["--log-level", "info"], None).await;
     assert!(String::from_utf8_lossy(&info.stderr).contains("Starting server"));
-    let invalid = home.run(&[], Some("invalid endpoint".into())).await;
+    let invalid = home
+        .run(&["--log-level", "warn"], Some("invalid endpoint".into()))
+        .await;
     let stderr = String::from_utf8_lossy(&invalid.stderr);
     assert!(stderr.contains("OpenTelemetry export disabled"), "{stderr}");
     assert!(!stderr.contains("Starting server"), "{stderr}");
@@ -108,7 +136,7 @@ async fn console_filter_is_independent_of_otlp() {
             )
             .with_state(send);
     let collector = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let exported = home.run(&[], Some(endpoint)).await;
+    let exported = home.run(&["--log-level", "warn"], Some(endpoint)).await;
     assert!(!String::from_utf8_lossy(&exported.stderr).contains("Starting server"));
 
     collector.abort();
@@ -206,6 +234,7 @@ fn assert_resource(resource: Option<Resource>) {
         }));
     }
     for (key, expected) in [
+        ("service.name", "wot-server"),
         (
             "service.version",
             option_env!("WOT_SERVER_VERSION")

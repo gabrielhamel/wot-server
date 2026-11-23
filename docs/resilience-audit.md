@@ -27,7 +27,7 @@ longer rely on unchecked indexing or `unwrap`.
 
 ## Operational bounds
 
-Protocol constants live in [Mercury limits](../src/platform/mercury/net/limits.rs). These are
+Protocol constants live in [Mercury limits](../src/shared-infrastructure/src/mercury/net/limits.rs). These are
 hard transport guardrails, independent of PostgreSQL and application admission.
 They are currently compile-time limits, not extra configuration-file fields.
 
@@ -88,7 +88,7 @@ pre-login crash packets over UDP, then accepted the existing account using the
 installed client public key and returned Account/showGUI and the garage cache.
 This used a synthetic peer, not visual game-client validation. The final check
 connected directly to BaseApp on loopback because the configured public
-`advertised_base` was unreachable from this Mac; that configuration was preserved.
+The advertised BaseApp address was unreachable from this Mac; that configuration was preserved.
 Public NAT/port-forwarding reachability was not validated.
 
 The PostgreSQL/UDP garage integration suite verifies that normal encrypted and

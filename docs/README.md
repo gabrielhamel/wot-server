@@ -62,6 +62,7 @@ establish compatibility with the current client.
 Architecture rules and documentation maintenance requirements are in
 [AGENTS.md](../AGENTS.md). The toolkit map records its audit baseline; its future
 contexts remain planning material. The runtime contexts are Accounts, Social,
-Player Sessions, and Player Administration. Shared Kernel and Platform support
-the runtime. Binary Mapping and Resource Extraction run offline as workspace
-packages under `tools/`.
+Player Sessions, Battles, and Player Administration. Each has its own Rust
+library crate under `src/`, alongside the shared libraries and web workspace.
+Binary Mapping and Resource Extraction run offline as workspace packages under
+`tools/`.

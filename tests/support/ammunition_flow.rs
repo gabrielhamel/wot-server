@@ -1,5 +1,5 @@
 use super::{Peer, Pickle, Value, dict};
-use wot_server::player_sessions::test_support::mercury::{
+use wot_platform::mercury::{
     app::dispatch::ScriptDispatch,
     script::{PythonValue, StringValue},
 };
@@ -59,24 +59,24 @@ pub fn exercise(peer: &mut Peer, dispatch: &ScriptDispatch) -> Pickle {
         shells(&unload),
         Pickle::List(layout.iter().copied().map(Pickle::from).collect())
     );
-    assert_eq!(depot(&unload), wot_server::pickle!({(shell_id): 2}));
+    assert_eq!(depot(&unload), wot_platform::pickle!({(shell_id): 2}));
     assert_eq!(dict(&unload, "stats"), money(&initial));
-    assert_eq!(receipt(peer, 236), wot_server::pickle!({"shells": []}));
+    assert_eq!(receipt(peer, 236), wot_platform::pickle!({"shells": []}));
 
     layout[source + 1] += 2;
     send(peer, 237, 1, 42, &layout);
     peer.until(dispatch, |p| p.responses.contains(&(237, 0)));
     let reload = update(peer, 6);
-    assert_eq!(depot(&reload), wot_server::pickle!({(shell_id): None}));
+    assert_eq!(depot(&reload), wot_platform::pickle!({(shell_id): None}));
     assert_eq!(dict(&reload, "stats"), money(&initial));
-    assert_eq!(receipt(peer, 237), wot_server::pickle!({"shells": []}));
+    assert_eq!(receipt(peer, 237), wot_platform::pickle!({"shells": []}));
 
     layout[source + 1] -= 1;
     layout[other + 1] += 1;
     send(peer, 238, 1, 42, &layout);
     peer.until(dispatch, |p| p.responses.contains(&(238, 0)));
     let purchase = update(peer, 7);
-    assert_eq!(depot(&purchase), wot_server::pickle!({(shell_id): 1}));
+    assert_eq!(depot(&purchase), wot_platform::pickle!({(shell_id): 1}));
     assert_eq!(
         shells(&purchase),
         Pickle::List(layout.iter().copied().map(Pickle::from).collect())
@@ -94,17 +94,17 @@ pub fn exercise(peer: &mut Peer, dispatch: &ScriptDispatch) -> Pickle {
     assert!(credits + gold > 0);
     assert_eq!(
         dict(&purchase, "stats"),
-        wot_server::pickle!({"credits": (1234 - credits), "gold": (1_000_000 - gold)})
+        wot_platform::pickle!({"credits": (1234 - credits), "gold": (1_000_000 - gold)})
     );
     assert_eq!(
         receipt(peer, 238),
-        wot_server::pickle!({"shells": [((shell), (credits, gold), 1)]})
+        wot_platform::pickle!({"shells": [((shell), (credits, gold), 1)]})
     );
 
     // Submitting the same target again must not consume stock, charge, or advance the revision.
     send(peer, 239, 1, 42, &layout);
     peer.until(dispatch, |p| p.responses.contains(&(239, 0)));
-    assert_eq!(receipt(peer, 239), wot_server::pickle!({}));
+    assert_eq!(receipt(peer, 239), wot_platform::pickle!({}));
     peer.command(
         dispatch,
         "doCmdInt3",
@@ -152,7 +152,7 @@ fn depot(cache_or_diff: &Pickle) -> Pickle {
 
 fn money(cache: &Pickle) -> Pickle {
     let stats = dict(cache, "stats");
-    wot_server::pickle!({"credits": (dict(&stats, "credits")), "gold": (dict(&stats, "gold"))})
+    wot_platform::pickle!({"credits": (dict(&stats, "credits")), "gold": (dict(&stats, "gold"))})
 }
 
 fn optional_amount(value: &Pickle, currency: &str) -> i64 {
@@ -197,7 +197,7 @@ pub(super) fn pickle_value(value: &Value) -> Pickle {
             value.clone()
         }
         Value::Python(PythonValue::Raw(bytes)) | Value::String(StringValue::Raw(bytes)) => {
-            wot_server::platform::client_formats::pickle::from_bytes(bytes).unwrap()
+            wot_platform::client_formats::pickle::from_bytes(bytes).unwrap()
         }
         other => panic!("Expected pickle, got {other:?}"),
     }

@@ -107,9 +107,10 @@ and [`mode_selector_data_provider.py`](../references/wot-src/sources/res/scripts
 
 The previous account bootstrap omitted that key from `initialServerSettings`,
 which explains the missing card. The current
-[account bootstrap](../../src/player_sessions/infrastructure/bootstrap.rs#L13)
-sends the [`training_room_visible` setting](../server.md#running), which
-defaults to `true`. The client reads the same server-wide setting regardless
+[account bootstrap](../../src/player-sessions/src/infrastructure/bootstrap.rs#L13)
+sends Training Room availability, which is enabled by default. Pass
+[`--disable-training-room`](../server.md#running) to turn it off. The client reads
+the same server-wide setting regardless
 of the player's inventory, battle count or access level.
 Opening Training Rooms requests command `520` with reserved stream ID `200`
 and `[2, 7, 0, 0, 50]` for type, sort key, idle filter and page bounds. The
@@ -156,7 +157,7 @@ sent `CANNOT_CREATE` (9), which the EU client translated as “wrong team number
 The client labels the room comment **Description** in Create Room and
 Modify Room. Both dialogs show the field when
 `initialServerSettings.pre_moderation_config.prebattleDescriptionEnabled` is
-true. The [account bootstrap](../../src/player_sessions/infrastructure/bootstrap.rs#L13)
+true. The [account bootstrap](../../src/player-sessions/src/infrastructure/bootstrap.rs#L13)
 sets it alongside Training Room visibility. The [settings window](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/TrainingSettingsWindow.py#L133)
 also checks the host's comment permission when editing. The key and field
 names are present in the installed EU build's compiled client scripts. The

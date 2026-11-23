@@ -4,12 +4,8 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use wot_server::player_sessions::test_support::mercury::app::login::{
-    App, Event, element::LoginRequest,
-};
-use wot_server::player_sessions::test_support::mercury::net::{
-    bundle::Bundle, proto::Protocol, socket::PacketSocket,
-};
+use wot_platform::mercury::app::login::{App, Event, element::LoginRequest};
+use wot_platform::mercury::net::{bundle::Bundle, proto::Protocol, socket::PacketSocket};
 
 #[test]
 fn wrong_key_login_is_rejected_and_next_encrypted_login_still_works() {

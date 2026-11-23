@@ -10,13 +10,15 @@ Container builds and publishing run only when a Git tag is created; see the
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --locked --doc -p wot-server
+cargo test --locked --doc --workspace
 cargo test --workspace --all-targets --features integration-test-support
 ```
 
 The server doctests check that Rust rejects access to private context APIs.
-The integration-test feature exposes fixture helpers for storage and protocol
-tests. Build the production binary with the default features.
+Integration tests import contracts and fixture helpers directly from the
+crates that own them. The `integration-test-support` feature enables the
+fixtures used by storage and protocol tests. Build the production binary
+with the default features.
 
 The integration suite builds a synthetic, rebased AMD64 PE in memory, invokes
 the real CLI and compiles its generated Rust. It verifies initializer ordering
@@ -43,18 +45,19 @@ only after all models render. The workflow regenerates them on `main`.
 
 ## Browser pages
 
-From the repository root, use Node 22.22.2 or a newer supported LTS and run:
+Rust builds of the server need Node.js and npm for the web bundle. To run
+the browser checks independently, use Node 22.22.2 or a newer supported
+release from the repository root:
 
 ```sh
-npm ci
-npm run check --workspace tools/web
-npm run test --workspace tools/web
-npm run build --workspace tools/web
+cargo web-build
+npm run check --workspace src/server-runtime/src/infrastructure/web
+npm run test --workspace src/server-runtime/src/infrastructure/web
 ```
 
 Vite+ runs formatting and lint checks and executes the Testing Library suites.
 TypeScript runs in strict mode. Update formatting with
-`npm run format --workspace tools/web`. The tests render the real administration
+`npm run format --workspace src/server-runtime/src/infrastructure/web`. The tests render the real administration
 and Store pages, use the accessible controls, and intercept HTTP at the
 network boundary with MSW. They cover admin sign-in, player creation, garage
 grants, Store catalog and checkout, stale offer recovery and browser exception
@@ -91,9 +94,9 @@ docker compose up -d --wait
 export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
-cargo test --locked --lib initializes_context_storage -- --ignored
-cargo test --locked --lib exports_admin_http_request_inputs -- --ignored
-cargo test --locked --lib exports_admin_http_access_lifecycle -- --ignored
+cargo test --locked -p wot-server-runtime --lib initializes_context_storage -- --ignored
+cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored
+cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_access_lifecycle -- --ignored
 cargo test --locked -p wot-server --features integration-test-support --test garage -- --ignored
 ```
 
@@ -226,19 +229,16 @@ native XMPP authentication, offline persistence, history/reconnect, retention an
 see [Social verification](social.md#validation). It is a real PostgreSQL + UDP integration test, not a claim of rendered game UI or
 a throughput benchmark. An RSA-encrypted login path is covered by the same harness.
 
-Start `./target/release/wot-server` to validate the actual configuration, database,
-resources, schema binding and sockets; stop with Ctrl-C after the ready log.
-Settings are read exclusively from the generated file described in the
-[server guide](server.md). Environment variables above belong to the integration
-test harness. The [client validation record](client-validation.md) documents
-earlier native garage walkthroughs. The protocol test also checks revision
-acknowledgement after a full cache and required startup settings.
+Start the release binary with the arguments in the [server guide](server.md)
+to validate the database, resources, schema binding and sockets. Stop with
+Ctrl-C after the ready log. The [client validation record](client-validation.md)
+documents earlier native garage walkthroughs. The protocol test also checks
+revision acknowledgement after a full cache.
 
-Unit tests cover default configuration creation, preservation of edits, relative
-path resolution, rejection of invalid settings, key reuse, and cumulative filtering
-at all three logging levels with appended log contents. Endpoint
-checks verify wildcard listeners advertise a concrete route-selected IPv4 address
-and actual port. Local clients bypass explicit public overrides when BaseApp
+Startup tests cover required arguments, defaults and overrides, invalid
+values, key reuse and console log filtering. Endpoint checks verify that
+wildcard listeners advertise a concrete route-selected IPv4 address and actual
+port. Local clients bypass explicit public overrides when BaseApp
 listens on wildcard/loopback; non-loopback clients retain the override, including
 its separately configured port. Concrete non-loopback listeners remain explicit. The garage integration tests bind BaseApp to `0.0.0.0:0` without reserving a port
 ahead of time. Plaintext login checks automatic routing; encrypted login configures

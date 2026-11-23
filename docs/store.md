@@ -88,7 +88,7 @@ shop while the game is closed. Select **My garage** to see current balances
 and owned tanks. If your game garage is connected, the gateway publishes the
 purchase to it. Otherwise, the next garage sync reads the committed purchase.
 
-The dashboard tab is available when both `admin` and `store` are configured.
+The dashboard tab is available when both the admin dashboard and Store are enabled.
 It uses the dashboard session cookie to authorize
 `GET /api/admin/me/shop/catalog` and `POST /api/admin/me/shop/orders` for the
 signed-in account. Orders require the `X-Wot-Admin: 1` write header and use
@@ -104,32 +104,21 @@ and sign in as `commander@example.test` with `demo-player`.
 
 ## Configuration
 
-Build the shared React project with `npm ci` and
-`npm run build --workspace tools/web`. Configure the same HTTP listener used by the
-[admin dashboard](admin.md). The Store can be enabled on its own.
+The server embeds the Store UI at build time. For local game clients it
+advertises the HTTP listener on loopback when available. For LAN game clients
+it uses the listener's private IPv4 address, choosing the interface that
+routes back to the client when listening on all interfaces. It uses the
+actual HTTP port selected by `--web-bind`. The client opens `/shop/` and sends
+requests to `/api/shop/`.
 
-```json
-{
-  "web": {
-    "bind": "127.0.0.1:8080",
-    "ui_dir": "../../tools/web/dist"
-  },
-  "store": {
-    "origin": "http://127.0.0.1:8080"
-  }
-}
-```
+Use `--store-origin` to override the advertised address for every client.
+For example, a server behind a proxy or Docker port mapping may need an
+explicit origin that players can reach. Internet clients need a reachable HTTPS
+origin. Route `/shop`, `/shop/*`, `/assets/*` and `/api/shop/*` through the
+TLS reverse proxy. The client receives the origin when it connects.
 
-The client opens `/shop/` and sends requests to `/api/shop/`.
-For remote clients, set `store.origin` to a reachable HTTPS origin and route
-`/shop`, `/shop/*`, `/assets/*` and `/api/shop/*` to the shared listener
-through your TLS reverse proxy. Keep admin routes on the access policy used
-by your deployment. The container ships the compiled web UI in `web/`
-beside the server binary.
-
-If upgrading a development configuration that used a separate Store bind,
-move the shared address to `web.bind` and update `store.origin` to match the
-shared listener or its reverse proxy. Reconnect after changing the Store URL.
+Pass `--disable-store` to disable the Store, or `--disable-admin` to run the
+Store independently of the dashboard.
 
 ## Client and checkout protocol
 

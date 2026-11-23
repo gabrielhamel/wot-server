@@ -33,12 +33,13 @@ The server needs a **PostgreSQL database**. Start one with the included
 docker compose up -d --wait postgres
 ```
 
-With the default Compose settings, use this connection string in `server.json`:
+For a native installation, prepare an [extracted resource bundle](docs/resources.md)
+in `resources/` and start the server with the local Compose connection URL.
 
-```json
-{
-  "database_url": "postgresql://wot_server:local-development@127.0.0.1:54329/wot_server"
-}
+```sh
+export WOT_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
+mkdir -p .local
+cargo run --release -- --resource-dir resources --private-key .local/login.pem
 ```
 
 The server applies database migrations automatically.
@@ -123,7 +124,7 @@ installation and configuration.
 - Grant tanks, credits, gold, bonds, free XP, Experimental Equipment components,
   crew books, Improved Equipment, Bounty and Experimental Equipment, 3D
   attachments, and stat trackers.
-- Enable the dashboard in `server.json` and use the first-administrator setup
+- Open the dashboard and use the first-administrator setup
   to get started. [Dashboard guide](docs/admin.md)
 
 ![Admin dashboard showing a player's balances, resource grants and garage](docs/images/dashboard.png)

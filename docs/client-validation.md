@@ -37,18 +37,16 @@ The private PKCS#8 key is `.local/login.pem` (owner-only permissions); it is nev
 copied into the client or committed. Configuration, keys, traces and screenshots
 under `.local/` are deliberately ignored by Git.
 
-From the repository root, start the configured server with:
+With `WOT_DATABASE_URL` set to the validation database, start the server from the
+repository root with the extracted bundle and saved RSA identity.
 
 ```sh
-./target/release/wot-server
+./target/release/wot-server --resource-dir /path/to/resources --private-key .local/login.pem
 ```
 
-No arguments or environment variables are needed. Startup now listens on all
-IPv4 interfaces and chooses each client's reachable BaseApp address automatically.
-The existing private/public key identity is reused: the saved `.local/login.pem`
-is selected directly by `private_key` in `target/release/server.json`, outside
-the disposable build directory. See the
-[configuration guide](server.md) before moving the executable.
+Startup listens on all IPv4 interfaces and chooses each client's reachable
+BaseApp address automatically. See the [server guide](server.md) for the
+available arguments.
 
 Select the local server entry above. If the launcher presents its official
 account, choose **Switch Account** and use **demo@example.test / demo**. Official launcher tokens

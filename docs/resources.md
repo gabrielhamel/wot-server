@@ -11,13 +11,11 @@ cargo build --locked --release -p wot-extract
 
 The output directory must be new and its parent must already exist. After
 successful extraction, copy the entire output directory to the server host.
-The default location is `resources/` beside the server executable. To use
-another location, set `resource_dir` in `server.json`. Replace the old
-`game_dir` field when upgrading an existing configuration.
+Pass the output path to the server with `--resource-dir /path/to/resources`.
 
-The [published container image](container.md) includes the bundle. To use a
-different bundle, mount it read-only and set `resource_dir` to its absolute
-path inside the container. The extractor runs offline with the installed client
+The [published container image](container.md) includes a bundle at
+`/opt/wot-server/resources`. To use a different bundle, mount it read-only and
+pass its container path to `--resource-dir`. The extractor runs offline with the installed client
 as input. The server reads the bundle on startup and on demand for vehicle
 templates, so keep its files available for the lifetime of the process.
 
@@ -68,8 +66,8 @@ audio. Both bundles and game files should stay outside Git.
 Package files take precedence over loose files. The extractor uses package
 order from `paths.xml` where present and considers remaining installed packages
 in filename order. Mod overlays are outside the extraction scope. Resource
-requirements come from the current [garage catalog](../src/accounts/infrastructure/client)
-and [script ABI loader](../src/platform/mercury/script/load.rs).
+requirements come from the current [garage catalog](../src/accounts/src/infrastructure/client)
+and [script ABI loader](../src/shared-infrastructure/src/mercury/script/load.rs).
 Regenerate the bundle when changing the game build or updating to a server
 that reads different resource paths. For [garage camouflage](camouflage.md),
 regenerate existing bundles with the updated extractor. Each cosmetic category

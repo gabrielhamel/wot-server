@@ -4,14 +4,12 @@ use super::{
     depot_flow::{row, send_array},
     dict,
 };
-use wot_server::{
-    accounts::test_support::{
-        AccountRepository, GarageCatalog, PostgresAccounts, ProgressionCommand, ProgressionError,
-        VehiclePurchaseOptions, VehicleSaleRequest,
-    },
-    pickle,
-    player_sessions::test_support::mercury::app::dispatch::ScriptDispatch,
+use wot_accounts::test_support::{
+    AccountRepository, GarageCatalog, PostgresAccounts, ProgressionCommand, ProgressionError,
+    VehiclePurchaseOptions, VehicleSaleRequest,
 };
+use wot_platform::mercury::app::dispatch::ScriptDispatch;
+use wot_platform::pickle;
 
 const AIMING: i32 = (101 << 8) | 0xf9;
 const RAMMER: i32 = (81 << 8) | 0xf9;

@@ -26,7 +26,9 @@ The extractor and server builds share BuildKit caches for the Cargo registry
 and compiled dependencies. They reuse these caches while the runner's Docker
 storage is available and rebuild the workspace crates when source layers change.
 The E2E test build shares the Cargo registry cache and uses a separate
-cache for compiled test dependencies.
+cache for compiled test dependencies. The server and E2E build stages provide
+Node.js and npm to Cargo. The final image packages the browser bundle produced
+by the server build.
 
 Before pushing any tags, the workflow starts the final image alongside a
 fresh PostgreSQL instance on an isolated Docker network. It then copies the
@@ -43,35 +45,31 @@ server-list registration, follow the
 
 The package is public and can be pulled without signing in. Set
 `IMAGE` to a published image name from the workflow summary. The image bundles
-the release binary, `/opt/wot-server/resources` and
-`/opt/wot-server/web`. The previous `dashboard/` path points to that bundle. The server creates `server.json` beside the
-binary on first start. The runtime user has UID and GID 10001.
+the release binary with the embedded dashboard and Store, plus
+`/opt/wot-server/resources`. The runtime user has UID and GID 10001.
 
 Both the server and extractor images include the project license and
 [WG Toolkit attribution](../THIRD_PARTY_NOTICES.md) in
 `/usr/share/licenses/wot-server/`.
 
-Use a PostgreSQL instance reachable from the container, and prepare a
-`server.json` with its connection string. Keep the configuration and login
-identity on the host. For example, with a pre-existing `./state` directory
-writable by UID 10001 and a readable `./server.json`:
+Use a PostgreSQL instance reachable from the container and export its
+connection URL as `WOT_DATABASE_URL`. Mount a host directory writable by UID
+10001 for the persistent login key.
 
 ```sh
 docker run --rm --name wot-server \
   -p 20016:20016/udp -p 20017:20017/udp -p 20017:20017/tcp \
   -p 127.0.0.1:8080:8080/tcp \
-  --mount "type=bind,src=$PWD/server.json,dst=/opt/wot-server/server.json,readonly" \
+  -e WOT_DATABASE_URL \
   --mount "type=bind,src=$PWD/state,dst=/state" \
-  "$IMAGE"
+  "$IMAGE" --resource-dir resources --private-key /state/login.pem \
+  --advertised-base 192.168.1.10:20017
 ```
 
-Set `private_key` to `/state/login.pem` and `advertised_base` to the host address and port that
-game clients can reach; the container's bridge address is usually unreachable
-from outside Docker. For the optional dashboard, set `web.bind` to
-`0.0.0.0:8080`, `web.ui_dir` to `web`, and `admin` to
-`{"secure_cookies": false}` for the loopback HTTP port shown above. See the
-[admin guide](admin.md) for HTTPS configuration, and the [server guide](server.md)
-for database, RSA login and client setup.
+Pass the Docker host address and port reachable by game clients to
+`--advertised-base`. The HTTP port mapping above publishes the dashboard on
+the host's loopback interface. See the [admin guide](admin.md) for HTTPS
+configuration and the [server guide](server.md) for the complete flag list.
 
 For a local image build, generate the bundle into `resources/` using the
 [extractor](resources.md), then run `docker build -t wot-server:local .`.

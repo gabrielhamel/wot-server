@@ -4,7 +4,9 @@ Telemetry is required for server behavior. Every changed workflow must be
 understandable through its trace, including its context transitions,
 input, database work, result and response. Production sends traces to the
 configured OTLP collector. See the [server guide](server.md#logging-and-telemetry)
-for endpoint configuration, resource attributes and console filtering.
+for endpoint configuration, resource attributes and console filtering. The
+server includes each runtime library’s Rust tracing target in its console and
+OTLP filters. The E2E trace capture uses the same target allowlist.
 
 ## Server metrics
 
@@ -26,8 +28,8 @@ collector. Each series describes one server process.
 The gateway refreshes both count gauges on its tick loop. Tick histograms
 record one sample per gateway tick when at least one arena is active at the
 start of processing. Duration and delay use buckets around the 100 ms interval.
-See the [metric instruments](../src/player_sessions/infrastructure/gateway/metrics.rs)
-and [gateway scheduler](../src/player_sessions/infrastructure/gateway/mod.rs).
+See the [metric instruments](../src/player-sessions/src/infrastructure/gateway/metrics.rs)
+and [gateway scheduler](../src/player-sessions/src/infrastructure/gateway/mod.rs).
 
 PostgreSQL operation timing starts when the adapter polls the SQLx future, so
 it includes pool acquisition time for operations that acquire a connection.
@@ -36,7 +38,7 @@ SQL verbs with an `OTHER` fallback), and `outcome` (`success` or `error`). SQL
 text, bind parameters and error messages are absent from metric attributes.
 Pool gauges sample the shared pool at collection time. The server registers
 these metrics after connecting and applying migrations. See the
-[PostgreSQL instruments](../src/platform/infrastructure/observability/database_metrics.rs).
+[PostgreSQL instruments](../src/shared-infrastructure/src/infrastructure/observability/database_metrics.rs).
 
 ## Trace structure
 
@@ -77,7 +79,8 @@ Training Room visibility and Description field availability sent in the queued A
 `mercury.response` child records delivery of `showGUI`.
 
 The shared web listener composes the admin and Store APIs. Page shells and
-shared assets emit `web.ui.request` with their matched route and HTTP status.
+shared assets emit `web.ui.request` with their matched route, HTTP status and
+asset source. They preserve a valid sampled W3C trace parent when supplied.
 Admin and Store API requests keep their own request spans.
 
 Managed player creation traces the input lengths and validation outcome
@@ -424,7 +427,7 @@ even when writing its protocol error response succeeds.
 
 ## PostgreSQL
 
-The [Platform database tracing adapter](../src/platform/infrastructure/observability.rs)
+The [Platform database tracing adapter](../src/shared-infrastructure/src/infrastructure/observability.rs)
 awaits application-issued queries and explicit transaction boundaries inside
 `postgresql.query` spans. It records the context of the caller.
 

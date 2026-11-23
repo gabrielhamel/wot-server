@@ -21,37 +21,17 @@ docker compose up -d --wait postgres
 
 The repository's `compose.yaml` starts **PostgreSQL only**, on the Docker
 network `wot-server_default`. The commands below start the game server on that
-same network. This example uses the Compose database's default credentials;
-if you override them, update `database_url` accordingly.
+same network. Set the PostgreSQL connection URL for the container. This example
+uses the Compose database's default credentials.
 
-### Configure the server
-
-Save the following as `server.json` in the repository root, replacing
-`192.168.1.10` with
-the server host's IPv4 address reachable by game clients. For a game running on
-the same computer, use `127.0.0.1` instead.
-
-```json
-{
-  "database_url": "postgresql://wot_server:local-development@postgres:5432/wot_server",
-  "resource_dir": "resources",
-  "login_bind": "0.0.0.0:20016",
-  "base_bind": "0.0.0.0:20017",
-  "advertised_base": "192.168.1.10:20017",
-  "private_key": "/state/login.pem",
-  "web": {
-    "bind": "0.0.0.0:8080",
-    "ui_dir": "web"
-  },
-  "admin": {
-    "secure_cookies": false
-  }
-}
+```sh
+export WOT_DATABASE_URL='postgresql://wot_server:local-development@postgres:5432/wot_server'
 ```
 
-The advertised address must be the Docker **host's reachable address**, because
-clients use it to connect after login. For clients outside your LAN, use the
-host's public IPv4 address and forward the game ports listed below.
+In the launch command below, replace `192.168.1.10` with the Docker host's
+reachable IPv4 address. Clients use that address to connect after login. If
+clients run outside your LAN, use the host's public IPv4 address and forward
+the game ports listed below.
 
 Prepare the login key directory. The image runs as UID/GID `10001`, so
 initialize the volume's ownership once:
@@ -72,9 +52,10 @@ docker run -d --name wot-server --restart unless-stopped \
   -p 20017:20017/udp \
   -p 20017:20017/tcp \
   -p 127.0.0.1:8080:8080/tcp \
-  --mount "type=bind,src=$PWD/server.json,dst=/opt/wot-server/server.json,readonly" \
+  -e WOT_DATABASE_URL \
   --mount type=volume,src=wot-server-state,dst=/state \
-  "$IMAGE"
+  "$IMAGE" --resource-dir resources --private-key /state/login.pem \
+  --advertised-base 192.168.1.10:20017
 ```
 
 The server applies database migrations and generates its login key on first
@@ -84,9 +65,9 @@ administrator, then sign in with the administrator email and password. Use
 such as `player@example.com` for the game client. New accounts receive tier I
 tanks, crew and ammunition. Startup does not create demo accounts automatically.
 
-Edit `server.json` and run `docker restart wot-server` to apply configuration
-changes. Stop the game server with `docker stop wot-server`; stop PostgreSQL with
-`docker compose down`.
+Recreate the container with the new arguments when changing settings. Keep the
+`wot-server-state` volume to reuse the login key. Stop the game server with
+`docker stop wot-server` and PostgreSQL with `docker compose down`.
 
 ### Ports
 
@@ -103,8 +84,11 @@ These are the host ports published by the commands above:
 Allow/forward **all three game mappings**, including both UDP and TCP on `20017`,
 through the host firewall and router when needed. Game clients do not need the
 admin or database ports. Docker's `EXPOSE` declarations alone do not publish
-ports; the `-p` options above do. The web listener is optional: remove the
-`admin` object and its port mapping to disable it.
+ports. The `-p` options above publish them. To disable the web listener,
+omit the HTTP port mapping and pass `--disable-admin --disable-store`.
+For [Store access from another computer](store.md#configuration), configure a
+reachable origin. If serving the Store directly on a LAN, publish port 8080 on
+the Docker host's LAN address.
 
 ## Add the server to the game's server list
 
@@ -135,7 +119,7 @@ cp -n "$WOT_GAME_DIR/res/scripts_config.xml" "$WOT_GAME_DIR/res/scripts_config.x
 
 Inspect the existing entries and choose an unused `periphery_id`. The example
 uses `250`, which was free in the validated EU installation. If you choose a
-different ID, set the same `periphery_id` in `server.json` for Training Room
+different ID, pass it to `--periphery-id` for Training Room
 invitations.
 
 ```sh

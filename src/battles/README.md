@@ -1,5 +1,7 @@
 # Battles
 
+The `wot-battles` library publishes its runtime and roster types through `wot_battles::contract`.
+
 Battles owns the live arena from preparation through the departure of the last
 participant. It allocates battle IDs, loads arena geometry, spawns vehicles,
 advances rounds, resolves vehicle controls and hits, and replicates battle state
@@ -18,7 +20,7 @@ mode.
 | `application/` | Participant identity, launch inputs, roster eligibility and typed Avatar and vehicle commands. |
 | `infrastructure/` | In-memory arena and participant lifecycle, bundled arena definitions, terrain and obstacle collision, and native battle payload encoders. The delivery port connects those encoders to the local Mercury adapter. |
 
-Callers use [the published contract](mod.rs). Player Sessions assigns each
+Callers use [the published contract](src/contract.rs). Player Sessions assigns each
 participant the identifier of the current session admission and keeps the
 mapping to the live Mercury client. The Mercury adapter translates incoming
 methods into typed commands and applies outputs from the arena delivery port.

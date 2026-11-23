@@ -1,5 +1,7 @@
 # Social
 
+The `wot-social` library publishes its operations through `wot_social::contract`.
+
 Social owns durable, directed contacts, native private conversations and retained
 messages. Player Sessions supplies authenticated account IDs. Social does not authenticate
 users, own socket connections, alter account identities, or implement battles.
@@ -12,7 +14,7 @@ users, own socket connections, alter account identities, or implement battles.
 | `infrastructure/conversations.rs` | Durable pairs, atomic message writes, recent restoration and bounded history. |
 
 Social owns the `social` PostgreSQL schema and its
-[embedded migrations](infrastructure/migrations/). It resolves player names
+[embedded migrations](src/infrastructure/migrations/). It resolves player names
 and checks participants through Accounts' published `PlayerDirectory` before
 writes. Reads load Social records and resolve names with bounded batches. The
 directory calls run outside Social transactions, which permits a shared pool
@@ -22,7 +24,7 @@ and history responses. Native friendship changes lock both participants in ID
 order. Legacy contact changes lock the owner, and private writes lock both
 participants in ID order, keeping ignore checks and writes coherent.
 
-Player Sessions consumes the [published Social contract](contract.rs), which
+Player Sessions consumes the [published Social contract](src/contract.rs), which
 exposes Social operations without the repository or PostgreSQL adapter. Server
 composition constructs the service and supplies its player directory. The native
 XMPP adapter owns XML/JID translation and presence/socket delivery. Its BW adapter

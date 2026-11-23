@@ -93,9 +93,9 @@ Implementation ownership:
 
 | Source | Responsibility |
 | --- | --- |
-| `src/accounts/domain/modules.rs` | Progression, research, installation and stock rules. |
-| `src/accounts/application/mod.rs` | Module command/proposal and repository contract. |
-| `src/accounts/infrastructure/client/module_defs.rs` | Versioned resource translation, research indices and gun-specific ammunition. |
-| `src/accounts/infrastructure/client/progression.rs` | Catalog-backed planning and client cache deltas. |
-| `src/accounts/infrastructure/postgres.rs` | Coherent reads and atomic persistence. |
-| `src/player_sessions/infrastructure/gateway/progression.rs` | Bounded command execution and completion responses. |
+| `src/accounts/src/domain/modules.rs` | Progression, research, installation and stock rules. |
+| `src/accounts/src/application/mod.rs` | Module command/proposal and repository contract. |
+| `src/accounts/src/infrastructure/client/module_defs.rs` | Versioned resource translation, research indices and gun-specific ammunition. |
+| `src/accounts/src/infrastructure/client/progression.rs` | Catalog-backed planning and client cache deltas. |
+| `src/accounts/src/infrastructure/postgres.rs` | Coherent reads and atomic persistence. |
+| `src/player-sessions/src/infrastructure/gateway/progression.rs` | Bounded command execution and completion responses. |

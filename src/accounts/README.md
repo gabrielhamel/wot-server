@@ -1,5 +1,7 @@
 # Accounts
 
+The `wot-accounts` library publishes its operations through `wot_accounts::contract`.
+
 Accounts owns durable player identity, password hashes, player roles, dashboard sessions, balances, vehicle ownership,
 integer preferences, tank/module research, vehicle purchases and sales, garage capacity, module installation, mounted equipment, consumables, directives, cosmetic ownership and outfits, loaded ammunition, shared depot stock and sales, crew and barracks, and account revisions. It publishes account views and garage projections to Player Sessions.
 
@@ -13,16 +15,16 @@ integer preferences, tank/module research, vehicle purchases and sales, garage c
 | `infrastructure/player_access.rs` | Role-aware account and session access, serialized role changes and session revocation. |
 | `infrastructure/client/` | Anti-corruption layer adapting the versioned [resource bundle](../../docs/resources.md), garage catalog and account/shop cache formats. These wire models are not account domain models. |
 
-Runtime consumers import the context's [published contract](contract.rs).
+Runtime consumers import the context's [published contract](src/contract.rs).
 Game authentication returns an opaque `AccountView` with identity and revision
 accessors. `GarageQueries` publishes session projections, Store offers and
 dashboard inspections. `GarageCommands` validates garage changes against the
 current revision and commits them. Player Sessions delivers the committed
 projection and receipt. Server composition creates these services through
-the [PostgreSQL entry point](postgres.rs).
+the [PostgreSQL entry point](src/postgres.rs).
 
 Accounts owns the `accounts` PostgreSQL schema and its
-[embedded migrations](infrastructure/migrations/). It owns identity and Garage
+[embedded migrations](src/infrastructure/migrations/). It owns identity and Garage
 in this deployment and keeps initial garage provisioning atomic with account
 creation. Catalog adapters translate the resource bundle and versioned client
 formats.
@@ -85,7 +87,7 @@ The published `PlayerDirectory` resolves numeric account IDs and display names
 for Social. Server composition shares one PostgreSQL pool. Each repository uses
 its own schema and Social holds account IDs as scalar values.
 
-[Player Administration](../player_administration/README.md) consumes `PlayerAccess` through the public
+[Player Administration](../player-administration/README.md) consumes `PlayerAccess` through the public
 context entry point. It receives account IDs, logins, display names and roles. Account
 creation hashes the password with Argon2id and commits the identity and starter
 garage in one PostgreSQL transaction. Bootstrap authorizes first-admin creation
