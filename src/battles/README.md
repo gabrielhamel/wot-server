@@ -15,11 +15,19 @@ mode.
 | Layer | Responsibilities |
 | --- | --- |
 | `domain/` | Round timing and phase transitions, vehicle movement, aim, ammunition and hit resolution. |
-| `application/` | Launch inputs and roster eligibility for a two-team battle. |
-| `infrastructure/` | In-memory arena and participant lifecycle, bundled arena definitions, terrain and obstacle collision, and the native Avatar, Vehicle and roster adapters over Platform's shared Mercury transport. |
+| `application/` | Participant identity, launch inputs, roster eligibility and typed Avatar and vehicle commands. |
+| `infrastructure/` | In-memory arena and participant lifecycle, bundled arena definitions, terrain and obstacle collision, and native battle payload encoders. The delivery port connects those encoders to the local Mercury adapter. |
 
-Callers use [the published contract](mod.rs). Preparation validates the roster
-and builds the client payloads before Player Sessions acknowledges the launch.
+Callers use [the published contract](mod.rs). Player Sessions assigns each
+participant the identifier of the current session admission and keeps the
+mapping to the live Mercury client. The Mercury adapter translates incoming
+methods into typed commands and applies outputs from the arena delivery port.
+The runtime holds participant IDs and arena entity IDs. The adapter owns
+access to the live BaseApp, including entity creation and packet delivery.
+The runtime and adapter run synchronously in the same gateway loop.
+
+Preparation validates the roster and builds the client payloads before Player
+Sessions acknowledges the launch.
 Activation registers the participants for routing and adds the arena to the
 active count published to Player Sessions. Once a participant leaves,
 Player Sessions resets the connection for garage entry. The Battle ID is
@@ -42,6 +50,7 @@ defines them, its wheel scroll and steering properties. See the
 | Battle | A live match on one arena with an assigned roster and round clock. |
 | Arena | The shared space where the battle runs, identified by its geometry and gameplay variant. |
 | Participant | A connected player assigned to a team with a combat or observer vehicle. |
+| Participant ID | Gateway-local admission generation used to route battle inputs and deliveries to one specific session. A new login gets a new ID. |
 | Round | The progression through loading, countdown, active battle and results. |
 | Loadout | The equipped vehicle descriptor, health, crew size, ammunition, locked outfit and base performance at launch. |
 | Scene impact | The first projectile contact with terrain or a placed obstacle, reported with its effect material. |

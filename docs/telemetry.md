@@ -243,7 +243,9 @@ game.command                                      [doCmdInt3, 411]
 Avatar commands record the player's account and entity ID. The readiness
 command that starts the countdown also parents the period broadcast.
 Arena cell commands trace the wire element and target entity IDs, the method,
-and the argument byte count. A movement command parents the first changed
+and the argument byte count. The decoded battle control stays in the same
+trace and records the gateway-local participant ID. Arena entry and participant
+removal use that same identifier. A movement command parents the first changed
 position snapshot. Aim commands retain their spans through the turret traverse
 to the requested aim, with a child span for each resulting angle or server
 marker update. Enabling the marker parents its first delivery. The marker

@@ -24,7 +24,7 @@ ContextMap Server {
     implementationTechnology = "Common Mercury transport and client-format codecs, bounded HTTP serving, blocking-work span propagation, and browser HTTP tracing and theme"
   }
   Platform [U] -> [D] Battles {
-    implementationTechnology = "Shared BaseApp transport, script dispatch, and client-format codecs"
+    implementationTechnology = "Script dispatch and client-format codecs; the local arena delivery adapter uses the shared BaseApp"
   }
   Platform [U] -> [D] PlayerAdministration {
     implementationTechnology = "Bounded HTTP serving for the admin API, with shared TypeScript HTTP tracing and theme for the dashboard"
@@ -54,7 +54,7 @@ ContextMap Server {
     implementationTechnology = "Native Avatar and Vehicle control methods, arena lifecycle events and entity replication over Mercury"
   }
   Battles [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Map and active arena count queries, battle launch with an assigned roster, equipped loadouts with outfits and vehicle performance, viewer customization preferences, and participant lifecycle for garage handoff and scheduled return after the outcome"
+    implementationTechnology = "Map and active arena count queries, battle launch with an assigned roster, equipped loadouts with outfits and vehicle performance, viewer customization preferences, typed Avatar and vehicle commands, and participant IDs for arena delivery and garage return"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections"

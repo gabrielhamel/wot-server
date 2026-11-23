@@ -63,3 +63,112 @@ entity_schema! {
         }
     }
 }
+
+pub(crate) enum AvatarUpdate {
+    Arena {
+        kind: u8,
+        data: Vec<u8>,
+    },
+    RoundFinished {
+        winner: i8,
+        reason: u8,
+    },
+    HitDirection {
+        yaw: f32,
+        attacker: u32,
+        damage: u16,
+        explosive: bool,
+        victim: u32,
+    },
+    Tracer {
+        shooter: u32,
+        id: i32,
+        effects: ShellEffects,
+        start: glam::Vec3,
+        velocity: glam::Vec3,
+        range: f32,
+    },
+    Impact {
+        id: i32,
+        effects: ShellEffects,
+        material: u8,
+        endpoint: glam::Vec3,
+        direction: glam::Vec3,
+        speed: f32,
+    },
+    StopTracer {
+        id: i32,
+        endpoint: glam::Vec3,
+    },
+    ShotResults(ShotResult),
+    BattleEvents(BattleEvent),
+}
+
+impl AvatarUpdate {
+    pub(super) fn send(self, mut avatar: AvatarView<'_>) -> std::io::Result<()> {
+        match self {
+            Self::Arena { kind, data } => avatar.updateArena(kind, Bytes(data)),
+            Self::RoundFinished { winner, reason } => avatar.onRoundFinished(winner, reason),
+            Self::HitDirection {
+                yaw,
+                attacker,
+                damage,
+                explosive,
+                victim,
+            } => avatar.showOwnVehicleHitDirection(
+                yaw,
+                EntityId(attacker),
+                damage,
+                0,
+                false,
+                explosive,
+                EntityId(victim),
+                0,
+            ),
+            Self::Tracer {
+                shooter,
+                id,
+                effects,
+                start,
+                velocity,
+                range,
+            } => avatar.showTracer(
+                EntityId(shooter),
+                id,
+                0,
+                effects.legacy_index,
+                effects.prefab_index,
+                effects.kind,
+                effects.caliber_mm,
+                start,
+                velocity,
+                0.0,
+                range,
+                0,
+                0,
+            ),
+            Self::Impact {
+                id,
+                effects,
+                material,
+                endpoint,
+                direction,
+                speed,
+            } => avatar.explodeProjectile(
+                id,
+                effects.legacy_index,
+                effects.prefab_index,
+                material,
+                effects.kind,
+                effects.caliber_mm,
+                endpoint,
+                direction,
+                speed,
+                Vec::new(),
+            ),
+            Self::StopTracer { id, endpoint } => avatar.stopTracer(id, endpoint),
+            Self::ShotResults(result) => avatar.showShotResults(vec![result]),
+            Self::BattleEvents(event) => avatar.onBattleEvents(vec![event]),
+        }
+    }
+}

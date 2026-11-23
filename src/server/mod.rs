@@ -34,7 +34,7 @@ pub(crate) fn bind_battles(
     resources: &wot_resources::ResourceBundle,
     enabled: bool,
 ) -> anyhow::Result<crate::battles::contract::BattleRuntime> {
-    crate::battles::contract::BattleRuntime::bind(base, resources, enabled)
+    crate::battles::mercury::bind(base, resources, enabled)
 }
 
 #[cfg(any(test, feature = "integration-test-support"))]

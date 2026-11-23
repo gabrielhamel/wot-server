@@ -2,12 +2,16 @@ mod application;
 mod domain;
 mod infrastructure;
 
-/// Launch and lifecycle operations for callers that assemble battle rosters.
+/// Rosters, decoded commands and lifecycle operations for live battles.
 pub(crate) mod contract {
     pub(crate) use super::application::{
-        BattleLaunch, BattleMode, BattleParticipant, VehicleLoadout,
+        AvatarCommand, BattleLaunch, BattleMode, BattleParticipant, ParticipantId, VehicleCommand,
+        VehicleControl, VehicleLoadout,
     };
     pub(crate) use super::infrastructure::{
         AvatarAction, BattleRuntime, ParticipantDeparture, PreparedBattle, TICK,
     };
 }
+
+/// In-process adapter for sessions connected through Mercury.
+pub(crate) use infrastructure::mercury;

@@ -1,5 +1,6 @@
 use super::{
-    ClientKey, Completion, Gateway, LoginError, PreparedAccount, Ticket, TracedCompletion,
+    ClientKey, Completion, Gateway, LoginError, MercuryArena, ParticipantId, PreparedAccount,
+    Ticket, TracedCompletion,
 };
 use blowfish::Blowfish;
 use rsa::rand_core::{OsRng, RngCore};
@@ -263,10 +264,13 @@ impl Gateway {
 
     pub(super) fn remove_session(&mut self, client: ClientKey) {
         if let Some(session) = self.sessions.get(&client) {
+            let participant = ParticipantId(session.generation);
             self.xmpp.revoke(session.account.snapshot.id());
             self.social_disconnect(client);
             self.remove_training_member(client);
-            self.battles.remove_participant(&mut self.base, client);
+            let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
+            self.battles.remove_participant(&mut delivery, participant);
+            self.battle_clients.remove(&participant);
             self.sessions.remove(&client);
         }
     }

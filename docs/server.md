@@ -160,8 +160,12 @@ The server owns its [Mercury adapter](../src/platform/mercury) for
 UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish and dynamic
 entity dispatch. [Player Sessions](../src/player_sessions/README.md) binds
 Account RPCs for the garage. [Battles](../src/battles/README.md) binds arena
-entities and controls using the same BaseApp transport. The adapters validate
-their method tables and creation layout against the configured bundle. The [shared codecs](../src/platform/infrastructure/client_formats/README.md)
+entities and controls through its synchronous arena delivery port. The
+Mercury adapter maps participant IDs to live BaseApp connections, translates
+incoming methods into typed battle commands and publishes native arena
+updates. The gateway runs the battle tick in the same loop as the session
+transport. Both adapters validate their method tables and creation layout
+against the configured bundle. The [shared codecs](../src/platform/infrastructure/client_formats/README.md)
 read packed resources and serialize Python values for Player Sessions and Accounts.
 
 A standalone checkout builds with `cargo build --locked`. See the

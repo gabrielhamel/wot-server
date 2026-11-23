@@ -1,5 +1,12 @@
-use crate::platform::mercury::app::base::ClientKey;
 use std::time::{Duration, Instant};
+
+mod commands;
+
+pub(crate) use commands::{AvatarCommand, VehicleCommand, VehicleControl};
+
+/// The admission generation of a player session, unique within the gateway.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct ParticipantId(pub(crate) u64);
 
 #[derive(Clone, Copy)]
 pub(crate) enum BattleMode {
@@ -14,7 +21,7 @@ pub(crate) struct BattleLaunch {
 }
 
 pub(crate) struct BattleParticipant {
-    pub client: ClientKey,
+    pub id: ParticipantId,
     pub account_id: i64,
     pub name: String,
     pub team: u8,

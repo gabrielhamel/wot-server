@@ -5,14 +5,14 @@ pub(super) const ROSTER_ENTITY_NODE: u16 = 2;
 impl ArenaWire {
     pub(in super::super) fn roster_ready(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         count: usize,
         row: usize,
         ready: bool,
     ) -> Result<()> {
-        let schema = base
-            .dispatch()
+        let schema = self
+            .dispatch
             .entity_from_id(self.roster_component)
             .context("Missing roster component")?;
         let (index, roster) = schema
@@ -59,8 +59,8 @@ impl ArenaWire {
             records.push(record);
         }
         for record in records {
-            base.send_arena_element(client, NrlData(record))?;
-            base.send_arena_element(client, ApplyNrlUpdate {})?;
+            delivery.send_arena_element(client, NrlData(record))?;
+            delivery.send_arena_element(client, ApplyNrlUpdate {})?;
         }
         Ok(())
     }

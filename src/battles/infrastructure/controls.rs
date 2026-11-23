@@ -1,7 +1,10 @@
 use super::avatar::{BattleEvent, ShotResult};
 use super::*;
 use crate::{
-    battles::domain::vehicle::{Aim, AmmunitionCommand},
+    battles::{
+        application::{VehicleCommand, VehicleControl},
+        domain::vehicle::{Aim, AmmunitionCommand},
+    },
     platform::mercury::script::Value as WireValue,
 };
 use glam::Vec3Swizzles;
@@ -13,24 +16,26 @@ const ARMOR_PIERCED_WITH_DAMAGE: u32 = 1 << 4;
 const DIRECT_PROJECTILE: u32 = 1 << 20;
 
 impl BattleRuntime {
-    pub(crate) fn cell_method(&mut self, base: &mut base::App, event: base::CellMethodEvent) {
-        let span = event.span.clone();
-        span.in_scope(|| {
-            let (Some(wire), Some(id)) = (&self.wire, self.engagements.get(&event.client)) else {
-                return;
-            };
-            let Some(battle) = self.active.get_mut(id) else {
-                return;
-            };
-            battle.control(base, wire, *id, event, Instant::now());
-        });
+    pub(crate) fn vehicle_control(
+        &mut self,
+        delivery: &mut impl ArenaDelivery,
+        event: VehicleControl,
+    ) {
+        let (Some(wire), Some(id)) = (&self.wire, self.engagements.get(&event.participant)) else {
+            return;
+        };
+        let Some(battle) = self.active.get_mut(id) else {
+            return;
+        };
+        let request = tracing::Span::current();
+        battle.control(delivery, wire, *id, event, Instant::now(), &request);
     }
 }
 
 impl Battle {
     #[tracing::instrument(name = "battles.control", skip_all, fields(
         ddd.bounded_context.name = "battles", input.battle.id = battle_id,
-        input.entity_id = event.entity_id, rpc.method = %event.name, input.args.count = event.args.len(),
+        input.participant.id = event.participant.0, input.entity_id = event.entity_id, rpc.method = %event.method, input.args.count = event.argument_count,
         input.drive.flags = tracing::field::Empty, input.ammunition.setting = tracing::field::Empty,
         input.ammunition.shell = tracing::field::Empty, input.aim.kind = tracing::field::Empty,
         input.aim.server_marker = tracing::field::Empty, output.outcome = tracing::field::Empty,
@@ -38,23 +43,22 @@ impl Battle {
     ))]
     fn control(
         &mut self,
-        base: &mut base::App,
+        delivery: &mut impl ArenaDelivery,
         wire: &ArenaWire,
         battle_id: u32,
-        event: base::CellMethodEvent,
+        event: VehicleControl,
         now: Instant,
+        request: &tracing::Span,
     ) {
         let operation = tracing::Span::current();
-        let Some(player) = self.players.get_mut(&event.client) else {
+        let Some(player) = self.players.get_mut(&event.participant) else {
             return;
         };
         let avatar_target = event.entity_id == player.avatar_id;
         let vehicle_target = event.entity_id == player.vehicle.entity_id;
-        let outcome = if let ("setServerMarker", [WireValue::UInt8(enabled @ (0 | 1))]) =
-            (&*event.name, event.args.as_slice())
+        let outcome = if let VehicleCommand::SetServerMarker(enabled) = event.command
             && avatar_target
         {
-            let enabled = *enabled != 0;
             operation.record("input.aim.server_marker", enabled);
             if enabled && (player.observer || player.tank.base_dispersion_angle().is_none()) {
                 "vehicle_unavailable"
@@ -67,42 +71,30 @@ impl Battle {
         } else if !player.ready || player.observer || player.tank.health == 0 {
             "vehicle_unavailable"
         } else {
-            match (&*event.name, event.args.as_slice()) {
-                ("vehicle_moveWith", [WireValue::UInt8(flags)]) if avatar_target => {
+            match event.command {
+                VehicleCommand::Drive(flags) if avatar_target => {
                     operation.record("input.drive.flags", flags);
                     if !matches!(self.round.phase, RoundPhase::Battle) {
                         "round_inactive"
-                    } else if player.tank.drive(*flags) {
+                    } else if player.tank.drive(flags) {
                         player.pending_drive = Some(operation.clone());
                         "accepted"
                     } else {
                         "invalid_flags"
                     }
                 }
-                (
-                    "trackRelativePointWithGun" | "vehicle_trackRelativePointWithGun",
-                    [WireValue::Vector3(offset)],
-                ) if avatar_target || vehicle_target => {
-                    player.aim(Aim::WorldPoint(player.tank.position + *offset), &operation)
+                VehicleCommand::AimRelative(offset) if avatar_target || vehicle_target => {
+                    player.aim(Aim::WorldPoint(player.tank.position + offset), &operation)
                 }
-                ("vehicle_trackWorldPointWithGun", [WireValue::Vector3(point)])
-                    if avatar_target =>
-                {
-                    player.aim(Aim::WorldPoint(*point), &operation)
+                VehicleCommand::AimWorld(point) if avatar_target => {
+                    player.aim(Aim::WorldPoint(point), &operation)
                 }
-                (
-                    "stopTrackingWithGun" | "vehicle_stopTrackingWithGun",
-                    [WireValue::Float32(yaw), WireValue::Float32(pitch)],
-                ) if avatar_target || vehicle_target => player.aim(
-                    Aim::HullAngles {
-                        yaw: *yaw,
-                        pitch: *pitch,
-                    },
-                    &operation,
-                ),
-                ("vehicle_shoot", []) if avatar_target => {
+                VehicleCommand::AimAngles { yaw, pitch } if avatar_target || vehicle_target => {
+                    player.aim(Aim::HullAngles { yaw, pitch }, &operation)
+                }
+                VehicleCommand::Shoot if avatar_target => {
                     if matches!(self.round.phase, RoundPhase::Battle) {
-                        match self.fire(base, wire, battle_id, event.client, now) {
+                        match self.fire(delivery, wire, battle_id, event.participant, now) {
                             Ok(outcome) => outcome,
                             Err(error) => {
                                 operation.record("otel.status_code", "ERROR");
@@ -114,36 +106,30 @@ impl Battle {
                         "round_inactive"
                     }
                 }
-                (
-                    "vehicle_changeSetting",
-                    [
-                        WireValue::UInt8(setting @ (0 | 1 | 17 | 18)),
-                        WireValue::Int32(shell),
-                    ],
-                ) if avatar_target => {
+                VehicleCommand::ChangeSetting { setting, shell } if avatar_target => {
                     operation.record("input.ammunition.setting", setting);
                     if matches!(setting, 0 | 1) {
                         operation.record("input.ammunition.shell", shell);
                     }
                     let command = match (&self.round.phase, setting) {
-                        (RoundPhase::Battle, 0) => Some(AmmunitionCommand::ChangeShell(*shell)),
-                        (RoundPhase::Battle, 1) => Some(AmmunitionCommand::QueueShell(*shell)),
+                        (RoundPhase::Battle, 0) => Some(AmmunitionCommand::ChangeShell(shell)),
+                        (RoundPhase::Battle, 1) => Some(AmmunitionCommand::QueueShell(shell)),
                         (RoundPhase::Battle, 17 | 18) => Some(AmmunitionCommand::ReloadMagazine),
                         (RoundPhase::Loading | RoundPhase::Countdown, 0 | 1) => {
-                            Some(AmmunitionCommand::SelectInitial(*shell))
+                            Some(AmmunitionCommand::SelectInitial(shell))
                         }
                         _ => None,
                     };
                     if let Some(command) = command {
                         let time = now.saturating_duration_since(self.started_at).as_secs_f32();
-                        player.advance_ammunition(base, wire, event.client, now, time);
+                        player.advance_ammunition(delivery, wire, event.participant, now, time);
                         let outcome = player.tank.ammunition_command(now, command);
                         if matches!(outcome, "shell_change_started" | "reload_started") {
                             player.pending_reload = Some(operation.clone());
                         }
                         if let Err(error) = wire.publish_own_state(
-                            base,
-                            event.client,
+                            delivery,
+                            event.participant,
                             player.vehicle.entity_id,
                             &player.tank,
                             now,
@@ -167,26 +153,26 @@ impl Battle {
             }
         };
         operation.record("output.outcome", outcome);
-        event.span.record("output.outcome", outcome);
+        request.record("output.outcome", outcome);
         if matches!(
             outcome,
             "unimplemented" | "delivery_failed" | "shell_damage_unavailable"
         ) {
             operation.record("otel.status_code", "ERROR");
-            event.span.record("otel.status_code", "ERROR");
+            request.record("otel.status_code", "ERROR");
         }
     }
 
     pub(super) fn advance_vehicles(
         &mut self,
-        base: &mut base::App,
+        delivery: &mut impl ArenaDelivery,
         wire: &ArenaWire,
         now: Instant,
     ) -> Vec<(u32, tracing::Span)> {
         let peers: Vec<_> = self
             .players
             .iter()
-            .filter(|(_, p)| p.avatar.is_some())
+            .filter(|(_, p)| p.entered)
             .map(|(&key, _)| key)
             .collect();
         let mut movement = Vec::new();
@@ -256,7 +242,7 @@ impl Battle {
                     &[client],
                     |client| {
                         wire.publish_hull_aim(
-                            base,
+                            delivery,
                             client,
                             player.vehicle.direction,
                             tracks,
@@ -265,7 +251,7 @@ impl Battle {
                     },
                 );
             }
-            player.publish_chassis_motion(base, wire, &peers, movement_parent);
+            player.publish_chassis_motion(delivery, wire, &peers, movement_parent);
             if player.tank.health <= 0 || self.round.phase == RoundPhase::Finished {
                 continue;
             }
@@ -277,12 +263,12 @@ impl Battle {
             } else {
                 player.pending_aim.take()
             };
-            player.advance_ammunition(base, wire, client, now, time);
+            player.advance_ammunition(delivery, wire, client, now, time);
             let parent = aim.or(drive);
             if player.last_gun_angles != gun {
                 player.last_gun_angles = gun;
                 deliver_state(parent.clone(), "gun_angles", entity_id, &peers, |client| {
-                    wire.publish_gun_angles(base, client, entity_id, gun)
+                    wire.publish_gun_angles(delivery, client, entity_id, gun)
                 });
             }
             if player.server_marker
@@ -292,7 +278,7 @@ impl Battle {
                 if player.last_gun_marker != Some(ray) {
                     let parent = player.pending_marker.clone().or(parent);
                     deliver_state(parent, "gun_marker", entity_id, &[client], |client| {
-                        wire.publish_gun_marker(base, client, ray, dispersion)?;
+                        wire.publish_gun_marker(delivery, client, ray, dispersion)?;
                         player.last_gun_marker = Some(ray);
                         player.pending_marker = None;
                         Ok(())
@@ -305,7 +291,7 @@ impl Battle {
 
     #[tracing::instrument(name = "battles.shot", skip_all, fields(
         ddd.bounded_context.name = "battles", input.battle.id = battle_id,
-        input.client.address = %client, input.entity_id = tracing::field::Empty,
+        input.participant.id = client.0, input.entity_id = tracing::field::Empty,
         input.ammunition.shell = tracing::field::Empty, input.shell.damage = tracing::field::Empty,
         input.shell.kind = tracing::field::Empty, input.shell.caliber_mm = tracing::field::Empty,
         input.shell.max_distance_metres = tracing::field::Empty,
@@ -319,10 +305,10 @@ impl Battle {
     ), err)]
     fn fire(
         &mut self,
-        base: &mut base::App,
+        delivery: &mut impl ArenaDelivery,
         wire: &ArenaWire,
         battle_id: u32,
-        client: ClientKey,
+        client: ParticipantId,
         now: Instant,
     ) -> Result<&'static str> {
         let span = tracing::Span::current();
@@ -330,7 +316,7 @@ impl Battle {
             return Ok("vehicle_unavailable");
         };
         let time = now.saturating_duration_since(self.started_at).as_secs_f32();
-        shooter.advance_ammunition(base, wire, client, now, time);
+        shooter.advance_ammunition(delivery, wire, client, now, time);
         span.record("input.entity_id", shooter.vehicle.entity_id);
         let shell = shooter.tank.shell_settings()[0];
         span.record("input.ammunition.shell", shell);
@@ -432,12 +418,12 @@ impl Battle {
         };
         span.record("output.outcome", outcome);
         for (&peer, participant) in &self.players {
-            let Some(avatar) = participant.avatar else {
+            if !participant.entered {
                 continue;
-            };
+            }
             let result = (|| -> Result<()> {
-                wire.show_tracer(base, avatar, entity_id, shot_id, &shot)?;
-                base.arena_vehicle_method(
+                wire.show_tracer(delivery, peer, entity_id, shot_id, &shot)?;
+                delivery.arena_vehicle_method(
                     peer,
                     entity_id,
                     "showShooting",
@@ -448,12 +434,18 @@ impl Battle {
                     ],
                 )?;
                 if let Some((distance, material)) = scene {
-                    wire.show_scene_impact(base, avatar, shot_id, &shot, distance, material)?;
+                    wire.show_scene_impact(delivery, peer, shot_id, &shot, distance, material)?;
                 }
                 if let Some((victim, id, distance, previous, health, effect)) = impact {
                     let damage = previous - health;
                     let endpoint = shot.origin + shot.direction * distance;
-                    base.entity(avatar)?.stopTracer(shot_id, endpoint)?;
+                    delivery.send_avatar(
+                        peer,
+                        AvatarUpdate::StopTracer {
+                            id: shot_id,
+                            endpoint,
+                        },
+                    )?;
                     if peer == client {
                         let mut flags = DIRECT_PROJECTILE;
                         if damage > 0 {
@@ -462,33 +454,36 @@ impl Battle {
                         if health == 0 {
                             flags |= VEHICLE_KILLED;
                         }
-                        base.entity(avatar)?.showShotResults(vec![ShotResult {
-                            vehicleID: id,
-                            hitFlags: flags,
-                            gunInstallationIndex: GUN_INSTALLATION_INDEX,
-                        }])?;
+                        delivery.send_avatar(
+                            peer,
+                            AvatarUpdate::ShotResults(ShotResult {
+                                vehicleID: id,
+                                hitFlags: flags,
+                                gunInstallationIndex: GUN_INSTALLATION_INDEX,
+                            }),
+                        )?;
                     }
-                    wire.show_shot_impact(base, peer, id, effect)?;
+                    wire.show_shot_impact(delivery, peer, id, effect)?;
                     if peer == victim {
-                        base.entity(avatar)?.showOwnVehicleHitDirection(
-                            hit_direction,
-                            EntityId(entity_id),
-                            damage as u16,
-                            0,
-                            false,
-                            shot.effects.kind == HIGH_EXPLOSIVE_SHELL_KIND,
-                            EntityId(id),
-                            0,
+                        delivery.send_avatar(
+                            peer,
+                            AvatarUpdate::HitDirection {
+                                yaw: hit_direction,
+                                attacker: entity_id,
+                                damage: damage as u16,
+                                explosive: shot.effects.kind == HIGH_EXPLOSIVE_SHELL_KIND,
+                                victim: id,
+                            },
                         )?;
                     }
 
                     wire.vehicle_properties(
-                        base,
+                        delivery,
                         peer,
                         id,
                         [("health", WireValue::Int16(health))],
                     )?;
-                    base.arena_vehicle_method(
+                    delivery.arena_vehicle_method(
                         peer,
                         id,
                         "onHealthChanged",
@@ -503,18 +498,20 @@ impl Battle {
                     if damage > 0 && (peer == client || peer == victim) {
                         let received = peer == victim;
                         let other_vehicle = if received { entity_id } else { id };
-                        base.entity(avatar)?
-                            .onBattleEvents(vec![BattleEvent::shot_damage(
+                        delivery.send_avatar(
+                            peer,
+                            AvatarUpdate::BattleEvents(BattleEvent::shot_damage(
                                 other_vehicle,
                                 damage as u16,
                                 received,
                                 shot.effects,
-                            )])?;
+                            )),
+                        )?;
                     }
                 }
                 if peer == client || impact.is_some_and(|(victim, ..)| victim == peer) {
                     wire.publish_own_state(
-                        base,
+                        delivery,
                         peer,
                         participant.vehicle.entity_id,
                         &participant.tank,
@@ -527,11 +524,11 @@ impl Battle {
             if let Err(error) = result {
                 span.record("otel.status_code", "ERROR");
                 error!(%error, "Shot delivery failed");
-                base.disconnect_client(peer);
+                delivery.disconnect(peer);
             }
         }
         if defeated {
-            self.publish_period(base, battle_id, now);
+            self.publish_period(delivery, battle_id, now);
         }
         Ok(outcome)
     }
@@ -540,9 +537,9 @@ impl Battle {
 impl Participant {
     fn advance_ammunition(
         &mut self,
-        base: &mut base::App,
+        delivery: &mut impl ArenaDelivery,
         wire: &ArenaWire,
-        client: ClientKey,
+        client: ParticipantId,
         now: Instant,
         time: f32,
     ) {
@@ -554,7 +551,7 @@ impl Participant {
             };
             let entity = self.vehicle.entity_id;
             deliver_state(reload, "ammunition", entity, &[client], |client| {
-                wire.publish_own_state(base, client, entity, &self.tank, now, time)
+                wire.publish_own_state(delivery, client, entity, &self.tank, now, time)
             });
         }
     }
@@ -579,16 +576,16 @@ impl Participant {
 impl Participant {
     fn publish_chassis_motion(
         &mut self,
-        base: &mut base::App,
+        delivery: &mut impl ArenaDelivery,
         wire: &ArenaWire,
-        peers: &[ClientKey],
+        peers: &[ParticipantId],
         drive: Option<&tracing::Span>,
     ) {
         let entity_id = self.vehicle.entity_id;
         let engine_mode = self.tank.engine_mode();
         if engine_mode != self.last_engine_mode {
             deliver_state(drive.cloned(), "engine_mode", entity_id, peers, |client| {
-                wire.publish_engine_mode(base, client, entity_id, engine_mode)
+                wire.publish_engine_mode(delivery, client, entity_id, engine_mode)
             });
             self.last_engine_mode = engine_mode;
         }
@@ -607,7 +604,7 @@ impl Participant {
         {
             if values != self.last_wheels[index] {
                 deliver_state(drive.cloned(), kind, entity_id, peers, |client| {
-                    wire.publish_wheels(base, client, entity_id, index == 1, &values)
+                    wire.publish_wheels(delivery, client, entity_id, index == 1, &values)
                 });
                 self.last_wheels[index] = values;
             }
@@ -619,8 +616,8 @@ fn deliver_state(
     parent: Option<tracing::Span>,
     name: &'static str,
     entity_id: u32,
-    peers: &[ClientKey],
-    mut send: impl FnMut(ClientKey) -> Result<()>,
+    peers: &[ParticipantId],
+    mut send: impl FnMut(ParticipantId) -> Result<()>,
 ) {
     let mut deliver = || {
         let span = tracing::Span::current();

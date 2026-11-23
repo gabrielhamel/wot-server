@@ -1,7 +1,7 @@
-//! Live arena orchestration and its BaseApp transport adapter.
+//! Live arena orchestration and replication through its delivery port.
 
 use super::{
-    application::{BattleLaunch, BattleMode, VehicleLoadout},
+    application::{AvatarCommand, BattleLaunch, BattleMode, ParticipantId, VehicleLoadout},
     domain::{
         round::{LOAD_TIMEOUT, Round, RoundPhase},
         vehicle::Tank,
@@ -9,12 +9,15 @@ use super::{
 };
 use crate::platform::{
     client_formats::pickle::{self, Value},
-    mercury::app::{
-        base::{self, ClientKey},
-        client::element::arena::{
-            AvatarPosition, CreateArenaEntity, LeaveArenaEntity, VehiclePosition,
+    mercury::{
+        app::{
+            client::element::arena::{
+                AvatarPosition, CreateArenaEntity, LeaveArenaEntity, VehiclePosition,
+            },
+            dispatch::ScriptDispatch,
+            entity::EntityId,
         },
-        entity::{Bytes, EntityId, EntityKey, MethodDecodeError},
+        script::Value as ScriptValue,
     },
 };
 use anyhow::{Context, Result};
@@ -28,13 +31,16 @@ use std::{
 use tracing::error;
 use wot_resources::ResourceBundle;
 
-use avatar::{Avatar, AvatarBase};
+use avatar::AvatarUpdate;
+use delivery::ArenaDelivery;
 use maps::ArenaMap;
 use wire::{ArenaEntry, ArenaWire, ShotImpact};
 
 mod avatar;
 mod controls;
+mod delivery;
 mod maps;
+pub(crate) mod mercury;
 mod obstacles;
 mod terrain;
 mod wire;
@@ -106,7 +112,7 @@ struct Battle {
     ground: Arc<terrain::Terrain>,
     obstacles: Arc<obstacles::Obstacles>,
     arena_type: i32,
-    players: HashMap<ClientKey, Participant>,
+    players: HashMap<ParticipantId, Participant>,
     started_at: Instant,
     last_snapshot_tick: Option<u32>,
     round: Round,
@@ -123,7 +129,7 @@ struct Participant {
     roster_row: usize,
     team: u8,
     entry: ArenaEntry,
-    avatar: Option<EntityKey<Avatar>>,
+    entered: bool,
     ready: bool,
     tank: Tank,
     observer: bool,
@@ -146,7 +152,7 @@ impl Battle {
     ))]
     fn publish_roster_ready(
         &self,
-        base: &mut base::App,
+        delivery: &mut impl ArenaDelivery,
         wire: &ArenaWire,
         battle_id: u32,
         row: usize,
@@ -154,12 +160,8 @@ impl Battle {
     ) {
         let span = tracing::Span::current();
         let mut delivered = 0;
-        for (&peer, player) in self
-            .players
-            .iter()
-            .filter(|(_, player)| player.avatar.is_some())
-        {
-            match wire.roster_ready(base, peer, self.roster_count, row, ready) {
+        for (&peer, player) in self.players.iter().filter(|(_, player)| player.entered) {
+            match wire.roster_ready(delivery, peer, self.roster_count, row, ready) {
                 Ok(()) => delivered += 1,
                 Err(error) => {
                     span.record("otel.status_code", "ERROR");
@@ -206,7 +208,7 @@ impl Battle {
         output.delivered.count = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
     ))]
-    fn publish_period(&mut self, base: &mut base::App, battle_id: u32, now: Instant) {
+    fn publish_period(&mut self, delivery: &mut impl ArenaDelivery, battle_id: u32, now: Instant) {
         let span = tracing::Span::current();
         if self.round.phase == RoundPhase::Finished {
             let (winner, reason) = self.result.unwrap_or((0, TIME_LIMIT));
@@ -216,15 +218,15 @@ impl Battle {
         }
         let mut delivered = 0;
         for (&client, player) in &self.players {
-            let Some(avatar) = player.avatar else {
+            if !player.entered {
                 continue;
-            };
-            match self.send_period(base, avatar, now) {
+            }
+            match self.send_period(delivery, client, now) {
                 Ok(()) => delivered += 1,
                 Err(error) => {
                     span.record("otel.status_code", "ERROR");
                     error!(%error, "Could not send battle period");
-                    base.disconnect_client(client);
+                    delivery.disconnect(client);
                 }
             }
         }
@@ -233,8 +235,8 @@ impl Battle {
 
     fn send_period(
         &self,
-        base: &mut base::App,
-        avatar: EntityKey<Avatar>,
+        delivery: &mut impl ArenaDelivery,
+        participant: ParticipantId,
         now: Instant,
     ) -> Result<()> {
         let (winner, reason) = self.result.unwrap_or((0, TIME_LIMIT));
@@ -271,11 +273,16 @@ impl Battle {
             (length),
             (extra)
         ))))?;
-        let mut avatar = base.entity(avatar)?;
         if matches!(self.round.phase, RoundPhase::Finished) {
-            avatar.onRoundFinished(winner, reason)?;
+            delivery.send_avatar(participant, AvatarUpdate::RoundFinished { winner, reason })?;
         }
-        avatar.updateArena(ARENA_PERIOD, Bytes(encoder.finish()?))?;
+        delivery.send_avatar(
+            participant,
+            AvatarUpdate::Arena {
+                kind: ARENA_PERIOD,
+                data: encoder.finish()?,
+            },
+        )?;
         Ok(())
     }
 }
@@ -287,7 +294,7 @@ pub(crate) struct PreparedBattle {
 }
 
 impl PreparedBattle {
-    pub(crate) fn contains(&self, client: ClientKey) -> bool {
+    pub(crate) fn contains(&self, client: ParticipantId) -> bool {
         self.battle.players.contains_key(&client)
     }
 
@@ -309,21 +316,21 @@ pub(crate) enum ParticipantDeparture {
 pub(crate) struct BattleRuntime {
     maps: HashMap<i32, Option<ArenaMap>>,
     active: BTreeMap<u32, Battle>,
-    engagements: HashMap<ClientKey, u32>,
+    engagements: HashMap<ParticipantId, u32>,
     resources: ResourceBundle,
     wire: Option<ArenaWire>,
     next_id: u32,
 }
 
 impl BattleRuntime {
-    pub(crate) fn bind(
-        base: &mut base::App,
+    fn load(
+        dispatch: Arc<ScriptDispatch>,
         resources: &ResourceBundle,
         enabled: bool,
     ) -> Result<Self> {
         let maps = maps::load(resources).context("Load arena maps")?;
         let wire = if enabled && maps.values().any(Option::is_some) {
-            Some(ArenaWire::bind(base, resources).context("Validate arena layout")?)
+            Some(ArenaWire::bind(dispatch, resources).context("Validate arena layout")?)
         } else {
             None
         };
@@ -345,7 +352,7 @@ impl BattleRuntime {
         self.maps.contains_key(&arena_type)
     }
 
-    pub(crate) fn contains(&self, client: ClientKey) -> bool {
+    pub(crate) fn contains(&self, client: ParticipantId) -> bool {
         self.engagements.contains_key(&client)
     }
 
@@ -362,7 +369,7 @@ impl BattleRuntime {
     ), err)]
     pub(crate) fn prepare(
         &mut self,
-        base: &mut base::App,
+        delivery: &mut impl ArenaDelivery,
         launch: BattleLaunch,
     ) -> Result<Option<PreparedBattle>> {
         let span = tracing::Span::current();
@@ -374,7 +381,7 @@ impl BattleRuntime {
         let mut clients = HashSet::new();
         if !launch.valid_roster()
             || launch.participants.iter().any(|player| {
-                self.engagements.contains_key(&player.client) || !clients.insert(player.client)
+                self.engagements.contains_key(&player.id) || !clients.insert(player.id)
             })
         {
             span.record("output.outcome", "invalid_roster");
@@ -426,7 +433,7 @@ impl BattleRuntime {
                 .context("Arena spawn has no terrain height")?;
             counts[side] += 1;
             entrants.push((
-                player.client,
+                player.id,
                 Entrant {
                     account_id: player.account_id,
                     name: player.name,
@@ -435,9 +442,9 @@ impl BattleRuntime {
                     observer: player.observer,
                     customization_display_type: player.customization_display_type,
                     vehicle: player.vehicle,
-                    avatar_id: base.arena_entity_id(),
-                    vehicle_id: base.arena_entity_id(),
-                    info_id: base.arena_entity_id(),
+                    avatar_id: delivery.reserve_entity_id(),
+                    vehicle_id: delivery.reserve_entity_id(),
+                    info_id: delivery.reserve_entity_id(),
                     position,
                     direction,
                 },
@@ -447,7 +454,6 @@ impl BattleRuntime {
             .iter()
             .map(|(_, entrant)| entrant)
             .collect::<Vec<_>>();
-        let dispatch = base.dispatch();
         let players = entrants
             .iter()
             .enumerate()
@@ -455,19 +461,12 @@ impl BattleRuntime {
                 Ok((
                     *client,
                     Participant {
-                        vehicle: wire.vehicle(dispatch, player)?,
+                        vehicle: wire.vehicle(player)?,
                         avatar_id: player.avatar_id,
                         roster_row,
                         team: player.team,
-                        entry: wire.entry(
-                            dispatch,
-                            battle_id,
-                            arena_type,
-                            launch.mode,
-                            player,
-                            &roster,
-                        )?,
-                        avatar: None,
+                        entry: wire.entry(battle_id, arena_type, launch.mode, player, &roster)?,
+                        entered: false,
                         ready: false,
                         tank: player.tank(),
                         observer: player.observer,
@@ -516,18 +515,18 @@ impl BattleRuntime {
         self.active.insert(id, battle);
     }
 
-    pub(crate) fn enter(&mut self, base: &mut base::App, client: ClientKey) -> Result<()> {
+    pub(crate) fn enter(
+        &mut self,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
+    ) -> Result<()> {
         let Some(&battle_id) = self.engagements.get(&client) else {
             return Ok(());
         };
         let Some(battle) = self.active.get_mut(&battle_id) else {
             return Ok(());
         };
-        let Some(player) = battle
-            .players
-            .get(&client)
-            .filter(|player| player.avatar.is_none())
-        else {
+        let Some(player) = battle.players.get(&client).filter(|player| !player.entered) else {
             return Ok(());
         };
         let span = tracing::info_span!(
@@ -538,6 +537,7 @@ impl BattleRuntime {
             "input.arena_type_id" = battle.arena_type,
             "input.team" = player.team,
             "input.customization.display_type" = player.customization_display_type,
+            "input.participant.id" = client.0,
             "input.entity_id" = player.avatar_id,
             "output.players.count" = battle.players.len(),
             "output.avatar_control" = tracing::field::Empty,
@@ -545,13 +545,13 @@ impl BattleRuntime {
             "otel.status_code" = tracing::field::Empty,
         );
         let result = span.in_scope(|| -> Result<_> {
-            let avatar = base.create_base_player_with_id::<Avatar>(
+            delivery.create_avatar(
                 client,
                 player.avatar_id,
                 player.entry.base_properties.clone(),
             )?;
             player.entry.publish(
-                base,
+                delivery,
                 client,
                 &battle.map,
                 battle.players.values().map(|other| other.vehicle.clone()),
@@ -560,23 +560,25 @@ impl BattleRuntime {
             span.record("output.avatar_control", "server");
             if let Some(wire) = &self.wire {
                 for other in battle.players.values().filter(|player| player.ready) {
-                    wire.roster_ready(base, client, battle.roster_count, other.roster_row, true)?;
+                    wire.roster_ready(
+                        delivery,
+                        client,
+                        battle.roster_count,
+                        other.roster_row,
+                        true,
+                    )?;
                 }
             }
-            battle.send_period(base, avatar, Instant::now())?;
-            base.enable_arena_cell(client, player.vehicle.entity_id);
-            Ok(avatar)
+            battle.send_period(delivery, client, Instant::now())?;
+            delivery.enable_arena_cell(client, player.vehicle.entity_id)?;
+            Ok(())
         });
         span.in_scope(|| match result {
-            Ok(avatar) => {
+            Ok(()) => {
                 if let Some(player) = battle.players.get_mut(&client) {
-                    player.avatar = Some(avatar);
+                    player.entered = true;
                 }
-                if battle
-                    .players
-                    .values()
-                    .all(|player| player.avatar.is_some())
-                {
+                if battle.players.values().all(|player| player.entered) {
                     battle.launch = None;
                 }
                 span.record("output.outcome", "entered");
@@ -585,19 +587,29 @@ impl BattleRuntime {
             Err(error) => {
                 span.record("output.outcome", "delivery_failed");
                 span.record("otel.status_code", "ERROR");
-                base.disconnect_client(client);
+                delivery.disconnect(client);
                 Err(error)
             }
         })
     }
 
-    pub(crate) fn avatar_method(
+    pub(crate) fn owns_avatar(&self, participant: ParticipantId, entity_id: u32) -> bool {
+        self.engagements
+            .get(&participant)
+            .and_then(|id| self.active.get(id))
+            .and_then(|battle| battle.players.get(&participant))
+            .is_some_and(|player| player.entered && player.avatar_id == entity_id)
+    }
+
+    pub(crate) fn avatar_command(
         &mut self,
-        base: &mut base::App,
-        event: &base::BaseMethodEvent,
+        delivery: &mut impl ArenaDelivery,
+        participant: ParticipantId,
+        entity_id: u32,
+        command: AvatarCommand,
     ) -> AvatarAction {
         let span = tracing::Span::current();
-        let Some(battle_id) = self.engagements.get(&event.client).copied() else {
+        let Some(&battle_id) = self.engagements.get(&participant) else {
             span.record("output.outcome", "arena_unavailable");
             return AvatarAction::Stay;
         };
@@ -605,21 +617,21 @@ impl BattleRuntime {
             span.record("output.outcome", "arena_unavailable");
             return AvatarAction::Stay;
         };
-        let Some(player) = battle.players.get_mut(&event.client).filter(|player| {
-            player
-                .avatar
-                .is_some_and(|avatar| avatar.any() == event.entity)
-        }) else {
+        let Some(player) = battle
+            .players
+            .get_mut(&participant)
+            .filter(|player| player.entered && player.avatar_id == entity_id)
+        else {
             span.record("output.outcome", "entity_unavailable");
             return AvatarAction::Stay;
         };
-        match base.decode::<AvatarBase>(event.entity, &event.call) {
-            Ok((_, AvatarBase::SetClientReady {})) => {
+        match command {
+            AvatarCommand::Ready => {
                 let was_ready = player.ready;
                 player.ready = true;
                 let row = player.roster_row;
                 if !was_ready && let Some(wire) = &self.wire {
-                    battle.publish_roster_ready(base, wire, battle_id, row, true);
+                    battle.publish_roster_ready(delivery, wire, battle_id, row, true);
                 }
                 span.record(
                     "output.outcome",
@@ -628,34 +640,23 @@ impl BattleRuntime {
                 if battle.players.values().all(|participant| participant.ready) {
                     let now = Instant::now();
                     if battle.round.advance(now, true) {
-                        battle.publish_period(base, battle_id, now);
+                        battle.publish_period(delivery, battle_id, now);
                     }
                 }
                 AvatarAction::Stay
             }
-            Ok((_, AvatarBase::LeaveArena {})) => {
+            AvatarCommand::Leave => {
                 span.record("output.outcome", "left_arena");
                 AvatarAction::Leave
-            }
-            Err(error) => {
-                let outcome = if matches!(error, MethodDecodeError::Unimplemented) {
-                    "unimplemented"
-                } else {
-                    "decode_failed"
-                };
-                span.record("output.outcome", outcome);
-                span.record("otel.status_code", "ERROR");
-                error!(outcome, "Avatar base method could not be dispatched");
-                AvatarAction::Stay
             }
         }
     }
 
     pub(crate) fn tick(
         &mut self,
-        base: &mut base::App,
+        delivery: &mut impl ArenaDelivery,
         now: Instant,
-    ) -> Vec<(ClientKey, tracing::Span)> {
+    ) -> Vec<(ParticipantId, tracing::Span)> {
         let mut ending = Vec::new();
         for (&battle_id, battle) in &mut self.active {
             if battle.round.ended(now) {
@@ -671,7 +672,7 @@ impl BattleRuntime {
                 continue;
             }
             if battle.round.advance(now, false) {
-                battle.publish_period(base, battle_id, now);
+                battle.publish_period(delivery, battle_id, now);
             }
             let tick = battle.ticks(now);
             if battle.last_snapshot_tick == Some(tick) {
@@ -684,7 +685,7 @@ impl BattleRuntime {
                 RoundPhase::Battle | RoundPhase::Finished
             ) && let Some(wire) = &self.wire
             {
-                movement = battle.advance_vehicles(base, wire, now);
+                movement = battle.advance_vehicles(delivery, wire, now);
             }
             let movement: Vec<_> = movement
                 .into_iter()
@@ -700,7 +701,7 @@ impl BattleRuntime {
             let mut recipients = 0_i64;
             let mut delivered = 0_i64;
             for (&client, player) in &battle.players {
-                if player.avatar.is_some() {
+                if player.entered {
                     let avatar = AvatarPosition {
                         reference: 0,
                         // The Avatar rides its Vehicle, so its own pose is relative to the hull.
@@ -714,15 +715,15 @@ impl BattleRuntime {
                         direction: other.vehicle.direction,
                     });
                     recipients += 1;
-                    match base.arena_tick(client, tick as u8, avatar, vehicles) {
+                    match delivery.arena_tick(client, tick as u8, avatar, vehicles) {
                         Ok(()) => delivered += 1,
                         Err(error) => {
                             error!(%error, battle_id, "Could not send battle tick");
-                            base.disconnect_client(client);
+                            delivery.disconnect(client);
                         }
                     }
                 } else if now >= battle.started_at + LOAD_TIMEOUT {
-                    base.disconnect_client(client);
+                    delivery.disconnect(client);
                 }
             }
             for span in movement {
@@ -737,11 +738,11 @@ impl BattleRuntime {
         ending
     }
 
-    #[tracing::instrument(name = "battles.remove_participant", skip_all, fields(ddd.bounded_context.name = "battles", input.client.address = %client, output.battle.id = tracing::field::Empty, output.players.count = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
+    #[tracing::instrument(name = "battles.remove_participant", skip_all, fields(ddd.bounded_context.name = "battles", input.participant.id = client.0, output.battle.id = tracing::field::Empty, output.players.count = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
     pub(crate) fn remove_participant(
         &mut self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
     ) -> Option<ParticipantDeparture> {
         let id = self.engagements.remove(&client)?;
         let battle = self.active.get_mut(&id)?;
@@ -755,11 +756,11 @@ impl BattleRuntime {
             if removed.ready
                 && let Some(wire) = &self.wire
             {
-                battle.publish_roster_ready(base, wire, id, removed.roster_row, false);
+                battle.publish_roster_ready(delivery, wire, id, removed.roster_row, false);
             }
             for (&peer, player) in &battle.players {
-                if player.avatar.is_some()
-                    && let Err(error) = base.send_arena_element(
+                if player.entered
+                    && let Err(error) = delivery.send_arena_element(
                         peer,
                         LeaveArenaEntity {
                             entity_id: removed.vehicle.entity_id,
@@ -770,15 +771,15 @@ impl BattleRuntime {
                     error!(%error, "Could not remove departed battle vehicle");
                 }
             }
-            if battle.players.values().all(|p| p.avatar.is_some()) {
+            if battle.players.values().all(|p| p.entered) {
                 battle.launch = None;
             }
             let now = Instant::now();
             if battle.finish_if_team_left(now) {
-                battle.publish_period(base, id, now);
+                battle.publish_period(delivery, id, now);
             }
         }
-        Some(if removed.avatar.is_some() {
+        Some(if removed.entered {
             ParticipantDeparture::Entered
         } else {
             ParticipantDeparture::Loading

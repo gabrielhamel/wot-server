@@ -149,12 +149,12 @@ impl ArenaWire {
 
     pub(in super::super) fn publish_gun_angles(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         entity_id: u32,
         value: u16,
     ) -> Result<()> {
-        base.send_arena_property(
+        delivery.send_arena_property(
             client,
             Some(entity_id),
             self.gun_angles_element,
@@ -168,13 +168,13 @@ impl ArenaWire {
 
     pub(in super::super) fn publish_hull_aim(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         direction: Vec3,
         tracks: [f32; 2],
         rpm: f32,
     ) -> Result<()> {
-        base.send_arena_property(
+        delivery.send_arena_property(
             client,
             None,
             self.hull_aim_element,
@@ -188,12 +188,12 @@ impl ArenaWire {
 
     pub(in super::super) fn publish_engine_mode(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         entity_id: u32,
         mode: [u8; 2],
     ) -> Result<()> {
-        base.send_arena_property(
+        delivery.send_arena_property(
             client,
             Some(entity_id),
             self.engine_mode_element,
@@ -207,8 +207,8 @@ impl ArenaWire {
 
     pub(in super::super) fn publish_wheels(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         entity_id: u32,
         steering: bool,
         values: &[u8],
@@ -220,7 +220,7 @@ impl ArenaWire {
         };
         let mut bytes = Vec::with_capacity(values.len() + 1);
         bytes.write_blob_variable(values)?;
-        base.send_arena_property(
+        delivery.send_arena_property(
             client,
             Some(entity_id),
             element_id,
@@ -257,17 +257,17 @@ impl ArenaWire {
 
     pub(in super::super) fn publish_gun_marker(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         ray: GunRay,
         dispersion: f32,
     ) -> Result<()> {
-        let (_, node, property) = self.gun_marker_property(base.dispatch())?;
+        let (_, node, property) = self.gun_marker_property(&self.dispatch)?;
         let value = gun_marker_value(&property.ty, ray, dispersion)?;
         let mut record = node.to_be_bytes().to_vec();
         value.write(&mut record, &property.ty)?;
-        base.send_arena_element(client, NrlData(record))?;
-        base.send_arena_element(client, ApplyNrlUpdate {})?;
+        delivery.send_arena_element(client, NrlData(record))?;
+        delivery.send_arena_element(client, ApplyNrlUpdate {})?;
         Ok(())
     }
 
@@ -290,7 +290,8 @@ impl ArenaWire {
         Ok((component, node, property))
     }
 
-    pub(super) fn validate_controls(&self, dispatch: &ScriptDispatch) -> Result<()> {
+    pub(super) fn validate_controls(&self) -> Result<()> {
+        let dispatch = &self.dispatch;
         let marker_setting = dispatch
             .entity_from_id(self.avatar_type)
             .context("Missing Avatar")?
@@ -398,15 +399,15 @@ impl ArenaWire {
 
     pub(in super::super) fn publish_own_state(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         vehicle_id: u32,
         tank: &Tank,
         now: Instant,
         time: f32,
     ) -> Result<()> {
-        let component = base
-            .dispatch()
+        let component = self
+            .dispatch
             .entity_from_id(self.own_vehicle_type)
             .context("Missing OwnVehicle")?;
         let mut values = own_state(component, vehicle_id, tank, now, time)?;
@@ -430,87 +431,82 @@ impl ArenaWire {
             records.push(record);
         }
         for record in records {
-            base.send_arena_element(client, NrlData(record))?;
-            base.send_arena_element(client, ApplyNrlUpdate {})?;
+            delivery.send_arena_element(client, NrlData(record))?;
+            delivery.send_arena_element(client, ApplyNrlUpdate {})?;
         }
         Ok(())
     }
 
     pub(in super::super) fn vehicle_properties<const N: usize>(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         entity_id: u32,
         fields: [(&str, WireValue); N],
     ) -> Result<()> {
-        let schema = base
-            .dispatch()
+        let schema = self
+            .dispatch
             .entity_from_id(self.vehicle_type)
             .context("Missing Vehicle")?;
         let update = properties_by_id(schema, fields)?;
-        base.send_arena_element(client, SelectEntity { entity_id })?;
-        base.send_arena_element(client, ArenaEntityProperties(update))?;
+        delivery.send_arena_element(client, SelectEntity { entity_id })?;
+        delivery.send_arena_element(client, ArenaEntityProperties(update))?;
         Ok(())
     }
 
     pub(in super::super) fn show_tracer(
         &self,
-        base: &mut base::App,
-        avatar: EntityKey<Avatar>,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         shooter: u32,
         shot_id: i32,
         shot: &Shot,
     ) -> Result<()> {
-        base.entity(avatar)?.showTracer(
-            EntityId(shooter),
-            shot_id,
-            0,
-            shot.effects.legacy_index,
-            shot.effects.prefab_index,
-            shot.effects.kind,
-            shot.effects.caliber_mm,
-            shot.origin,
-            shot.direction * SHELL_SPEED,
-            0.0,
-            shot.max_distance,
-            0,
-            0,
+        delivery.send_avatar(
+            client,
+            AvatarUpdate::Tracer {
+                shooter,
+                id: shot_id,
+                effects: shot.effects,
+                start: shot.origin,
+                velocity: shot.direction * SHELL_SPEED,
+                range: shot.max_distance,
+            },
         )?;
         Ok(())
     }
 
     pub(in super::super) fn show_scene_impact(
         &self,
-        base: &mut base::App,
-        avatar: EntityKey<Avatar>,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         shot_id: i32,
         shot: &Shot,
         distance: f32,
         material: Option<u32>,
     ) -> Result<()> {
-        base.entity(avatar)?.explodeProjectile(
-            shot_id,
-            shot.effects.legacy_index,
-            shot.effects.prefab_index,
-            self.impact_materials.effect_index(material),
-            shot.effects.kind,
-            shot.effects.caliber_mm,
-            shot.origin + shot.direction * distance,
-            shot.direction,
-            SHELL_SPEED,
-            Vec::new(),
+        delivery.send_avatar(
+            client,
+            AvatarUpdate::Impact {
+                id: shot_id,
+                effects: shot.effects,
+                material: self.impact_materials.effect_index(material),
+                endpoint: shot.origin + shot.direction * distance,
+                direction: shot.direction,
+                speed: SHELL_SPEED,
+            },
         )?;
         Ok(())
     }
 
     pub(in super::super) fn show_shot_impact(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         target: u32,
         impact: ShotImpact,
     ) -> Result<()> {
-        base.arena_vehicle_method(client, target, "showDamageFromShot", impact.args())?;
+        delivery.arena_vehicle_method(client, target, "showDamageFromShot", impact.args())?;
         Ok(())
     }
 }
