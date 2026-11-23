@@ -464,10 +464,18 @@ reported the same version.
 The native [battle debug controller](../references/wot-src/sources/res/scripts/client/gui/battle_control/controllers/debug_ctrl.py#L45)
 reads ping from `BigWorld.statPing()` and the red indicator from
 `BigWorld.statLagDetected()`. In the installed x64 client, the connection
-latency path at `0x14041be50` clamps the ping statistic to at least 1 ms
-before the stat binding at `0x140ab5500` reads it. The server immediately
-acknowledges accepted reliable arena packets so the client can measure
-round-trip time.
+latency path at `0x14041be50` converts the channel round-trip time to
+milliseconds, subtracts 50 ms (the 0.1 s constant at `0x14462440c` times 500),
+and floors the result at 1 ms before the stat binding at `0x140ab5500` reads it.
+The client reserves 999 ms for an unavailable or out-of-range sample. This
+explains how immediate acknowledgement can drive the display to 1 ms even over
+a WAN connection. BigWorld's historical
+[receiver](../references/BigWorld-Engine-14.4.1/programming/bigworld/lib/network/packet_receiver.cpp)
+queues acknowledgements on regular channels for the next send. The server
+carries pending acknowledgements on outgoing arena traffic, including the
+100 ms position snapshot when there are no replies. The two-peer protocol
+test verifies acknowledgement in snapshots during readiness and active driving.
+The corrected numeric display still needs a native WAN check.
 
 The native client recorded the Avatar control handoff in the 21 November
 2026 training replay, but the replay lacked the periodic Avatar poses. The
@@ -476,8 +484,8 @@ x64 packet receiver calls the unreliable sequence validator at
 requires a valid 28-bit sequence and rejects older datagrams. Without the
 footer, the packet retains the constructor's `0x10000000` sentinel
 (`0x142d45ea6`) and fails validation. The server now
-adds the sequence footer to all on-channel packets, including standalone
-acknowledgements and single-packet snapshots. Unreliable datagrams draw
+adds the sequence footer to all on-channel packets, including single-packet
+snapshots. Unreliable datagrams draw
 from a separate allocator so reliability can maintain its own contiguous
 sequence. This matches the external channel framing in the
 [BigWorld UDP bundle reference](../references/BigWorld-Engine-14.4.1/programming/bigworld/lib/network/udp_bundle.cpp#L432).
@@ -492,8 +500,9 @@ to the locally controlled set. The detailed Avatar pose handler at
 removes it from that set at `0x142cf7a3c`. The server then supplies
 hull-relative Avatar poses and detailed Vehicle poses each tick, including
 while parked. Driving and shooting still use Avatar cell methods. The
-two-peer protocol test models the compiled client's pose gate. The red dot
-still needs verification in the native HUD.
+two-peer protocol test models the compiled client's pose gate. In a native
+multiplayer session, players reported the lag indicator staying green when
+the battle started, even though the displayed ping dropped to 1 ms.
 
 Each roster row starts as loading. `Avatar.setClientReady` publishes a
 nested `AvatarVehiclesInfo.vehiclesInfo` update of `isAvatarReady`, followed by

@@ -85,7 +85,7 @@ pub struct Peer {
     avatar_locally_controlled: Option<bool>,
     pub nrl_updates: Vec<Vec<u8>>,
     pub last_sent_reliable: Seq,
-    pub ack_only_through: Option<Seq>,
+    pub snapshot_ack_through: Option<Seq>,
     last_unreliable_sequence: Option<Seq>,
     pub vehicle_methods: Vec<(u32, String, Vec<Value>)>,
     pub gun_angles: BTreeMap<u32, u16>,
@@ -138,7 +138,7 @@ impl Peer {
             avatar_locally_controlled: None,
             nrl_updates: Vec::new(),
             last_sent_reliable: Seq::ZERO,
-            ack_only_through: None,
+            snapshot_ack_through: None,
             last_unreliable_sequence: None,
             vehicle_methods: Vec::new(),
             gun_angles: BTreeMap::new(),
@@ -377,10 +377,11 @@ impl Peer {
                     }
                     self.last_unreliable_sequence = Some(sequence);
                 }
-                if config.footer_offset() == PACKET_HEADER_LEN
-                    && let Some(cumulative) = config.cumulative_ack()
-                {
-                    self.ack_only_through = Some(cumulative);
+                if self.cell.is_some() && config.on_channel() && config.cumulative_ack().is_some() {
+                    assert!(
+                        config.footer_offset() > PACKET_HEADER_LEN,
+                        "battle ACKs must share a datagram with outgoing messages"
+                    );
                 }
             }
             let Ok(mut channel) = self.protocol.accept(packet, addr) else {
@@ -540,6 +541,7 @@ impl Peer {
                             self.cell = None;
                             self.positions.clear();
                             self.arena_tick = None;
+                            self.snapshot_ack_through = None;
                             self.avatar_locally_controlled = None;
                             self.avatar_position_frames = 0;
                             self.geometry = None;
@@ -668,6 +670,7 @@ impl Peer {
                                 assert!((1..=127).contains(&tick.wrapping_sub(last)));
                             }
                             self.arena_tick = Some(tick);
+                            self.snapshot_ack_through = config.cumulative_ack();
                             has_tick = true;
                         }
                         client::id::RESOURCE_HEADER => {
