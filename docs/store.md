@@ -109,10 +109,15 @@ The server embeds the Store UI at build time. The default origin is
 `/api/shop/`. Pass `--disable-store` to disable the Store, or
 `--disable-admin` to run it independently of the dashboard.
 
-For remote clients, pass a reachable HTTPS origin to `--store-origin` and route
-`/shop`, `/shop/*`, `/assets/*` and `/api/shop/*` to the HTTP listener through
-your TLS reverse proxy. Use `--web-bind` to change the shared listener.
-Reconnect after changing the Store URL.
+For clients on a trusted LAN, pass the server's private IPv4 address, for example
+`--store-origin http://192.168.1.3:8080`. Both local and LAN clients will use
+that address. The shared HTTP listener defaults to `0.0.0.0:8080`; make sure
+port 8080 is reachable from the LAN.
+
+For clients connecting over the internet, pass a reachable HTTPS origin to
+`--store-origin` and route `/shop`, `/shop/*`, `/assets/*` and `/api/shop/*` to
+the HTTP listener through your TLS reverse proxy. Reconnect after changing the
+Store URL.
 
 ## Client and checkout protocol
 

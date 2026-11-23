@@ -1,6 +1,9 @@
 use anyhow::{Context, Result, ensure};
 use clap::Parser;
-use std::{net::SocketAddrV4, path::PathBuf};
+use std::{
+    net::{Ipv4Addr, SocketAddrV4},
+    path::PathBuf,
+};
 
 #[derive(Clone, Copy, clap::ValueEnum)]
 pub(crate) enum LogLevel {
@@ -94,7 +97,7 @@ pub(crate) struct Configuration {
     #[arg(long)]
     pub disable_store: bool,
 
-    /// Store origin sent to the game client (HTTPS or loopback HTTP)
+    /// Store origin sent to the game client (HTTPS or HTTP on loopback or private IPv4)
     #[arg(long, default_value = "http://127.0.0.1:8080")]
     pub store_origin: String,
 }
@@ -127,10 +130,13 @@ fn validate_store_origin(origin: &mut String) -> Result<()> {
         .parse::<axum::http::Uri>()
         .context("Invalid Store origin")?;
     let host = uri.host().context("Store origin requires a host")?;
-    let loopback = matches!(host, "localhost" | "127.0.0.1" | "[::1]");
+    let local_http = matches!(host, "localhost" | "[::1]")
+        || host
+            .parse::<Ipv4Addr>()
+            .is_ok_and(|address| address.is_loopback() || address.is_private());
     ensure!(
-        uri.scheme_str() == Some("https") || (uri.scheme_str() == Some("http") && loopback),
-        "Store origin requires HTTPS or loopback HTTP"
+        uri.scheme_str() == Some("https") || (uri.scheme_str() == Some("http") && local_http),
+        "Store origin requires HTTPS, or HTTP with a loopback or private IPv4 address"
     );
     ensure!(
         uri.path() == "/" && uri.query().is_none() && !origin.contains(['@', '#']),
@@ -182,6 +188,37 @@ mod tests {
             &"x".repeat(1025),
         ] {
             assert!(parse_trusted_proxy_ips(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn store_origin_allows_explicit_lan_http_and_requires_https_for_public_hosts() {
+        for origin in [
+            "http://192.168.1.3:8080",
+            "http://10.0.0.3",
+            "http://172.16.0.3",
+            "http://127.0.0.1:8080",
+            "http://[::1]:8080",
+            "https://store.example.test",
+        ] {
+            let mut configured = format!("{origin}/");
+            validate_store_origin(&mut configured).unwrap();
+            assert_eq!(configured, origin);
+        }
+
+        for origin in [
+            "http://198.51.100.3:8080",
+            "http://172.32.0.3",
+            "http://0.0.0.0:8080",
+            "http://store.example.test",
+            "http://192.168.1.3:8080/shop",
+            "http://192.168.1.3:8080/#token",
+            "http://user@192.168.1.3:8080",
+        ] {
+            assert!(
+                validate_store_origin(&mut origin.to_owned()).is_err(),
+                "{origin}"
+            );
         }
     }
 

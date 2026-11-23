@@ -73,7 +73,7 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
             .args(["--web-bind", &address.to_string(), "--web-ui-dir", "web"])
             .args([
                 "--store-origin",
-                &format!("http://{address}"),
+                "http://192.168.1.3:8080",
                 "--log-level",
                 "info",
             ])

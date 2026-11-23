@@ -133,7 +133,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             .is_err()
     );
     let router = gateway
-        .enable_store("http://127.0.0.1:8081".to_owned())
+        .enable_store("http://192.168.1.3:8081".to_owned())
         .unwrap();
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
@@ -157,7 +157,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
                 .shop_url
                 .as_ref()
                 .unwrap()
-                .strip_prefix("http://127.0.0.1:8081/shop/#")
+                .strip_prefix("http://192.168.1.3:8081/shop/#")
                 .unwrap()
                 .to_owned();
             (peer, token, state)
@@ -834,7 +834,7 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
         spans
             .iter()
             .any(|span| span.name == "player_sessions.enable"
-                && has(span, "output.store.host", "127.0.0.1"))
+                && has(span, "output.store.host", "192.168.1.3"))
     );
     let success = root("success");
     let stale = root("stale");

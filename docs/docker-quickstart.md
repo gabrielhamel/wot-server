@@ -86,7 +86,9 @@ through the host firewall and router when needed. Game clients do not need the
 admin or database ports. Docker's `EXPOSE` declarations alone do not publish
 ports. The `-p` options above publish them. To disable the web listener,
 omit the HTTP port mapping and pass `--disable-admin --disable-store`.
-For remote Store access, configure a [reachable HTTPS origin](store.md#configuration).
+For [Store access from another computer](store.md#configuration), configure a
+reachable origin. If serving the Store directly on a LAN, publish port 8080 on
+the Docker host's LAN address.
 
 ## Add the server to the game's server list
 
