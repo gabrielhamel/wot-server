@@ -229,19 +229,16 @@ native XMPP authentication, offline persistence, history/reconnect, retention an
 see [Social verification](social.md#validation). It is a real PostgreSQL + UDP integration test, not a claim of rendered game UI or
 a throughput benchmark. An RSA-encrypted login path is covered by the same harness.
 
-Start `./target/release/wot-server` to validate the actual configuration, database,
-resources, schema binding and sockets; stop with Ctrl-C after the ready log.
-Settings are read exclusively from the generated file described in the
-[server guide](server.md). Environment variables above belong to the integration
-test harness. The [client validation record](client-validation.md) documents
-earlier native garage walkthroughs. The protocol test also checks revision
-acknowledgement after a full cache and required startup settings.
+Start the release binary with the arguments in the [server guide](server.md)
+to validate the database, resources, schema binding and sockets. Stop with
+Ctrl-C after the ready log. The [client validation record](client-validation.md)
+documents earlier native garage walkthroughs. The protocol test also checks
+revision acknowledgement after a full cache.
 
-Unit tests cover default configuration creation, preservation of edits, relative
-path resolution, rejection of invalid settings, key reuse, and cumulative filtering
-at all three logging levels with appended log contents. Endpoint
-checks verify wildcard listeners advertise a concrete route-selected IPv4 address
-and actual port. Local clients bypass explicit public overrides when BaseApp
+Startup tests cover required arguments, defaults and overrides, invalid
+values, key reuse and console log filtering. Endpoint checks verify that
+wildcard listeners advertise a concrete route-selected IPv4 address and actual
+port. Local clients bypass explicit public overrides when BaseApp
 listens on wildcard/loopback; non-loopback clients retain the override, including
 its separately configured port. Concrete non-loopback listeners remain explicit. The garage integration tests bind BaseApp to `0.0.0.0:0` without reserving a port
 ahead of time. Plaintext login checks automatic routing; encrypted login configures

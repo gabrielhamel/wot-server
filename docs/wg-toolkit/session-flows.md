@@ -108,8 +108,9 @@ and [`mode_selector_data_provider.py`](../references/wot-src/sources/res/scripts
 The previous account bootstrap omitted that key from `initialServerSettings`,
 which explains the missing card. The current
 [account bootstrap](../../src/player-sessions/src/infrastructure/bootstrap.rs#L13)
-sends the [`training_room_visible` setting](../server.md#running), which
-defaults to `true`. The client reads the same server-wide setting regardless
+sends Training Room availability, which is enabled by default. Pass
+[`--disable-training-room`](../server.md#running) to turn it off. The client reads
+the same server-wide setting regardless
 of the player's inventory, battle count or access level.
 Opening Training Rooms requests command `520` with reserved stream ID `200`
 and `[2, 7, 0, 0, 50]` for type, sort key, idle filter and page bounds. The

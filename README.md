@@ -33,15 +33,13 @@ The server needs a **PostgreSQL database**. Start one with the included
 docker compose up -d --wait postgres
 ```
 
-For a native installation using the default Compose settings, start with these
-three required fields in `server.json`:
+For a native installation, prepare an [extracted resource bundle](docs/resources.md)
+in `resources/` and start the server with the local Compose connection URL.
 
-```json
-{
-  "resource_dir": "resources",
-  "database_url": "postgresql://wot_server:local-development@127.0.0.1:54329/wot_server",
-  "private_key": "login.pem"
-}
+```sh
+export WOT_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
+mkdir -p .local
+cargo run --release -- --resource-dir resources --private-key .local/login.pem
 ```
 
 The server applies database migrations automatically.

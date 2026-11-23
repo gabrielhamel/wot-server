@@ -81,7 +81,6 @@ jobs:
             test -s web/index.html
             test -d web/assets
             test -s dashboard/index.html
-            test ! -e server.json
             libraries=$(ldd ./wot-server)
             printf "%s\n" "$libraries" >&2
             case "$libraries" in *"not found"*) exit 1;; esac
@@ -101,21 +100,11 @@ jobs:
           POSTGRES_IMAGE: docker.io/library/postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
         run: |
           smoke="wot-smoke-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          config_dir=$(mktemp -d "$RUNNER_TEMP/wot-smoke.XXXXXX")
           cleanup() {
             docker rm -fv "$smoke-server" "$smoke-db" >/dev/null 2>&1 || true
             docker network rm "$smoke" >/dev/null 2>&1 || true
-            rm -rf "$config_dir"
           }
           trap cleanup EXIT
-          cat > "$config_dir/server.json" <<'JSON'
-          {
-            "resource_dir": "resources",
-            "database_url": "postgresql://wot_smoke:ci-only@postgres:5432/wot_smoke",
-            "private_key": "login.pem"
-          }
-          JSON
-          chmod 644 "$config_dir/server.json"
           docker network create --internal "$smoke"
           docker run -d --name "$smoke-db" --network "$smoke" --network-alias postgres \
             -e POSTGRES_USER=wot_smoke -e POSTGRES_PASSWORD=ci-only "$POSTGRES_IMAGE"
@@ -129,9 +118,9 @@ jobs:
             fi
             sleep 1
           done
-          docker create --name "$smoke-server" --network "$smoke" "$IMAGE" --log-level info
-          docker cp "$config_dir/server.json" "$smoke-server:/opt/wot-server/server.json"
-          docker start "$smoke-server"
+          docker run -d --name "$smoke-server" --network "$smoke" \
+            -e WOT_DATABASE_URL=postgresql://wot_smoke:ci-only@postgres:5432/wot_smoke \
+            "$IMAGE" --resource-dir resources --private-key login.pem --log-level info
           ready=false
           for attempt in {1..60}; do
             if [[ $(docker inspect --format '{{.State.Running}}' "$smoke-server") != true ]]; then

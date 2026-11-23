@@ -166,7 +166,7 @@ The client receives the same route-selected or explicitly advertised endpoint,
 including the localhost shortcut. The XMPP virtual domain is `wot-server.local`;
 explicit connection settings supply its reachable IP, so DNS is not required.
 Remote clients need TCP forwarding/firewall access as well as the existing UDP
-ports. An `advertised_base` override must expose both transports at that port.
+ports. A `--advertised-base` override must expose both transports at that port.
 
 The authenticated Account's token request type 1 mints 256 random bits. Tokens
 bind the account to its game-session source IP and admit a chat connection for

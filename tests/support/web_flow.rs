@@ -62,24 +62,22 @@ fn admin_and_shop_share_one_listener_with_separate_authorization() {
     )
     .unwrap();
     let debug_log = fs::File::create(&log_path).unwrap();
-    let configuration = serde_json::json!({
-        "resource_dir": resources,
-        "database_url": database_url,
-        "private_key": key_path,
-        "login_bind": "127.0.0.1:0",
-        "base_bind": "127.0.0.1:0",
-        "web": {"bind": address.to_string(), "ui_dir": "web"},
-        "admin": {},
-        "store": {"origin": format!("http://{address}")},
-    });
-    fs::write(
-        fixture.directory.join("server.json"),
-        configuration.to_string(),
-    )
-    .unwrap();
     fixture.server = Some(
         Command::new(executable)
-            .args(["--log-level", "info"])
+            .current_dir(&fixture.directory)
+            .arg("--resource-dir")
+            .arg(resources)
+            .arg("--private-key")
+            .arg(key_path)
+            .args(["--login-bind", "127.0.0.1:0", "--base-bind", "127.0.0.1:0"])
+            .args(["--web-bind", &address.to_string(), "--web-ui-dir", "web"])
+            .args([
+                "--store-origin",
+                &format!("http://{address}"),
+                "--log-level",
+                "info",
+            ])
+            .env("WOT_DATABASE_URL", database_url)
             .env_remove("OTEL_EXPORTER_OTLP_ENDPOINT")
             .stdout(Stdio::null())
             .stderr(debug_log)

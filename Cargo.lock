@@ -3620,8 +3620,6 @@ dependencies = [
  "prost",
  "reqwest",
  "rsa 0.8.2",
- "serde",
- "serde_json",
  "sqlx",
  "tokio",
  "tower",

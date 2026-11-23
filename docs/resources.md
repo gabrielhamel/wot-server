@@ -11,13 +11,11 @@ cargo build --locked --release -p wot-extract
 
 The output directory must be new and its parent must already exist. After
 successful extraction, copy the entire output directory to the server host.
-The default location is `resources/` beside the server executable. To use
-another location, set `resource_dir` in `server.json`. Replace the old
-`game_dir` field when upgrading an existing configuration.
+Pass the output path to the server with `--resource-dir /path/to/resources`.
 
-The [published container image](container.md) includes the bundle. To use a
-different bundle, mount it read-only and set `resource_dir` to its absolute
-path inside the container. The extractor runs offline with the installed client
+The [published container image](container.md) includes a bundle at
+`/opt/wot-server/resources`. To use a different bundle, mount it read-only and
+pass its container path to `--resource-dir`. The extractor runs offline with the installed client
 as input. The server reads the bundle on startup and on demand for vehicle
 templates, so keep its files available for the lifetime of the process.
 
