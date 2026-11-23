@@ -343,6 +343,15 @@ property's Variable8 wire framing. This is a server limit. The client's
 renderer limit and visible appearance still require a native battle check.
 The hit segment still crosses an approximate hull volume.
 
+The November 23 Mac LAN Training Room capture on Munich at 14:04 Paris
+time used the EU executable identified above. Its SHA-256 was
+`b9400e54b5be220dedb3cd58a222a3ea314c4313dffc9bc0aaa5297c0fc1d121`.
+The replay contained three `showDamageFromShot` calls with legacy effect 0
+and prefab 255, and no Vehicle property 33 updates. The running server's
+bundle lacked the shot effect and damage sticker definitions. That bundle
+explains the absence of sticker updates even though the impacts reached the
+client.
+
 ## Range expiry
 
 The 2026-11-22 WGUS lookup returned EU production build `2.4.1.5514` for

@@ -29,6 +29,14 @@ pub(super) struct ShellEffectCatalog {
 
 impl ShellEffectCatalog {
     pub(super) fn load(resources: &ResourceBundle) -> Result<Self> {
+        let has_stickers = resources.has_file(STICKERS);
+        if !has_stickers {
+            tracing::warn!(
+                ddd.bounded_context.name = "accounts",
+                resource.file = STICKERS,
+                "Vehicle impact marks are unavailable. Re-extract the game resource bundle."
+            );
+        }
         if [LEGACY, PREFABS, VEHICLE_COMMON]
             .iter()
             .all(|path| !resources.has_file(path))
@@ -37,7 +45,7 @@ impl ShellEffectCatalog {
         }
         let shot_effects = read_xml(resources, LEGACY).context(LEGACY)?;
         let legacy = effect_indices(&shot_effects)?;
-        let pierced_stickers = if resources.has_file(STICKERS) {
+        let pierced_stickers = if has_stickers {
             let stickers = read_xml(resources, STICKERS).context(STICKERS)?;
             pierced_stickers(&shot_effects, &stickers)?
         } else {
