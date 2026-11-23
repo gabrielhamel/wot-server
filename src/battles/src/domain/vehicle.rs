@@ -1,6 +1,8 @@
 use super::{
     ammunition::{Ammunition, Reload},
     armor::roll,
+    ballistics::elevation,
+    devices::{Condition, Criticals, DeviceStrike},
     movement::{Drive, GRAVITY, GroundContact, approach},
     world::{HULL_HEIGHT, Hull, VehicleBody, WorldMotion},
 };
@@ -24,6 +26,8 @@ pub(crate) struct Tank {
     aim: Option<Aim>,
     gun_yaw: f32,
     gun_pitch: f32,
+    stun_traverse: Option<f32>,
+    pub(crate) condition: Condition,
 }
 
 pub(crate) enum Aim {
@@ -51,6 +55,7 @@ pub(crate) struct Shot {
     pub travelled: f32,
     pub penetration_loss: f32,
     pub ricocheted: bool,
+    pub heat_jet: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -85,6 +90,8 @@ impl Tank {
             aim: None,
             gun_yaw: 0.0,
             gun_pitch: 0.0,
+            stun_traverse: None,
+            condition: Condition::default(),
         };
         tank.advance_gun(0.0);
         tank
@@ -321,6 +328,10 @@ impl Tank {
         else {
             return false;
         };
+        if self.condition.immobilized() {
+            self.drive.stop();
+            return false;
+        }
         let before = (self.position, self.yaw);
         if self.vertical_speed.is_some() {
             self.drive
@@ -345,7 +356,12 @@ impl Tank {
         self.vertical_speed.is_some() || before != (self.position, self.yaw)
     }
 
+    pub fn set_stun_traverse(&mut self, factor: Option<f32>) {
+        self.stun_traverse = factor;
+    }
+
     pub fn advance_gun(&mut self, seconds: f32) -> bool {
+        let seconds = seconds * self.stun_traverse.unwrap_or(1.0);
         let Some(gun) = self.performance.as_ref().map(|vehicle| &vehicle.gun) else {
             return false;
         };
@@ -362,7 +378,15 @@ impl Tank {
                     self.gun_yaw
                 };
                 let from_gun = Quat::from_rotation_y(-yaw) * target - shot_position;
-                (yaw, -from_gun.y.atan2(from_gun.z.max(0.0)))
+                let horizontal = from_gun.z.max(0.0);
+                let pitch = gun
+                    .shell_ballistics
+                    .get(&self.ammunition.settings()[0])
+                    .map_or_else(
+                        || from_gun.y.atan2(horizontal),
+                        |shell| elevation(horizontal, from_gun.y, shell.speed, shell.gravity),
+                    );
+                (yaw, -pitch)
             }
             Some(Aim::HullAngles { yaw, pitch }) => (angle(yaw), pitch),
             None => (0.0, 0.0),
@@ -424,6 +448,9 @@ impl Tank {
     }
 
     pub fn fire(&mut self, now: Instant) -> Result<Shot, &'static str> {
+        if self.condition.disabled(wot_shared_kernel::Device::Gun) {
+            return Err("gun_disabled");
+        }
         if self.is_tipped() {
             return Err("vehicle_overturned");
         }
@@ -459,9 +486,10 @@ impl Tank {
             travelled: 0.0,
             penetration_loss: 0.0,
             ricocheted: false,
+            heat_jet: false,
             direction: ray.direction,
             damage,
-            max_distance,
+            max_distance: max_distance.min(ballistics.damage_limited_range),
             effects,
             ballistics,
             penetration_roll: roll(
@@ -531,6 +559,15 @@ impl Tank {
             AmmunitionCommand::ChangeShell(shell) => self.ammunition.select(gun, now, shell, true),
             AmmunitionCommand::ReloadMagazine => self.ammunition.manual_reload(gun, now),
         }
+    }
+
+    pub fn apply_criticals(&mut self, strikes: &[Option<DeviceStrike>], now: Instant) -> Criticals {
+        let Some(performance) = &self.performance else {
+            return Criticals::default();
+        };
+        let armed = self.ammunition.rounds.iter().any(|&(_, count)| count > 0);
+        self.condition
+            .apply(strikes, &performance.device_health, armed, now)
     }
 
     pub fn hit(&mut self, damage: u16) -> (i16, i16) {
@@ -622,6 +659,7 @@ mod tests {
                 mobility: Default::default(),
                 turret_pivot: None,
                 armor: Default::default(),
+                device_health: Default::default(),
                 gun: GunPerformance {
                     turret_traverse: 0.5,
                     gun_traverse: 0.0,
@@ -643,7 +681,6 @@ mod tests {
                             test_ballistics(
                                 90.0,
                                 wot_shared_kernel::ShellKind::HighExplosive {
-                                    spall_damage: 45.0,
                                     shield_penetration: true,
                                     obstacle_penetration: true,
                                 },
@@ -700,7 +737,11 @@ mod tests {
             uniform_penetration: false,
             uniform_damage: false,
             far_damage: damage,
+            damage_limited_range: f32::INFINITY,
+            device_damage: [0.0; 2],
+            explosive: None,
             speed: GunRay::FALLBACK_SPEED_MPS,
+            gravity: 0.0,
             normalization: 5.0_f32.to_radians(),
             ricochet_cos: 70.0_f32.to_radians().cos(),
             trace_ricochet: true,

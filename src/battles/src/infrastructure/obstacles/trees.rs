@@ -165,6 +165,58 @@ fn trunk() -> Mesh {
     }
 }
 
+impl Scenery {
+    pub(in crate::infrastructure) fn blast_trees(
+        &mut self,
+        center: Vec3,
+        radius: f32,
+        damage: f32,
+    ) -> Vec<Breakage> {
+        let mut hits = Vec::new();
+        if radius <= 0.0 || damage <= 0.0 {
+            return Vec::new();
+        }
+        let geometry = &self.geometry;
+        let bounds = Bounds {
+            min: center - Vec3::splat(radius),
+            max: center + Vec3::splat(radius),
+        };
+        if let Some(index) = &geometry.index {
+            index.visit(&geometry.instances, bounds, &mut |instance| {
+                let Some(native) = instance.native else {
+                    return;
+                };
+                let Some(tree) = geometry.trees.0.get(&native) else {
+                    return;
+                };
+                let closest = tree
+                    .foot
+                    .with_y(center.y.clamp(tree.foot.y, tree.foot.y + tree.height));
+                let distance = center.distance(closest);
+                if distance < radius {
+                    let fragment = Fragment {
+                        object: Object::Native(native),
+                        part: TREE_PART,
+                        health: instance.health_scale as u32,
+                        cascade: 0,
+                    };
+                    hits.push((distance, native, fragment));
+                }
+            });
+        }
+        hits.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        hits.into_iter()
+            .take(64)
+            .flat_map(|(distance, _, fragment)| {
+                self.damage(
+                    fragment,
+                    (damage * (1.0 - distance / radius)).round() as u32,
+                )
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

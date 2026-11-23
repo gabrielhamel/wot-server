@@ -438,15 +438,15 @@ replicated partway through flight. The direct hit at 87.74 s in replay
 1344 (shot `194269611`) also advertises 720 m. The separate stop packet
 defines the earlier endpoint.
 
-Training uses the equipped gun's nominal `maxDistance` for the loaded shell
-and retains a straight-ray simulation using the equipped shell’s speed. Every tracer advertises
-that range. A miss has no impact message. An invalid or missing range rejects the shot before
-consuming ammunition. The parser accepts positive distances through 10 km,
-the largest value present in the reference shot definitions, which bounds
-the one-metre heightfield search. The official client also computes effective
-range limits from piercing power and damage curves in
-[`computeShotMaxDistance`](references/wot-src/sources/res/scripts/common/helpers_common.py).
-Training still uses nominal range because it does not simulate those curves.
+Training starts with the equipped gun's nominal `maxDistance` and limits it
+by the zero crossings of the shell's penetration and damage curves. The
+server and tracer use the resulting range and the same launch velocity.
+Artillery tracers also receive the configured gravity used by the server.
+An unobstructed shell expires without an impact message. A missing or
+invalid shot definition rejects the shot before it consumes ammunition.
+The client’s
+[`computeShotMaxDistance`](references/wot-src/sources/res/scripts/common/helpers_common.py)
+is the reference for the range calculation.
 
 ## Round end and movement
 

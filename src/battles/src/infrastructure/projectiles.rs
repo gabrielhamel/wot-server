@@ -1,9 +1,12 @@
 use super::{
     avatar::{BattleEvent, ShotResult},
+    explosions::{DirectBlastHit, Explosion},
+    vehicle_damage::DamageSource,
     *,
 };
 use crate::domain::{
     armor::{ArmorHit, ArmorOutcome},
+    tracer::{self, TracerView},
     vehicle::Shot,
 };
 use wot_platform::mercury::script::Value as WireValue;
@@ -22,10 +25,12 @@ const DIRECT_PROJECTILE: u32 = 1 << 20;
 const RICOCHET_PROJECTILE: u32 = 1 << 23;
 const MAX_PENDING_IMPACTS: usize = 256;
 const MAX_OBSTACLES_PIERCED: u8 = 8;
+const MAX_SCENE_SCREENS: u8 = 8;
 
 pub(super) struct PendingImpact {
     due: Instant,
     distance: f32,
+    flight_seconds: f32,
     contact: Contact,
     shot: Shot,
     shot_id: i32,
@@ -33,6 +38,8 @@ pub(super) struct PendingImpact {
     attacker: u32,
     team: u8,
     obstacles_pierced: u8,
+    tracer_peers: Vec<ParticipantId>,
+    screens_pierced: u8,
     span: tracing::Span,
 }
 
@@ -41,8 +48,15 @@ enum Contact {
     Vehicle {
         participant: ParticipantId,
         id: u32,
-        hit: ArmorHit,
+        hit: Box<ArmorHit>,
     },
+}
+
+struct PlannedContact {
+    shot: Shot,
+    distance: f32,
+    flight: f32,
+    contact: Contact,
 }
 
 struct VehicleHit {
@@ -54,6 +68,9 @@ struct VehicleHit {
     effect: ShotImpact,
     sticker_added: bool,
     outcome: ArmorOutcome,
+    criticals: u8,
+    fire_started: bool,
+    detonated: bool,
 }
 
 impl Battle {
@@ -63,6 +80,9 @@ impl Battle {
         input.ammunition.shell = tracing::field::Empty, input.shell.damage = tracing::field::Empty,
         input.shell.kind = tracing::field::Empty, input.shell.caliber_mm = tracing::field::Empty,
         input.shell.max_distance_metres = tracing::field::Empty,
+        input.shell.velocity_mps = tracing::field::Empty,
+        input.shell.gravity_mps2 = tracing::field::Empty,
+        output.tracer.recipients = tracing::field::Empty,
         output.projectile.flight_seconds = tracing::field::Empty,
         output.damage_stickers.count = tracing::field::Empty,
         output.scene_impact.distance_metres = tracing::field::Empty,
@@ -71,6 +91,12 @@ impl Battle {
         output.shot.id = tracing::field::Empty,
         output.obstacles_pierced.count = tracing::field::Empty,
         output.projectile.ricocheted = tracing::field::Empty,
+        output.projectile.screens_pierced = tracing::field::Empty,
+        output.devices.damaged = tracing::field::Empty,
+        output.devices.destroyed = tracing::field::Empty,
+        output.crew.injured = tracing::field::Empty,
+        output.fire.started = tracing::field::Empty,
+        output.ammo_rack.detonated = tracing::field::Empty,
         output.target.entity_id = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.hit_direction.radians = tracing::field::Empty,
         output.damage_log.shell_type = tracing::field::Empty,
@@ -117,6 +143,8 @@ impl Battle {
         span.record("input.shell.kind", shot.effects.kind);
         span.record("input.shell.caliber_mm", shot.effects.caliber_mm);
         span.record("input.shell.max_distance_metres", shot.max_distance);
+        span.record("input.shell.velocity_mps", shot.ballistics.speed);
+        span.record("input.shell.gravity_mps2", shot.ballistics.gravity);
         shooter.pending_reload = shooter
             .tank
             .reload_timers()
@@ -128,19 +156,23 @@ impl Battle {
         self.shot_sequence = self.shot_sequence.wrapping_add(1);
         let shot_id = self.shot_sequence;
         span.record("output.shot.id", shot_id);
-        let contact = self.projectile_contact(&shot, team, None);
+        let contact = self.plan_contact(shot, team, None);
         let outcome = if contact.is_some() {
             "launched"
         } else {
             "miss"
         };
         span.record("output.outcome", outcome);
+        let mut tracer_peers = Vec::new();
         for (&peer, participant) in &self.players {
             if !participant.entered {
                 continue;
             }
             let result = (|| -> Result<()> {
-                wire.show_tracer(delivery, peer, entity_id, shot_id, &shot)?;
+                if participant.sees_tracer(&shot) {
+                    wire.show_tracer(delivery, peer, entity_id, shot_id, &shot)?;
+                    tracer_peers.push(peer);
+                }
                 delivery.arena_vehicle_method(
                     peer,
                     entity_id,
@@ -169,13 +201,20 @@ impl Battle {
                 delivery.disconnect(peer);
             }
         }
-        if let Some((distance, contact)) = contact {
-            let seconds = distance / shot.ballistics.speed;
-            span.record("output.projectile.flight_seconds", seconds);
-            let due = now + Duration::from_secs_f32(seconds);
+        span.record("output.tracer.recipients", tracer_peers.len());
+        if let Some(PlannedContact {
+            shot,
+            distance,
+            flight,
+            contact,
+        }) = contact
+        {
+            span.record("output.projectile.flight_seconds", flight);
+            let due = now + Duration::from_secs_f32(flight);
             self.queue_impact(PendingImpact {
                 due,
                 distance,
+                flight_seconds: flight,
                 contact,
                 shot,
                 shot_id,
@@ -183,31 +222,56 @@ impl Battle {
                 attacker: entity_id,
                 team,
                 obstacles_pierced: 0,
+                screens_pierced: 0,
+                tracer_peers,
                 span,
             });
         }
         Ok(outcome)
     }
 
+    fn plan_contact(
+        &self,
+        shot: Shot,
+        team: u8,
+        ignore: Option<ParticipantId>,
+    ) -> Option<PlannedContact> {
+        shot.flight_segments().find_map(|segment| {
+            let (distance, contact) =
+                self.projectile_contact(&segment.shot, segment.distance, team, ignore)?;
+            let partial = segment.seconds * (distance / segment.distance);
+            let mut shot = segment.shot;
+            shot.ballistics.speed = segment.contact_speed(partial);
+            Some(PlannedContact {
+                shot,
+                distance,
+                flight: segment.started + partial,
+                contact,
+            })
+        })
+    }
+
     fn projectile_contact(
         &self,
         shot: &Shot,
+        limit: f32,
         team: u8,
         ignore: Option<ParticipantId>,
     ) -> Option<(f32, Contact)> {
         let span = tracing::Span::current();
+        // Resolve a layered target along one local tangent when its entry lies near
+        // the end of a flight segment.
+        let lookahead = (limit + 12.0).min(shot.max_distance);
         let ground = self
             .ground
-            .shot_intersection(shot.origin, shot.direction, shot.max_distance);
-        let obstacle = self.obstacles.intersect(
-            shot.origin,
-            shot.direction,
-            ground.unwrap_or(shot.max_distance),
-        );
+            .shot_intersection(shot.origin, shot.direction, lookahead);
+        let obstacle =
+            self.obstacles
+                .intersect(shot.origin, shot.direction, ground.unwrap_or(lookahead));
         let scene = obstacle
             .map(|hit| (hit.distance, Some(hit)))
             .or_else(|| ground.map(|distance| (distance, None)));
-        let range = scene.map_or(shot.max_distance, |(distance, _)| distance);
+        let range = scene.map_or(lookahead, |(distance, _)| distance);
         let target = self
             .players
             .iter()
@@ -219,11 +283,8 @@ impl Battle {
                     && p.tank.health > 0
             })
             .filter_map(|(&participant, p)| {
-                Some((
-                    participant,
-                    p.vehicle.entity_id,
-                    shot.armor_path(&p.tank, range)?,
-                ))
+                let path = shot.armor_path(&p.tank, range)?;
+                (path.first_distance() <= limit).then_some((participant, p.vehicle.entity_id, path))
             })
             .min_by(|(_, a, left), (_, b, right)| {
                 left.first_distance()
@@ -237,18 +298,20 @@ impl Battle {
                 Contact::Vehicle {
                     participant,
                     id,
-                    hit,
+                    hit: Box::new(hit),
                 },
             ))
         });
         vehicle.or_else(|| {
-            scene.map(|(distance, obstacle)| {
-                span.record("output.scene_impact.distance_metres", distance);
-                if let Some(hit) = obstacle {
-                    span.record("output.obstacle.material_kind", hit.material);
-                }
-                (distance, Contact::Scene(obstacle))
-            })
+            scene
+                .filter(|(distance, _)| *distance <= limit)
+                .map(|(distance, obstacle)| {
+                    span.record("output.scene_impact.distance_metres", distance);
+                    if let Some(hit) = obstacle {
+                        span.record("output.obstacle.material_kind", hit.material);
+                    }
+                    (distance, Contact::Scene(obstacle))
+                })
         })
     }
 
@@ -307,6 +370,7 @@ impl Battle {
         let mut destructibles = Vec::new();
         let mut continuation = None;
         let mut obstacles_pierced = impact.obstacles_pierced;
+        let mut screens_pierced = impact.screens_pierced;
         let outcome = match impact.contact {
             Contact::Scene(Some(hit)) => {
                 if let Some(fragment) = hit.fragment {
@@ -354,18 +418,47 @@ impl Battle {
             Contact::Vehicle {
                 participant,
                 id,
-                hit,
+                ref hit,
             } => {
                 if let Some(victim) = self
                     .players
                     .get_mut(&participant)
                     .filter(|p| p.tank.health > 0)
                 {
-                    if let Some(onward) = shot.ricochet_from(hit) {
+                    if let Some(onward) = shot.ricochet_from(**hit) {
                         continuation = Some((onward, Some(participant)));
                         span.record("output.projectile.ricocheted", true);
+                    } else if screens_pierced < MAX_SCENE_SCREENS
+                        && let Some(onward) = shot.through_screen(**hit)
+                    {
+                        continuation = Some((onward, Some(participant)));
+                        screens_pierced += 1;
+                        span.record("output.projectile.screens_pierced", screens_pierced);
                     }
-                    let (previous, health) = victim.tank.hit(hit.damage);
+                    let critical = victim.tank.apply_criticals(&hit.devices, now);
+                    span.record("output.devices.damaged", critical.damaged);
+                    span.record("output.devices.destroyed", critical.destroyed);
+                    span.record("output.crew.injured", critical.crew);
+                    span.record("output.fire.started", critical.fire_started);
+                    span.record("output.ammo_rack.detonated", critical.detonated);
+                    if critical.fire_started
+                        || (critical.destroyed > critical.crew
+                            && victim.pending_condition.is_none())
+                    {
+                        victim.pending_condition = Some(DamageSource {
+                            attacker,
+                            span: span.clone(),
+                        });
+                    }
+                    let damage = if critical.detonated {
+                        u16::MAX
+                    } else {
+                        hit.damage
+                    };
+                    let (previous, health) = victim.tank.hit(damage);
+                    if health <= 0 {
+                        victim.pending_condition = None;
+                    }
                     let damage = previous - health;
                     let effect = ShotImpact::new(
                         attacker,
@@ -396,6 +489,9 @@ impl Battle {
                         effect,
                         sticker_added,
                         outcome: hit.outcome,
+                        criticals: critical.damaged,
+                        fire_started: critical.fire_started,
+                        detonated: critical.detonated,
                     });
                     defeated = self
                         .players
@@ -423,13 +519,17 @@ impl Battle {
                         (obstacle.map(|hit| hit.material), &destructibles),
                     );
                 }
-                delivery.send_avatar(
-                    peer,
-                    AvatarUpdate::StopTracer {
-                        id: shot_id,
-                        endpoint: shot.origin + shot.direction * distance,
-                    },
-                )?;
+                if impact.tracer_peers.contains(&peer)
+                    && continuation.is_none_or(|(onward, _)| onward.ricocheted != shot.ricocheted)
+                {
+                    delivery.send_avatar(
+                        peer,
+                        AvatarUpdate::StopTracer {
+                            id: shot_id,
+                            endpoint: shot.origin + shot.direction * distance,
+                        },
+                    )?;
+                }
                 let Some(VehicleHit {
                     victim,
                     entity_id: id,
@@ -439,6 +539,9 @@ impl Battle {
                     effect,
                     sticker_added,
                     outcome,
+                    criticals,
+                    fire_started,
+                    detonated,
                 }) = vehicle_hit
                 else {
                     return Ok(());
@@ -460,6 +563,12 @@ impl Battle {
                     if health == 0 {
                         flags |= VEHICLE_KILLED;
                     }
+                    if criticals > 0 {
+                        flags |= 1 << 10;
+                    }
+                    if fire_started {
+                        flags |= 1 << 2;
+                    }
                     delivery.send_avatar(
                         peer,
                         AvatarUpdate::ShotResults(ShotResult {
@@ -473,20 +582,33 @@ impl Battle {
                 if sticker_added && let Some(target) = self.players.get(&victim) {
                     wire.publish_damage_stickers(delivery, peer, id, &target.damage_stickers)?;
                 }
-                if damage == 0 {
-                    return Ok(());
-                }
-                if peer == victim {
+                if peer == victim && (damage != 0 || criticals != 0) {
                     delivery.send_avatar(
                         peer,
                         AvatarUpdate::HitDirection {
                             yaw: direction,
                             attacker,
                             damage: damage as u16,
+                            criticals: u32::from(criticals),
                             explosive: shot.effects.kind == HIGH_EXPLOSIVE_SHELL_KIND,
                             victim: id,
                         },
                     )?;
+                }
+                if detonated {
+                    delivery.arena_vehicle_method(
+                        peer,
+                        id,
+                        "showAmmoBayEffect",
+                        vec![
+                            WireValue::UInt8(1),
+                            WireValue::Float32(1.0),
+                            WireValue::Float32(0.0),
+                        ],
+                    )?;
+                }
+                if damage == 0 {
+                    return Ok(());
                 }
                 wire.vehicle_properties(
                     delivery,
@@ -530,30 +652,46 @@ impl Battle {
                 delivery.disconnect(peer);
             }
         }
-        if let Some((shot, bounced_from)) = continuation {
-            let shot_id = if bounced_from.is_some() {
+        if let Some((onward, excluded)) = continuation {
+            let bounced = onward.ricocheted != shot.ricocheted;
+            let shot = onward;
+            let mut tracer_peers = impact.tracer_peers.clone();
+            let shot_id = if bounced {
+                tracer_peers.clear();
                 self.shot_sequence = self.shot_sequence.wrapping_add(1);
                 let id = self.shot_sequence;
-                for (&peer, _) in self.players.iter().filter(|(_, player)| player.entered) {
+                for (&peer, _) in self
+                    .players
+                    .iter()
+                    .filter(|(_, player)| player.entered && player.sees_tracer(&shot))
+                {
                     if let Err(error) = wire.show_tracer(delivery, peer, attacker, id, &shot) {
                         span.record("otel.status_code", "ERROR");
                         error!(%error, "Ricochet tracer delivery failed");
                         delivery.disconnect(peer);
+                    } else {
+                        tracer_peers.push(peer);
                     }
                 }
                 id
             } else {
                 shot_id
             };
-            if let Some((distance, contact)) = self.projectile_contact(&shot, team, bounced_from) {
-                let flight = distance / shot.ballistics.speed;
+            if let Some(PlannedContact {
+                shot,
+                distance,
+                flight,
+                contact,
+            }) = self.plan_contact(shot, team, excluded)
+            {
                 span.record(
                     "output.projectile.flight_seconds",
-                    shot.travelled / shot.ballistics.speed + flight,
+                    impact.flight_seconds + flight,
                 );
                 self.queue_impact(PendingImpact {
                     due: impact.due + Duration::from_secs_f32(flight),
                     distance,
+                    flight_seconds: impact.flight_seconds + flight,
                     contact,
                     shot,
                     shot_id,
@@ -561,14 +699,66 @@ impl Battle {
                     attacker,
                     team,
                     obstacles_pierced,
+                    tracer_peers,
+                    screens_pierced,
                     span: span.clone(),
                 });
             }
+        }
+        if continuation.is_none() && shot.ballistics.explosive.is_some() {
+            let (splash, direct_hit) = match impact.contact {
+                Contact::Scene(_) => (true, None),
+                Contact::Vehicle {
+                    participant,
+                    ref hit,
+                    ..
+                } => (
+                    hit.outcome != ArmorOutcome::Penetrated,
+                    matches!(
+                        hit.outcome,
+                        ArmorOutcome::Blocked | ArmorOutcome::Spall | ArmorOutcome::Penetrated
+                    )
+                    .then_some(DirectBlastHit {
+                        victim: participant,
+                        damage: hit.damage,
+                        armor_mm: hit.thickness_mm,
+                    }),
+                ),
+            };
+            self.resolve_explosion(
+                delivery,
+                wire,
+                now,
+                Explosion {
+                    shot,
+                    distance,
+                    shooter,
+                    attacker,
+                    team,
+                    direct_hit,
+                },
+                splash,
+            );
+            defeated = self
+                .players
+                .values()
+                .all(|player| player.team == team || player.observer || player.tank.health == 0);
         }
         if defeated {
             self.result = Some((team as i8, ELIMINATION));
             self.round.finish(now);
             self.publish_period(delivery, battle_id, now);
         }
+    }
+}
+
+impl Participant {
+    fn sees_tracer(&self, shot: &Shot) -> bool {
+        // Training supplies known sources for every viewer until a spotting service exists.
+        // The strategic camera will supply viewport containment when it is wired.
+        let view = TracerView::Direct {
+            direction: self.tank.gun_ray().direction,
+        };
+        tracer::visible(shot.origin, self.tank.position, true, view)
     }
 }

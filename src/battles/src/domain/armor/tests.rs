@@ -1,8 +1,8 @@
 use super::*;
 use std::sync::Arc;
 use wot_shared_kernel::{
-    ArmorMesh, ArmorTriangle, GunLoading, GunPerformance, MountedArmor, ShellBallistics,
-    ShellEffects, VehiclePerformance,
+    ArmorDevice, ArmorMesh, ArmorTriangle, Device, ExplosiveShell, GunLoading, GunPerformance,
+    MountedArmor, ShellBallistics, ShellEffects, VehiclePerformance,
 };
 
 fn shot(kind: ShellKind, penetration: f32) -> Shot {
@@ -21,7 +21,11 @@ fn shot(kind: ShellKind, penetration: f32) -> Shot {
             uniform_penetration: false,
             uniform_damage: false,
             far_damage: 100.0,
+            damage_limited_range: f32::INFINITY,
+            device_damage: [0.0; 2],
+            explosive: None,
             speed: 500.0,
+            gravity: 0.0,
             normalization: 5.0_f32.to_radians(),
             ricochet_cos: 70.0_f32.to_radians().cos(),
             trace_ricochet: true,
@@ -33,6 +37,7 @@ fn shot(kind: ShellKind, penetration: f32) -> Shot {
         travelled: 0.0,
         penetration_loss: 0.0,
         ricocheted: false,
+        heat_jet: false,
     }
 }
 
@@ -45,6 +50,7 @@ fn plate(thickness_mm: f32, damage_factor: f32) -> ArmorPlate {
         caliber_ricochet: true,
         caliber_normalization: true,
         once: false,
+        device: None,
     }
 }
 
@@ -126,14 +132,17 @@ fn heat_uses_remaining_penetration_and_loses_power_across_the_gap() {
 
 #[test]
 fn modern_he_spalls_at_main_armor_and_respects_screen_loss() {
-    let shot = shot(
+    let mut shot = shot(
         ShellKind::HighExplosive {
-            spall_damage: 50.0,
             shield_penetration: true,
             obstacle_penetration: true,
         },
         100.0,
     );
+    shot.ballistics.explosive = Some(ExplosiveShell {
+        spall_damage: [50.0; 2],
+        ..ExplosiveShell::default()
+    });
     let screen = surface(30.0, 1, plate(20.0, 0.0), 0.0);
     let hull = surface(30.3, 2, plate(60.0, 1.0), 0.0);
     let direct = shot.resolve_surfaces(&[hull]).unwrap();
@@ -195,6 +204,7 @@ fn a_ray_can_strike_an_off_center_part_or_pass_through_empty_space() {
             mobility: Default::default(),
             turret_pivot: Some(Vec3::ZERO),
             armor,
+            device_health: Default::default(),
             gun: GunPerformance {
                 turret_traverse: 0.0,
                 gun_traverse: 0.0,
@@ -230,4 +240,53 @@ fn a_ray_can_strike_an_off_center_part_or_pass_through_empty_space() {
     assert!(shot.armor_path(&tank, 24.9).is_none());
     shot.origin.x = -0.5;
     assert!(shot.armor_path(&tank, shot.max_distance).is_none());
+}
+
+#[test]
+fn penetrating_shell_traces_devices_before_the_next_hull_surface() {
+    let mut shot = shot(ShellKind::ArmorPiercing, 100.0);
+    shot.ballistics.device_damage = [50.0; 2];
+    let entry = surface(30.0, 1, plate(50.0, 1.0), 0.0);
+    let mut engine = surface(30.25, 2, plate(0.0, 0.0), 0.0);
+    engine.plate.device = Some(ArmorDevice {
+        device: Device::Engine,
+        health: None,
+        projectile_chance: 1.0,
+        explosion_chance: 0.0,
+    });
+    let exit = surface(30.5, 3, plate(50.0, 1.0), 0.0);
+    let hit = shot.resolve_surfaces(&[entry, engine, exit]).unwrap();
+    assert_eq!(hit.outcome, ArmorOutcome::Penetrated);
+    assert_eq!(hit.devices[0].unwrap().device, Device::Engine);
+    assert_eq!(hit.devices[0].unwrap().damage, 50);
+    let beyond = surface(29.8, 3, plate(50.0, 1.0), 0.0);
+    let blocked = shot.resolve_surfaces(&[beyond, entry, engine]).unwrap();
+    assert!(blocked.devices.iter().all(Option::is_none));
+}
+
+#[test]
+fn layered_and_secondary_impacts_keep_distance_loss_and_remaining_penetration() {
+    let mut shot = shot(ShellKind::ArmorPiercing, 100.0);
+    shot.ballistics.penetration_mm = [100.0, 55.0];
+    let screen = surface(150.0, 1, plate(25.0, 0.0), 0.0);
+    let hit = shot.resolve_surfaces(&[screen]).unwrap();
+    assert_eq!(hit.outcome, ArmorOutcome::ScreenPenetrated);
+    assert_eq!(hit.remaining_mm, 65.0);
+    let next = shot.through_screen(hit).unwrap();
+    assert!((next.penetration_at(100.0) - 55.0).abs() < 0.002);
+    assert!(next.max_distance < shot.max_distance);
+    let armor = surface(100.0, 2, plate(60.0, 1.0), 0.0);
+    assert_eq!(
+        next.resolve_surfaces(&[armor]).unwrap().outcome,
+        ArmorOutcome::Blocked
+    );
+}
+
+#[test]
+fn shell_curves_can_limit_reach_before_the_nominal_range() {
+    use wot_shared_kernel::shell_zero_distance;
+    let reach = shell_zero_distance([50.0, 5.0]);
+    assert_eq!(reach, 550.0);
+    assert_eq!(shell_value_at_distance([50.0, 5.0], reach), 0.0);
+    assert!(shell_zero_distance([50.0; 2]).is_infinite());
 }

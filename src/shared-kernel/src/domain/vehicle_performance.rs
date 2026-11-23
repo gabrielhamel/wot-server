@@ -10,6 +10,7 @@ pub struct VehiclePerformance {
     pub turret_pivot: Option<Vec3>,
     pub gun: GunPerformance,
     pub armor: [Option<MountedArmor>; 4],
+    pub device_health: BTreeMap<Device, DeviceHealth>,
 }
 
 #[derive(Clone, Debug)]
@@ -136,6 +137,7 @@ pub struct ArmorPlate {
     pub caliber_ricochet: bool,
     pub caliber_normalization: bool,
     pub once: bool,
+    pub device: Option<ArmorDevice>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -145,7 +147,6 @@ pub enum ShellKind {
         jet_loss_per_metre: f32,
     },
     HighExplosive {
-        spall_damage: f32,
         shield_penetration: bool,
         obstacle_penetration: bool,
     },
@@ -162,10 +163,85 @@ pub struct ShellBallistics {
     pub uniform_penetration: bool,
     pub uniform_damage: bool,
     pub far_damage: f32,
+    pub damage_limited_range: f32,
+    pub device_damage: [f32; 2],
+    pub explosive: Option<ExplosiveShell>,
     pub speed: f32,
+    pub gravity: f32,
     pub normalization: f32,
     pub ricochet_cos: f32,
     pub trace_ricochet: bool,
     pub obstacle_damage: Option<f32>,
     pub obstacle_penetration_loss: f32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ExplosiveShell {
+    pub scenery_radius: f32,
+    pub artillery_radius: f32,
+    pub splash_factor: f32,
+    pub edge_factor: f32,
+    pub armor_absorption: f32,
+    pub fragment_damage: [f32; 2],
+    pub fragment_absorption: f32,
+    pub spall_damage: [f32; 2],
+    pub spall_radius: f32,
+    pub spall_cone_cos: f32,
+    pub piercing_spalls: bool,
+    pub spall_device_damage: [f32; 2],
+    pub stun: Option<ShellStun>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ShellStun {
+    pub radius: f32,
+    pub duration: f32,
+    pub guaranteed: f32,
+    pub damage_coefficient: f32,
+    pub minimum: f32,
+    pub turret_traverse: f32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Device {
+    TrackLeft,
+    TrackRight,
+    Wheel,
+    Engine,
+    Fuel,
+    AmmoRack,
+    Gun,
+    Turret,
+    Optics,
+    Radio,
+    Crew(u32),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ArmorDevice {
+    pub device: Device,
+    pub projectile_chance: f32,
+    pub explosion_chance: f32,
+    pub health: Option<DeviceHealth>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DeviceHealth {
+    pub maximum: u16,
+    pub repaired: u16,
+    pub repair_seconds: f32,
+    pub fire_chance: f32,
+}
+
+/// Default distance anchors from the client's common shell helpers.
+pub fn shell_value_at_distance([near, far]: [f32; 2], metres: f32) -> f32 {
+    (near + (far - near) * ((metres - 50.0).max(0.0) / 450.0)).max(0.0)
+}
+
+pub fn shell_zero_distance([near, far]: [f32; 2]) -> f32 {
+    if far < near {
+        50.0 + 450.0 * near / (near - far)
+    } else {
+        f32::INFINITY
+    }
 }

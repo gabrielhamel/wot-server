@@ -1708,8 +1708,7 @@ pub fn exercise_battle(
             .collect::<Vec<_>>()
     );
     let received_shot = |p: &Peer| {
-        p.methods.iter().any(|(name, _)| name == "stopTracer")
-            && p.methods.iter().any(|(name, _)| name == "onBattleEvents")
+        p.methods.iter().any(|(name, _)| name == "onBattleEvents")
             && p.vehicle_methods.iter().any(|(target, name, args)| {
                 *target == second
                     && name == "onHealthChanged"
@@ -1750,37 +1749,44 @@ pub fn exercise_battle(
             .any(|(name, _)| name == "showShotResults")
     );
 
-    for peer in [&*host, &*guest] {
-        let (_, tracer) = peer
-            .methods
-            .iter()
-            .find(|(name, _)| name == "showTracer")
-            .unwrap();
-        let (_, endpoint) = peer
-            .methods
-            .iter()
-            .find(|(name, _)| name == "stopTracer")
-            .unwrap();
-        assert_eq!(tracer[0].as_i64(), Some(i64::from(first)));
-        assert_eq!(tracer[1], endpoint[0]);
-        let (
-            Value::Vector3(origin),
-            Value::Vector3(velocity),
-            Value::Float32(range),
-            Value::Vector3(end),
-        ) = (&tracer[7], &tracer[8], &tracer[10], &endpoint[1])
-        else {
-            panic!("expected tracer geometry");
-        };
-        assert_eq!(*range, fixture.shell_range);
-        assert!((velocity.length() - fixture.shell_speed).abs() < 0.01);
-        let ray = velocity.normalize();
-        let offset = *end - *origin;
-        assert!(offset.cross(ray).length() < 0.01);
-        assert!((target - *origin).cross(ray).length() < 0.10);
-        assert!((centered - *origin).cross(ray).length() > 0.15);
-        assert!((0.0..=*range).contains(&offset.dot(ray)));
+    let (_, tracer) = host
+        .methods
+        .iter()
+        .find(|(name, _)| name == "showTracer")
+        .unwrap();
+    let (_, endpoint) = host
+        .methods
+        .iter()
+        .find(|(name, _)| name == "stopTracer")
+        .unwrap();
+    assert_eq!(tracer[0].as_i64(), Some(i64::from(first)));
+    assert_eq!(tracer[1], endpoint[0]);
+    let (
+        Value::Vector3(origin),
+        Value::Vector3(velocity),
+        Value::Float32(range),
+        Value::Vector3(end),
+    ) = (&tracer[7], &tracer[8], &tracer[10], &endpoint[1])
+    else {
+        panic!("expected tracer geometry");
+    };
+    assert_eq!(*range, fixture.shell_range);
+    assert!((velocity.length() - fixture.shell_speed).abs() < 0.01);
+    let ray = velocity.normalize();
+    let offset = *end - *origin;
+    assert!(offset.cross(ray).length() < 0.01);
+    assert!((target - *origin).cross(ray).length() < 0.10);
+    assert!((centered - *origin).cross(ray).length() > 0.15);
+    assert!((0.0..=*range).contains(&offset.dot(ray)));
 
+    assert!(origin.distance(guest.positions[&second]) > 565.0);
+    assert!(
+        !guest
+            .methods
+            .iter()
+            .any(|(name, _)| matches!(name.as_str(), "showTracer" | "stopTracer"))
+    );
+    for peer in [&*host, &*guest] {
         let (_, _, impact) = peer
             .vehicle_methods
             .iter()
@@ -2058,23 +2064,23 @@ pub fn exercise_battle(
 fn assert_range_expiry(host: &mut Peer, guest: &mut Peer, script: &ScriptDispatch, range: f32) {
     let start = [host.methods.len(), guest.methods.len()];
     host.cell_command(script, "vehicle_shoot", vec![]);
-    for (peer, since) in [(host, start[0]), (guest, start[1])] {
-        peer.until(script, |p| {
-            p.methods[since..]
-                .iter()
-                .any(|(name, _)| name == "showTracer")
-        });
-        let tracer = peer.methods[since..]
+    host.until(script, |peer| {
+        peer.methods[start[0]..]
             .iter()
-            .find(|(name, _)| name == "showTracer")
-            .unwrap();
-        assert_eq!(tracer.1[10], Value::Float32(range));
-        let shot_id = tracer.1[1].clone();
+            .any(|(name, _)| name == "showTracer")
+    });
+    let (_, tracer) = host.methods[start[0]..]
+        .iter()
+        .find(|(name, _)| name == "showTracer")
+        .unwrap();
+    assert_eq!(tracer[10], Value::Float32(range));
+    let shot_id = tracer[1].clone();
+    let Value::Vector3(velocity) = tracer[8] else {
+        panic!("Expected tracer velocity");
+    };
+    let flight = ((range / velocity.length()) * 10.0).ceil() as u8;
+    for (peer, since) in [(&mut *host, start[0]), (&mut *guest, start[1])] {
         let tick = peer.arena_tick.unwrap();
-        let Value::Vector3(velocity) = tracer.1[8] else {
-            panic!("Expected tracer velocity");
-        };
-        let flight = ((range / velocity.length()) * 10.0).ceil() as u8;
         peer.until(script, |p| {
             p.arena_tick
                 .is_some_and(|now| (flight..=127).contains(&now.wrapping_sub(tick)))
@@ -2083,6 +2089,11 @@ fn assert_range_expiry(host: &mut Peer, guest: &mut Peer, script: &ScriptDispatc
             matches!(name.as_str(), "stopTracer" | "explodeProjectile") && args[0] == shot_id
         }));
     }
+    assert!(
+        !guest.methods[start[1]..]
+            .iter()
+            .any(|(name, args)| name == "showTracer" && args[1] == shot_id)
+    );
 }
 
 fn assert_ground_impact(host: &mut Peer, guest: &mut Peer, script: &ScriptDispatch) {
@@ -2108,39 +2119,49 @@ fn assert_scene_impact(
     material: u8,
     expected_distance: std::ops::Range<f32>,
 ) {
+    let start = [host.methods.len(), guest.methods.len()];
     host.cell_command(script, "vehicle_shoot", vec![]);
-    for peer in [host, guest] {
-        let received = peer.methods.len();
+    for (peer, since) in [(&mut *host, start[0]), (&mut *guest, start[1])] {
         peer.until(script, |peer| {
-            peer.methods[received..]
+            peer.methods[since..]
                 .iter()
                 .any(|(name, _)| name == "explodeProjectile")
         });
-        let messages = &peer.methods[received..];
-        let explosion_index = messages
+    }
+    let impact = |peer: &Peer, since| {
+        peer.methods[since..]
             .iter()
-            .position(|(name, _)| name == "explodeProjectile")
-            .unwrap();
-        let (_, impact) = &messages[explosion_index];
-        let (_, tracer) = peer.methods[..received + explosion_index]
+            .find(|(name, _)| name == "explodeProjectile")
+            .unwrap()
+            .1
+            .clone()
+    };
+    let (_, tracer) = host.methods[start[0]..]
+        .iter()
+        .find(|(name, _)| name == "showTracer")
+        .expect("shooter tracer sent before explosion");
+    let blast = impact(host, start[0]);
+    assert_eq!(blast, impact(guest, start[1]));
+    assert_eq!(blast[0], tracer[1]);
+    assert_eq!(blast[1..3], tracer[3..5]);
+    assert_eq!(blast[3], Value::UInt8(material));
+    assert_eq!(blast[4..6], tracer[5..7]);
+    let (Value::Vector3(endpoint), Value::Vector3(origin), Value::Vector3(velocity)) =
+        (&blast[6], &tracer[7], &tracer[8])
+    else {
+        panic!("expected impact geometry");
+    };
+    assert!(expected_distance.contains(&endpoint.distance(*origin)));
+    assert!((*endpoint - *origin).normalize().dot(velocity.normalize()) > 0.999);
+    assert!(matches!(&blast[9], Value::Seq(destructibles) if destructibles.is_empty()));
+    assert!(
+        !guest.methods[start[1]..]
             .iter()
-            .rev()
-            .find(|(name, _)| name == "showTracer")
-            .expect("tracer sent before explosion");
-        assert_eq!(impact[0], tracer[1]);
-        assert_eq!(impact[1..3], tracer[3..5]);
-        assert_eq!(impact[3], Value::UInt8(material));
-        assert_eq!(impact[4..6], tracer[5..7]);
-        let (Value::Vector3(endpoint), Value::Vector3(origin), Value::Vector3(velocity)) =
-            (&impact[6], &tracer[7], &tracer[8])
-        else {
-            panic!("expected impact geometry");
-        };
-        assert!(expected_distance.contains(&endpoint.distance(*origin)));
-        assert!((*endpoint - *origin).normalize().dot(velocity.normalize()) > 0.999);
-        assert!(matches!(&impact[9], Value::Seq(destructibles) if destructibles.is_empty()));
+            .any(|(name, _)| name == "showTracer")
+    );
+    for (peer, since) in [(&*host, start[0]), (&*guest, start[1])] {
         assert!(
-            !messages
+            !peer.methods[since..]
                 .iter()
                 .any(|(name, _)| name == "stopTracer" || name == "showShotResults")
         );
@@ -2458,6 +2479,13 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         .expect("training hit");
     assert!(has(hit, "ddd.bounded_context.name", "battles"));
     assert!(has(hit, "input.shell.damage", &shell_damage.to_string()));
+    assert!(has(
+        hit,
+        "input.shell.velocity_mps",
+        &fixture.shell_speed.to_string()
+    ));
+    assert!(has(hit, "output.tracer.recipients", "1"));
+
     let damage = attribute(hit, "output.damage")
         .unwrap()
         .parse::<u16>()
@@ -2533,8 +2561,8 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
     );
     for (span_name, method, recipients) in [
         ("mercury.arena_vehicle_method", "showDamageFromShot", 2),
-        ("mercury.response", "showTracer", 2),
-        ("mercury.response", "stopTracer", 2),
+        ("mercury.response", "showTracer", 1),
+        ("mercury.response", "stopTracer", 1),
         ("mercury.response", "showShotResults", 1),
         ("mercury.response", "onBattleEvents", 2),
         ("mercury.response", "showOwnVehicleHitDirection", 1),
@@ -2763,7 +2791,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
                 && has(s, "rpc.method", "showTracer")
                 && has(s, "output.delivery", "sent"))
             .count(),
-        2
+        1
     );
 
     let leave = traces

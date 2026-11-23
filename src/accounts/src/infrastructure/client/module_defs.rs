@@ -1,5 +1,5 @@
 use super::{
-    battle_armor::{ArmorMaterials, shell_ballistics},
+    battle_armor::{ArmorMaterials, read_device_health},
     battle_performance,
     item_defs::{self, VehicleDef},
     item_prices::ItemPrices,
@@ -18,7 +18,9 @@ use std::{
 };
 use wot_platform::client_formats::pxml::Element;
 use wot_resources::ResourceBundle;
-use wot_shared_kernel::{ArmorMesh, GunPerformance, Mobility, MountedArmor, VehiclePerformance};
+use wot_shared_kernel::{
+    ArmorMesh, Device, DeviceHealth, GunPerformance, Mobility, MountedArmor, VehiclePerformance,
+};
 
 const METRIC_HORSEPOWER_TO_WATTS: f32 = 735.5;
 
@@ -31,6 +33,7 @@ pub(super) struct VehicleModules {
     hull_traverse: BTreeMap<i32, f32>,
     chassis_mobility: BTreeMap<i32, Mobility>,
     engine_power_hp: BTreeMap<i32, f32>,
+    devices: BTreeMap<i32, DeviceHealth>,
     hull_positions: BTreeMap<i32, Vec3>,
     turret_position: Option<Vec3>,
     gun_performance: BTreeMap<(i32, i32), GunPerformance>,
@@ -107,6 +110,18 @@ impl VehicleModules {
             }
             _ => hull_traverse,
         };
+        let device_health = [
+            (ModuleKind::Engine, Device::Engine),
+            (ModuleKind::FuelTank, Device::Fuel),
+            (ModuleKind::Chassis, Device::TrackLeft),
+            (ModuleKind::Chassis, Device::TrackRight),
+            (ModuleKind::Chassis, Device::Wheel),
+            (ModuleKind::Gun, Device::Gun),
+            (ModuleKind::Radio, Device::Radio),
+        ]
+        .into_iter()
+        .filter_map(|(kind, device)| Some((device, *self.devices.get(modules.get(&kind)?)?)))
+        .collect();
         Some(VehiclePerformance {
             forward_speed,
             reverse_speed,
@@ -120,6 +135,7 @@ impl VehicleModules {
                 .map(|(hull, turret)| hull + turret),
             gun,
             armor,
+            device_health,
         })
     }
 
@@ -268,6 +284,7 @@ impl VehicleModules {
             .and_then(|physics| physics.get_child_element("detailed"));
         let mut chassis_mobility = BTreeMap::new();
         let mut engine_power_hp = BTreeMap::new();
+        let mut devices = BTreeMap::new();
         let mut hull_positions = BTreeMap::new();
         let mut chassis_armor = BTreeMap::new();
         let mut turret_armor = BTreeMap::new();
@@ -315,6 +332,11 @@ impl VehicleModules {
                         .and_then(|l| l.get_child_float(key))
                         .or_else(|| base.get_child_float(key))
                 };
+                if kind != 3
+                    && let Some(health) = read_device_health(local, base)
+                {
+                    devices.insert(id, health);
+                }
                 let price = prices
                     .prices
                     .iter()
@@ -512,6 +534,9 @@ impl VehicleModules {
                                 max_weight: None,
                             },
                         );
+                        if let Some(health) = read_device_health(gun_local, gun_base) {
+                            devices.insert(gun, health);
+                        }
                         let max_ammo = gun_local
                             .and_then(|l| l.get_child_integer("maxAmmo"))
                             .or_else(|| gun_base.get_child_integer("maxAmmo"))
@@ -552,11 +577,11 @@ impl VehicleModules {
                             if let Some(range) = battle_performance::shell_range(local, shared) {
                                 shell_ranges.insert(shell_id, range);
                             }
-                            if let Some(profile) = shell_ballistics(
+                            if let Some(profile) = armor.shell_ballistics(
                                 local,
                                 shared,
                                 shell,
-                                armor.projectile_speed_factor,
+                                tags.split_whitespace().any(|tag| tag == "SPG"),
                             ) {
                                 ballistics.insert(shell_id, profile);
                             }
@@ -652,6 +677,7 @@ impl VehicleModules {
             hull_traverse,
             chassis_mobility,
             engine_power_hp,
+            devices,
             hull_positions,
             turret_position,
             gun_performance,

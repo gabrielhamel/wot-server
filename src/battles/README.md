@@ -71,7 +71,7 @@ and [movement coverage](../../docs/battle-mechanics.md#training-movement-coverag
 Projectile launch and contact are separate. The simulation queues contact
 until the tracer has travelled the distance to the selected intersection. The
 solver uses the equipped part meshes and plate materials to resolve armor,
-screens and modern direct-fire HE. At contact it applies HP loss if applicable,
+screens, modern direct-fire HE, artillery splash and modeled device damage. At contact it applies HP loss if applicable,
 sends the outcome and local hit ray, and replicates penetration marks to arena
 viewers. See the [replay and resource evidence](../../docs/battle-replays.md#persistent-vehicle-impact-marks).
 

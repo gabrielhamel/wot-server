@@ -120,7 +120,11 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
             || GARAGE_FILES.contains(&path)
             || BATTLE_EFFECT_FILES.contains(&path)
             || path == "scripts/item_defs/vehicles/common/forbidden_vehicles_to_battle_config.xml"
-            || path == "scripts/item_defs/vehicles/common/vehicle_common.xml"
+            || matches!(
+                path,
+                "scripts/item_defs/vehicles/common/vehicle_common.xml"
+                    | "scripts/item_defs/vehicles/common/stun.xml"
+            )
             || matches!(
                 path,
                 "text/lc_messages/vehicle_customization.mo"

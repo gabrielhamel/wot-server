@@ -1029,7 +1029,7 @@ mod tests {
                 .is_none_or(|hit| hit.object != fragment.object)
         );
         assert!(scene.damage(fragment, fragment.health).is_empty());
-        let fresh = scene.test_new_round();
+        let mut fresh = scene.test_new_round();
         assert_eq!(
             fresh
                 .sweep_hull(hull, travel)
@@ -1038,6 +1038,23 @@ mod tests {
                 .unwrap()
                 .part,
             TREE_PART
+        );
+        let foot = hull.position + Vec3::Z * 3.0;
+        assert!(
+            fresh
+                .blast_trees(foot + Vec3::X * 2.0, 0.5, fragment.health as f32)
+                .is_empty()
+        );
+        let blasted = fresh.blast_trees(foot + Vec3::X * 0.25, 0.75, fragment.health as f32 * 2.0);
+        assert!(
+            blasted
+                .iter()
+                .any(|hit| hit.native == Some(native) && hit.part == TREE_PART)
+        );
+        assert!(
+            fresh
+                .blast_trees(foot, 0.3, fragment.health as f32)
+                .is_empty()
         );
     }
 
