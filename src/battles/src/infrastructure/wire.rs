@@ -17,7 +17,7 @@ use wot_platform::mercury::{
 mod controls;
 mod roster;
 
-pub(super) use controls::{ShotImpact, pack_wheel_speed, pack_wheel_steering};
+pub(super) use controls::{DamageStickers, ShotImpact, pack_wheel_speed, pack_wheel_steering};
 
 pub(super) struct ArenaWire {
     dispatch: Arc<ScriptDispatch>,
@@ -35,6 +35,7 @@ pub(super) struct ArenaWire {
     wheels_scroll_element: u8,
     wheels_steering_element: u8,
     hull_aim_element: u8,
+    damage_stickers_element: u8,
     impact_materials: ImpactMaterials,
 }
 
@@ -98,6 +99,7 @@ impl ArenaWire {
                 vehicle_type,
                 "steeringAngles",
             )?,
+            damage_stickers_element: Self::bind_damage_stickers(&dispatch, vehicle_type)?,
             hull_aim_element: Self::bind_fixed_property(
                 &dispatch,
                 avatar_type,

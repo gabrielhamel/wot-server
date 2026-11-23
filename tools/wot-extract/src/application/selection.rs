@@ -34,6 +34,7 @@ const GARAGE_FILES: &[&str] = &[
 
 const BATTLE_EFFECT_FILES: &[&str] = &[
     "scripts/item_defs/vehicles/common/shot_effects.xml",
+    "scripts/item_defs/vehicles/common/damage_stickers.xml",
     "scripts/item_defs/vehicles/common/prefab_effects/shot_effects.xml",
     "scripts/item_defs/vehicles/common/vehicle.xml",
     "system/data/material_kinds.xml",

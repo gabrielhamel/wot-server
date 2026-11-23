@@ -7,6 +7,7 @@ use wot_shared_kernel::ShellEffects;
 
 const LEGACY: &str = "scripts/item_defs/vehicles/common/shot_effects.xml";
 const PREFABS: &str = "scripts/item_defs/vehicles/common/prefab_effects/shot_effects.xml";
+const STICKERS: &str = "scripts/item_defs/vehicles/common/damage_stickers.xml";
 const VEHICLE_COMMON: &str = "scripts/item_defs/vehicles/common/vehicle.xml";
 const NO_PREFAB: u8 = 255;
 const SHELL_KINDS: [&str; 6] = [
@@ -21,6 +22,7 @@ const SHELL_KINDS: [&str; 6] = [
 #[derive(Default)]
 pub(super) struct ShellEffectCatalog {
     legacy: BTreeMap<String, u8>,
+    pierced_stickers: BTreeMap<String, u8>,
     prefabs: BTreeMap<String, u8>,
     defaults: BTreeMap<String, String>,
 }
@@ -33,7 +35,14 @@ impl ShellEffectCatalog {
         {
             return Ok(Self::default());
         }
-        let legacy = effect_indices(read_xml(resources, LEGACY).context(LEGACY)?.as_ref())?;
+        let shot_effects = read_xml(resources, LEGACY).context(LEGACY)?;
+        let legacy = effect_indices(&shot_effects)?;
+        let pierced_stickers = if resources.has_file(STICKERS) {
+            let stickers = read_xml(resources, STICKERS).context(STICKERS)?;
+            pierced_stickers(&shot_effects, &stickers)?
+        } else {
+            BTreeMap::new()
+        };
         let prefabs = effect_indices(read_xml(resources, PREFABS).context(PREFABS)?.as_ref())?;
         let common = read_xml(resources, VEHICLE_COMMON).context(VEHICLE_COMMON)?;
         let defaults = common
@@ -45,6 +54,7 @@ impl ShellEffectCatalog {
             .collect();
         Ok(Self {
             legacy,
+            pierced_stickers,
             prefabs,
             defaults,
         })
@@ -74,11 +84,38 @@ impl ShellEffectCatalog {
                 || shell.get_child_boolean("improved") == Some(true),
             caliber_mm,
             legacy_index: self.legacy.get(effect.trim()).copied().unwrap_or_default(),
+            pierced_sticker: self.pierced_stickers.get(effect.trim()).copied(),
             prefab_index: prefab
                 .and_then(|name| self.prefabs.get(name.trim()).copied())
                 .unwrap_or(NO_PREFAB),
         })
     }
+}
+
+fn pierced_stickers(effects: &Element, stickers: &Element) -> Result<BTreeMap<String, u8>> {
+    let ids: BTreeMap<_, _> = stickers
+        .iter_children_all()
+        .filter(|(name, _)| !matches!(name.as_str(), "texture" | "xmlns:xmlref"))
+        .enumerate()
+        .map(|(id, (name, _))| Ok((name.as_str(), u8::try_from(id)?)))
+        .collect::<Result<_>>()?;
+    effects
+        .iter_children_all()
+        .filter_map(|(effect, value)| {
+            let sticker = value
+                .as_element()?
+                .get_child_element("targetStickers")?
+                .get_child_string("armorPierced")?
+                .trim();
+            (!sticker.is_empty()).then_some((effect, sticker))
+        })
+        .map(|(effect, sticker)| {
+            let id = ids.get(sticker).with_context(|| {
+                format!("Unknown damage sticker {sticker} for shell effect {effect}")
+            })?;
+            Ok((effect.clone(), *id))
+        })
+        .collect()
 }
 
 fn damage_log_type(kind: &str, shot: Option<&Element>, shell: &Element) -> Option<u8> {
@@ -125,6 +162,26 @@ fn effect_indices(table: &Element) -> Result<BTreeMap<String, u8>> {
 mod tests {
     use super::*;
     use wot_platform::client_formats::pxml::Value;
+
+    #[test]
+    fn resolves_penetration_stickers_from_each_shot_effect() {
+        let mut stickers = Element::new();
+        for name in ["texture", "ap_hole", "xmlns:xmlref", "he_hole"] {
+            stickers.add_children(name, Value::String(String::new()));
+        }
+        let mut effects = Element::new();
+        for (name, sticker) in [("ap", "ap_hole"), ("he", "he_hole"), ("smoke", "")] {
+            let mut shot = Element::new();
+            let mut target = Element::new();
+            target.add_children("armorPierced", Value::String(sticker.into()));
+            shot.add_children("targetStickers", Value::Element(Box::new(target)));
+            effects.add_children(name, Value::Element(Box::new(shot)));
+        }
+        assert_eq!(
+            pierced_stickers(&effects, &stickers).unwrap(),
+            BTreeMap::from([("ap".to_owned(), 0), ("he".to_owned(), 1)])
+        );
+    }
 
     #[test]
     fn resolves_damage_log_types_independently_of_projectile_types() {

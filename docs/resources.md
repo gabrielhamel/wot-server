@@ -50,8 +50,10 @@ server. Older manifests without the field remain supported.
   triangles and their material IDs. Battles uses
   `system/data/material_kinds.xml` to resolve the client effect index.
   **Accounts** reads the legacy and prefab shot effect tables and the common
-  vehicle defaults. Re-extract existing bundles to enable obstacle impacts
-  and select the loaded shell's effect definitions.
+  vehicle defaults. It uses `damage_stickers.xml` together with the loaded
+  shell's legacy hit effect to select persistent penetration marks.
+  Re-extract bundles that lack these definitions to enable the corresponding
+  obstacle effects and vehicle marks.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
   item definitions, customization price groups, style, camouflage, paint, decal, projected decal, effect, personal-number attachment and stat tracker definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle

@@ -15,6 +15,7 @@ use wot_platform::mercury::app::{
 };
 use wot_platform::mercury::net::{
     bundle::{Bundle, NextElementReader},
+    codec::Codec,
     element::{Element, ElementLength, SimpleElement},
     packet::{PACKET_HEADER_LEN, PacketConfig},
     proto::Protocol,
@@ -88,6 +89,7 @@ pub struct Peer {
     last_unreliable_sequence: Option<Seq>,
     pub vehicle_methods: Vec<(u32, String, Vec<Value>)>,
     pub gun_angles: BTreeMap<u32, u16>,
+    pub damage_stickers: BTreeMap<u32, Value>,
     pub hull_aim: Option<u64>,
     pub engine_modes: BTreeMap<u32, [u8; 2]>,
     pub vehicle_directions: BTreeMap<u32, glam::Vec3>,
@@ -140,6 +142,7 @@ impl Peer {
             last_unreliable_sequence: None,
             vehicle_methods: Vec::new(),
             gun_angles: BTreeMap::new(),
+            damage_stickers: BTreeMap::new(),
             hull_aim: None,
             engine_modes: BTreeMap::new(),
             vehicle_directions: BTreeMap::new(),
@@ -712,6 +715,19 @@ impl Peer {
                                         .element;
                                     self.engine_modes
                                         .insert(self.selected_entity.unwrap(), update.bytes);
+                                }
+                                "damageStickers" => {
+                                    let update = element
+                                        .read::<client::VariableEntityProperty, _>(&())
+                                        .unwrap()
+                                        .element;
+                                    let mut body = update.bytes.as_slice();
+                                    let stickers =
+                                        Value::read(&mut body, &properties[index as usize].ty)
+                                            .unwrap();
+                                    assert!(body.is_empty());
+                                    self.damage_stickers
+                                        .insert(self.selected_entity.unwrap(), stickers);
                                 }
                                 "wheelsScroll" | "steeringAngles" => {
                                     let update = element

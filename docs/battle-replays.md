@@ -298,11 +298,12 @@ indices 31/1. Its `showShooting` also carries HE kind 1.
 Training selects the first hit along the shot ray from the outdoor
 heightfield, placed obstacle meshes, and eligible vehicles. The heightfield
 uses a one-metre search and a binary refinement. The server bounds the
-obstacle search with the nearer of the terrain and vehicle candidates. For
-scene impacts, it sends the tracer, muzzle event and `explodeProjectile` to
-battle participants with the collision point, material effect index and
-loaded shell data. The same shell data goes to the vehicle hit path. Training
-uses the existing 450 m/s tracer speed and a straight trajectory.
+obstacle search with the nearer of the terrain and vehicle candidates. It
+sends the tracer and muzzle event at launch, then resolves contact once the
+distance divided by the advertised 450 m/s has elapsed. For a scene impact,
+`explodeProjectile` carries the collision point, material effect index and
+loaded shell data. Contacts use the poses at launch and
+are processed on the battle clock. The trajectory is straight.
 
 The obstacle extractor adapts the pinned Toolkit's
 [compiled space readers](references/wg-toolkit-rs/wg-toolkit/src/space/bin)
@@ -324,6 +325,23 @@ across 74 compiled spaces. It reported 10 unavailable or unsupported
 models. SpeedTree collision, destructible damage and destruction replication
 remain open. Training sends an empty destructibles list. Live client
 playback is needed to verify audio and visuals.
+
+## Persistent vehicle impact marks
+
+`Vehicle.showDamageFromShot` plays the transient impact. The client's
+[`Vehicle.set_damageStickers`](references/wot-src/sources/res/scripts/client/Vehicle.py#L668)
+adds and removes marks as the `Vehicle.damageStickers` array changes.
+[`setDamageSticker`](references/wot-src/sources/res/scripts/common/helpers_common.py#L277)
+uses the shell's configured penetration sticker as the low byte of the
+segment and the prefab effect index as the high byte of the hit parameters.
+Training uses that encoding for hits that remove health and whose legacy
+effect defines a penetration mark. The client applies the prefab or legacy
+appearance from its effect tables. New arena viewers receive the current
+array as part of entry. The server keeps the 15 most recent distinct marks
+per vehicle, because a one-byte count plus 16 bytes per point fits the
+property's Variable8 wire framing. This is a server limit. The client's
+renderer limit and visible appearance still require a native battle check.
+The hit segment still crosses an approximate hull volume.
 
 ## Range expiry
 

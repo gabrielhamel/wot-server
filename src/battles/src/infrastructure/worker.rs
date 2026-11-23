@@ -362,6 +362,7 @@ mod tests {
                 round: Round::new(now, Duration::from_secs(300)),
                 launch: None,
                 shot_sequence: 0,
+                projectiles: Vec::new(),
                 result: None,
                 finish_span: None,
                 roster_count: 0,

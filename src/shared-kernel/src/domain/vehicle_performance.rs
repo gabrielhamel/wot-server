@@ -73,6 +73,7 @@ pub struct ShellEffects {
     pub caliber_mm: f32,
     pub legacy_index: u8,
     pub prefab_index: u8,
+    pub pierced_sticker: Option<u8>,
 }
 
 impl Default for ShellEffects {
@@ -84,6 +85,7 @@ impl Default for ShellEffects {
             caliber_mm: 45.0,
             legacy_index: 0,
             prefab_index: 0,
+            pierced_sticker: None,
         }
     }
 }

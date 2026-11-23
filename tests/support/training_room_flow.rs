@@ -2,6 +2,7 @@ use super::{
     Peer, Pickle, ScriptDispatch, Value, ammunition_flow::pickle_value, dict, telemetry_capture,
 };
 use opentelemetry_sdk::trace::SpanData;
+use std::time::Duration;
 use wot_platform::mercury::script::StringValue;
 
 #[path = "training_chat_flow.rs"]
@@ -1309,6 +1310,7 @@ pub struct BattleFixture {
     shell_damage: u16,
     shell_range: f32,
     has_obstacles: bool,
+    has_damage_stickers: bool,
 }
 
 pub fn battle_fixture(resources: &wot_resources::ResourceBundle) -> BattleFixture {
@@ -1344,6 +1346,8 @@ pub fn battle_fixture(resources: &wot_resources::ResourceBundle) -> BattleFixtur
             .round() as u16,
         shell_range: range,
         has_obstacles: resources.has_file("spaces/07_lakeville/collision.bin"),
+        has_damage_stickers: resources
+            .has_file("scripts/item_defs/vehicles/common/damage_stickers.xml"),
     }
 }
 
@@ -1780,6 +1784,23 @@ pub fn exercise_battle(
         assert_eq!((params >> 8) & 0xffff, 370);
         assert_eq!(impact[2], tracer[3]);
         assert_eq!(impact[3], tracer[4]);
+        if fixture.has_damage_stickers {
+            let Value::Seq(stickers) = &peer.damage_stickers[&second] else {
+                panic!("expected target damage sticker array");
+            };
+            let [Value::Dict(sticker)] = stickers.as_slice() else {
+                panic!("expected one persistent damage sticker");
+            };
+            assert_eq!(sticker["networkID"], point["networkID"]);
+            let Value::UInt64(sticker_segment) = sticker["segment"] else {
+                panic!("expected packed sticker segment");
+            };
+            assert_eq!(sticker_segment >> 8, segment >> 8);
+            assert_eq!(
+                sticker["params"].as_i64().unwrap(),
+                params | (tracer[4].as_i64().unwrap() << 24)
+            );
+        }
         let (_, _, health) = peer
             .vehicle_methods
             .iter()
@@ -2393,6 +2414,35 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
             .iter()
             .any(|s| s.name == "game.cell_command" && child_of(control, s))
     );
+    let flight = attribute(hit, "output.projectile.flight_seconds")
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    assert!(flight > 0.0);
+    let earliest_impact = hit.start_time + Duration::from_secs_f64((flight - 0.01).max(0.0));
+    for impact in traces
+        .iter()
+        .filter(|span| child_of(span, hit) && has(span, "rpc.method", "stopTracer"))
+    {
+        assert!(impact.start_time >= earliest_impact);
+    }
+    if fixture.has_damage_stickers {
+        assert!(has(hit, "output.damage_stickers.count", "1"));
+        let sticker_updates: Vec<_> = traces
+            .iter()
+            .filter(|span| child_of(span, hit) && span.name == "battles.damage_stickers")
+            .collect();
+        assert_eq!(sticker_updates.len(), 2);
+        for update in sticker_updates {
+            assert!(has(update, "input.damage_stickers.count", "1"));
+            assert!(update.start_time >= earliest_impact);
+            assert!(traces.iter().any(|delivery| {
+                child_of(delivery, update)
+                    && delivery.name == "mercury.arena_delivery"
+                    && has(delivery, "output.delivery", "sent")
+            }));
+        }
+    }
     assert_eq!(
         traces
             .iter()

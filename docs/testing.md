@@ -169,9 +169,12 @@ the impact and health updates, and the shooter and victim each receive their
 own feedback. The impact check verifies the penetrating hull segment, its
 direction in the victim's local frame, the damage fraction, the projectile's
 world travel yaw and the received damage-log AP type. The test
-checks the recipient count and exported parent span for
-these deliveries and verifies that an immediate second shot is rejected during
-reload.
+checks the recipient count and exported parent span for these deliveries,
+verifies the stop is sent after the shot's scheduled flight time and verifies
+that an immediate second shot is rejected during reload. With the extracted
+damage sticker catalog, both peers decode the target's persistent sticker
+property and verify the geometry and shell effect parameters. The exported
+delivery spans carry the original shot parent across the wait for contact.
 The same peers exercise [garage ammunition](ammunition.md): rejected requests
 followed by valid unload/reload/purchase, depot conservation/deletions, balances,
 receipts, idempotency and identical cache after reconnect. A fresh pool confirms

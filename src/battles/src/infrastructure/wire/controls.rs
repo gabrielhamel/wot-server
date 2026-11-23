@@ -1,6 +1,6 @@
 use super::*;
 use crate::domain::vehicle::{GunRay, Shot, Tank};
-use std::time::Instant;
+use std::{collections::VecDeque, time::Instant};
 use wot_platform::mercury::{
     app::{
         client::element::{FixedEntityProperty, VariableEntityProperty, id::ENTITY_PROPERTY},
@@ -12,11 +12,67 @@ use wot_shared_kernel::ShellEffects;
 
 const OWN_ENTITY_NODE: u16 = 1024;
 const GUN_MARKER_COMPONENT_NODE: u16 = 2048;
-const SHELL_SPEED: f32 = 450.0;
 const HULL_PART_INDEX: u8 = 1;
 const ARMOR_PIERCED_NO_DAMAGE: u8 = 0;
 const ARMOR_PIERCED: u8 = 4;
 type Fields = BTreeMap<&'static str, WireValue>;
+
+// One byte for the array count and 16 bytes per hit point in a Variable8 property.
+const MAX_DAMAGE_STICKERS: usize = 15;
+
+#[derive(Clone, Copy)]
+struct DamageSticker {
+    segment: u64,
+    params: u32,
+}
+
+#[derive(Default)]
+pub(in super::super) struct DamageStickers(VecDeque<DamageSticker>);
+
+impl DamageStickers {
+    pub(in super::super) fn add(&mut self, impact: ShotImpact) -> bool {
+        let Some(sticker) = impact.sticker() else {
+            return false;
+        };
+        if self
+            .0
+            .iter()
+            .any(|previous| previous.segment == sticker.segment)
+        {
+            return false;
+        }
+        if self.0.len() == MAX_DAMAGE_STICKERS {
+            self.0.pop_front();
+        }
+        self.0.push_back(sticker);
+        true
+    }
+
+    pub(in super::super) fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub(in super::super) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn value(&self) -> WireValue {
+        WireValue::Seq(
+            self.0
+                .iter()
+                .map(|sticker| hit_point(sticker.segment, sticker.params))
+                .collect(),
+        )
+    }
+}
+
+fn hit_point(segment: u64, params: u32) -> WireValue {
+    WireValue::Dict(BTreeMap::from([
+        ("networkID".into(), WireValue::UInt32(0)),
+        ("segment".into(), WireValue::UInt64(segment)),
+        ("params".into(), WireValue::UInt32(params)),
+    ]))
+}
 
 #[derive(Clone, Copy)]
 pub(in super::super) struct ShotImpact {
@@ -71,21 +127,24 @@ impl ShotImpact {
         }
     }
 
+    fn sticker(self) -> Option<DamageSticker> {
+        let id = self.effects.pierced_sticker.filter(|_| self.damage > 0)?;
+        Some(DamageSticker {
+            segment: (self.segment & !0xff) | u64::from(id),
+            params: self.params | (u32::from(self.effects.prefab_index) << 24),
+        })
+    }
+
     fn args(self) -> Vec<WireValue> {
-        let hit_point = WireValue::Dict(BTreeMap::from([
-            ("networkID".into(), WireValue::UInt32(0)),
-            ("segment".into(), WireValue::UInt64(self.segment)),
-            ("params".into(), WireValue::UInt32(self.params)),
-        ]));
         vec![
             WireValue::Int32(self.attacker as i32),
-            WireValue::Seq(vec![hit_point]),
+            WireValue::Seq(vec![hit_point(self.segment, self.params)]),
             WireValue::UInt8(self.effects.legacy_index),
             WireValue::UInt8(self.effects.prefab_index),
             WireValue::Int32(i32::from(self.damage)),
             WireValue::UInt8(self.damage_factor),
             WireValue::UInt8(0),
-            WireValue::Float32(SHELL_SPEED),
+            WireValue::Float32(Shot::SPEED_MPS),
             WireValue::UInt8(0),
         ]
     }
@@ -469,7 +528,7 @@ impl ArenaWire {
                 id: shot_id,
                 effects: shot.effects,
                 start: shot.origin,
-                velocity: shot.direction * SHELL_SPEED,
+                velocity: shot.direction * Shot::SPEED_MPS,
                 range: shot.max_distance,
             },
         )?;
@@ -493,10 +552,50 @@ impl ArenaWire {
                 material: self.impact_materials.effect_index(material),
                 endpoint: shot.origin + shot.direction * distance,
                 direction: shot.direction,
-                speed: SHELL_SPEED,
+                speed: Shot::SPEED_MPS,
             },
         )?;
         Ok(())
+    }
+
+    #[tracing::instrument(name = "battles.damage_stickers", skip_all, fields(
+        ddd.bounded_context.name = "battles", input.participant.id = client.0,
+        input.entity_id = entity_id, input.damage_stickers.count = stickers.len()
+    ), err)]
+    pub(in super::super) fn publish_damage_stickers(
+        &self,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
+        entity_id: u32,
+        stickers: &DamageStickers,
+    ) -> Result<()> {
+        let vehicle = self
+            .dispatch
+            .entity_from_id(self.vehicle_type)
+            .context("Missing Vehicle")?;
+        let ty = property_type(vehicle, "damageStickers")?;
+        let mut bytes = Vec::new();
+        stickers.value().write(&mut bytes, ty)?;
+        delivery.send_arena_property(
+            client,
+            Some(entity_id),
+            self.damage_stickers_element,
+            VariableEntityProperty {
+                element_id: self.damage_stickers_element,
+                bytes,
+            },
+        )?;
+        Ok(())
+    }
+
+    pub(super) fn bind_damage_stickers(dispatch: &ScriptDispatch, vehicle_type: u16) -> Result<u8> {
+        Self::bind_property(
+            dispatch,
+            vehicle_type,
+            "damageStickers",
+            &WireValue::Seq(vec![hit_point(0, 0)]),
+            ElementLength::Variable8,
+        )
     }
 
     pub(in super::super) fn show_shot_impact(
@@ -546,7 +645,7 @@ fn gun_marker_value(ty: &Ty, ray: GunRay, dispersion: f32) -> Result<WireValue> 
             ("gunPosition", WireValue::Vector3(ray.origin)),
             (
                 "shotVector",
-                WireValue::Vector3(ray.direction * SHELL_SPEED),
+                WireValue::Vector3(ray.direction * Shot::SPEED_MPS),
             ),
             ("dispersion", WireValue::Float32(dispersion)),
         ],
@@ -559,7 +658,7 @@ fn property_type<'a>(component: &'a EntityDispatch, name: &str) -> Result<&'a Ty
         .iter()
         .find(|p| &*p.name == name)
         .map(|p| &p.ty)
-        .with_context(|| format!("Missing OwnVehicle.{name}"))
+        .with_context(|| format!("Missing property {name}"))
 }
 
 fn rows(ty: &Ty) -> Result<&Ty> {
@@ -670,4 +769,30 @@ fn own_state(
         ("vehicleClipReloadTime", clip_time_value),
         ("vehicleHealthInfo", health),
     ]))
+}
+
+#[cfg(test)]
+mod impact_tests {
+    use super::*;
+
+    #[test]
+    fn retains_distinct_penetrations_up_to_the_wire_limit() {
+        let mut marks = DamageStickers::default();
+        let mut effects = ShellEffects::default();
+        let impact = ShotImpact::new(1, 1, 10, Vec3::Z, effects);
+        assert!(!marks.add(impact));
+        effects.pierced_sticker = Some(0);
+        assert!(!marks.add(ShotImpact::new(1, 0, 10, Vec3::Z, effects)));
+
+        for index in 0..=MAX_DAMAGE_STICKERS {
+            let direction = glam::Quat::from_rotation_y(index as f32 * 0.1) * Vec3::Z;
+            let impact = ShotImpact::new(1, 1, 10, direction, effects);
+            assert!(marks.add(impact));
+            assert!(!marks.add(impact));
+        }
+        assert_eq!(marks.len(), MAX_DAMAGE_STICKERS);
+        let first = ShotImpact::new(1, 1, 10, Vec3::Z, effects);
+        assert!(marks.add(first));
+        assert_eq!(marks.len(), MAX_DAMAGE_STICKERS);
+    }
 }
