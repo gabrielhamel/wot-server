@@ -61,6 +61,11 @@ Battle peers receive the Vehicle's engine mode and, where the chassis
 defines them, its wheel scroll and steering properties. See the
 [replay and resource evidence](../../docs/battle-replays.md#vehicle-movement-and-chassis-animation).
 
+Projectile launch and contact are separate. The simulation queues contact
+until the tracer has travelled the distance to the selected intersection. At
+contact, it updates health, sends hit feedback and replicates marks to all
+arena viewers. See the [replay and resource evidence](../../docs/battle-replays.md#persistent-vehicle-impact-marks).
+
 | Term | Meaning |
 | --- | --- |
 | Battle | A live match on one arena with an assigned roster and round clock. |
@@ -69,4 +74,5 @@ defines them, its wheel scroll and steering properties. See the
 | Participant ID | Gateway-local admission generation used to route battle inputs and deliveries to one specific session. A new login gets a new ID. |
 | Round | The progression through loading, countdown, active battle and results. |
 | Loadout | The equipped vehicle descriptor, health, crew size, ammunition, locked outfit and base performance at launch. |
+| Damage sticker | A persistent penetration mark replicated on the struck vehicle when the shell defines one. |
 | Scene impact | The first projectile contact with terrain or a placed obstacle, reported with its effect material. |

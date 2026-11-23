@@ -343,6 +343,8 @@ impl Tank {
 }
 
 impl Shot {
+    pub const SPEED_MPS: f32 = 450.0;
+
     pub fn intersection(&self, target: &Tank) -> Option<f32> {
         let offset = target.position + Vec3::Y * 1.0 - self.origin;
         let projected = offset.dot(self.direction);
@@ -422,6 +424,7 @@ mod tests {
                                 prefab_index: 2,
                                 damage_log_type: Some(1),
                                 premium: false,
+                                pierced_sticker: None,
                             },
                         ),
                         (
@@ -433,6 +436,7 @@ mod tests {
                                 prefab_index: 1,
                                 damage_log_type: Some(7),
                                 premium: false,
+                                pierced_sticker: None,
                             },
                         ),
                     ]

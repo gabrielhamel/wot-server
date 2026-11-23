@@ -272,8 +272,11 @@ parents `battles.drive_vehicle` for the first simulation step, the driver's
 `steering_angles` deliveries to battle peers. The step records the sampled
 surface counts, hull pitch, resulting longitudinal speed and yaw rate.
 Shots retain their parent through target selection, ground and obstacle
-intersection, damage, and the muzzle, tracer, impact and health deliveries.
-The shot span records the loaded shell kind and caliber. Scene impacts
+intersection, the wait for the tracer's flight, and the impact and health
+deliveries. The same span parents the immediate muzzle and tracer deliveries
+and records the shell kind, caliber and scheduled flight time. An impact that
+adds a persistent mark records the retained sticker count and parents a
+`battles.damage_stickers` span per recipient. Scene impacts
 record distance along the ray and parent the `explodeProjectile`
 deliveries. Obstacle impacts include the raw collision material kind. The same shot parents
 the shooter-only result, the victim-only direction and the private damage

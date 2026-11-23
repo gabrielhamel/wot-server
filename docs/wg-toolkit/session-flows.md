@@ -419,12 +419,16 @@ Received damage uses the client's battle-log shell type, including the HE
 mechanics variant and the premium shell flag. The shooter also
 receives updated ammunition and reload state. See the [direct-hit replay
 evidence](../battle-replays.md#direct-hit-in-replay-1344).
-Training resolves the ray immediately. The impact packet includes a segment
+Training selects the first intersection at launch and resolves it after the
+tracer flight time. The impact packet includes a segment
 through the center of the hull's bounding box in the incoming shot direction,
 expressed in the target's local frame. The client uses its hull mesh to find
 the impact for audiovisual feedback. The segment is a presentation
 approximation for the training hit volume. Impact strength is the HP removed
-as a fraction of the target's starting health, scaled to 0–255.
+as a fraction of the target's starting health, scaled to 0–255. For a damaging
+hit with a defined penetration sticker, the server also sends
+`Vehicle.damageStickers` to every arena viewer. The property retains up to
+15 distinct marks per vehicle and replaces the oldest when full.
 The equipped gun's selected shot entry supplies `maxDistance`, including
 local overrides. This range bounds vehicle, terrain and obstacle checks.
 On a miss the tracer carries the shell's maximum range and expires on the

@@ -117,7 +117,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.room.open_flag`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Wire privacy flag on Training Room creation. `0` denotes invite-only and `1` denotes open. |
 | [`input.room.id`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Training Room ID supplied by the client on join or decline, or set by the server for invitation delivery, channel membership and Training launch preparation. |
 | [`input.battle.id`](../src/battles/src/infrastructure/mod.rs) | Server-assigned battle ID on activation, arena entry, period and readiness broadcasts, vehicle controls and shots. |
-| [`input.participant.id`](../src/battles/src/infrastructure/mod.rs) | Numeric admission generation scoped to the gateway. Recorded on arena entry and participant removal, and on [decoded vehicle controls and shots](../src/battles/src/infrastructure/controls.rs). |
+| [`input.participant.id`](../src/battles/src/infrastructure/mod.rs) | Numeric admission generation scoped to the gateway. Recorded on arena entry and participant removal, and on [decoded vehicle controls](../src/battles/src/infrastructure/controls.rs), [shots](../src/battles/src/infrastructure/projectiles.rs), and [damage sticker deliveries](../src/battles/src/infrastructure/wire/controls.rs). |
 | [`output.battle.id`](../src/battles/src/infrastructure/mod.rs) | Battle ID allocated during preparation or resolved on participant removal. |
 | [`input.cluster.id`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Cluster supplied on Training Room join or decline, or configured periphery on invitation delivery. Public room-list joins use `0`. |
 | [`input.invitation`](../src/player-sessions/src/infrastructure/gateway/training.rs) | True when the join request accepts an invitation. |
@@ -135,10 +135,10 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.ground.hard_contacts`](../src/battles/src/domain/vehicle.rs), `input.ground.medium_contacts`, `input.ground.soft_contacts` | Number of chassis surface samples of each class in the drive step, out of four. Unpainted or unavailable surface samples count as medium. |
 | [`input.ground.pitch_radians`](../src/battles/src/domain/vehicle.rs) | Starting hull pitch in radians for the drive step. Positive values descend along the forward axis. |
 | [`input.ammunition.setting`](../src/battles/src/infrastructure/controls.rs) | Native ammunition setting code `0`, `1`, `17` or `18` on a decoded shell selection or reload command. |
-| [`input.ammunition.shell`](../src/battles/src/infrastructure/controls.rs) | Requested signed shell compact descriptor on shell selection, or current shell compact descriptor on a shot attempt. |
-| [`input.shell.kind`](../src/battles/src/infrastructure/controls.rs) | Client shell kind index of a fired shell. |
-| [`input.shell.caliber_mm`](../src/battles/src/infrastructure/controls.rs) | Effect caliber in millimetres for a fired shell. |
-| [`input.shell.damage`](../src/battles/src/infrastructure/controls.rs) | Nominal hit points for the fired shell before capping by the target's remaining health. Omitted on rejected shots. |
+| [`input.ammunition.shell`](../src/battles/src/infrastructure/controls.rs) | Requested signed shell compact descriptor on shell selection, or current shell compact descriptor on a [shot attempt](../src/battles/src/infrastructure/projectiles.rs). |
+| [`input.shell.kind`](../src/battles/src/infrastructure/projectiles.rs) | Client shell kind index of a fired shell. |
+| [`input.shell.caliber_mm`](../src/battles/src/infrastructure/projectiles.rs) | Effect caliber in millimetres for a fired shell. |
+| [`input.shell.damage`](../src/battles/src/infrastructure/projectiles.rs) | Nominal hit points for the fired shell before capping by the target's remaining health. Omitted on rejected shots. |
 | [`input.aim.kind`](../src/battles/src/infrastructure/controls.rs) | Aim representation on an aim command, `world_point` or `hull_angles`. |
 | [`input.aim.server_marker`](../src/battles/src/infrastructure/controls.rs) | Boolean supplied by the Avatar's server reticle setting command. |
 | [`input.replication.kind`](../src/battles/src/infrastructure/controls.rs) | Arena delivery kind, including `position`, `hull_aim` (driver orientation and track motion), `engine_mode`, `wheels_scroll`, `steering_angles`, `gun_angles`, `gun_marker` and `ammunition`. |
@@ -270,15 +270,18 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.unlocked_vehicle_count`](../src/accounts/src/infrastructure/client/store.rs) | Number of gold vehicle descriptors purchasable through the native shop and projected in the Tech Tree economics unlock set during garage sync. |
 | [`output.offers.count`](../src/player-sessions/src/infrastructure/gateway/store.rs) | Number of offers included in a Store catalog response. |
 | [`output.arena_type_id`](../src/player-sessions/src/infrastructure/gateway/training/start.rs) | Arena type selected in the room when the host confirms or unlocks a team. |
-| [`input.shell.max_distance_metres`](../src/battles/src/infrastructure/controls.rs) | Equipped gun's nominal maximum travel distance in metres for the fired shell. |
-| [`output.shot.id`](../src/battles/src/infrastructure/controls.rs) | Arena-local sequence number assigned after firing, omitted on rejection. |
-| [`output.hit_direction.radians`](../src/battles/src/infrastructure/controls.rs) | Incoming projectile's world travel yaw in radians, sent to the victim and omitted on miss. |
-| [`output.damage_log.shell_type`](../src/battles/src/infrastructure/controls.rs) | Client damage-log shell type ID for a vehicle hit when known. |
-| [`output.scene_impact.distance_metres`](../src/battles/src/infrastructure/controls.rs) | Distance in metres from the muzzle to a ground or obstacle impact. |
-| [`output.obstacle.material_kind`](../src/battles/src/infrastructure/controls.rs) | Raw client material kind of the hit obstacle collision triangle, including 0 when the triangle carries no material. |
-| [`output.target.entity_id`](../src/battles/src/infrastructure/controls.rs) | Vehicle entity struck by a shot, recorded for vehicle hits. |
-| [`output.damage`](../src/battles/src/infrastructure/controls.rs) | Hit points actually removed by a shot, omitted on miss. |
-| [`output.outcome`](../src/battles/src/infrastructure/controls.rs) | Cell controls record `accepted`, `shell_selected`, `shell_queued`, `shell_change_started`, `reload_started`, `magazine_full`, `manual_reload_unavailable`, `hit`, `ground_impact`, `obstacle_impact`, `miss`, `reloading`, `empty`, `invalid_flags`, `invalid_aim`, `shell_unavailable`, `shell_damage_unavailable`, `shell_range_unavailable`, `round_inactive`, `vehicle_unavailable`, `unimplemented` or `delivery_failed`. Missing or invalid loaded-shell damage or range sets error status. Mercury records `entity_unavailable` for a target outside the session's control and `wire_decode_failed` for invalid framing or argument data. |
+| [`input.shell.max_distance_metres`](../src/battles/src/infrastructure/projectiles.rs) | Equipped gun's nominal maximum travel distance in metres for the fired shell. |
+| [`output.shot.id`](../src/battles/src/infrastructure/projectiles.rs) | Arena-local sequence number assigned after firing, omitted on rejection. |
+| [`output.projectile.flight_seconds`](../src/battles/src/infrastructure/projectiles.rs) | Seconds from launch to scheduled contact. Omitted for shots with no contact. |
+| [`output.damage_stickers.count`](../src/battles/src/infrastructure/projectiles.rs) | Number of retained damage stickers on the target when the hit adds a new sticker. |
+| [`input.damage_stickers.count`](../src/battles/src/infrastructure/wire/controls.rs) | Number of stickers in the full Vehicle damage sticker property sent to one participant. |
+| [`output.hit_direction.radians`](../src/battles/src/infrastructure/projectiles.rs) | Incoming projectile's world travel yaw in radians, sent to the victim and omitted on miss. |
+| [`output.damage_log.shell_type`](../src/battles/src/infrastructure/projectiles.rs) | Client damage-log shell type ID for a vehicle hit when known. |
+| [`output.scene_impact.distance_metres`](../src/battles/src/infrastructure/projectiles.rs) | Distance in metres from the muzzle to a ground or obstacle impact. |
+| [`output.obstacle.material_kind`](../src/battles/src/infrastructure/projectiles.rs) | Raw client material kind of the hit obstacle collision triangle, including 0 when the triangle carries no material. |
+| [`output.target.entity_id`](../src/battles/src/infrastructure/projectiles.rs) | Vehicle entity struck by a shot, recorded for vehicle hits. |
+| [`output.damage`](../src/battles/src/infrastructure/projectiles.rs) | Hit points actually removed by a shot, omitted on miss. |
+| [`output.outcome`](../src/battles/src/infrastructure/controls.rs) | Cell controls and [shot resolution](../src/battles/src/infrastructure/projectiles.rs) record `accepted`, `shell_selected`, `shell_queued`, `shell_change_started`, `reload_started`, `magazine_full`, `manual_reload_unavailable`, `launched`, `projectile_queue_full`, `target_unavailable`, `hit`, `ground_impact`, `obstacle_impact`, `miss`, `reloading`, `empty`, `invalid_flags`, `invalid_aim`, `shell_unavailable`, `shell_damage_unavailable`, `shell_range_unavailable`, `round_inactive`, `vehicle_unavailable`, `unimplemented` or `delivery_failed`. Missing or invalid loaded-shell damage or range sets error status. Mercury records `entity_unavailable` for a target outside the session's control and `wire_decode_failed` for invalid framing or argument data. |
 | [`output.obstacles.instances`](../src/battles/src/infrastructure/obstacles.rs) | Number of collision mesh placements loaded for the selected gameplay mode. Zero when the bundle has no obstacle collision for the map. |
 | [`output.terrain.tiles`](../src/battles/src/infrastructure/terrain.rs), `output.terrain.surface_tiles` | Number of decoded outdoor height tiles and driving surface tiles for the selected arena. |
 | [`output.drive.speed_mps`](../src/battles/src/domain/vehicle.rs) | Signed speed in metres per second after the simulation step. Negative means reverse. |

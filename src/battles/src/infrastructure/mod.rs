@@ -34,7 +34,8 @@ use wot_resources::ResourceBundle;
 use avatar::AvatarUpdate;
 use delivery::ArenaDelivery;
 use maps::ArenaMap;
-use wire::{ArenaEntry, ArenaWire, ShotImpact};
+use projectiles::PendingImpact;
+use wire::{ArenaEntry, ArenaWire, DamageStickers, ShotImpact};
 
 mod avatar;
 mod controls;
@@ -43,6 +44,7 @@ mod maps;
 pub(crate) mod mercury;
 mod obstacles;
 mod preparation;
+mod projectiles;
 mod terrain;
 mod wire;
 mod worker;
@@ -124,6 +126,7 @@ struct Battle {
     round: Round,
     launch: Option<tracing::Span>,
     shot_sequence: i32,
+    projectiles: Vec<PendingImpact>,
     result: Option<(i8, u8)>,
     finish_span: Option<tracing::Span>,
     roster_count: usize,
@@ -149,6 +152,7 @@ struct Participant {
     pending_drive: Option<tracing::Span>,
     pending_aim: Option<tracing::Span>,
     pending_reload: Option<tracing::Span>,
+    damage_stickers: DamageStickers,
 }
 
 impl Battle {
@@ -477,6 +481,7 @@ impl BattleRuntime {
                         pending_drive: None,
                         pending_aim: None,
                         pending_reload: None,
+                        damage_stickers: DamageStickers::default(),
                     },
                 ))
             })
@@ -497,6 +502,7 @@ impl BattleRuntime {
                 round: Round::new(now, launch.duration),
                 launch: Some(tracing::Span::current()),
                 shot_sequence: 0,
+                projectiles: Vec::new(),
                 result: None,
                 finish_span: None,
                 roster_count: roster.len(),
@@ -572,6 +578,24 @@ impl BattleSimulation {
             )?;
             span.record("output.avatar_control", "server");
             if let Some(wire) = &self.wire {
+                for other in battle.players.values() {
+                    if other.tank.health != other.tank.max_health {
+                        wire.vehicle_properties(
+                            delivery,
+                            client,
+                            other.vehicle.entity_id,
+                            [("health", ScriptValue::Int16(other.tank.health))],
+                        )?;
+                    }
+                    if !other.damage_stickers.is_empty() {
+                        wire.publish_damage_stickers(
+                            delivery,
+                            client,
+                            other.vehicle.entity_id,
+                            &other.damage_stickers,
+                        )?;
+                    }
+                }
                 for other in battle.players.values().filter(|player| player.ready) {
                     wire.roster_ready(
                         delivery,
@@ -675,6 +699,9 @@ impl BattleSimulation {
                     )
                 }));
                 continue;
+            }
+            if let Some(wire) = &self.wire {
+                battle.advance_projectiles(delivery, wire, battle_id, now);
             }
             if battle.round.advance(now, false) {
                 battle.publish_period(delivery, battle_id, now);
