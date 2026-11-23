@@ -48,8 +48,8 @@ The generated JSON contains the three required fields. All other fields are opti
 | `training_room_visible` | `true`. Advertises the Training Room card at login and allows room creation when the resource bundle contains arena definitions. Set to `false` and restart the server to disable creation and hide the card for new logins. |
 | `periphery_id` | `250`. Local server ID used for Training Room invitations. Match the `periphery_id` on the clients' server-list entry so the game accepts the invitation on the current server. |
 | `log_level` | `"debug"`. Also accepts `"error"`, `"warn"`, `"info"`, and `"trace"`. |
-| `web` | Serves the dashboard and Store embedded by Cargo on `127.0.0.1:8080`. Set `web.bind` to change the listener or `web.ui_dir` to serve assets from disk. Relative override paths resolve beside `server.json`. |
-| `admin` | [Dashboard and admin API](admin.md) enabled. Session cookies require HTTPS on non-loopback binds by default. Set `admin` to `{}` to also require HTTPS on a loopback bind, or to `null` to disable admin. |
+| `web` | Serves the dashboard and Store embedded by Cargo on `0.0.0.0:8080`. Set `web.bind` to change the listener or `web.ui_dir` to serve assets from disk. Relative override paths resolve beside `server.json`. |
+| `admin` | [Dashboard and admin API](admin.md) enabled. Session cookies support HTTP by default. Set `admin.secure_cookies` to `true` for HTTPS, or set `admin` to `null` to disable admin. |
 | `store` | In-game [Store](store.md#configuration) enabled with origin `http://127.0.0.1:8080`. Set `store.origin` for remote clients or `store` to `null` to disable the Store. |
 
 Unknown fields, invalid types and invalid limits stop startup with a diagnostic.

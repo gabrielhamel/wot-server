@@ -164,9 +164,7 @@ async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Mete
                 gateway.player_grants(),
                 store,
                 player_administration::DashboardConfig {
-                    secure_cookies: admin
-                        .secure_cookies
-                        .unwrap_or(!settings.bind.ip().is_loopback()),
+                    secure_cookies: admin.secure_cookies,
                     trusted_proxies,
                 },
             ));

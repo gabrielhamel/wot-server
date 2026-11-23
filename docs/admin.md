@@ -28,9 +28,9 @@ Both builds require Node.js and npm. Use Node.js 22.22.2 or a newer supported
 release. Cargo installs the locked dependencies as needed and writes the
 browser bundle to `src/server-runtime/src/infrastructure/web/dist/`.
 
-The server serves the embedded dashboard at `127.0.0.1:8080` by default.
-Set `web.bind` to change the listener. To serve a separate build, set
-`web.ui_dir` to its directory. Relative paths resolve beside `server.json`.
+The server serves the embedded dashboard on all IPv4 interfaces at port 8080
+by default. Set `web.bind` to `127.0.0.1:8080` to limit it to the local machine.
+To serve a separate build, set `web.ui_dir` to its directory. Relative paths resolve beside `server.json`.
 Legacy `admin.bind` and `admin.dashboard_dir` still supply the listener
 settings when there is no `web` object. Set `admin` to `null` to disable the
 dashboard and admin API.
@@ -99,10 +99,9 @@ pieces, and **Grant Experimental Equipment** for tiers 1–3. These pickers
 show the player's unmounted depot stock.
 
 For remote administration, serve the dashboard through an HTTPS reverse
-proxy and use `"admin": {}` in `server.json`. Route `/dashboard/`,
-`/assets/*` and `/api/admin/*` to the web listener. Secure cookies are enabled
-by default. Use `"secure_cookies": false` only when accessing the listener over
-local HTTP, including an SSH tunnel to the loopback listener.
+proxy and set `"admin": {"secure_cookies": true}` in `server.json`. Route
+`/dashboard/`, `/assets/*` and `/api/admin/*` to the web listener. The default
+`secure_cookies: false` allows sign-in over HTTP.
 
 ### Upgrade an existing database
 

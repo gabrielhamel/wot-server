@@ -69,10 +69,9 @@ docker run --rm --name wot-server \
 
 Set `private_key` to `/state/login.pem` and `advertised_base` to the host address and port that
 game clients can reach; the container's bridge address is usually unreachable
-from outside Docker. To publish the dashboard port from Docker, set `web.bind` to
-`0.0.0.0:8080` and `admin` to
-`{"secure_cookies": false}` for the loopback HTTP port shown above. See the
-[admin guide](admin.md) for HTTPS configuration, and the [server guide](server.md)
+from outside Docker. The dashboard listens on all container interfaces by default.
+The port mapping above publishes it on the host's loopback interface. See the
+[admin guide](admin.md) for HTTPS configuration and the [server guide](server.md)
 for database, RSA login and client setup.
 
 For a local image build, generate the bundle into `resources/` using the

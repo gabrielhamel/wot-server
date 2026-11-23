@@ -29,29 +29,20 @@ impl LogLevel {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub(crate) struct AdminConfiguration {
     bind: Option<SocketAddrV4>,
-    #[serde(default = "secure_admin_cookies")]
-    pub secure_cookies: Option<bool>,
+    pub secure_cookies: bool,
     pub dashboard_dir: Option<PathBuf>,
 }
 
-fn secure_admin_cookies() -> Option<bool> {
-    Some(true)
-}
-
 fn default_admin() -> Option<AdminConfiguration> {
-    Some(AdminConfiguration {
-        bind: None,
-        secure_cookies: None,
-        dashboard_dir: None,
-    })
+    Some(AdminConfiguration::default())
 }
 
 fn default_web_bind() -> SocketAddrV4 {
-    SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 8080)
+    SocketAddrV4::new(std::net::Ipv4Addr::UNSPECIFIED, 8080)
 }
 
 #[derive(Deserialize)]
@@ -326,10 +317,26 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(settings.as_object().unwrap().len(), 3);
         let web = defaults.web.unwrap();
-        assert_eq!(web.bind, "127.0.0.1:8080".parse().unwrap());
+        assert_eq!(web.bind, "0.0.0.0:8080".parse().unwrap());
         assert!(web.ui_dir.is_none());
         assert_eq!(defaults.store.unwrap().origin, "http://127.0.0.1:8080");
-        assert_eq!(defaults.admin.unwrap().secure_cookies, None);
+        assert!(!defaults.admin.unwrap().secure_cookies);
+
+        let mut web_settings = settings.clone();
+        web_settings["web"] = serde_json::json!({});
+        web_settings["admin"] = serde_json::json!({});
+        std::fs::write(&path, serde_json::to_vec(&web_settings).unwrap()).unwrap();
+        let config = Configuration::load(&path).unwrap();
+        assert_eq!(config.web.unwrap().bind, "0.0.0.0:8080".parse().unwrap());
+        assert!(!config.admin.unwrap().secure_cookies);
+
+        web_settings["web"]["bind"] = "127.0.0.1:9090".into();
+        web_settings["admin"]["secure_cookies"] = true.into();
+        std::fs::write(&path, serde_json::to_vec(&web_settings).unwrap()).unwrap();
+        let config = Configuration::load(&path).unwrap();
+        assert_eq!(config.web.unwrap().bind, "127.0.0.1:9090".parse().unwrap());
+        assert!(config.admin.unwrap().secure_cookies);
+
         for field in ["resource_dir", "database_url", "private_key"] {
             let mut incomplete = settings.clone();
             incomplete.as_object_mut().unwrap().remove(field);
