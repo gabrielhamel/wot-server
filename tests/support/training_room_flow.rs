@@ -2245,6 +2245,12 @@ fn assert_roster_ready(script: &ScriptDispatch, updates: &[Vec<u8>]) {
 pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
     let shell_damage = fixture.shell_damage;
     let traces = telemetry_capture::exporter().get_finished_spans().unwrap();
+    let attribute = |span: &SpanData, key: &str| {
+        span.attributes
+            .iter()
+            .find(|attribute| attribute.key.as_str() == key)
+            .map(|attribute| attribute.value.to_string())
+    };
     let has = |span: &SpanData, key, value: &str| {
         span.attributes
             .iter()
@@ -2366,6 +2372,8 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         .iter()
         .find(|s| s.name == "battles.control" && child_of(hit, s))
         .unwrap();
+    let shooter = attribute(control, "input.participant.id").expect("shooting participant ID");
+    assert!(has(hit, "input.participant.id", &shooter));
     assert!(
         traces
             .iter()
@@ -2629,10 +2637,38 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         .find(|s| s.name == "player_sessions.return_from_battle" && child_of(s, leave))
         .expect("garage return in the leave request trace");
     assert!(has(garage_return, "output.outcome", "garage_reset"));
-    assert!(traces.iter().any(|s| s.name == "battles.remove_participant"
-        && child_of(s, garage_return)
-        && has(s, "ddd.bounded_context.name", "battles")
-        && has(s, "output.players.count", "1")));
+    let departed = traces
+        .iter()
+        .find(|span| span.name == "battles.remove_participant" && child_of(span, garage_return))
+        .expect("participant removal in the leave request trace");
+    assert!(has(departed, "ddd.bounded_context.name", "battles"));
+    assert!(has(departed, "output.players.count", "1"));
+    let participant =
+        attribute(departed, "input.participant.id").expect("departing participant ID");
+    let avatar = attribute(leave, "input.entity_id").expect("departing Avatar ID");
+    let battle = attribute(departed, "output.battle.id").expect("departed battle ID");
+    assert!(traces.iter().any(|span| span.name == "battles.enter"
+        && has(span, "input.battle.id", &battle)
+        && has(span, "input.entity_id", &avatar)
+        && has(span, "input.participant.id", &participant)
+        && has(span, "output.outcome", "entered")));
+    assert!(traces.iter().any(|control| {
+        control.name == "battles.control"
+            && has(control, "output.outcome", "invalid_flags")
+            && traces.iter().any(|request| {
+                request.name == "game.cell_command"
+                    && child_of(control, request)
+                    && has(request, "output.outcome", "invalid_flags")
+            })
+            && traces.iter().any(|entry| {
+                entry.name == "battles.enter"
+                    && ["input.battle.id", "input.entity_id", "input.participant.id"]
+                        .iter()
+                        .all(|key| {
+                            attribute(control, key).is_some_and(|value| has(entry, key, &value))
+                        })
+            })
+    }));
     for account in [host, guest] {
         let sync = traces
             .iter()

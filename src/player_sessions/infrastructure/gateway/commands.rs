@@ -12,9 +12,21 @@ impl Gateway {
                 .span
                 .record("user.id", session.account.snapshot.id().to_string());
         }
-        if self.battles.contains(event.client) {
+        if let Some(participant) = session.map(|session| ParticipantId(session.generation))
+            && self.battles.contains(participant)
+        {
             event.span.in_scope(|| {
-                if let AvatarAction::Leave = self.battles.avatar_method(&mut self.base, &event) {
+                let entity_id = event.entity.id().0;
+                if !self.battles.owns_avatar(participant, entity_id) {
+                    event.span.record("output.outcome", "entity_unavailable");
+                    return;
+                }
+                let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
+                if let Some(command) = delivery.avatar_command(&event)
+                    && let AvatarAction::Leave =
+                        self.battles
+                            .avatar_command(&mut delivery, participant, entity_id, command)
+                {
                     self.return_from_battle(event.client);
                 }
             });

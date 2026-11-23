@@ -116,6 +116,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.room.open_flag`](../src/player_sessions/infrastructure/gateway/training.rs) | Wire privacy flag on Training Room creation. `0` denotes invite-only and `1` denotes open. |
 | [`input.room.id`](../src/player_sessions/infrastructure/gateway/training.rs) | Training Room ID supplied by the client on join or decline, or set by the server for invitation delivery, channel membership and Training launch preparation. |
 | [`input.battle.id`](../src/battles/infrastructure/mod.rs) | Server-assigned battle ID on arena entry, period and readiness broadcasts, vehicle controls and shots. |
+| [`input.participant.id`](../src/battles/infrastructure/mod.rs) | Numeric admission generation scoped to the gateway. Recorded on arena entry and participant removal, and on [decoded vehicle controls and shots](../src/battles/infrastructure/controls.rs). |
 | [`output.battle.id`](../src/battles/infrastructure/mod.rs) | Battle ID allocated during preparation or resolved on participant removal. |
 | [`input.cluster.id`](../src/player_sessions/infrastructure/gateway/training.rs) | Cluster supplied on Training Room join or decline, or configured periphery on invitation delivery. Public room-list joins use `0`. |
 | [`input.invitation`](../src/player_sessions/infrastructure/gateway/training.rs) | True when the join request accepts an invitation. |

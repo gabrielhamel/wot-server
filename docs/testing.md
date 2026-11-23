@@ -153,7 +153,9 @@ accepted after the control handoff, and the committed ready flag for both
 roster rows. Each peer requires the sequence footer on unreliable channel
 datagrams and ignores stale unreliable sequences. The test checks that both
 clients' cell creation and control handoff deliveries share the original host
-request trace. The same peers
+request trace. It also checks that a rejected drive command retains its Mercury
+request parent and that battle entry, decoded controls, shots and removal use
+the participant ID assigned to the corresponding session. The same peers
 check that both initial Vehicle poses agree with their corresponding cell
 creation on both clients. They verify that steering right in reverse swings
 the tail to the right. They drive both vehicles and require their position

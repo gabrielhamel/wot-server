@@ -12,7 +12,7 @@ use crate::platform::mercury::{
     script::{PythonValue, StringValue, Ty, TyKind, Value as WireValue},
 };
 use glam::{Vec2, Vec3, Vec4};
-use std::{io, io::BufReader, net::SocketAddr};
+use std::{io, io::BufReader};
 
 mod controls;
 mod roster;
@@ -20,6 +20,7 @@ mod roster;
 pub(super) use controls::{ShotImpact, pack_wheel_speed, pack_wheel_steering};
 
 pub(super) struct ArenaWire {
+    dispatch: Arc<ScriptDispatch>,
     avatar_type: u16,
     vehicle_type: u16,
     info_type: u16,
@@ -49,9 +50,7 @@ pub(super) struct ArenaEntry {
 }
 
 impl ArenaWire {
-    pub(super) fn bind(base: &mut base::App, resources: &ResourceBundle) -> Result<Self> {
-        base.register::<Avatar>().context("Bind Avatar methods")?;
-        let dispatch = base.dispatch();
+    pub(super) fn bind(dispatch: Arc<ScriptDispatch>, resources: &ResourceBundle) -> Result<Self> {
         let type_id = |name: &str| {
             dispatch
                 .entity_from_name(name)
@@ -64,6 +63,7 @@ impl ArenaWire {
         let avatar_type = type_id("Avatar")?;
         let gun_marker_type = type_id("GunMarkerComponent")?;
         let schema = Self {
+            dispatch: dispatch.clone(),
             impact_materials: ImpactMaterials::load(resources)?,
             avatar_type,
             vehicle_type,
@@ -75,31 +75,31 @@ impl ArenaWire {
                 .component_nrl_id(gun_marker_type)
                 .context("GunMarkerComponent has no client replication type")?,
             gun_angles_element: Self::bind_fixed_property(
-                dispatch,
+                &dispatch,
                 vehicle_type,
                 "gunAnglesPacked",
                 &WireValue::UInt16(0),
                 2,
             )?,
             engine_mode_element: Self::bind_fixed_property(
-                dispatch,
+                &dispatch,
                 vehicle_type,
                 "engineMode",
                 &WireValue::Seq(vec![WireValue::UInt8(1), WireValue::UInt8(0)]),
                 2,
             )?,
             wheels_scroll_element: Self::bind_wheel_property(
-                dispatch,
+                &dispatch,
                 vehicle_type,
                 "wheelsScroll",
             )?,
             wheels_steering_element: Self::bind_wheel_property(
-                dispatch,
+                &dispatch,
                 vehicle_type,
                 "steeringAngles",
             )?,
             hull_aim_element: Self::bind_fixed_property(
-                dispatch,
+                &dispatch,
                 avatar_type,
                 "ownVehicleAuxPhysicsData",
                 &WireValue::UInt64(0),
@@ -113,21 +113,21 @@ impl ArenaWire {
                 .context("AvatarVehiclesInfo has no client replication type")?,
         };
         let sample = Entrant::sample();
-        schema.vehicle(dispatch, &sample)?;
-        schema.validate_controls(dispatch)?;
-        schema.entry(dispatch, 1, 1, BattleMode::Training, &sample, &[&sample])?;
+        schema.vehicle(&sample)?;
+        schema.validate_controls()?;
+        schema.entry(1, 1, BattleMode::Training, &sample, &[&sample])?;
         Ok(schema)
     }
 
     pub(super) fn entry(
         &self,
-        dispatch: &ScriptDispatch,
         space_id: u32,
         arena_type: i32,
         mode: BattleMode,
         player: &Entrant,
         players: &[&Entrant],
     ) -> Result<ArenaEntry> {
+        let dispatch = &self.dispatch;
         let avatar = dispatch
             .entity_from_id(self.avatar_type)
             .context("Missing Avatar")?;
@@ -222,12 +222,9 @@ impl ArenaWire {
         })
     }
 
-    pub(super) fn vehicle(
-        &self,
-        dispatch: &ScriptDispatch,
-        player: &Entrant,
-    ) -> Result<CreateArenaEntity> {
-        let vehicle = dispatch
+    pub(super) fn vehicle(&self, player: &Entrant) -> Result<CreateArenaEntity> {
+        let vehicle = self
+            .dispatch
             .entity_from_id(self.vehicle_type)
             .context("Missing Vehicle")?;
         let property_type = |name| {
@@ -426,14 +423,14 @@ fn write_component_node(
 impl ArenaEntry {
     pub(super) fn publish(
         &self,
-        base: &mut base::App,
-        client: ClientKey,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
         map: &ArenaMap,
         vehicles: impl Iterator<Item = CreateArenaEntity>,
         tick: u32,
     ) -> Result<()> {
-        base.send_arena_element(client, SetGameTime { game_time: tick })?;
-        base.send_arena_element(client, self.cell.clone())?;
+        delivery.send_arena_element(client, SetGameTime { game_time: tick })?;
+        delivery.send_arena_element(client, self.cell.clone())?;
         // Space metadata records observed alongside the geometry mapping.
         for record in [
             &[0, 0, 0, 0, 0, 1, 0, 0, 0][..],
@@ -442,12 +439,10 @@ impl ArenaEntry {
         ] {
             let mut data = self.cell.space_id.to_le_bytes().to_vec();
             data.extend(record);
-            base.send_arena_element(client, SpaceProperty(data))?;
+            delivery.send_arena_element(client, SpaceProperty(data))?;
         }
-        let SocketAddr::V4(entry_id) = base.addr()? else {
-            anyhow::bail!("arena requires an IPv4 BaseApp");
-        };
-        base.send_arena_element(
+        let entry_id = delivery.geometry_address()?;
+        delivery.send_arena_element(
             client,
             GeometryMapping {
                 space_id: self.cell.space_id,
@@ -457,18 +452,18 @@ impl ArenaEntry {
         )?;
         for vehicle in vehicles {
             let entity_id = vehicle.entity_id;
-            publish_entity(base, client, vehicle)?;
+            publish_entity(delivery, client, vehicle)?;
             if entity_id == self.cell.vehicle_id {
-                base.send_arena_element(client, SelectEntity { entity_id })?;
-                base.send_arena_element(client, self.own_vehicle.clone())?;
+                delivery.send_arena_element(client, SelectEntity { entity_id })?;
+                delivery.send_arena_element(client, self.own_vehicle.clone())?;
             }
         }
-        publish_entity(base, client, self.info.clone())?;
-        base.send_arena_element(client, self.roster.clone())?;
-        base.send_arena_element(client, self.own_component.clone())?;
-        base.send_arena_element(client, self.gun_marker.clone())?;
+        publish_entity(delivery, client, self.info.clone())?;
+        delivery.send_arena_element(client, self.roster.clone())?;
+        delivery.send_arena_element(client, self.own_component.clone())?;
+        delivery.send_arena_element(client, self.gun_marker.clone())?;
         // CreateCellPlayer assumes local Avatar control and filters out server poses.
-        base.send_arena_element(
+        delivery.send_arena_element(
             client,
             ControlEntity {
                 entity_id: self.avatar_entity_id,
@@ -480,18 +475,18 @@ impl ArenaEntry {
 }
 
 fn publish_entity(
-    base: &mut base::App,
-    client: ClientKey,
+    delivery: &mut impl ArenaDelivery,
+    client: ParticipantId,
     entity: CreateArenaEntity,
 ) -> io::Result<()> {
-    base.send_arena_element(
+    delivery.send_arena_element(
         client,
         EnterArenaEntity {
             entity_id: entity.entity_id,
             alias: u8::MAX,
         },
     )?;
-    base.send_arena_element(client, entity)
+    delivery.send_arena_element(client, entity)
 }
 
 fn properties_by_id<const N: usize>(
@@ -694,17 +689,12 @@ mod tests {
     fn vehicle_creation_carries_locked_outfit_in_public_info() {
         let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
-        let mut base = base::App::new(
-            "127.0.0.1:0".parse().unwrap(),
-            script::load(&resources).unwrap(),
-        )
-        .unwrap();
-        let wire = ArenaWire::bind(&mut base, &resources).unwrap();
-        let dispatch = base.dispatch();
+        let dispatch = Arc::new(ScriptDispatch::new(script::load(&resources).unwrap()));
+        let wire = ArenaWire::bind(dispatch.clone(), &resources).unwrap();
         let mut player = Entrant::sample();
         // CustomizationOutfit with the First Warrior style marker.
         player.vehicle.outfit = vec![4, 16, 0xda, 7];
-        let vehicle = wire.vehicle(dispatch, &player).unwrap();
+        let vehicle = wire.vehicle(&player).unwrap();
         let schema = dispatch.entity_from_id(vehicle.type_id).unwrap();
         let mut properties = &vehicle.properties[1..];
         let property_id = u8::read(&mut properties, &()).unwrap();

@@ -43,7 +43,7 @@ use element::{LoginKey, SessionKey};
 pub struct App {
     /// The scripting model for this app, and its per entity-type dispatch tables
     /// computed from it at construction time.
-    dispatch: ScriptDispatch,
+    dispatch: Arc<ScriptDispatch>,
     /// The registered entity schemas.
     entity_schemas: Registry,
     /// Internal socket for this application.
@@ -79,7 +79,7 @@ impl App {
 
     pub(crate) fn from_socket(socket: PacketSocket, script: Script) -> Self {
         Self {
-            dispatch: ScriptDispatch::new(script),
+            dispatch: Arc::new(ScriptDispatch::new(script)),
             entity_schemas: Registry::default(),
             socket,
             protocol: Protocol::new(),
@@ -99,6 +99,10 @@ impl App {
     /// The dispatch tables of the script model this app was created with.
     pub fn dispatch(&self) -> &ScriptDispatch {
         &self.dispatch
+    }
+
+    pub(crate) fn shared_dispatch(&self) -> Arc<ScriptDispatch> {
+        Arc::clone(&self.dispatch)
     }
 
     /// Get the address this app is bound to.
@@ -1135,6 +1139,14 @@ impl App {
             state.player = Some(key.any());
         }
         Ok(key)
+    }
+
+    pub(crate) fn player<T: EntitySchema>(&mut self, client: ClientKey) -> io::Result<T::View<'_>> {
+        let entity = self
+            .client(client)?
+            .player
+            .ok_or_else(|| io_invalid_data(format_args!("client {client} has no player entity")))?;
+        self.entity(entity.cast::<T>())
     }
 
     pub fn entity<T: EntitySchema>(&mut self, key: EntityKey<T>) -> io::Result<T::View<'_>> {

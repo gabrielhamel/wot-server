@@ -12,7 +12,9 @@ Player Sessions owns the Training text channel through live room membership.
 When a room is ready to launch, Player Sessions sends the selected map,
 duration and equipped roster through the [Battles contract](../battles/mod.rs).
 The room remains discoverable during the round. Player Sessions handles the
-arena handoff and restores the same membership on garage return.
+arena handoff and restores the same membership on garage return. It maps the
+current admission generation to the live Mercury client for battle delivery and
+for returns scheduled by Battles.
 
 | Layer | Responsibilities |
 | --- | --- |
@@ -22,7 +24,7 @@ arena handoff and restores the same membership on garage return.
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
 | `infrastructure/gateway/training.rs` | Check map IDs through Battles and manage shared room settings, membership, roster, readiness and deletion. |
-| `infrastructure/gateway/training/start.rs` | Validate team confirmation, prepare the roster through the Battles contract and hand off eligible sessions. |
+| `infrastructure/gateway/training/start.rs` | Validate team confirmation, prepare the roster through the Battles contract using participant IDs, and hand off eligible sessions. |
 | `infrastructure/gateway/training/chat.rs` | Open and close the native Training channel and relay messages to the active room roster. |
 | `infrastructure/gateway/training/invites.rs` | Keep active invitations by account ID and deliver them immediately or on garage sync. |
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |

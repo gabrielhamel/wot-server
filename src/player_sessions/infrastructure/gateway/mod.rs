@@ -4,7 +4,10 @@ use super::{
 };
 use crate::{
     accounts::contract::{GameAccounts, GarageCommands, GarageQueries, PreparedAccount},
-    battles::contract::{BattleRuntime, ParticipantDeparture, TICK},
+    battles::{
+        contract::{BattleRuntime, ParticipantDeparture, ParticipantId, TICK},
+        mercury::MercuryArena,
+    },
     player_sessions::domain::Admissions,
 };
 use anyhow::{Context, Result};
@@ -161,6 +164,7 @@ pub struct Gateway {
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
     battles: BattleRuntime,
+    battle_clients: HashMap<ParticipantId, ClientKey>,
     metrics: Option<metrics::GatewayMetrics>,
     account_bootstrap: AccountBootstrap,
     training_rooms: BTreeMap<u32, training::HostedRoom>,
@@ -249,6 +253,7 @@ impl Gateway {
             tickets: HashMap::new(),
             sessions: HashMap::new(),
             battles,
+            battle_clients: HashMap::new(),
             metrics: None,
             account_bootstrap,
             training_rooms: BTreeMap::new(),
@@ -321,7 +326,17 @@ impl Gateway {
                     }
                 }
                 base::Event::BaseMethod(event) => self.handle_base_method(event),
-                base::Event::CellMethod(event) => self.battles.cell_method(&mut self.base, event),
+                base::Event::CellMethod(event) => {
+                    if let Some(session) = self.sessions.get(&event.client) {
+                        let participant = ParticipantId(session.generation);
+                        let control = MercuryArena::vehicle_control(participant, &event);
+                        event.span.in_scope(|| {
+                            let mut delivery =
+                                MercuryArena::new(&mut self.base, &self.battle_clients);
+                            self.battles.vehicle_control(&mut delivery, control);
+                        });
+                    }
+                }
                 base::Event::IoError(error) => error!(error = %error.error, "Base packet failed"),
                 _ => {}
             }
@@ -336,12 +351,15 @@ impl Gateway {
                     .metrics
                     .as_ref()
                     .filter(|_| self.battles.active_count() > 0);
-                let ending = self.battles.tick(&mut self.base, now);
+                let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
+                let ending = self.battles.tick(&mut delivery, now);
                 if let Some(metrics) = tick_metrics {
                     metrics.record_battle_tick(now.duration_since(tick), now.elapsed());
                 }
-                for (client, finish) in ending {
-                    finish.in_scope(|| self.return_from_battle(client));
+                for (participant, finish) in ending {
+                    if let Some(&client) = self.battle_clients.get(&participant) {
+                        finish.in_scope(|| self.return_from_battle(client));
+                    }
                 }
                 if let Some(metrics) = &self.metrics {
                     metrics.record_counts(self.sessions.len(), self.battles.active_count());
@@ -365,7 +383,12 @@ impl Gateway {
     ))]
     fn return_from_battle(&mut self, client: ClientKey) {
         let span = tracing::Span::current();
-        match self.battles.remove_participant(&mut self.base, client) {
+        let departure = self.sessions.get(&client).and_then(|session| {
+            let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
+            self.battles
+                .remove_participant(&mut delivery, ParticipantId(session.generation))
+        });
+        match departure {
             Some(ParticipantDeparture::Entered) => match self.base.reset_player(client) {
                 Ok(()) => {
                     span.record("output.outcome", "garage_reset");
@@ -554,6 +577,8 @@ impl Gateway {
         };
         if let Some(client) = self.base.answer_login_success(event.addr, ticket.blowfish) {
             let saving = self.pending_writes.contains(&ticket.account.snapshot.id());
+            self.battle_clients
+                .insert(ParticipantId(ticket.generation), client);
             self.sessions.insert(
                 client,
                 Session {
@@ -585,8 +610,10 @@ impl Gateway {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
         };
-        if self.battles.contains(client) {
-            return self.battles.enter(&mut self.base, client);
+        let participant = ParticipantId(session.generation);
+        if self.battles.contains(participant) {
+            let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
+            return self.battles.enter(&mut delivery, participant);
         }
         if session.entity.is_some() {
             return Ok(());

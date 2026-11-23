@@ -197,7 +197,7 @@ impl Gateway {
                 return Ok(None);
             };
             entrants.push(BattleParticipant {
-                client,
+                id: ParticipantId(session.generation),
                 account_id: member.account_id,
                 name: member.name.clone(),
                 team,
@@ -210,8 +210,9 @@ impl Gateway {
         if !entrants.iter().any(|entrant| entrant.is_host) {
             return Ok(None);
         }
+        let mut delivery = MercuryArena::new(&mut self.base, &self.battle_clients);
         let prepared = self.battles.prepare(
-            &mut self.base,
+            &mut delivery,
             BattleLaunch {
                 arena_type: room.settings.arena_type_id,
                 duration: Duration::from_secs(u64::try_from(room.settings.duration_seconds)?),
@@ -239,10 +240,11 @@ impl Gateway {
         for (&client, member) in &mut room.members {
             member.ready_vehicle = None;
             member.ready_inventory = None;
-            if !battle.contains(client) {
-                continue;
-            }
-            let Some(session) = self.sessions.get_mut(&client) else {
+            let Some(session) = self
+                .sessions
+                .get_mut(&client)
+                .filter(|session| battle.contains(ParticipantId(session.generation)))
+            else {
                 continue;
             };
             member.in_battle = true;
