@@ -150,5 +150,26 @@ The lookup and fallback are in the reference client's
   requests, wallet updates, and full sync after reconnect. Native GUI rendering
   of these flows remains unverified.
 
-Battle settlement, crew dossiers, reward and token recruits with preset or zero perks,
-mentoring licenses, recertification forms and event-specific crew remain pending.
+## Special recruits
+
+Admin grants resolve a special crew group in the installed nation's
+`premiumGroups` catalog and add the recruit directly to the barracks.
+The grant uses the published passport IDs and encodes the premium and sex
+flags in the crew descriptor so the client resolves the correct identity.
+The recruit starts at full crew efficiency and receives a compatible
+specialization in their nation. The first catalog role is selected when
+the group lists several. Groups without a role list default to commander.
+The grant uses the first passport entry from each catalog field for groups
+that supply a pool of names or portraits, including the generic male and female
+premium groups.
+
+The same nation and group can be granted once per account. Normal barracks
+capacity applies. The server uses the catalog's role eligibility and
+passport replacement restrictions for crew skins. Female-only skins can be
+equipped by a female recruit whose group allows skin use. Direct passport
+editing remains available through the standard-crew command. The [admin guide](admin.md) describes
+the picker and the [Store guide](store.md#event-cosmetics-and-recruits) gives
+examples from the EU client.
+
+Battle settlement, crew dossiers, reward-token recruitment with preset or
+zero perks, mentoring licenses and recertification forms remain pending.

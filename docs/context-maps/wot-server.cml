@@ -57,7 +57,7 @@ ContextMap Server {
     implementationTechnology = "Battles Rust library contract for map and active arena count queries, separate bounded in-process queues for arena preparation and live simulation, checked activation with an assigned roster, equipped loadouts with outfits and vehicle performance, viewer customization preferences, typed Avatar and vehicle commands sent on a bounded in-process queue to the arena tick worker, and queued participant updates and garage returns delivered through BaseApp"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "Accounts Rust library PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections"
+    implementationTechnology = "Accounts Rust library PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections for vehicles, cosmetics, crew items, recruit groups with country options, and equipment"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "Player Sessions Rust library contracts for bounded PlayerGrants and StoreRequests coordinate dashboard requests with garage writes. The embedded Store web entry point accepts the dashboard transport."

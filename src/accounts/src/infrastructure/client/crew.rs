@@ -1,7 +1,7 @@
 use super::{
     GarageCatalog,
     item_defs::{self, NATIONS},
-    items::TankmanDescr,
+    items::{TankmanDescr, tankman_flag},
 };
 use crate::{
     AccountSnapshot, CrewCommand, CrewMember, CrewPassport, CrewRecruitment, CrewRoster,
@@ -23,9 +23,16 @@ pub(super) fn now() -> u64 {
 }
 
 pub(super) fn crew_descriptor(member: &CrewMember) -> Vec<u8> {
+    let mut flags = 0;
+    if member.special_recruit.is_some() {
+        flags |= tankman_flag::IS_PREMIUM;
+    }
+    if member.female {
+        flags |= tankman_flag::IS_FEMALE;
+    }
     TankmanDescr {
         nation: member.nation,
-        flags: vec![0],
+        flags: vec![flags],
         vehicle_type_id: member.specialization,
         role: member.role,
         skills_efficiency_xp: member.training.efficiency_xp,
@@ -151,6 +158,8 @@ impl GarageCatalog {
             dismissed_at: None,
             role_change_target: None,
             skin: None,
+            special_recruit: None,
+            female: false,
         })
     }
 
@@ -338,6 +347,9 @@ impl GarageCatalog {
                     self.crew_vehicle(vehicle)?
                 };
                 self.check_crew_seat(snapshot, member, false)?;
+                if !self.recruit_allows_role(member, role) {
+                    return Err(ProgressionError::InvalidRequest);
+                }
                 validate_specialization(member, &vehicle, role)?;
                 if member.role != role {
                     member.training.change_role(role);
@@ -357,6 +369,9 @@ impl GarageCatalog {
             } => {
                 let member = crew.active_mut(member)?;
                 self.check_crew_seat(snapshot, member, false)?;
+                if member.special_recruit.is_some() {
+                    return Err(ProgressionError::InvalidRequest);
+                }
                 let passports = self
                     .passports
                     .get(usize::from(member.nation))

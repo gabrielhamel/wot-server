@@ -52,8 +52,10 @@ consumables and directives. The Improved Equipment section includes eligible
 `deluxe` items with positive bond prices even when their bundle entry is hidden
 by `notInShop`. Checkout adds one copy to the depot and debits bonds in the
 same account revision.
-It uses the mapped web Store prices for crew skins and the mapped Bond Shop
-prices for styles. The extractor brings over `artefacts.mo`,
+The Store keeps its mapped gold offers for crew skins and adds the other EU
+skins with a positive catalog price in credits, gold or bonds. It honors
+item and price-group `notInShop` flags and region restrictions. Styles use
+the mapped Bond Shop offers. The extractor brings over `artefacts.mo`,
 `crew_skins.mo` and the British `gb_vehicles.mo` for localized display names.
 Re-extract the bundle to use those catalogs. The catalog also accepts older
 bundles with definition or mapped names as fallbacks.
@@ -64,6 +66,56 @@ stock to the customization inventory. A style carries the client-defined
 vehicle filter and can be applied to the common outfit of a compatible vehicle.
 The server retains the client style descriptor and the client renders the
 style from its local resources.
+
+### Event cosmetics and recruits
+
+The admin panel can grant selectable 2D and 3D styles and EU crew skins through the
+same transaction used for other garage grants. An item's native shop
+visibility does not affect grant eligibility. The account keeps total
+ownership and the server checks catalog limits before adding copies.
+Selectable styles retain their vehicle filters. The grant picker appends
+compatible tank names to 3D styles and to 2D styles with explicit tank lists.
+Other 2D styles show nation and tier restrictions where available. Styles
+with the same remaining label get a variant number. A style integrated into a
+vehicle through `lockedOnVehicle` is delivered with the vehicle.
+
+These examples were verified in `scripts.pkg` from the installed EU client on
+2026-11-23 (`v.2.4.1.1 #993`, executable SHA-256
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`).
+
+- Proserpina (`506`) is a [Tour of Duty clan reward](https://worldoftanks.eu/en/wot-1-24-1/).
+  The client defines the style for the Carro da Combattimento 45 t, with a
+  one-copy limit and a `notInShop` price group. It is available as an admin grant.
+- Birthday Skill4ltu (`197`) is an equippable crew skin distributed through
+  [Twitch Drops](https://worldoftanks.eu/en/news/general-news/wot-16-anniversary-august-2026/).
+  Its `rareSkin` price group sets a price of 50,000 credits. This price is used
+  by the Store and the native purchase handler.
+- [Girls und Panzer characters](https://worldoftanks.eu/en/news/general-news/girls-und-panzer-october-2026/)
+  such as Miho Nishizumi are special recruits. Admin grants use the
+  [barracks workflow](crew.md#special-recruits).
+
+The sampled bundle contains 989 selectable 2D styles and 268 selectable 3D
+styles. Its other entries include 124 hidden 2D styles, three built-in 2D
+styles and 40 built-in 3D styles. All 308 3D styles use a native price group marked `notInShop`. The separate web
+Bond Shop mapping can still offer styles from those groups.
+
+| Field or tag | Meaning |
+| --- | --- |
+| `notInShop` | Native shop exclusion on the item or its price group. |
+| `hiddenInUI` | Hides the style in the native UI. |
+| `lockedOnVehicle` | Style integrated into a vehicle. |
+| `c11n2D`, `c11n3D` | Identifies a 2D or 3D style. |
+| `progression_required` | Marks a style with customization gated by progression. |
+| `styleProgression` | Defines levels for the style. |
+| `progression_rewind_enabled` | Marks progression that offers a return to an earlier level. |
+| `styleSerialNumber` | Identifies a style that can display a serial number. |
+| `addNationalEmblem` | Requests the vehicle's national emblem. |
+| `NY_style`, `Kursk_battle`, `winter_hunt` | Holiday or event categories. |
+| `sabatonArenaMusic`, `offspringArenaMusic` | Music tags associated with Sabaton and The Offspring. |
+| `vehicleFilter`, `maxNumber` | Vehicle compatibility and total copies allowed. |
+
+Style grants add owned stock. Progression updates and serial-number
+assignment are still pending.
 
 ## WoT Premium Account
 
@@ -199,12 +251,17 @@ In the client reference, the Store registers `NotificationWebApi` in
 The PostgreSQL integration test
 `store_purchase_updates_the_garage_and_rejects_replay` checks bootstrap,
 authorization, stale and concurrent orders, insufficient funds, the
-Collectors’ tier gate, credit and bond purchases, style compatibility,
+Collectors’ tier gate, credit and bond purchases including Birthday Skill4ltu,
+style compatibility,
 Premium Account activation, extension and live expiry, native purchase,
 reconnect persistence, and exported W3C parent and SQL/garage delivery
 ancestry. The `exports_admin_http_access_lifecycle` test checks a dashboard
 purchase while the game is disconnected, session and write-header enforcement,
-account isolation, replay rejection, persisted balances and trace ancestry.
+account isolation, replay rejection, persisted balances and trace ancestry. It
+also checks admin authorization, persistence and success and rejection traces
+for the style, skin and recruit grants. The live garage grant test checks the inventory diff
+for Proserpina, Birthday Skill4ltu and Miho Nishizumi, plus fitting Proserpina and the 2D Veteran style on the Carro and
+rejecting Proserpina on an incompatible tank.
 The garage and training battle integration test checks that the original
 Store token opens the catalog before battle, receives HTTP 401 in the arena,
 and opens the catalog again after the garage synchronizes. It verifies the

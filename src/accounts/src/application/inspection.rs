@@ -42,6 +42,10 @@ pub struct GarageInspection {
     summary: GarageSummary,
     vehicles: Vec<GarageVehicle>,
     attachments: BTreeMap<u16, u32>,
+    styles_2d: BTreeMap<u16, u32>,
+    styles_3d: BTreeMap<u16, u32>,
+    crew_skins: BTreeMap<u16, u32>,
+    special_recruits: BTreeMap<i32, u32>,
     depot: BTreeMap<i32, u32>,
 }
 
@@ -92,6 +96,7 @@ impl GarageInspection {
             })
             .collect();
         vehicles.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.key.cmp(&b.key)));
+        let (styles_2d, styles_3d) = catalog.style_counts(&snapshot);
         Self {
             summary: GarageSummary::from(&snapshot),
             vehicles,
@@ -102,6 +107,10 @@ impl GarageInspection {
                 .chain(catalog.grantable_experimental_equipment())
                 .filter_map(|(id, _)| Some((id, *snapshot.progression.depot.get(&id)?)))
                 .collect(),
+            styles_2d,
+            styles_3d,
+            crew_skins: catalog.crew_skin_counts(&snapshot),
+            special_recruits: catalog.special_recruit_counts(&snapshot),
             attachments: snapshot
                 .progression
                 .cosmetics

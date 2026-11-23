@@ -5,6 +5,7 @@ import type { Identifier } from "react-admin";
 import type { Garage, Grant } from "../../../application/admin-contracts";
 import type { AdminDataProvider } from "../../../infrastructure/admin-api";
 import { errorMessage } from "../../../../../shared-infrastructure/src/infrastructure/web/http";
+import { SpecialRecruitGrant } from "./special-recruit-grant";
 import { CosmeticGrant } from "./cosmetic-grant";
 import { DepotGrant } from "./depot-grant";
 import { CurrencyGrant } from "./currency-grant";
@@ -130,6 +131,33 @@ function GaragePage({ id }: { id: Identifier }) {
               busy={busy}
               kind="stat_tracker"
               vehicles={garage.vehicles}
+              onGrant={submit}
+            />
+            <CosmeticGrant
+              api={api}
+              busy={busy}
+              kind="style2d"
+              owned={garage.styles_2d}
+              onGrant={submit}
+            />
+            <CosmeticGrant
+              api={api}
+              busy={busy}
+              kind="style3d"
+              owned={garage.styles_3d}
+              onGrant={submit}
+            />
+            <CosmeticGrant
+              api={api}
+              busy={busy}
+              kind="crew_skin"
+              owned={garage.crew_skins}
+              onGrant={submit}
+            />
+            <SpecialRecruitGrant
+              api={api}
+              busy={busy}
+              owned={garage.special_recruits}
               onGrant={submit}
             />
           </Box>

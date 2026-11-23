@@ -44,12 +44,22 @@ export type PlayerGarage = Record<Currency, string> & {
 export type Garage = Omit<PlayerGarage, "vehicles"> & {
   vehicles: GarageVehicle[];
   attachments: OwnedCosmetics;
+  styles_2d: OwnedCosmetics;
+  styles_3d: OwnedCosmetics;
+  crew_skins: OwnedCosmetics;
+  special_recruits: OwnedCosmetics;
   depot: Record<number, number>;
 };
 
 export interface DepotItem {
   id: number;
   name: string;
+}
+
+export interface SpecialRecruit {
+  id: number;
+  name: string;
+  countries: DepotItem[];
 }
 
 export type DepotGrantKind =
@@ -68,7 +78,8 @@ export type Grant =
   | { kind: "currency"; currency: Currency; amount: number }
   | { kind: "vehicle"; vehicle: number }
   | { kind: DepotGrantKind; id: number; count: number }
-  | { kind: "attachment"; id: number; count: number }
+  | { kind: "attachment" | "style2d" | "style3d" | "crew_skin"; id: number; count: number }
+  | { kind: "special_recruit"; id: number }
   | { kind: "stat_tracker"; vehicle: number; id: number; count: number };
 
 export interface GrantResult {

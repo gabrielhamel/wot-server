@@ -26,7 +26,7 @@ checkout to the same context.
 | First administrator | Account created by the setup form when the database has no players. |
 | Self-service registration | Player account creation enabled once an administrator exists. The email is the sign-in name and the username is the in-game display name. |
 | Player record | Account ID, game login, display name and role returned by the admin API. |
-| Grant | Administrator-authorized addition of currency, cosmetic copies or a permanently owned tank. |
+| Grant | Administrator-authorized addition of currency, inventory stock, a special recruit or a permanently owned tank. |
 
 The [admin guide](../../docs/admin.md) describes configuration and the HTTP
 contract.

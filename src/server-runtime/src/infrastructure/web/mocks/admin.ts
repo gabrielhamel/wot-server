@@ -21,6 +21,24 @@ const vehicles: CatalogVehicle[] = [
   { id: 813, key: "germany:G01_Pz_IV", name: "Panzer IV", tier: 5 },
 ];
 const attachments: Cosmetic[] = [{ id: 12, name: "Field crate", max_owned: 3 }];
+const styles2d: Cosmetic[] = [
+  { id: 644, name: "Veteran (Carro da Combattimento 45 t)", max_owned: 1 },
+];
+const styles3d: Cosmetic[] = [
+  { id: 506, name: "Proserpina (Carro da Combattimento 45 t)", max_owned: 1 },
+];
+const crewSkins: Cosmetic[] = [{ id: 197, name: "Birthday Skill4ltu", max_owned: null }];
+const recruits = [
+  { id: 74, name: "Miho Nishizumi", countries: [{ id: 74, name: "Germany" }] },
+  {
+    id: 190,
+    name: "Birthday14 cat",
+    countries: [
+      { id: 190, name: "France" },
+      { id: 191, name: "Germany" },
+    ],
+  },
+];
 const crewBooks: DepotItem[] = [{ id: 286, name: "Training Booklet (U.S.S.R.)" }];
 const experimentalEquipment: DepotItem[] = [{ id: 38649, name: "Fire-Control System T1" }];
 const bountyEquipment: DepotItem[] = [
@@ -50,6 +68,10 @@ function demoGarage(displayName: string): Garage {
     slots: 5,
     vehicles: [{ ...starter, inventory_id: id, stat_trackers: { 37: 0 } }],
     attachments: {},
+    styles_2d: {},
+    styles_3d: {},
+    crew_skins: {},
+    special_recruits: {},
     depot: {},
   };
 }
@@ -91,14 +113,40 @@ function applyGrant(garage: Garage, grant: Grant) {
       garage.depot[grant.id] = count;
       break;
     }
+    case "special_recruit":
+      if (!recruits.some(({ countries }) => countries.some(({ id }) => id === grant.id)))
+        return problem(422, "Recruit unavailable.");
+      if (garage.special_recruits[grant.id])
+        return problem(409, "The player already has this recruit.");
+      garage.special_recruits[grant.id] = 1;
+      break;
+    case "style2d":
+    case "style3d":
+    case "crew_skin":
     case "attachment":
     case "stat_tracker": {
-      const items = grant.kind === "attachment" ? attachments : trackers;
+      const catalogs = {
+        attachment: attachments,
+        stat_tracker: trackers,
+        style2d: styles2d,
+        style3d: styles3d,
+        crew_skin: crewSkins,
+      };
+      const items = catalogs[grant.kind];
       const owned =
-        grant.kind === "attachment"
-          ? garage.attachments
-          : garage.vehicles.find(({ inventory_id }) => inventory_id === grant.vehicle)
-              ?.stat_trackers;
+        grant.kind === "stat_tracker"
+          ? garage.vehicles.find(({ inventory_id }) => inventory_id === grant.vehicle)
+              ?.stat_trackers
+          : garage[
+              (
+                {
+                  attachment: "attachments",
+                  style2d: "styles_2d",
+                  style3d: "styles_3d",
+                  crew_skin: "crew_skins",
+                } as const
+              )[grant.kind]
+            ];
       const item = items.find(({ id }) => id === grant.id);
       if (!item || !owned) return problem(404, "Item unavailable.");
       const count = (owned[grant.id] ?? 0) + grant.count;
@@ -249,6 +297,10 @@ export function adminHandlers(storage: Storage = window.localStorage) {
     http.get(`${endpoint}/experimental-equipment`, () => HttpResponse.json(experimentalEquipment)),
     http.get(`${endpoint}/bounty-equipment`, () => HttpResponse.json(bountyEquipment)),
     http.get(`${endpoint}/attachments`, () => HttpResponse.json(attachments)),
+    http.get(`${endpoint}/styles-2d`, () => HttpResponse.json(styles2d)),
+    http.get(`${endpoint}/styles-3d`, () => HttpResponse.json(styles3d)),
+    http.get(`${endpoint}/crew-skins`, () => HttpResponse.json(crewSkins)),
+    http.get(`${endpoint}/special-recruits`, () => HttpResponse.json(recruits)),
     http.get(`${endpoint}/stat-trackers`, () => HttpResponse.json(trackers)),
   ];
 }

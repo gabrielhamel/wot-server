@@ -363,15 +363,16 @@ impl CosmeticState {
             .saturating_sub(u32::try_from(mounted).unwrap_or(u32::MAX))
     }
 
-    #[tracing::instrument(name = "accounts.cosmetics.add_style", skip_all, fields(ddd.bounded_context.name = "accounts", input.style_id = id, output.owned.count = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "accounts.cosmetics.add_style", skip_all, fields(ddd.bounded_context.name = "accounts", input.style_id = id, input.count = count, output.owned.count = tracing::field::Empty), err)]
     pub(crate) fn add_style(
         &mut self,
         id: u16,
+        count: u32,
         limit: Option<u32>,
     ) -> Result<(), ProgressionError> {
         let total = self
             .style_owned(id)
-            .checked_add(1)
+            .checked_add(count)
             .filter(|&total| limit.is_none_or(|limit| total <= limit))
             .ok_or(ProgressionError::InvalidCosmetic)?;
         self.owned

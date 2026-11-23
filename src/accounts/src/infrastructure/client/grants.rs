@@ -1,7 +1,8 @@
-use super::GarageCatalog;
+use super::{GarageCatalog, cosmetic_catalog::StyleDimension};
 use crate::{
     AccountSnapshot, CosmeticKind, GrantError, PlayerGrant, ProgressionChange, ProgressionError,
 };
+use std::collections::BTreeMap;
 use wot_platform::client_formats::pickle::Value;
 
 pub struct VehicleCatalogEntry<'a> {
@@ -68,6 +69,60 @@ impl GarageCatalog {
             .map(|(&id, name)| (id, name.as_str()))
     }
 
+    pub fn grantable_styles_2d(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.grantable_styles(StyleDimension::Two)
+    }
+
+    pub fn grantable_styles_3d(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.grantable_styles(StyleDimension::Three)
+    }
+
+    fn grantable_styles(
+        &self,
+        dimension: StyleDimension,
+    ) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.cosmetic_grant_entries(CosmeticKind::Style)
+            .filter(move |entry| self.cosmetics.style_dimension(entry.id) == Some(dimension))
+    }
+
+    pub(crate) fn style_counts(
+        &self,
+        snapshot: &AccountSnapshot,
+    ) -> (BTreeMap<u16, u32>, BTreeMap<u16, u32>) {
+        let mut styles_2d = BTreeMap::new();
+        let mut styles_3d = BTreeMap::new();
+        if let Some(styles) = snapshot
+            .progression
+            .cosmetics
+            .owned()
+            .get(&CosmeticKind::Style)
+        {
+            for (&id, &count) in styles {
+                match self.cosmetics.style_dimension(id) {
+                    Some(StyleDimension::Two) => {
+                        styles_2d.insert(id, count);
+                    }
+                    Some(StyleDimension::Three) => {
+                        styles_3d.insert(id, count);
+                    }
+                    None => {}
+                }
+            }
+        }
+        (styles_2d, styles_3d)
+    }
+
+    pub fn grantable_crew_skins(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.crew_skins
+            .iter()
+            .filter(|(_, skin)| skin.eu)
+            .map(|(&id, skin)| CosmeticGrantEntry {
+                id,
+                name: &skin.name,
+                max_owned: skin.max_owned,
+            })
+    }
+
     pub fn grantable_attachments(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
         self.cosmetic_grant_entries(CosmeticKind::Attachment)
     }
@@ -107,6 +162,7 @@ impl GarageCatalog {
         grant: PlayerGrant,
     ) -> Result<ProgressionChange, GrantError> {
         let previous_revision = snapshot.revision;
+        let mut hired_crew_member = None;
         let acquired_vehicle = match grant {
             PlayerGrant::Currency { currency, amount } => {
                 currency.grant(&mut snapshot.balances, amount)?;
@@ -138,6 +194,47 @@ impl GarageCatalog {
                     return Err(GrantError::UnknownExperimentalEquipment);
                 }
                 snapshot.progression.grant_depot_stock(id, count)?;
+                None
+            }
+            PlayerGrant::Style2d { id, count } | PlayerGrant::Style3d { id, count } => {
+                let dimension = if matches!(grant, PlayerGrant::Style2d { .. }) {
+                    StyleDimension::Two
+                } else {
+                    StyleDimension::Three
+                };
+                if !(1..=100).contains(&count) {
+                    return Err(GrantError::InvalidDepotCount);
+                }
+                let limit = self
+                    .cosmetics
+                    .style_grant_limit(id, dimension)
+                    .ok_or(GrantError::UnknownStyle)?;
+                snapshot
+                    .progression
+                    .cosmetics
+                    .add_style(id, count, limit)
+                    .map_err(|_| GrantError::StyleLimit)?;
+                None
+            }
+            PlayerGrant::CrewSkin { id, count } => {
+                if !(1..=100).contains(&count) {
+                    return Err(GrantError::InvalidDepotCount);
+                }
+                if !self.crew_skins.get(&id).is_some_and(|skin| skin.eu) {
+                    return Err(GrantError::UnknownCrewSkin);
+                }
+                let item = super::crew_skins::descriptor(id).to_int() as i32;
+                self.check_crew_skin_limit(&snapshot, item, count).map_err(
+                    |error| match error {
+                        ProgressionError::InvalidRequest => GrantError::CrewSkinLimit,
+                        other => GrantError::Vehicle(other),
+                    },
+                )?;
+                snapshot.progression.grant_depot_stock(item, count)?;
+                None
+            }
+            PlayerGrant::SpecialRecruit { id } => {
+                hired_crew_member = Some(self.add_special_recruit(&mut snapshot, id)?);
                 None
             }
             PlayerGrant::Attachment { id, count } => {
@@ -198,7 +295,7 @@ impl GarageCatalog {
             sold_vehicle: None,
             consumable_purchases: Vec::new(),
             shell_purchases: Vec::new(),
-            hired_crew_member: None,
+            hired_crew_member,
             snapshot,
             previous_revision,
         })
@@ -227,6 +324,10 @@ impl GarageCatalog {
                 }))
             }
             PlayerGrant::Vehicle { .. }
+            | PlayerGrant::Style2d { .. }
+            | PlayerGrant::Style3d { .. }
+            | PlayerGrant::CrewSkin { .. }
+            | PlayerGrant::SpecialRecruit { .. }
             | PlayerGrant::CrewBook { .. }
             | PlayerGrant::ImprovedEquipment { .. }
             | PlayerGrant::BountyEquipment { .. }

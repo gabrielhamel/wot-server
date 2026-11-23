@@ -97,6 +97,22 @@ impl GarageQueries {
         self.0.grantable_vehicles()
     }
 
+    pub fn grantable_styles_2d(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.0.grantable_styles_2d()
+    }
+
+    pub fn grantable_styles_3d(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.0.grantable_styles_3d()
+    }
+
+    pub fn grantable_crew_skins(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
+        self.0.grantable_crew_skins()
+    }
+
+    pub fn grantable_special_recruits(&self) -> Vec<crate::contract::SpecialRecruitGrantEntry> {
+        self.0.grantable_special_recruits()
+    }
+
     pub fn grantable_attachments(&self) -> impl Iterator<Item = CosmeticGrantEntry<'_>> {
         self.0.grantable_attachments()
     }

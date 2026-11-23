@@ -41,6 +41,21 @@ pub enum PlayerGrant {
         id: i32,
         count: u32,
     },
+    Style2d {
+        id: u16,
+        count: u32,
+    },
+    Style3d {
+        id: u16,
+        count: u32,
+    },
+    CrewSkin {
+        id: u16,
+        count: u32,
+    },
+    SpecialRecruit {
+        id: i32,
+    },
     Attachment {
         id: u16,
         count: u32,
@@ -53,6 +68,20 @@ pub enum GrantError {
     InvalidAmount,
     #[error("The grant would exceed the supported balance limit.")]
     BalanceLimit,
+    #[error("Select a style of the requested type from the installed catalog.")]
+    UnknownStyle,
+    #[error("The grant would exceed the style ownership limit.")]
+    StyleLimit,
+    #[error("Select a crew skin from the installed catalog.")]
+    UnknownCrewSkin,
+    #[error("The grant would exceed the crew skin ownership limit.")]
+    CrewSkinLimit,
+    #[error("Select a special recruit from the installed catalog.")]
+    UnknownSpecialRecruit,
+    #[error("The player already has this special recruit.")]
+    SpecialRecruitOwned,
+    #[error("No compatible specialization is available for this recruit.")]
+    SpecialRecruitVehicle,
     #[error("Select an attachment from the installed catalog.")]
     UnknownAttachment,
     #[error("The grant would exceed the attachment ownership limit.")]

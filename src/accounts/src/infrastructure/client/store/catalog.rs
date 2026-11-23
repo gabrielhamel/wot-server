@@ -24,6 +24,7 @@ pub(in crate::infrastructure::client) fn load(
     equipment: &EquipmentRules,
     consumables: &ConsumableRules,
     directives: &DirectiveRules,
+    crew_skins: &BTreeMap<u16, super::super::crew_skins::CrewSkin>,
 ) -> Result<Vec<StoreOffer>> {
     let mut offers = PREMIUM_PACKAGES
         .into_iter()
@@ -113,7 +114,7 @@ pub(in crate::infrastructure::client) fn load(
         }
     }
     offers.extend(vehicle_listings(vehicles));
-    offers.extend(super::super::crew_skins::store_offers(fs, prices)?);
+    offers.extend(super::super::crew_skins::store_offers(crew_skins, prices));
     offers.sort_by(|a, b| {
         a.category
             .cmp(&b.category)

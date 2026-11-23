@@ -195,6 +195,23 @@ impl GarageCatalog {
                 return StoreAvailability::OwnershipLimit;
             }
         }
+        if offer.category == StoreCategory::CrewSkins {
+            let id = IntCompactDescr::from_int(i64::from(offer.item)).id;
+            if self
+                .crew_skins
+                .get(&id)
+                .and_then(|skin| skin.max_owned)
+                .is_some_and(|limit| {
+                    self.crew_skin_counts(account)
+                        .get(&id)
+                        .copied()
+                        .unwrap_or_default()
+                        >= limit
+                })
+            {
+                return StoreAvailability::OwnershipLimit;
+            }
+        }
         if offer.price.available(account) < offer.price.amount() {
             return StoreAvailability::InsufficientFunds;
         }
@@ -266,10 +283,11 @@ impl GarageCatalog {
             }
             category if category.is_style() => {
                 let id = IntCompactDescr::from_int(i64::from(offer.item)).id;
-                account
-                    .progression
-                    .cosmetics
-                    .add_style(id, self.cosmetics.store_style_limit(id))?;
+                account.progression.cosmetics.add_style(
+                    id,
+                    1,
+                    self.cosmetics.store_style_limit(id),
+                )?;
                 offer.price.charge(&mut account)?;
                 None
             }

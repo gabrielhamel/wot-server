@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use wot_accounts::contract::{
     AccountNotFound, AccountView, CosmeticGrantEntry, GarageInspection, GrantCurrency, GrantError,
-    PlayerGarage, PlayerGrant, ProgressionError, VehicleCatalogEntry,
+    PlayerGarage, PlayerGrant, ProgressionError, SpecialRecruitGrantEntry, VehicleCatalogEntry,
 };
 use wot_player_sessions::contract::{GrantDelivery, GrantRequestError};
 use wot_shared_kernel::AccountId;
@@ -54,6 +54,10 @@ pub(super) enum GrantBody {
     BountyEquipment { id: i32, count: u32 },
     ExperimentalEquipment { id: i32, count: u32 },
     Attachment { id: u16, count: u32 },
+    Style2d { id: u16, count: u32 },
+    Style3d { id: u16, count: u32 },
+    CrewSkin { id: u16, count: u32 },
+    SpecialRecruit { id: i32 },
     StatTracker { vehicle: i64, id: u16, count: u32 },
 }
 
@@ -128,6 +132,36 @@ pub(super) async fn catalog(State(state): State<AdminState>) -> Json<Vec<Vehicle
         .collect();
     vehicles.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.key.cmp(&b.key)));
     Json(vehicles)
+}
+
+#[tracing::instrument(name = "admin.garage.catalog", skip_all, fields(ddd.bounded_context.name = "player_administration", input.collection = "styles_2d", output.items.count = tracing::field::Empty))]
+pub(super) async fn style_2d_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<CosmeticGrantRecord>> {
+    cosmetic_grant_catalog(state.catalog.grantable_styles_2d())
+}
+
+#[tracing::instrument(name = "admin.garage.catalog", skip_all, fields(ddd.bounded_context.name = "player_administration", input.collection = "styles_3d", output.items.count = tracing::field::Empty))]
+pub(super) async fn style_3d_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<CosmeticGrantRecord>> {
+    cosmetic_grant_catalog(state.catalog.grantable_styles_3d())
+}
+
+#[tracing::instrument(name = "admin.garage.catalog", skip_all, fields(ddd.bounded_context.name = "player_administration", input.collection = "crew_skins", output.items.count = tracing::field::Empty))]
+pub(super) async fn crew_skin_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<CosmeticGrantRecord>> {
+    cosmetic_grant_catalog(state.catalog.grantable_crew_skins())
+}
+
+#[tracing::instrument(name = "admin.garage.catalog", skip_all, fields(ddd.bounded_context.name = "player_administration", input.collection = "special_recruits", output.items.count = tracing::field::Empty))]
+pub(super) async fn special_recruit_catalog(
+    State(state): State<AdminState>,
+) -> Json<Vec<SpecialRecruitGrantEntry>> {
+    let recruits = state.catalog.grantable_special_recruits();
+    tracing::Span::current().record("output.items.count", recruits.len());
+    Json(recruits)
 }
 
 #[tracing::instrument(
@@ -284,6 +318,29 @@ pub(super) async fn grant(
             request_span.record("input.count", count);
             PlayerGrant::ExperimentalEquipment { id, count }
         }
+        GrantBody::Style2d { id, count } => {
+            request_span.record("input.grant.kind", "style2d");
+            request_span.record("input.item", id);
+            request_span.record("input.count", count);
+            PlayerGrant::Style2d { id, count }
+        }
+        GrantBody::Style3d { id, count } => {
+            request_span.record("input.grant.kind", "style3d");
+            request_span.record("input.item", id);
+            request_span.record("input.count", count);
+            PlayerGrant::Style3d { id, count }
+        }
+        GrantBody::CrewSkin { id, count } => {
+            request_span.record("input.grant.kind", "crew_skin");
+            request_span.record("input.item", id);
+            request_span.record("input.count", count);
+            PlayerGrant::CrewSkin { id, count }
+        }
+        GrantBody::SpecialRecruit { id } => {
+            request_span.record("input.grant.kind", "special_recruit");
+            request_span.record("input.item", id);
+            PlayerGrant::SpecialRecruit { id }
+        }
         GrantBody::Attachment { id, count } => {
             request_span.record("input.grant.kind", "attachment");
             request_span.record("input.attachment_id", id);
@@ -350,6 +407,9 @@ fn grant_error(error: GrantRequestError) -> ApiError {
                 "This grant could not be applied to the player.",
             ),
         },
+        GrantRequestError::Rejected(GrantError::SpecialRecruitOwned) => {
+            (StatusCode::CONFLICT, message.as_str())
+        }
         GrantRequestError::Rejected(_) => (StatusCode::UNPROCESSABLE_ENTITY, message.as_str()),
     };
     ApiError::new(status, message)

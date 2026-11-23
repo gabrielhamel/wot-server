@@ -22,6 +22,8 @@ mod localization;
 mod module_defs;
 mod progression;
 mod shop;
+mod special_recruits;
+pub use special_recruits::{SpecialRecruitCountry, SpecialRecruitGrantEntry};
 mod starter_garage;
 mod store;
 pub use store::{
@@ -55,6 +57,7 @@ pub struct GarageCatalog {
     passports: Vec<crew::Passports>,
     crew_books: BTreeMap<i32, crew_books::CrewBook>,
     crew_skins: BTreeMap<u16, crew_skins::CrewSkin>,
+    special_recruits: BTreeMap<i32, special_recruits::SpecialRecruit>,
     prices: item_prices::ItemPrices,
     cosmetics: cosmetic_catalog::CosmeticCatalog,
     shell_prices: BTreeMap<i32, ShellPrice>,
@@ -230,6 +233,7 @@ impl GarageCatalog {
         cosmetic_catalog::index_exterior_shop(&fs, &mut prices)?;
         let crew_books = crew_books::load(&fs, &mut prices)?;
         let crew_skins = crew_skins::load(&fs, &mut prices)?;
+        let special_recruits = special_recruits::load(&fs)?;
         let (equipment, equipment_grants) = equipment::load(&fs, &prices)?;
         let directives = directives::load(&fs, &prices)?;
         let consumables = consumables::load(&fs, &prices)?;
@@ -298,6 +302,7 @@ impl GarageCatalog {
             passports,
             crew_books,
             crew_skins,
+            special_recruits,
             prices,
             cosmetics,
             shell_prices,
@@ -313,6 +318,9 @@ impl GarageCatalog {
             shop,
         };
         catalog.validate_vehicle_variants();
+        catalog
+            .cosmetics
+            .label_style_grants(&catalog.offers, &catalog.filesystem);
         catalog.tech_tree =
             starter_garage::tech_tree(&catalog.filesystem, &catalog.keys, &catalog.offers)?;
         catalog.store_offers = store::load(
@@ -322,6 +330,7 @@ impl GarageCatalog {
             &catalog.equipment,
             &catalog.consumables,
             &catalog.directives,
+            &catalog.crew_skins,
         )?;
         catalog
             .store_offers

@@ -59,6 +59,10 @@ pub struct CrewMember {
     pub role_change_target: Option<u16>,
     #[serde(default)]
     pub skin: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub special_recruit: Option<u16>,
+    #[serde(default)]
+    pub female: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -647,6 +651,8 @@ mod tests {
                 dismissed_at: None,
                 role_change_target: None,
                 skin: None,
+                special_recruit: None,
+                female: false,
             })
             .unwrap();
         }
