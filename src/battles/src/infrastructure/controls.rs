@@ -3,7 +3,6 @@ use crate::{
     application::{VehicleCommand, VehicleControl},
     domain::vehicle::{Aim, AmmunitionCommand},
 };
-use glam::Vec3Swizzles;
 
 impl BattleSimulation {
     pub(super) fn vehicle_control_with_delivery(
@@ -170,57 +169,29 @@ impl Battle {
         let mut movement = Vec::new();
         let time = now.saturating_duration_since(self.started_at).as_secs_f32();
         let seconds = TICK.as_secs_f32();
-        for (&client, player) in self
-            .players
-            .iter_mut()
-            .filter(|(_, player)| player.ready && !player.observer)
-        {
-            let previous = player.tank.position;
-            let previous_direction = player.vehicle.direction;
-            let previous_tracks = player.tank.track_speeds();
-            let drive = player.pending_drive.take();
-            if self.round.phase == RoundPhase::Finished {
-                player.tank.drive(0);
-            }
-            let movement_parent = self.finish_span.as_ref().or(drive.as_ref());
-            if player.tank.health <= 0 {
-                player.tank.stop_motion();
-            } else if drive.is_some() || player.tank.is_driving() {
-                let half_width = player
-                    .tank
-                    .performance
-                    .as_ref()
-                    .map_or(1.25, |profile| profile.mobility.track_half_width);
-                let ground = self.ground.ground_contact(
-                    previous.xz(),
-                    player.tank.yaw,
-                    half_width,
-                    previous_direction.y,
-                );
-                let mut step = || player.tank.step(seconds, self.map.bounds, ground);
-                let moved = match movement_parent {
-                    Some(parent) => parent.in_scope(step),
-                    None => step(),
+        let motions = self.advance_world(seconds);
+        for motion in motions {
+            let client = motion.client;
+            let (breakages, cause) = motion.breakages();
+            if !breakages.is_empty() {
+                let mut publish = || self.publish_breakages(delivery, wire, breakages, cause);
+                match &motion.parent {
+                    Some(parent) => parent.in_scope(publish),
+                    None => publish(),
                 };
-                if moved {
-                    if let Some((position, direction)) = self
-                        .ground
-                        .vehicle_pose(player.tank.position.xz(), player.tank.yaw)
-                    {
-                        player.tank.position = position;
-                        player.tank.set_hull_tilt(direction);
-                        player.vehicle.position = position;
-                        player.vehicle.direction = direction;
-                        if let Some(parent) = movement_parent {
-                            movement.push((player.vehicle.entity_id, parent.clone()));
-                        }
-                    } else {
-                        player.tank.position = previous;
-                        player.tank.yaw = previous_direction.z;
-                        player.tank.stop_motion();
-                    }
-                }
             }
+            let Some(player) = self.players.get_mut(&client) else {
+                continue;
+            };
+            let movement_parent = motion.parent.as_ref();
+            if motion.changed
+                && let Some(parent) = movement_parent
+            {
+                movement.push((player.vehicle.entity_id, parent.clone()));
+            }
+            let drive = motion.drive;
+            let previous_direction = motion.previous_direction;
+            let previous_tracks = motion.previous_tracks;
 
             let tracks = player.tank.track_speeds();
             if drive.is_some()

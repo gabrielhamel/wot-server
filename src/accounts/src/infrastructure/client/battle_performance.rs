@@ -1,7 +1,49 @@
 use glam::{Vec3, Vec3Swizzles};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Read};
 use wot_platform::client_formats::pxml::{Element, Value};
+use wot_resources::ResourceBundle;
 use wot_shared_kernel::{GunLoading, GunPerformance, Mobility, ShellEffects, Wheel};
+
+pub(super) fn collision_bounds(
+    fs: &ResourceBundle,
+    local: Option<&Element>,
+    base: &Element,
+) -> anyhow::Result<Option<[Vec3; 2]>> {
+    let Some(model) = field(local, base, &["hitTester", "collisionModelClient"])
+        .and_then(Value::as_string)
+        .and_then(|path| path.strip_suffix(".model"))
+    else {
+        return Ok(None);
+    };
+    let path = format!("{model}.bounds");
+    if !fs.has_file(&path) {
+        return Ok(None);
+    }
+    let mut bytes = [0; 28];
+    fs.read(&path)?.read_exact(&mut bytes)?;
+    let (header, values) = bytes.split_at(4);
+    anyhow::ensure!(
+        header == b"WVB1",
+        "Invalid vehicle collision bounds in {path}"
+    );
+    let mut floats = values
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .copied()
+        .map(f32::from_le_bytes);
+    let mut read = || Vec3::from_array(std::array::from_fn(|_| floats.next().unwrap_or(f32::NAN)));
+    let [min, max] = [read(), read()];
+    anyhow::ensure!(
+        min.is_finite()
+            && max.is_finite()
+            && min.cmplt(max).all()
+            && (max - min).max_element() <= 32.0
+            && min.abs().max(max.abs()).max_element() <= 32.0,
+        "Invalid vehicle collision extent in {path}"
+    );
+    Ok(Some([min, max]))
+}
 
 pub(super) fn speed_limits(vehicle: &Element) -> Option<[f32; 2]> {
     let speed = vehicle.get_child_element("speedLimits")?;
@@ -16,12 +58,10 @@ pub(super) fn traverse(local: Option<&Element>, base: &Element) -> Option<f32> {
     non_negative(rotation)
 }
 
-pub(super) fn hull_traverse(local: Option<&Element>, base: &Element) -> Option<f32> {
-    let traverse = traverse(local, base)?;
-    let limit = number(local, base, "rotationSpeedLimit")
+pub(super) fn hull_traverse_limit(local: Option<&Element>, base: &Element) -> Option<f32> {
+    number(local, base, "rotationSpeedLimit")
         .and_then(non_negative)
-        .map_or(traverse, f32::to_radians);
-    Some(traverse.min(limit))
+        .map(f32::to_radians)
 }
 
 pub(super) fn mobility(
@@ -30,7 +70,16 @@ pub(super) fn mobility(
     physics: Option<&Element>,
     wheeled: bool,
 ) -> Mobility {
-    let mut mobility = Mobility::default();
+    let mut mobility = Mobility {
+        traverse_limit: hull_traverse_limit(local, base),
+        max_climb_angle: number(local, base, "maxClimbAngle")
+            .filter(|angle| (0.0..90.0).contains(angle))
+            .map(f32::to_radians),
+        rotation_around_center: field(local, base, &["rotationIsAroundCenter"])
+            .and_then(Value::as_boolean)
+            .unwrap_or(true),
+        ..Mobility::default()
+    };
     if let Some(resistance) = vector(local, base, "terrainResistance")
         .filter(|value| value.min_element() >= 0.05 && value.max_element() <= 20.0)
     {
@@ -50,6 +99,9 @@ pub(super) fn mobility(
         .filter(|point| (0.1..=5.0).contains(&point.x))
     {
         mobility.track_half_width = point.x;
+        if (0.5..=10.0).contains(&point.y) {
+            mobility.track_half_length = point.y;
+        }
     }
     if let Some(wheels) = local
         .and_then(|chassis| chassis.get_child_element("wheels"))

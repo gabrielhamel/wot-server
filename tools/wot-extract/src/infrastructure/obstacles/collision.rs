@@ -12,9 +12,15 @@ use super::tagfile::{Node, Tagfile};
 pub(super) struct Triangle {
     pub vertices: [Vec3; 3],
     pub material: u32,
+    pub pass_flags: u32,
+    pub fragment: Option<super::destructibles::Fragment>,
 }
 
-pub(super) fn triangles(tagfile: &Tagfile) -> Option<Vec<Triangle>> {
+pub(super) fn triangles(
+    tagfile: &Tagfile,
+    model: Option<&super::destructibles::Model>,
+    railway_stock: bool,
+) -> Option<Vec<Triangle>> {
     let mut triangles = Vec::new();
     for named in tagfile.root()?.get("namedVariants")?.elements()? {
         let handles: Vec<_> = named
@@ -56,9 +62,19 @@ pub(super) fn triangles(tagfile: &Tagfile) -> Option<Vec<Triangle>> {
                 .iter()
                 .find(|(part, _, _)| *part == name)
                 .map_or((0, 0), |&(_, material, flags)| (material, flags));
-            if name.starts_with("c_") || flags & 2 != 0 {
+            if name.starts_with("c_") || flags & 3 == 3 {
                 continue;
             }
+            let fragment = model.and_then(|model| model.fragment(name, material, flags as u32));
+            let collision_flags = (flags as u32 & 3)
+                | if railway_stock
+                    && flags & 8 != 0
+                    && name.strip_prefix("s_").unwrap_or(name).starts_with("wall_")
+                {
+                    4
+                } else {
+                    0
+                };
             let shape = body.get("shape")?.deref()?;
             if shape.type_name() == "hknpCompressedMeshShape" {
                 let mesh = compressed_mesh_triangles(shape)?;
@@ -68,7 +84,12 @@ pub(super) fn triangles(tagfile: &Tagfile) -> Option<Vec<Triangle>> {
                 triangles.extend(
                     mesh.into_iter()
                         .filter(|vertices| vertices.iter().all(|vertex| vertex.is_finite()))
-                        .map(|vertices| Triangle { vertices, material }),
+                        .map(|vertices| Triangle {
+                            vertices,
+                            material,
+                            pass_flags: collision_flags,
+                            fragment,
+                        }),
                 );
             }
         }
@@ -82,4 +103,27 @@ fn variant<'a>(handles: &[Node<'a>], name: &str) -> Option<Node<'a>> {
         .iter()
         .find(|handle| handle.get("name").and_then(|n| n.as_str()) == Some(name))
         .and_then(|handle| handle.get("variant")?.deref())
+}
+
+/// Havok's model-local envelope from all collision variants.
+pub(super) fn bounds(tagfile: &Tagfile) -> Option<[Vec3; 2]> {
+    let mut bounds: Option<[Vec3; 2]> = None;
+    for named in tagfile.root()?.get("namedVariants")?.elements()? {
+        let handles: Vec<_> = named
+            .get("variant")?
+            .deref()?
+            .get("resourceHandles")?
+            .elements()?
+            .into_iter()
+            .filter_map(|handle| handle.deref())
+            .collect();
+        let flags = variant(&handles, "HKBodyFlagsData")?;
+        let read = |name| Some(Vec3::from_slice(&flags.get(name)?.as_f32s::<4>()?));
+        let [low, high] = [read("minBounds_")?, read("maxBounds_")?];
+        if !low.is_finite() || !high.is_finite() || !low.cmplt(high).all() {
+            continue;
+        }
+        bounds = Some(bounds.map_or([low, high], |[min, max]| [min.min(low), max.max(high)]));
+    }
+    bounds
 }

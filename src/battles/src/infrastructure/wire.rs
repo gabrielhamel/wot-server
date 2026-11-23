@@ -20,7 +20,8 @@ mod roster;
 pub(super) use controls::{DamageStickers, ShotImpact, pack_wheel_speed, pack_wheel_steering};
 
 pub(super) struct ArenaWire {
-    dispatch: Arc<ScriptDispatch>,
+    pub(super) dispatch: Arc<ScriptDispatch>,
+    pub(super) area_type: u16,
     avatar_type: u16,
     vehicle_type: u16,
     info_type: u16,
@@ -69,6 +70,7 @@ impl ArenaWire {
             avatar_type,
             vehicle_type,
             info_type: type_id("AvatarInfo")?,
+            area_type: type_id("AreaDestructibles")?,
             roster_component,
             own_vehicle_type,
             gun_marker_type,
@@ -117,6 +119,7 @@ impl ArenaWire {
         let sample = Entrant::sample();
         schema.vehicle(&sample)?;
         schema.validate_controls()?;
+        schema.validate_scenery()?;
         schema.entry(1, 1, BattleMode::Training, &sample, &[&sample])?;
         Ok(schema)
     }
@@ -476,7 +479,7 @@ impl ArenaEntry {
     }
 }
 
-fn publish_entity(
+pub(super) fn publish_entity(
     delivery: &mut impl ArenaDelivery,
     client: ParticipantId,
     entity: CreateArenaEntity,
@@ -491,7 +494,7 @@ fn publish_entity(
     delivery.send_arena_element(client, entity)
 }
 
-fn properties_by_id<const N: usize>(
+pub(super) fn properties_by_id<const N: usize>(
     dispatch: &EntityDispatch,
     fields: [(&str, WireValue); N],
 ) -> Result<Vec<u8>> {

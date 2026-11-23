@@ -248,6 +248,7 @@ game.command                                      [doCmdInt3, 411]
       mercury.response                            [onCmdResponse]
       player_sessions.prepare_training_battle
         accounts.battle_vehicle                   [for each combat vehicle, outfit byte count]
+          accounts.battle_mobility                 [equipment and supply counts, collision bounds availability, effective profile]
         battles.prepare                           [allocates battle ID and counts arena outfits]
           battles.load_terrain                     [when terrain is loaded]
           battles.load_obstacles                  [when obstacle collision is loaded]
@@ -270,7 +271,25 @@ socket writes of the shared timestamped snapshot. The driving command also
 parents `battles.drive_vehicle` for the first simulation step, the driver's
 `hull_aim` update, and any changed `engine_mode`, `wheels_scroll` and
 `steering_angles` deliveries to battle peers. The step records the sampled
-surface counts, hull pitch, resulting longitudinal speed and yaw rate.
+surface counts, hull pitch, airborne state at entry, resulting longitudinal
+speed and yaw rate, and whether track-lock steering was used.
+When the world step detects contact, elevated support, scenery destruction,
+a held pileup, slope sliding, tipping or recovery,
+`battles.world_motion` records the surviving displacement, contact counts and
+hull roll. It also records whether turning contacted scenery and the retained
+speed multiplier after a break. Projectile impact additionally records whether a hit exhausted a
+scenery fragment's health. A pushed vehicle without its own drive span uses the initiating
+vehicle's available drive parent. The world span then parents pose and chassis
+replication and any scenery updates from the pushed hull's contact.
+
+`battles.scenery` follows the world-motion or shot span for each nonempty batch
+of newly broken fragments. It counts fragments with native identities, changed
+chunks, numbered tree falls, projectile references and queued peer deliveries.
+Map collision loading counts numbered trunks available for contact. An arena element
+delivery retains this span as its parent through the gateway. A batch without
+native identities records `no_native_identity`. A queue error marks the span
+as failed and disconnects the affected peer.
+
 Shots retain their parent through target selection, ground and obstacle
 intersection, the wait for the tracer's flight, and the impact and health
 deliveries. The same span parents the immediate muzzle and tracer deliveries

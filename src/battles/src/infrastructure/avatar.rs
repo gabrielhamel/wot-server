@@ -95,6 +95,7 @@ pub(crate) enum AvatarUpdate {
         endpoint: glam::Vec3,
         direction: glam::Vec3,
         speed: f32,
+        destructibles: Vec<u32>,
     },
     StopTracer {
         id: i32,
@@ -154,6 +155,7 @@ impl AvatarUpdate {
                 endpoint,
                 direction,
                 speed,
+                destructibles,
             } => avatar.explodeProjectile(
                 id,
                 effects.legacy_index,
@@ -164,7 +166,7 @@ impl AvatarUpdate {
                 endpoint,
                 direction,
                 speed,
-                Vec::new(),
+                destructibles,
             ),
             Self::StopTracer { id, endpoint } => avatar.stopTracer(id, endpoint),
             Self::ShotResults(result) => avatar.showShotResults(vec![result]),

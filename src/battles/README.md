@@ -14,9 +14,12 @@ map, duration and assigned roster to Battles. The launch contract can also
 accept a roster from a future matchmaker. Training is the implemented battle
 mode.
 
+The [Battle mechanics guide](../../docs/battle-mechanics.md) maps the official
+game's rules to the current Training implementation and identifies open work.
+
 | Layer | Responsibilities |
 | --- | --- |
-| `domain/` | Round timing and phase transitions, vehicle movement, aim, ammunition and hit resolution. |
+| `domain/` | Round timing and phase transitions, vehicle movement and world contact, aim, ammunition and hit resolution. |
 | `application/` | Participant identity, launch inputs, roster eligibility and typed Avatar and vehicle commands. |
 | `infrastructure/` | In-memory arena and participant lifecycle, bundled arena definitions, terrain and obstacle collision, and native battle payload encoders. The delivery port connects those encoders to the local Mercury adapter. |
 
@@ -42,7 +45,9 @@ launch, loads terrain and collision geometry, and builds the client payloads
 while the gateway handles requests and the simulation runs existing arenas.
 Player Sessions revalidates the room and account snapshots before acknowledging
 the launch and passing the prepared arena to the simulation task. Both tasks
-share the server process. Each queued operation retains its originating span.
+share the server process. The gateway assigns native scenery controller IDs
+from the same sequence as other arena entities before activation. Each queued
+operation retains its originating span.
 The simulation starts the arena clock and increments its active count on
 activation.
 Once a participant leaves,
@@ -52,14 +57,16 @@ Battles publishes the outcome and continues pose and chassis replication while
 vehicles coast to a stop before the scheduled garage return. Each Avatar receives
 its player’s customization display preference at entry.
 
-The server advances hull speed and yaw every 100 ms. It reads the equipped
-engine, vehicle mass and chassis resistance from the loadout, and samples the
-terrain at four points beneath the chassis. The height map supplies pitch and
+The server advances hull speed and yaw every 100 ms. It reads engine power,
+vehicle mass, chassis resistance and supported garage modifiers from the
+loadout, and samples the terrain at four points beneath the chassis. The
+height map supplies pitch and
 roll, while the surface map supplies hard, medium and soft ground. The driver
 receives independent track speeds in the Avatar's auxiliary physics property.
 Battle peers receive the Vehicle's engine mode and, where the chassis
 defines them, its wheel scroll and steering properties. See the
-[replay and resource evidence](../../docs/battle-replays.md#vehicle-movement-and-chassis-animation).
+[replay and resource evidence](../../docs/battle-replays.md#vehicle-movement-and-chassis-animation)
+and [movement coverage](../../docs/battle-mechanics.md#training-movement-coverage).
 
 Projectile launch and contact are separate. The simulation queues contact
 until the tracer has travelled the distance to the selected intersection. At
@@ -75,4 +82,5 @@ arena viewers. See the [replay and resource evidence](../../docs/battle-replays.
 | Round | The progression through loading, countdown, active battle and results. |
 | Loadout | The equipped vehicle descriptor, health, crew size, ammunition, locked outfit and base performance at launch. |
 | Damage sticker | A persistent penetration mark replicated on the struck vehicle when the shell defines one. |
-| Scene impact | The first projectile contact with terrain or a placed obstacle, reported with its effect material. |
+| Scene impact | The first projectile contact with terrain or a placed obstacle, reported with its effect material and any native references to fragments broken on impact. |
+| Scenery controller | A native `AreaDestructibles` entity that publishes broken objects and tree falls for one map chunk. Its state belongs to one arena. |

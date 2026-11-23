@@ -71,6 +71,57 @@ when selecting world-space vehicle trajectories. A roster entry can have no
 position samples. The recorded interval measures replay cadence, which may
 differ from server simulation or wire cadence.
 
+## Widepark Training capture from 2026-11-23
+
+User-supplied `damage_physics.wotreplay` records a Standard Training battle
+on `17_munchen` at 19:11:52 on EU1. The replay reports `v.2.4.1.1 #993` from
+XML and `2.4.1.0` from the executable. The raw file SHA-256 is
+`1dbb7aff7ac43d78e76f17a937fb636113301aa2e86dfbfa071d3e8c4f8386c4`.
+The locally extracted client reports the same XML label with executable
+SHA-256 `fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
+Inspect with `cargo wot-replay summary` and `cargo wot-replay positions`.
+The stream contains 6,860 type-`0x0a`, 45-byte position records.
+
+| Observation | Replay evidence |
+| --- | --- |
+| Leopard 1 stops on the approach to the railway stock | Entity `3654511` advances about 1.02 m in the map plane from 55.82 to 55.92 s, then about 0.19 m over the next 100 ms. At 56.02–56.32 s its X/Z stays within 1 cm of `(124.93, -35.65)`. Position record offsets are 216981, 217513, 218098 and 219657. |
+| TKS z n.k.m. 20 mm turns nearly in place | Entity `3654510` changes yaw by 0.298 rad over 128.12–128.62 s with 0.036 m of net X/Z translation. Position record offsets are 559962 and 562241. The player reported a wall fracture during pivoting. The position records establish the motion and do not identify the fracture or server force. |
+
+The extracted map places the nearest flat carriage at approximately
+`(126.26, 8.49, -41.51)` in world X/Y/Z, with `WGDE` chunk `0x807e` and
+local index `46`. Its asset is `hd_rw_UNI_004_Carriage_01.havok`. Its intact
+shootable body is distinct from the vehicle-only `s_wall_0` helper. A hull
+sweep using the recorded position and yaw confirms contact with that
+carriage at the stop. Training keeps the authored vehicle wall after
+the visual body breaks so the same approach stays blocked. The replay
+does not establish how the native server treats the helper after damage.
+
+
+## Widepark LAN pivot capture from 2026-11-23
+
+User-supplied `replay_last_battle.wotreplay` records a Widepark Training match
+on the development server at 19:41:02. The replay reports the EU client
+`v.2.4.1.1 #993`, executable label `2.4.1.0`, and contains 4,812 type-`0x0a`
+position records with 45-byte payloads. The raw SHA-256 is
+`26de01f6666bb95641eb7a83c5de424905160d250a5d82a071136be2d74e1d36`.
+
+The recording AMX 30 B, entity `1963090098`, is at
+`(246.39528, 7.99810, -33.58478)` with yaw `0.756306` rad at 132.91 s.
+This is position record offset 476216. The position remains fixed during
+the surrounding turn samples. The replay records state updates for the
+destruction controller centered at `(254.28, 0, -48.61)`. Its cumulative
+fragile-object list adds fence index `46` at 127.91 s and index `40` at
+129.51 s. Index `45` appears at 137.01 s at stream offset 491130.
+The position records do not establish how long the steering key was held.
+
+With the two earlier breaks applied to the arena, the recorded hull pose
+and a 0.04 rad turn increase horizontal overlap with fence panel `45`
+in WGDE chunk `0x817e`. The previous code compared the footprint's global
+reach along a single normal and could reject this corner contact before
+applying scenery damage. The bundle-backed regression verifies that the
+per-triangle test selects the panel and clears the contact after fracture.
+
+
 ## EU capture evidence from 2026-11-21
 
 All four recordings report `v.2.4.1.1 #993` from XML and `2.4.1.0` from the

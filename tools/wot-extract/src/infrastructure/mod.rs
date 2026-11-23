@@ -87,6 +87,8 @@ impl ClientResources {
             }
         }
         resources.index_loose(&root, "spaces")?;
+        resources.index_loose(&root, "vehicles")?;
+        resources.index_loose(&root, "objects/misc/bbox")?;
         resources.index_loose(&root, "system/data/material_kinds.xml")?;
         Ok(resources)
     }
@@ -276,7 +278,9 @@ pub fn is_terrain(path: &str) -> bool {
 fn is_candidate(path: &str) -> bool {
     if is_terrain(path)
         || obstacles::is_placement(path)
-        || (path.starts_with("content/") && path.ends_with(".havok"))
+        || obstacles::is_vehicle_contact_model(path)
+        || ((path.starts_with("content/") || path.starts_with("objects/misc/bbox/"))
+            && path.ends_with(".havok"))
         || path == "system/data/material_kinds.xml"
     {
         return true;
@@ -299,7 +303,10 @@ fn is_candidate(path: &str) -> bool {
     match relative.split_once('/') {
         Some(("client", file)) => file.ends_with(".pyc") && !file.contains('/'),
         Some(("entity_defs" | "component_defs" | "item_defs" | "arena_defs", _)) => true,
-        _ => matches!(relative, "entities.xml" | "components.xml"),
+        _ => matches!(
+            relative,
+            "entities.xml" | "components.xml" | "destructibles.xml"
+        ),
     }
 }
 

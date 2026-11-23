@@ -13,23 +13,39 @@ pub struct VehiclePerformance {
 
 #[derive(Clone, Debug)]
 pub struct Mobility {
+    pub mass_kg: f32,
     pub power_per_kg: f32,
     pub terrain_resistance: [f32; 3],
+    pub turning_resistance: f32,
     pub rolling_friction: [f32; 3],
     pub track_half_width: f32,
+    pub track_half_length: f32,
+    pub collision_bounds: Option<[Vec3; 2]>,
     pub wheels: Vec<Wheel>,
     pub turns_in_place: bool,
+    pub rotation_around_center: bool,
+    pub track_lock: bool,
+    pub traverse_limit: Option<f32>,
+    pub max_climb_angle: Option<f32>,
 }
 
 impl Default for Mobility {
     fn default() -> Self {
         Self {
+            mass_kg: 30_000.0,
             power_per_kg: 14.0,
             terrain_resistance: [1.0, 1.3, 2.0],
+            turning_resistance: 1.0,
             rolling_friction: [0.045, 0.065, 0.105],
             track_half_width: 1.25,
+            track_half_length: 2.5,
+            collision_bounds: None,
             wheels: Vec::new(),
             turns_in_place: true,
+            rotation_around_center: true,
+            track_lock: false,
+            traverse_limit: None,
+            max_climb_angle: None,
         }
     }
 }

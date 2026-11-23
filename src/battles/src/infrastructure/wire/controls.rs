@@ -542,7 +542,7 @@ impl ArenaWire {
         shot_id: i32,
         shot: &Shot,
         distance: f32,
-        material: Option<u32>,
+        (material, destructibles): (Option<u32>, &[u32]),
     ) -> Result<()> {
         delivery.send_avatar(
             client,
@@ -553,6 +553,7 @@ impl ArenaWire {
                 endpoint: shot.origin + shot.direction * distance,
                 direction: shot.direction,
                 speed: Shot::SPEED_MPS,
+                destructibles: destructibles.to_vec(),
             },
         )?;
         Ok(())

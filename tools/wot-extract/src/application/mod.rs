@@ -23,7 +23,13 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
     let mut classes = BTreeSet::new();
     let mut terrain = Vec::new();
     let mut placements = Vec::new();
+    let mut vehicle_bounds = Vec::new();
     for path in client.paths() {
+        if obstacles::is_vehicle_contact_model(path) {
+            validate_resource_path(path)?;
+            vehicle_bounds.push(path.to_owned());
+            continue;
+        }
         if obstacles::is_placement(path) {
             validate_resource_path(path)?;
             placements.push(path.to_owned());
@@ -78,6 +84,10 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
             obstacles::extract(&mut client, &placements, &root)?;
         count += collision_files;
         bytes += collision_bytes;
+        let (vehicle_files, vehicle_bytes) =
+            obstacles::extract_vehicle_bounds(&mut client, &vehicle_bounds, &root)?;
+        count += vehicle_files;
+        bytes += vehicle_bytes;
         ResourceBundle::write_manifest_with_version(output, classes, game_version)
             .context("Write bundle manifest")?;
         Ok(Summary {

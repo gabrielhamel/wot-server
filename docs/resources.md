@@ -43,11 +43,31 @@ server. Older manifests without the field remain supported.
   bundles use medium ground everywhere.
 - **Battles** reads the generated `spaces/<map>/collision.bin` placement
   files and shared `collision-models/*.mesh` triangle data for projectile
-  impacts. The extractor derives these from the compiled space and its
-  referenced Havok meshes. It omits the original assets and reports the
-  number of missing or unsupported collision models. Each placement stores
-  a mesh reference, visibility mask and affine transform. Each mesh stores
-  triangles and their material IDs. Battles uses
+  impacts and lateral hull contacts with scenery. The extractor derives
+  these from the compiled space and the Havok meshes it references, including
+  the proxy shapes under `objects/misc/bbox/`. It omits the original
+  assets and reports the path and reason for each missing or unsupported
+  collision model. The mesh decoder ignores disabled `DE AD DE AD` primitive
+  slots and keeps the remaining triangles. Camera-only proxies contribute
+  no vehicle or projectile geometry. Each placement stores
+  a mesh reference, visibility mask and affine transform. `WCP2` adds the
+  native chunk and object index from the compiled space's `WGDE` section.
+  `WCM3` meshes store triangle materials, native fragment kinds, initial
+  health and the transitive dependency mask from `scripts/destructibles.xml`.
+  Re-extract the installed EU client to enable native destruction updates
+  and cascades. `WCM4` also stores independent vehicle and shell pass flags.
+  This preserves vehicle contact for props such as lamps and for trackside
+  walls and ramps that shells ignore. `WCM5` also marks the authored vehicle
+  walls of carriages and locomotives that persist after a visual fragment
+  breaks. Older mesh versions remain readable.
+  Re-extract the client bundle to recover contact bodies omitted by older
+  extractors.
+  The optional `spaces/<map>/trees.bin` (`WCT1`) stores each numbered SpeedTree's
+  `WGDE` identity, scaled health, foot position, scale and fall height. The
+  extractor joins `SpTr` placements to `scripts/destructibles.xml` and excludes
+  entries in `vegetation/bushes.xml`. Re-extract to enable tree contact and
+  native fall replication.
+  Battles uses
   `system/data/material_kinds.xml` to resolve the client effect index.
   **Accounts** reads the legacy and prefab shot effect tables and the common
   vehicle defaults. It uses `damage_stickers.xml` together with the loaded
@@ -55,6 +75,11 @@ server. Older manifests without the field remain supported.
   The server logs a startup warning when the mark catalog is missing.
   Re-extract the bundle and restart the server with its new `--resource-dir`
   to enable the corresponding obstacle effects and vehicle marks.
+- **Accounts** reads optional `WVB1` vehicle collision bounds under
+  `vehicles/.../collision_client/*.bounds`. Each record stores the model-local
+  minimum and maximum from the Havok asset without copying the asset itself.
+  The equipped chassis and mounted hull determine the horizontal contact
+  footprint. Older bundles fall back to the track-derived footprint.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
   item definitions, customization price groups, style, camouflage, paint, decal, projected decal, effect, personal-number attachment and stat tracker definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle
