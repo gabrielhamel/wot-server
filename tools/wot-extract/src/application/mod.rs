@@ -23,11 +23,11 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
     let mut classes = BTreeSet::new();
     let mut terrain = Vec::new();
     let mut placements = Vec::new();
-    let mut vehicle_bounds = Vec::new();
+    let mut vehicle_collision = Vec::new();
     for path in client.paths() {
-        if obstacles::is_vehicle_contact_model(path) {
+        if obstacles::is_vehicle_collision_model(path) {
             validate_resource_path(path)?;
-            vehicle_bounds.push(path.to_owned());
+            vehicle_collision.push(path.to_owned());
             continue;
         }
         if obstacles::is_placement(path) {
@@ -85,7 +85,7 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
         count += collision_files;
         bytes += collision_bytes;
         let (vehicle_files, vehicle_bytes) =
-            obstacles::extract_vehicle_bounds(&mut client, &vehicle_bounds, &root)?;
+            obstacles::extract_vehicle_collision(&mut client, &vehicle_collision, &root)?;
         count += vehicle_files;
         bytes += vehicle_bytes;
         ResourceBundle::write_manifest_with_version(output, classes, game_version)

@@ -1,5 +1,8 @@
 use super::*;
-use crate::domain::vehicle::{GunRay, Shot, Tank};
+use crate::domain::{
+    armor::{ArmorOutcome, ImpactSegment},
+    vehicle::{GunRay, Shot, Tank},
+};
 use std::{collections::VecDeque, time::Instant};
 use wot_platform::mercury::{
     app::{
@@ -12,9 +15,6 @@ use wot_shared_kernel::ShellEffects;
 
 const OWN_ENTITY_NODE: u16 = 1024;
 const GUN_MARKER_COMPONENT_NODE: u16 = 2048;
-const HULL_PART_INDEX: u8 = 1;
-const ARMOR_PIERCED_NO_DAMAGE: u8 = 0;
-const ARMOR_PIERCED: u8 = 4;
 type Fields = BTreeMap<&'static str, WireValue>;
 
 // One byte for the array count and 16 bytes per hit point in a Variable8 property.
@@ -82,6 +82,8 @@ pub(in super::super) struct ShotImpact {
     segment: u64,
     params: u32,
     effects: ShellEffects,
+    outcome: ArmorOutcome,
+    speed: f32,
 }
 
 impl ShotImpact {
@@ -89,31 +91,20 @@ impl ShotImpact {
         attacker: u32,
         damage: i16,
         max_health: i16,
-        local_direction: Vec3,
+        contact: ImpactSegment,
+        outcome: ArmorOutcome,
         effects: ShellEffects,
+        speed: f32,
     ) -> Self {
-        let effect = if damage > 0 {
-            ARMOR_PIERCED
-        } else {
-            ARMOR_PIERCED_NO_DAMAGE
+        let effect = match outcome {
+            ArmorOutcome::Penetrated if damage > 0 => 4,
+            ArmorOutcome::Ricochet => 2,
+            ArmorOutcome::Blocked | ArmorOutcome::ScreenBlocked | ArmorOutcome::Spall => 3,
+            _ => 0,
         };
-        // The training hit volume has no part mesh. Give the client a ray
-        // through the center of its own hull bounding box for the impact effect.
-        let reach = local_direction * (0.5 / local_direction.abs().max_element());
-        let quantize = |point: Vec3| point.to_array().map(|axis| (axis * 255.0).round() as u8);
-        let center = Vec3::splat(0.5);
-        let start = quantize(center - reach);
-        let end = quantize(center + reach);
-        let segment = u64::from_le_bytes([
-            effect,
-            HULL_PART_INDEX,
-            start[0],
-            start[1],
-            start[2],
-            end[0],
-            end[1],
-            end[2],
-        ]);
+        let [ax, ay, az] = contact.start;
+        let [bx, by, bz] = contact.end;
+        let segment = u64::from_le_bytes([effect, contact.part, ax, ay, az, bx, by, bz]);
         Self {
             attacker,
             damage,
@@ -124,11 +115,16 @@ impl ShotImpact {
                 | (u32::from(effects.kind) << 4)
                 | u32::from(effect),
             effects,
+            outcome,
+            speed,
         }
     }
 
     fn sticker(self) -> Option<DamageSticker> {
-        let id = self.effects.pierced_sticker.filter(|_| self.damage > 0)?;
+        let id = self
+            .effects
+            .pierced_sticker
+            .filter(|_| self.damage > 0 && self.outcome == ArmorOutcome::Penetrated)?;
         Some(DamageSticker {
             segment: (self.segment & !0xff) | u64::from(id),
             params: self.params | (u32::from(self.effects.prefab_index) << 24),
@@ -143,8 +139,11 @@ impl ShotImpact {
             WireValue::UInt8(self.effects.prefab_index),
             WireValue::Int32(i32::from(self.damage)),
             WireValue::UInt8(self.damage_factor),
-            WireValue::UInt8(0),
-            WireValue::Float32(Shot::SPEED_MPS),
+            WireValue::UInt8(u8::from(matches!(
+                self.outcome,
+                ArmorOutcome::ScreenPenetrated | ArmorOutcome::ScreenBlocked
+            ))),
+            WireValue::Float32(self.speed),
             WireValue::UInt8(0),
         ]
     }
@@ -299,6 +298,7 @@ impl ArenaWire {
             GunRay {
                 origin: Vec3::ZERO,
                 direction: Vec3::Z,
+                speed: GunRay::FALLBACK_SPEED_MPS,
             },
             0.005,
         )?;
@@ -373,7 +373,20 @@ impl ArenaWire {
             ),
             (
                 "showDamageFromShot",
-                ShotImpact::new(1, 1, 1, Vec3::Z, ShellEffects::default()).args(),
+                ShotImpact::new(
+                    1,
+                    1,
+                    1,
+                    ImpactSegment {
+                        part: 1,
+                        start: [128, 128, 0],
+                        end: [128, 128, 255],
+                    },
+                    ArmorOutcome::Penetrated,
+                    ShellEffects::default(),
+                    GunRay::FALLBACK_SPEED_MPS,
+                )
+                .args(),
             ),
             (
                 "onHealthChanged",
@@ -525,10 +538,11 @@ impl ArenaWire {
             client,
             AvatarUpdate::Tracer {
                 shooter,
+                ricochet: shot.ricocheted,
                 id: shot_id,
                 effects: shot.effects,
                 start: shot.origin,
-                velocity: shot.direction * Shot::SPEED_MPS,
+                velocity: shot.direction * shot.ballistics.speed,
                 range: shot.max_distance,
             },
         )?;
@@ -552,7 +566,7 @@ impl ArenaWire {
                 material: self.impact_materials.effect_index(material),
                 endpoint: shot.origin + shot.direction * distance,
                 direction: shot.direction,
-                speed: Shot::SPEED_MPS,
+                speed: shot.ballistics.speed,
                 destructibles: destructibles.to_vec(),
             },
         )?;
@@ -644,10 +658,7 @@ fn gun_marker_value(ty: &Ty, ray: GunRay, dispersion: f32) -> Result<WireValue> 
         ty,
         [
             ("gunPosition", WireValue::Vector3(ray.origin)),
-            (
-                "shotVector",
-                WireValue::Vector3(ray.direction * Shot::SPEED_MPS),
-            ),
+            ("shotVector", WireValue::Vector3(ray.direction * ray.speed)),
             ("dispersion", WireValue::Float32(dispersion)),
         ],
     )
@@ -776,23 +787,38 @@ fn own_state(
 mod impact_tests {
     use super::*;
 
+    fn penetration(x: u8, damage: i16, effects: ShellEffects) -> ShotImpact {
+        ShotImpact::new(
+            1,
+            damage,
+            10,
+            ImpactSegment {
+                part: 1,
+                start: [x, 128, 0],
+                end: [x, 128, 255],
+            },
+            ArmorOutcome::Penetrated,
+            effects,
+            GunRay::FALLBACK_SPEED_MPS,
+        )
+    }
+
     #[test]
     fn retains_distinct_penetrations_up_to_the_wire_limit() {
         let mut marks = DamageStickers::default();
         let mut effects = ShellEffects::default();
-        let impact = ShotImpact::new(1, 1, 10, Vec3::Z, effects);
+        let impact = penetration(128, 1, effects);
         assert!(!marks.add(impact));
         effects.pierced_sticker = Some(0);
-        assert!(!marks.add(ShotImpact::new(1, 0, 10, Vec3::Z, effects)));
+        assert!(!marks.add(penetration(128, 0, effects)));
 
         for index in 0..=MAX_DAMAGE_STICKERS {
-            let direction = glam::Quat::from_rotation_y(index as f32 * 0.1) * Vec3::Z;
-            let impact = ShotImpact::new(1, 1, 10, direction, effects);
+            let impact = penetration(128 + index as u8, 1, effects);
             assert!(marks.add(impact));
             assert!(!marks.add(impact));
         }
         assert_eq!(marks.len(), MAX_DAMAGE_STICKERS);
-        let first = ShotImpact::new(1, 1, 10, Vec3::Z, effects);
+        let first = penetration(128, 1, effects);
         assert!(marks.add(first));
         assert_eq!(marks.len(), MAX_DAMAGE_STICKERS);
     }

@@ -3380,6 +3380,7 @@ dependencies = [
  "anyhow",
  "argon2",
  "async-trait",
+ "byteorder",
  "flate2",
  "glam",
  "serde",
@@ -3400,6 +3401,7 @@ version = "0.21.0"
 dependencies = [
  "anyhow",
  "byteorder",
+ "fastrand",
  "flate2",
  "glam",
  "opentelemetry",

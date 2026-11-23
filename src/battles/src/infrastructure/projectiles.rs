@@ -2,15 +2,26 @@ use super::{
     avatar::{BattleEvent, ShotResult},
     *,
 };
-use crate::domain::vehicle::Shot;
+use crate::domain::{
+    armor::{ArmorHit, ArmorOutcome},
+    vehicle::Shot,
+};
 use wot_platform::mercury::script::Value as WireValue;
+use wot_shared_kernel::ShellKind;
 
 const HIGH_EXPLOSIVE_SHELL_KIND: u8 = 1;
 const GUN_INSTALLATION_INDEX: u8 = 0;
 const VEHICLE_KILLED: u32 = 1;
+const RICOCHET: u32 = 1 << 3;
 const ARMOR_PIERCED_WITH_DAMAGE: u32 = 1 << 4;
+const ARMOR_BLOCKED: u32 = 1 << 5;
+const SCREEN_PIERCED: u32 = 1 << 6;
+const SCREEN_BLOCKED: u32 = 1 << 7;
+const ARMOR_BLOCKED_WITH_DAMAGE: u32 = 1 << 25;
 const DIRECT_PROJECTILE: u32 = 1 << 20;
+const RICOCHET_PROJECTILE: u32 = 1 << 23;
 const MAX_PENDING_IMPACTS: usize = 256;
+const MAX_OBSTACLES_PIERCED: u8 = 8;
 
 pub(super) struct PendingImpact {
     due: Instant,
@@ -21,6 +32,7 @@ pub(super) struct PendingImpact {
     shooter: ParticipantId,
     attacker: u32,
     team: u8,
+    obstacles_pierced: u8,
     span: tracing::Span,
 }
 
@@ -29,7 +41,7 @@ enum Contact {
     Vehicle {
         participant: ParticipantId,
         id: u32,
-        local_direction: Vec3,
+        hit: ArmorHit,
     },
 }
 
@@ -41,6 +53,7 @@ struct VehicleHit {
     direction: f32,
     effect: ShotImpact,
     sticker_added: bool,
+    outcome: ArmorOutcome,
 }
 
 impl Battle {
@@ -56,6 +69,8 @@ impl Battle {
         output.obstacle.material_kind = tracing::field::Empty,
         output.obstacle.fragment_destroyed = tracing::field::Empty,
         output.shot.id = tracing::field::Empty,
+        output.obstacles_pierced.count = tracing::field::Empty,
+        output.projectile.ricocheted = tracing::field::Empty,
         output.target.entity_id = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.hit_direction.radians = tracing::field::Empty,
         output.damage_log.shell_type = tracing::field::Empty,
@@ -88,7 +103,9 @@ impl Battle {
                 span.record("output.outcome", reason);
                 if matches!(
                     reason,
-                    "shell_damage_unavailable" | "shell_range_unavailable"
+                    "shell_damage_unavailable"
+                        | "shell_range_unavailable"
+                        | "shell_ballistics_unavailable"
                 ) {
                     span.record("otel.status_code", "ERROR");
                     error!(shell, reason, "Loaded shell has an invalid shot definition");
@@ -111,44 +128,7 @@ impl Battle {
         self.shot_sequence = self.shot_sequence.wrapping_add(1);
         let shot_id = self.shot_sequence;
         span.record("output.shot.id", shot_id);
-        let target = self
-            .players
-            .iter()
-            .filter(|(_, p)| p.team != team && p.ready && !p.observer && p.tank.health > 0)
-            .filter_map(|(&client, p)| {
-                shot.intersection(&p.tank)
-                    .map(|dist| (client, p.vehicle.entity_id, dist, p.tank.yaw))
-            })
-            .min_by(|(_, left, a, _), (_, right, b, _)| a.total_cmp(b).then(left.cmp(right)));
-        let range = target.map_or(shot.max_distance, |(_, _, distance, _)| distance);
-        let ground = self
-            .ground
-            .shot_intersection(shot.origin, shot.direction, range);
-        let obstacle =
-            self.obstacles
-                .intersect(shot.origin, shot.direction, ground.unwrap_or(range));
-        let scene = obstacle
-            .map(|hit| (hit.distance, Some(hit)))
-            .or_else(|| ground.map(|distance| (distance, None)));
-        let contact = if let Some((distance, obstacle)) = scene {
-            span.record("output.scene_impact.distance_metres", distance);
-            if let Some(hit) = obstacle {
-                span.record("output.obstacle.material_kind", hit.material);
-            }
-            Some((distance, Contact::Scene(obstacle)))
-        } else {
-            target.map(|(participant, id, distance, yaw)| {
-                let local_direction = glam::Quat::from_rotation_y(-yaw) * shot.direction;
-                (
-                    distance,
-                    Contact::Vehicle {
-                        participant,
-                        id,
-                        local_direction,
-                    },
-                )
-            })
-        };
+        let contact = self.projectile_contact(&shot, team, None);
         let outcome = if contact.is_some() {
             "launched"
         } else {
@@ -190,28 +170,93 @@ impl Battle {
             }
         }
         if let Some((distance, contact)) = contact {
-            let seconds = distance / Shot::SPEED_MPS;
+            let seconds = distance / shot.ballistics.speed;
             span.record("output.projectile.flight_seconds", seconds);
             let due = now + Duration::from_secs_f32(seconds);
-            let index = self
-                .projectiles
-                .partition_point(|projectile| projectile.due <= due);
-            self.projectiles.insert(
-                index,
-                PendingImpact {
-                    due,
-                    distance,
-                    contact,
-                    shot,
-                    shot_id,
-                    shooter: client,
-                    attacker: entity_id,
-                    team,
-                    span,
-                },
-            );
+            self.queue_impact(PendingImpact {
+                due,
+                distance,
+                contact,
+                shot,
+                shot_id,
+                shooter: client,
+                attacker: entity_id,
+                team,
+                obstacles_pierced: 0,
+                span,
+            });
         }
         Ok(outcome)
+    }
+
+    fn projectile_contact(
+        &self,
+        shot: &Shot,
+        team: u8,
+        ignore: Option<ParticipantId>,
+    ) -> Option<(f32, Contact)> {
+        let span = tracing::Span::current();
+        let ground = self
+            .ground
+            .shot_intersection(shot.origin, shot.direction, shot.max_distance);
+        let obstacle = self.obstacles.intersect(
+            shot.origin,
+            shot.direction,
+            ground.unwrap_or(shot.max_distance),
+        );
+        let scene = obstacle
+            .map(|hit| (hit.distance, Some(hit)))
+            .or_else(|| ground.map(|distance| (distance, None)));
+        let range = scene.map_or(shot.max_distance, |(distance, _)| distance);
+        let target = self
+            .players
+            .iter()
+            .filter(|&(&participant, p)| {
+                p.team != team
+                    && Some(participant) != ignore
+                    && p.ready
+                    && !p.observer
+                    && p.tank.health > 0
+            })
+            .filter_map(|(&participant, p)| {
+                Some((
+                    participant,
+                    p.vehicle.entity_id,
+                    shot.armor_path(&p.tank, range)?,
+                ))
+            })
+            .min_by(|(_, a, left), (_, b, right)| {
+                left.first_distance()
+                    .total_cmp(&right.first_distance())
+                    .then(a.cmp(b))
+            });
+        let vehicle = target.and_then(|(participant, id, path)| {
+            let hit = shot.resolve_armor(id, path)?;
+            Some((
+                hit.distance,
+                Contact::Vehicle {
+                    participant,
+                    id,
+                    hit,
+                },
+            ))
+        });
+        vehicle.or_else(|| {
+            scene.map(|(distance, obstacle)| {
+                span.record("output.scene_impact.distance_metres", distance);
+                if let Some(hit) = obstacle {
+                    span.record("output.obstacle.material_kind", hit.material);
+                }
+                (distance, Contact::Scene(obstacle))
+            })
+        })
+    }
+
+    fn queue_impact(&mut self, impact: PendingImpact) {
+        let index = self
+            .projectiles
+            .partition_point(|pending| pending.due <= impact.due);
+        self.projectiles.insert(index, impact);
     }
 
     pub(super) fn advance_projectiles(
@@ -260,10 +305,34 @@ impl Battle {
         let mut defeated = false;
         let mut vehicle_hit = None;
         let mut destructibles = Vec::new();
+        let mut continuation = None;
+        let mut obstacles_pierced = impact.obstacles_pierced;
         let outcome = match impact.contact {
             Contact::Scene(Some(hit)) => {
                 if let Some(fragment) = hit.fragment {
-                    let broken = self.obstacles.damage(fragment, u32::from(shot.damage));
+                    let amount = shot
+                        .ballistics
+                        .obstacle_damage
+                        .unwrap_or(f32::from(shot.damage)) as u32;
+                    let broken = self.obstacles.damage(fragment, amount);
+                    let loss = shot.ballistics.obstacle_penetration_loss;
+                    if self.obstacles.remaining_health(fragment) == 0
+                        && matches!(
+                            shot.ballistics.kind,
+                            ShellKind::HighExplosive {
+                                obstacle_penetration: true,
+                                ..
+                            }
+                        )
+                        && shot.penetration_at(distance) > loss
+                        && obstacles_pierced < MAX_OBSTACLES_PIERCED
+                        && let Some(mut onward) = shot.continue_from(distance, shot.direction)
+                    {
+                        onward.penetration_loss += loss;
+                        continuation = Some((onward, None));
+                        obstacles_pierced += 1;
+                        span.record("output.obstacles_pierced.count", obstacles_pierced);
+                    }
                     span.record("output.obstacle.fragment_destroyed", !broken.is_empty());
                     if !broken.is_empty() {
                         let yaw = shot.direction.x.atan2(shot.direction.z);
@@ -275,27 +344,37 @@ impl Battle {
                         );
                     }
                 }
-                "obstacle_impact"
+                if continuation.is_some() {
+                    "obstacle_penetrated"
+                } else {
+                    "obstacle_impact"
+                }
             }
             Contact::Scene(None) => "ground_impact",
             Contact::Vehicle {
                 participant,
                 id,
-                local_direction,
+                hit,
             } => {
                 if let Some(victim) = self
                     .players
                     .get_mut(&participant)
                     .filter(|p| p.tank.health > 0)
                 {
-                    let (previous, health) = victim.tank.hit(shot);
+                    if let Some(onward) = shot.ricochet_from(hit) {
+                        continuation = Some((onward, Some(participant)));
+                        span.record("output.projectile.ricocheted", true);
+                    }
+                    let (previous, health) = victim.tank.hit(hit.damage);
                     let damage = previous - health;
                     let effect = ShotImpact::new(
                         attacker,
                         damage,
                         victim.tank.max_health,
-                        local_direction,
+                        hit.segment,
+                        hit.outcome,
                         shot.effects,
+                        shot.ballistics.speed,
                     );
                     let sticker_added = victim.damage_stickers.add(effect);
                     if sticker_added {
@@ -316,12 +395,13 @@ impl Battle {
                         direction,
                         effect,
                         sticker_added,
+                        outcome: hit.outcome,
                     });
                     defeated = self
                         .players
                         .values()
                         .all(|p| p.team == team || p.observer || p.tank.health == 0);
-                    "hit"
+                    hit.outcome.name()
                 } else {
                     "target_unavailable"
                 }
@@ -331,6 +411,9 @@ impl Battle {
         for (&peer, participant) in self.players.iter().filter(|(_, player)| player.entered) {
             let result = (|| -> Result<()> {
                 if let Contact::Scene(obstacle) = impact.contact {
+                    if continuation.is_some() {
+                        return Ok(());
+                    }
                     return wire.show_scene_impact(
                         delivery,
                         peer,
@@ -355,16 +438,25 @@ impl Battle {
                     direction,
                     effect,
                     sticker_added,
+                    outcome,
                 }) = vehicle_hit
                 else {
                     return Ok(());
                 };
                 let damage = previous - health;
                 if peer == shooter {
-                    let mut flags = DIRECT_PROJECTILE;
-                    if damage > 0 {
-                        flags |= ARMOR_PIERCED_WITH_DAMAGE;
-                    }
+                    let mut flags = if shot.ricocheted {
+                        RICOCHET_PROJECTILE
+                    } else {
+                        DIRECT_PROJECTILE
+                    } | match outcome {
+                        ArmorOutcome::Penetrated => ARMOR_PIERCED_WITH_DAMAGE,
+                        ArmorOutcome::Blocked => ARMOR_BLOCKED,
+                        ArmorOutcome::Ricochet => RICOCHET,
+                        ArmorOutcome::ScreenPenetrated => SCREEN_PIERCED,
+                        ArmorOutcome::ScreenBlocked => SCREEN_BLOCKED,
+                        ArmorOutcome::Spall => ARMOR_BLOCKED_WITH_DAMAGE,
+                    };
                     if health == 0 {
                         flags |= VEHICLE_KILLED;
                     }
@@ -380,6 +472,9 @@ impl Battle {
                 wire.show_shot_impact(delivery, peer, id, effect)?;
                 if sticker_added && let Some(target) = self.players.get(&victim) {
                     wire.publish_damage_stickers(delivery, peer, id, &target.damage_stickers)?;
+                }
+                if damage == 0 {
+                    return Ok(());
                 }
                 if peer == victim {
                     delivery.send_avatar(
@@ -433,6 +528,41 @@ impl Battle {
                 span.record("otel.status_code", "ERROR");
                 error!(%error, "Projectile impact delivery failed");
                 delivery.disconnect(peer);
+            }
+        }
+        if let Some((shot, bounced_from)) = continuation {
+            let shot_id = if bounced_from.is_some() {
+                self.shot_sequence = self.shot_sequence.wrapping_add(1);
+                let id = self.shot_sequence;
+                for (&peer, _) in self.players.iter().filter(|(_, player)| player.entered) {
+                    if let Err(error) = wire.show_tracer(delivery, peer, attacker, id, &shot) {
+                        span.record("otel.status_code", "ERROR");
+                        error!(%error, "Ricochet tracer delivery failed");
+                        delivery.disconnect(peer);
+                    }
+                }
+                id
+            } else {
+                shot_id
+            };
+            if let Some((distance, contact)) = self.projectile_contact(&shot, team, bounced_from) {
+                let flight = distance / shot.ballistics.speed;
+                span.record(
+                    "output.projectile.flight_seconds",
+                    shot.travelled / shot.ballistics.speed + flight,
+                );
+                self.queue_impact(PendingImpact {
+                    due: impact.due + Duration::from_secs_f32(flight),
+                    distance,
+                    contact,
+                    shot,
+                    shot_id,
+                    shooter,
+                    attacker,
+                    team,
+                    obstacles_pierced,
+                    span: span.clone(),
+                });
             }
         }
         if defeated {

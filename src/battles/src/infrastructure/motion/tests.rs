@@ -43,6 +43,7 @@ fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_comman
             hull_traverse: 0.7,
             mobility: Mobility::default(),
             turret_pivot: None,
+            armor: Default::default(),
             gun: GunPerformance {
                 turret_traverse: 0.8,
                 gun_traverse: 0.0,
@@ -62,6 +63,7 @@ fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_comman
                 shell_damage: Default::default(),
                 shell_ranges: Default::default(),
                 shell_effects: Default::default(),
+                shell_ballistics: Default::default(),
             },
         }),
     };

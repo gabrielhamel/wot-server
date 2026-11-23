@@ -80,6 +80,13 @@ server. Older manifests without the field remain supported.
   minimum and maximum from the Havok asset without copying the asset itself.
   The equipped chassis and mounted hull determine the horizontal contact
   footprint. Older bundles fall back to the track-derived footprint.
+- **Accounts** reads `WVA1` vehicle projectile collision meshes under
+  `vehicles/.../collision_client/*.armor` for the equipped chassis, hull,
+  turret and gun. Each record stores a material ID and three local-space
+  vertices. Accounts joins material IDs with the vehicle armor overrides and
+  the common material definitions. Battles uses the same part bounds to encode
+  the impact ray for the client. Re-extract earlier bundles before testing
+  vehicle fire. Textures and rendering assets stay in the game client.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
   item definitions, customization price groups, style, camouflage, paint, decal, projected decal, effect, personal-number attachment and stat tracker definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle

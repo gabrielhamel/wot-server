@@ -293,7 +293,12 @@ as failed and disconnects the affected peer.
 Shots retain their parent through target selection, ground and obstacle
 intersection, the wait for the tracer's flight, and the impact and health
 deliveries. The same span parents the immediate muzzle and tracer deliveries
-and records the shell kind, caliber and scheduled flight time. An impact that
+and records the shell kind, caliber and scheduled flight time. The child
+`battles.resolve_armor` records the selected material and part index, nominal
+and effective thickness, remaining penetration, damage before capping to
+remaining HP, and the penetration outcome. The shot records cumulative flight
+time when it continues after a ricochet or stops at another contact after
+breaking a destructible fragment. An impact that
 adds a persistent mark records the retained sticker count and parents a
 `battles.damage_stickers` span per recipient. Scene impacts
 record distance along the ray and parent the `explodeProjectile`

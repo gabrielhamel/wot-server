@@ -1,4 +1,5 @@
 mod account;
+mod battle_armor;
 mod battle_mobility;
 mod battle_performance;
 mod cosmetic_catalog;
@@ -63,6 +64,7 @@ pub struct GarageCatalog {
     cosmetics: cosmetic_catalog::CosmeticCatalog,
     shell_prices: BTreeMap<i32, ShellPrice>,
     shell_effects: shell_effects::ShellEffectCatalog,
+    battle_armor: battle_armor::ArmorMaterials,
     equipment: crate::EquipmentRules,
     equipment_grants: equipment::EquipmentGrantCatalog,
     battle_mobility: battle_mobility::BattleMobility,
@@ -309,6 +311,7 @@ impl GarageCatalog {
                 }
             });
         let shell_effects = shell_effects::ShellEffectCatalog::load(&fs)?;
+        let battle_armor = battle_armor::ArmorMaterials::load(&fs)?;
         let mut catalog = Self {
             templates: RwLock::new(HashMap::new()),
             offers,
@@ -323,6 +326,7 @@ impl GarageCatalog {
             cosmetics,
             shell_prices,
             shell_effects,
+            battle_armor,
             equipment,
             equipment_grants,
             battle_mobility,
@@ -386,6 +390,7 @@ impl GarageCatalog {
             &self.prices,
             &self.shell_prices,
             &self.shell_effects,
+            &self.battle_armor,
         )
         .with_context(|| format!("Load modules for {key}"))?;
         let equipment = def.equipment.clone();

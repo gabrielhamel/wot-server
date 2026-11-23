@@ -1309,6 +1309,7 @@ pub fn assert_traces(account_id: i64, guest_account_id: i64, available: bool) {
 pub struct BattleFixture {
     shell_damage: u16,
     shell_range: f32,
+    shell_speed: f32,
     has_obstacles: bool,
     has_damage_stickers: bool,
     has_vehicle_bounds: bool,
@@ -1328,16 +1329,26 @@ pub fn battle_fixture(resources: &wot_resources::ResourceBundle) -> BattleFixtur
         .read("scripts/item_defs/vehicles/usa/components/guns.xml")
         .unwrap();
     let guns = pxml::from_reader(guns).unwrap();
-    let range = guns
-        .get_child_value_at(&[
-            "shared",
-            "_37mm_Gun_M1916",
-            "shots",
-            "_37mm_AP_1916_1937_T1",
-            "maxDistance",
-        ])
-        .unwrap()
-        .as_float()
+    let shot = [
+        "shared",
+        "_37mm_Gun_M1916",
+        "shots",
+        "_37mm_AP_1916_1937_T1",
+    ]
+    .into_iter()
+    .try_fold(guns.as_ref(), |element, name| {
+        element.get_child_element(name)
+    })
+    .unwrap();
+    let common = pxml::from_reader(
+        resources
+            .read("scripts/item_defs/vehicles/common/vehicle_common.xml")
+            .unwrap(),
+    )
+    .unwrap();
+    let speed_factor = common
+        .get_child_value_at(&["miscParams", "projectileSpeedFactor"])
+        .and_then(|value| value.as_float())
         .unwrap();
     BattleFixture {
         shell_damage: damage
@@ -1345,7 +1356,8 @@ pub fn battle_fixture(resources: &wot_resources::ResourceBundle) -> BattleFixtur
             .or_else(|| damage.as_vec2().map(|values| values.x))
             .unwrap()
             .round() as u16,
-        shell_range: range,
+        shell_range: shot.get_child_float("maxDistance").unwrap(),
+        shell_speed: shot.get_child_float("speed").unwrap() * speed_factor,
         has_obstacles: resources.has_file("spaces/07_lakeville/collision.bin"),
         has_vehicle_bounds: resources
             .has_file("vehicles/american/A01_T1_Cunningham/collision_client/Chassis.bounds"),
@@ -1654,7 +1666,11 @@ pub fn exercise_battle(
         "trackRelativePointWithGun",
         vec![Value::Vector3(glam::Vec3::Y)],
     );
-    let target = host.positions[&second] + glam::Vec3::Y * 1.35;
+    let centered = host.positions[&second] + glam::Vec3::Y * 1.35;
+    let across = (centered - host.positions[&first])
+        .cross(glam::Vec3::Y)
+        .normalize();
+    let target = centered + across * 0.25;
     let offset = target - host.positions[&first];
     host.cell_command(script, "setServerMarker", vec![Value::UInt8(1)]);
     host.vehicle_command(
@@ -1667,7 +1683,7 @@ pub fn exercise_battle(
         gun_markers(peer, script)
             .last()
             .is_some_and(|(origin, velocity, _)| {
-                (target - *origin).cross(velocity.normalize()).length() < 0.6
+                (target - *origin).cross(velocity.normalize()).length() < 0.06
             })
     });
     host.cell_command(script, "setServerMarker", vec![Value::UInt8(0)]);
@@ -1716,6 +1732,17 @@ pub fn exercise_battle(
     assert_eq!(hit["vehicleID"].as_i64(), Some(i64::from(second)));
     assert_eq!(hit["hitFlags"].as_i64(), Some(0x0010_0010));
     assert_eq!(hit["gunInstallationIndex"].as_i64(), Some(0));
+    let (_, _, health) = guest
+        .vehicle_methods
+        .iter()
+        .find(|(target, name, _)| *target == second && name == "onHealthChanged")
+        .unwrap();
+    let rolled_damage = health[1].as_i64().unwrap() - health[0].as_i64().unwrap();
+    let [min, max] = [0.75, 1.25].map(|scale| (f32::from(shell_damage) * scale).round() as i64);
+    assert!(
+        (min..=max).contains(&rolled_damage),
+        "rolled {rolled_damage}, expected {min}..={max}"
+    );
     assert!(
         !guest
             .methods
@@ -1746,9 +1773,12 @@ pub fn exercise_battle(
             panic!("expected tracer geometry");
         };
         assert_eq!(*range, fixture.shell_range);
+        assert!((velocity.length() - fixture.shell_speed).abs() < 0.01);
         let ray = velocity.normalize();
         let offset = *end - *origin;
         assert!(offset.cross(ray).length() < 0.01);
+        assert!((target - *origin).cross(ray).length() < 0.10);
+        assert!((centered - *origin).cross(ray).length() > 0.15);
         assert!((0.0..=*range).contains(&offset.dot(ray)));
 
         let (_, _, impact) = peer
@@ -1757,7 +1787,7 @@ pub fn exercise_battle(
             .find(|(target, name, _)| *target == second && name == "showDamageFromShot")
             .expect("target impact");
         assert_eq!(impact[0].as_i64(), Some(i64::from(first)));
-        assert_eq!(impact[4].as_i64(), Some(i64::from(shell_damage)));
+        assert_eq!(impact[4].as_i64(), Some(rolled_damage));
         let Value::Seq(points) = &impact[1] else {
             panic!("expected impact points");
         };
@@ -1769,16 +1799,9 @@ pub fn exercise_battle(
             panic!("expected packed hull segment");
         };
         let [effect, part, ax, ay, az, bx, by, bz] = segment.to_le_bytes();
-        assert_eq!((effect, part), (4, 1));
+        assert_eq!(effect, 4);
+        assert!(matches!(part, 1 | 2));
         assert_ne!([ax, ay, az], [bx, by, bz]);
-        let local_direction =
-            glam::Quat::from_rotation_y(-guest.cell.as_ref().unwrap().direction.z) * *velocity;
-        let encoded_delta = glam::Vec3::new(
-            f32::from(bx) - f32::from(ax),
-            f32::from(by) - f32::from(ay),
-            f32::from(bz) - f32::from(az),
-        );
-        assert!(encoded_delta.normalize().dot(local_direction.normalize()) > 0.99);
         let params = point["params"].as_i64().unwrap();
         assert_eq!(params & 0xf, i64::from(effect));
         assert_eq!((params >> 4) & 0xf, tracer[5].as_i64().unwrap());
@@ -1811,7 +1834,7 @@ pub fn exercise_battle(
             .unwrap();
         assert_eq!(
             impact[5].as_i64(),
-            Some(i64::from(shell_damage) * 255 / health[1].as_i64().unwrap())
+            Some(rolled_damage * 255 / health[1].as_i64().unwrap())
         );
     }
     for (peer, event_type, other_vehicle) in [(&*host, 7, second), (&*guest, 10, first)] {
@@ -1832,7 +1855,7 @@ pub fn exercise_battle(
         let Value::UInt64(details) = event["details"] else {
             panic!("expected packed damage details");
         };
-        assert_eq!(details >> 25 & 0xffff, u64::from(shell_damage));
+        assert_eq!(details >> 25 & 0xffff, rolled_damage as u64);
         assert_eq!(details >> 17 & 0xff, 0);
         assert_eq!(details >> 9 & 0x7f, if event_type == 10 { 1 } else { 127 });
     }
@@ -1853,7 +1876,7 @@ pub fn exercise_battle(
         .unwrap();
     assert_eq!(
         health[1].as_i64().unwrap() - health[0].as_i64().unwrap(),
-        i64::from(shell_damage)
+        rolled_damage
     );
     assert_eq!(direction[1].as_i64(), Some(i64::from(first)));
     assert_eq!(
@@ -1914,7 +1937,7 @@ pub fn exercise_battle(
             .any(|(target, name, _)| *target == first && name == "showShooting")
     );
     let facing = host.cell.as_ref().unwrap().direction.z;
-    assert_gun_marker(host, guest, script, first, facing);
+    assert_gun_marker(host, guest, script, first, facing, fixture.shell_speed);
     let reload_count = reload_times(host).len();
     assert_ground_impact(host, guest, script);
     if fixture.has_obstacles {
@@ -2048,7 +2071,10 @@ fn assert_range_expiry(host: &mut Peer, guest: &mut Peer, script: &ScriptDispatc
         assert_eq!(tracer.1[10], Value::Float32(range));
         let shot_id = tracer.1[1].clone();
         let tick = peer.arena_tick.unwrap();
-        let flight = ((range / 450.0) * 10.0).ceil() as u8;
+        let Value::Vector3(velocity) = tracer.1[8] else {
+            panic!("Expected tracer velocity");
+        };
+        let flight = ((range / velocity.length()) * 10.0).ceil() as u8;
         peer.until(script, |p| {
             p.arena_tick
                 .is_some_and(|now| (flight..=127).contains(&now.wrapping_sub(tick)))
@@ -2137,6 +2163,7 @@ fn assert_gun_marker(
     script: &ScriptDispatch,
     vehicle: u32,
     facing: f32,
+    speed: f32,
 ) {
     use std::f32::consts::{PI, TAU};
     let (marker_type, _) = script.entity_from_name("GunMarkerComponent").unwrap();
@@ -2180,7 +2207,7 @@ fn assert_gun_marker(
     assert_eq!(host.gun_angles[&vehicle], guest.gun_angles[&vehicle]);
     let (origin, velocity, dispersion) = *markers(host).last().unwrap();
     assert!(origin.distance(host.positions[&vehicle]) < 5.0);
-    assert!((velocity.length() - 450.0).abs() < 0.01 && dispersion > 0.0);
+    assert!((velocity.length() - speed).abs() < 0.01 && dispersion > 0.0);
     assert!(markers(guest).is_empty());
 
     let marker_count = markers(host).len();
@@ -2427,11 +2454,32 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
 
     let hit = traces
         .iter()
-        .find(|s| s.name == "battles.shot" && has(s, "output.outcome", "hit"))
+        .find(|s| s.name == "battles.shot" && has(s, "output.outcome", "penetrated"))
         .expect("training hit");
     assert!(has(hit, "ddd.bounded_context.name", "battles"));
     assert!(has(hit, "input.shell.damage", &shell_damage.to_string()));
-    assert!(has(hit, "output.damage", &shell_damage.to_string()));
+    let damage = attribute(hit, "output.damage")
+        .unwrap()
+        .parse::<u16>()
+        .unwrap();
+    let [min, max] = [0.75, 1.25].map(|scale| (f32::from(shell_damage) * scale).round() as u16);
+    assert!((min..=max).contains(&damage));
+    let armor = traces
+        .iter()
+        .find(|span| span.name == "battles.resolve_armor" && child_of(span, hit))
+        .expect("armor resolution belongs to the shot trace");
+    assert!(has(armor, "ddd.bounded_context.name", "battles"));
+    assert!(has(armor, "output.outcome", "penetrated"));
+    assert!(has(armor, "output.damage", &damage.to_string()));
+    for field in [
+        "output.part.index",
+        "output.material.kind",
+        "output.plate.thickness_mm",
+        "output.plate.effective_mm",
+        "output.penetration.remaining_mm",
+    ] {
+        assert!(attribute(armor, field).is_some(), "missing {field}");
+    }
     assert!(has(hit, "output.damage_log.shell_type", "1"));
     let control = traces
         .iter()

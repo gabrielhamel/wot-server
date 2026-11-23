@@ -1,13 +1,13 @@
 use super::{
     ammunition::{Ammunition, Reload},
+    armor::roll,
     movement::{Drive, GRAVITY, GroundContact, approach},
     world::{HULL_HEIGHT, Hull, VehicleBody, WorldMotion},
 };
 use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 use std::time::Instant;
-use wot_shared_kernel::{ShellEffects, VehiclePerformance};
+use wot_shared_kernel::{ShellBallistics, ShellEffects, VehiclePerformance};
 
-const HULL_RADIUS: f32 = 2.5;
 const TERRAIN_CONTACT_TOLERANCE_METRES: f32 = 0.35;
 
 pub(crate) struct Tank {
@@ -38,18 +38,26 @@ pub(crate) enum AmmunitionCommand {
     ReloadMagazine,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct Shot {
     pub origin: Vec3,
     pub direction: Vec3,
     pub damage: u16,
     pub max_distance: f32,
     pub effects: ShellEffects,
+    pub ballistics: ShellBallistics,
+    pub penetration_roll: f32,
+    pub damage_roll: f32,
+    pub travelled: f32,
+    pub penetration_loss: f32,
+    pub ricocheted: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) struct GunRay {
     pub origin: Vec3,
     pub direction: Vec3,
+    pub speed: f32,
 }
 
 impl Tank {
@@ -439,14 +447,28 @@ impl Tank {
             None if self.ammunition.loaded(shell) == 0 => 0.0,
             None => return Err("shell_range_unavailable"),
         };
+        let ballistics = performance.gun.shell_ballistics.get(&shell).copied();
+        if ballistics.is_none() && self.ammunition.loaded(shell) > 0 {
+            return Err("shell_ballistics_unavailable");
+        }
         self.ammunition.fire(&performance.gun.loading, now)?;
+        let ballistics = ballistics.ok_or("shell_ballistics_unavailable")?;
         let ray = self.gun_ray();
         Ok(Shot {
             origin: ray.origin,
+            travelled: 0.0,
+            penetration_loss: 0.0,
+            ricocheted: false,
             direction: ray.direction,
             damage,
             max_distance,
             effects,
+            ballistics,
+            penetration_roll: roll(
+                ballistics.penetration_randomization,
+                ballistics.uniform_penetration,
+            ),
+            damage_roll: roll(ballistics.damage_randomization, ballistics.uniform_damage),
         })
     }
 
@@ -454,7 +476,18 @@ impl Tank {
         let hull = self.hull_rotation();
         let turret = Quat::from_rotation_y(self.gun_yaw);
         let (pivot, shot_position) = self.gun_mount();
+        let speed = self
+            .performance
+            .as_ref()
+            .and_then(|profile| {
+                profile
+                    .gun
+                    .shell_ballistics
+                    .get(&self.ammunition.settings()[0])
+            })
+            .map_or(GunRay::FALLBACK_SPEED_MPS, |shell| shell.speed);
         GunRay {
+            speed,
             origin: self.position + hull * (pivot + turret * shot_position),
             direction: hull * turret * Quat::from_rotation_x(self.gun_pitch) * Vec3::Z,
         }
@@ -500,13 +533,27 @@ impl Tank {
         }
     }
 
-    pub fn hit(&mut self, shot: &Shot) -> (i16, i16) {
+    pub fn hit(&mut self, damage: u16) -> (i16, i16) {
         let previous = self.health;
-        self.health = previous.saturating_sub_unsigned(shot.damage).max(0);
+        self.health = previous.saturating_sub_unsigned(damage).max(0);
         if self.health == 0 {
             self.drive.flags = 0;
         }
         (previous, self.health)
+    }
+
+    pub fn armor_pose(&self, part: usize, offset: Vec3) -> (Vec3, Quat) {
+        let hull = self.hull_rotation();
+        let turret = hull * Quat::from_rotation_y(self.gun_yaw);
+        let (pivot, _) = self.gun_mount();
+        match part {
+            2 => (self.position + hull * pivot + turret * offset, turret),
+            3 => (
+                self.position + hull * pivot + turret * offset,
+                turret * Quat::from_rotation_x(self.gun_pitch),
+            ),
+            _ => (self.position + hull * offset, hull),
+        }
     }
 
     fn hull_rotation(&self) -> Quat {
@@ -514,28 +561,20 @@ impl Tank {
     }
 
     fn gun_mount(&self) -> (Vec3, Vec3) {
+        let default_pivot = Vec3::Y * 1.35;
         self.performance
             .as_ref()
-            .and_then(|profile| profile.turret_pivot.zip(profile.gun.shot_position))
-            .unwrap_or((Vec3::Y * 1.35, Vec3::ZERO))
+            .map_or((default_pivot, Vec3::ZERO), |profile| {
+                (
+                    profile.turret_pivot.unwrap_or(default_pivot),
+                    profile.gun.shot_position.unwrap_or_default(),
+                )
+            })
     }
 }
 
-impl Shot {
-    pub const SPEED_MPS: f32 = 450.0;
-
-    pub fn intersection(&self, target: &Tank) -> Option<f32> {
-        let offset = target.position + Vec3::Y * 1.0 - self.origin;
-        let projected = offset.dot(self.direction);
-        let perpendicular = (offset - self.direction * projected).length_squared();
-        if perpendicular > HULL_RADIUS * HULL_RADIUS {
-            return None;
-        }
-        let distance = projected - (HULL_RADIUS * HULL_RADIUS - perpendicular).sqrt();
-        (0.0..=self.max_distance)
-            .contains(&distance)
-            .then_some(distance)
-    }
+impl GunRay {
+    pub const FALLBACK_SPEED_MPS: f32 = 450.0;
 }
 
 pub(super) fn angle(radians: f32) -> f32 {
@@ -582,6 +621,7 @@ mod tests {
                 hull_traverse: 0.8,
                 mobility: Default::default(),
                 turret_pivot: None,
+                armor: Default::default(),
                 gun: GunPerformance {
                     turret_traverse: 0.5,
                     gun_traverse: 0.0,
@@ -593,6 +633,24 @@ mod tests {
                     shot_position: None,
                     shell_damage: [(10, 36), (20, 90)].into(),
                     shell_ranges: [(10, 720.0), (20, 600.0)].into_iter().collect(),
+                    shell_ballistics: [
+                        (
+                            10,
+                            test_ballistics(36.0, wot_shared_kernel::ShellKind::ArmorPiercing),
+                        ),
+                        (
+                            20,
+                            test_ballistics(
+                                90.0,
+                                wot_shared_kernel::ShellKind::HighExplosive {
+                                    spall_damage: 45.0,
+                                    shield_penetration: true,
+                                    obstacle_penetration: true,
+                                },
+                            ),
+                        ),
+                    ]
+                    .into(),
                     shell_effects: [
                         (
                             10,
@@ -630,6 +688,25 @@ mod tests {
                 },
             }),
         )
+    }
+
+    fn test_ballistics(damage: f32, kind: wot_shared_kernel::ShellKind) -> ShellBallistics {
+        ShellBallistics {
+            kind,
+            caliber_mm: 37.0,
+            penetration_mm: [100.0, 100.0],
+            penetration_randomization: 0.0,
+            damage_randomization: 0.0,
+            uniform_penetration: false,
+            uniform_damage: false,
+            far_damage: damage,
+            speed: GunRay::FALLBACK_SPEED_MPS,
+            normalization: 5.0_f32.to_radians(),
+            ricochet_cos: 70.0_f32.to_radians().cos(),
+            trace_ricochet: true,
+            obstacle_damage: None,
+            obstacle_penetration_loss: 0.0,
+        }
     }
 
     #[test]
@@ -895,11 +972,16 @@ mod tests {
         assert!(shooter.aim_at(Aim::WorldPoint(target.position + Vec3::Y)));
         shooter.advance_gun(4.0);
         let shot = shooter.fire(now).unwrap();
-        assert!(shot.intersection(&target).is_some());
+        assert!(
+            (target.position + Vec3::Y - shot.origin)
+                .cross(shot.direction)
+                .length()
+                < 0.001
+        );
         assert_eq!(shot.damage, 36);
         assert_eq!(shot.max_distance, 720.0);
         assert_eq!((shot.effects.kind, shot.effects.legacy_index), (2, 17));
-        assert_eq!(target.hit(&shot), (100, 64));
+        assert_eq!(target.hit(shot.damage), (100, 64));
         assert_eq!(shooter.rounds().next(), Some((10, 0, 0)));
         assert_eq!(shooter.shell_settings(), [20, 20]);
         assert_eq!(
@@ -913,9 +995,9 @@ mod tests {
         assert_eq!(shot.max_distance, 600.0);
         let mut distant = tank(vec![]);
         distant.position = shot.origin + shot.direction * 650.0 - Vec3::Y;
-        assert_eq!(shot.intersection(&distant), None);
+        assert!((distant.position - shot.origin).length() > shot.max_distance);
         assert_eq!((shot.effects.kind, shot.effects.legacy_index), (1, 19));
-        assert_eq!(target.hit(&shot), (64, 0));
+        assert_eq!(target.hit(shot.damage), (64, 0));
         assert_eq!(shooter.fire(ready).err(), Some("empty"));
     }
 

@@ -147,7 +147,11 @@ impl Battle {
         request.record("output.outcome", outcome);
         if matches!(
             outcome,
-            "unimplemented" | "delivery_failed" | "shell_damage_unavailable"
+            "unimplemented"
+                | "delivery_failed"
+                | "shell_damage_unavailable"
+                | "shell_range_unavailable"
+                | "shell_ballistics_unavailable"
         ) {
             operation.record("otel.status_code", "ERROR");
             request.record("otel.status_code", "ERROR");

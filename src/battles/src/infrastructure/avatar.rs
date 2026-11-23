@@ -82,6 +82,7 @@ pub(crate) enum AvatarUpdate {
     },
     Tracer {
         shooter: u32,
+        ricochet: bool,
         id: i32,
         effects: ShellEffects,
         start: glam::Vec3,
@@ -128,6 +129,7 @@ impl AvatarUpdate {
             ),
             Self::Tracer {
                 shooter,
+                ricochet,
                 id,
                 effects,
                 start,
@@ -136,7 +138,7 @@ impl AvatarUpdate {
             } => avatar.showTracer(
                 EntityId(shooter),
                 id,
-                0,
+                u8::from(ricochet),
                 effects.legacy_index,
                 effects.prefab_index,
                 effects.kind,
