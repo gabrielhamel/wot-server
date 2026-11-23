@@ -235,9 +235,9 @@ such a wall, and a turn that clears an existing contact can continue.
 Powered input adds sustained pressure at contact even while the hull is
 stationary. Breaking scenery consumes a bounded share of the assumed impact
 energy, so a light vehicle can lose more speed than a heavier one at the same
-approach speed. The server deducts 10% of the share of impact energy required
+approach speed. The server deducts 25% of the share of impact energy required
 for the break, after accounting for engine pressure. This caps the speed loss
-at about 5.1% per fragment. The active EU client's
+at about 13.4% per fragment. The active EU client's
 `scripts.pkg/scripts/client/Vehicle.pyc` confirms the impact damage
 coefficient in `_isDestructibleMayBeBroken`. The method returns a fracture
 prediction. Toolkit's `base/physics/rubble.rs` uses a separate speed-loss
@@ -247,10 +247,10 @@ normalized vehicle mass.
 The server's previous 35% energy deduction was introduced in commit
 `5c09940`. A synthetic test using the extracted stock TKS 20 mass of 2,800 kg
 and the 10 health of Widepark panel 45 in chunk `0x817e` reproduced a stall
-after two breaks at an entry speed of 8.5 m/s. With the 10% deduction the
-vehicle breaks all five test panels and slows along the way. Sustained
-pressure and slowdown through an actual row of panels remain open for native
-calibration. Shell impacts use the configured shell damage.
+after two breaks at an entry speed of 8.5 m/s. With the 25% deduction the TKS
+breaks three at that speed. At 9.8 m/s it breaks all five test panels while
+losing speed. Sustained pressure and slowdown through an actual row of panels
+remain open for native calibration. Shell impacts use the configured shell damage.
 Contact with scenery or another tank leaves tank HP unchanged.
 
 The server publishes broken modules, fragile props and fallen columns through

@@ -460,18 +460,18 @@ fn engine_pressure_breaks_from_rest_and_light_vehicles_lose_more_speed() {
     let medium = apply(36_000.0, Vec2::Y, Vec2::Y, Vec2::ZERO);
     assert_eq!(light.broken.len(), 1);
     assert_eq!(medium.broken.len(), 1);
-    assert!((0.96..0.98).contains(&light.speed_scale));
+    assert!((0.91..0.93).contains(&light.speed_scale));
     assert!(medium.speed_scale > 0.99);
 }
 
 #[test]
-fn tks_20_slows_without_stalling_through_five_widepark_strength_panels() {
+fn tks_20_entry_speed_affects_how_many_widepark_strength_panels_it_breaks() {
     let seconds = TICK.as_secs_f32();
     let mass = 2_800.0;
     let engine_power = mass * 11.664_455;
     let pressure = Vec2::Y * (1.13 * engine_power / 2.0 * 0.0002 * seconds);
     let bounds = [Vec2::splat(-40.0), Vec2::splat(40.0)];
-    let panels = (1_u8..=5)
+    let panels: Vec<_> = (1_u8..=5)
         .map(|part| {
             let z = 1.5 + 1.05 * f32::from(part);
             (
@@ -484,41 +484,42 @@ fn tks_20_slows_without_stalling_through_five_widepark_strength_panels() {
             )
         })
         .collect();
-    let mut scene = Scenery::test_mesh(panels);
-    let mut hull = Hull {
+    let start = Hull {
         position: Vec3::ZERO,
         yaw: 0.0,
         half_size: Vec2::new(0.9, 1.5),
         offset: Vec2::ZERO,
         body: None,
     };
-    let entry_speed = 8.5;
-    let mut speed = entry_speed;
-    let mut broken = 0;
-    for _ in 0..12 {
-        let mut step = SceneryMotion::new(1.0 / mass, seconds);
-        let travel = Vec2::Y * (speed * seconds);
-        step.push(
-            &mut scene,
-            hull,
-            travel + Vec2::Y * PRESS_REACH,
-            travel,
-            pressure,
-        );
-        let (allowed, contact) = constrain(&scene, hull, travel, bounds);
-        assert!(
-            contact.is_none(),
-            "tank stalled after breaking {broken} panels"
-        );
-        hull.position.z += allowed.y;
-        speed *= step.speed_scale;
-        broken += step.broken.len();
-        if broken == 5 {
-            break;
+    for (entry_speed, expected_breaks) in [(8.5, 3), (9.8, 5)] {
+        let mut scene = Scenery::test_mesh(panels.clone());
+        let mut hull = start;
+        let mut speed = entry_speed;
+        let mut broken = 0;
+        let mut stalled = false;
+        for _ in 0..12 {
+            let mut step = SceneryMotion::new(1.0 / mass, seconds);
+            let travel = Vec2::Y * (speed * seconds);
+            step.push(
+                &mut scene,
+                hull,
+                travel + Vec2::Y * PRESS_REACH,
+                travel,
+                pressure,
+            );
+            let (allowed, contact) = constrain(&scene, hull, travel, bounds);
+            hull.position.z += allowed.y;
+            speed *= step.speed_scale;
+            broken += step.broken.len();
+            stalled = contact.is_some();
+            if stalled || broken == 5 {
+                break;
+            }
         }
+        assert_eq!(broken, expected_breaks);
+        assert_eq!(stalled, expected_breaks < 5);
+        assert!((entry_speed * 0.60..entry_speed * 0.75).contains(&speed));
     }
-    assert_eq!(broken, 5);
-    assert!((entry_speed * 0.8..entry_speed * 0.95).contains(&speed));
 }
 
 #[test]
