@@ -17,12 +17,16 @@ open player management and grants from the **Admin** tab.
 
 ## Enable the dashboard
 
-From the repository root, build the SPA with Node.js 22.12 or later.
+Cargo builds the dashboard and Store bundle when building the server. To build
+just the browser bundle, run this command from the repository root:
 
 ```sh
-npm ci
-npm run build --workspace src/server-runtime/src/infrastructure/web
+cargo web-build
 ```
+
+Both builds require Node.js and npm. Use Node.js 22.22.2 or a newer supported
+release. Cargo installs the locked dependencies as needed and writes the
+browser bundle to `src/server-runtime/src/infrastructure/web/dist/`.
 
 Add these top-level settings to the `server.json` beside the game server
 executable for local HTTP development.

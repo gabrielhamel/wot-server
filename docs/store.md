@@ -104,8 +104,8 @@ and sign in as `commander@example.test` with `demo-player`.
 
 ## Configuration
 
-Build the shared React project with `npm ci` and
-`npm run build --workspace src/server-runtime/src/infrastructure/web`. Configure the same HTTP listener used by the
+Building the server with Cargo also builds the browser bundle. Run
+`cargo web-build` to build the bundle by itself. Configure the HTTP listener used by the
 [admin dashboard](admin.md). The Store can be enabled on its own.
 
 ```json

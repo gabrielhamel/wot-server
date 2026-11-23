@@ -10,7 +10,9 @@ Offline binary mapping remains available as a separate development tool.
 
 Generate a bundle with [wot-extract](resources.md) and place it under
 `target/release/resources` or set `resource_dir` to its location. From the
-repository root, start the server:
+repository root, start the server. A source build requires Node.js and npm to
+build the dashboard and Store bundle. See the
+[dashboard guide](admin.md#enable-the-dashboard) for configuration:
 
 ```sh
 cargo run --release

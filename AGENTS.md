@@ -180,6 +180,8 @@ adapters in the corresponding context layers. Keep common browser transport,
 telemetry and presentation primitives in Platform. Put browser route composition in
 `src/server-runtime/src/presentation/`. Keep the browser workspace, including Vite+
 configuration and test setup, under `src/server-runtime/src/infrastructure/web/`.
+Use `cargo web-build` to build the browser bundle alone. Server source builds
+use the same web build with the locked npm dependencies.
 
 Use Testing Library and MSW for admin and Store regression coverage. Render
 the full page, interact through accessible controls, and assert visible

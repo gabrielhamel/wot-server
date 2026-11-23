@@ -6,6 +6,7 @@ members = [
   "src/player-sessions",
   "src/resources",
   "src/server-runtime",
+  "src/server-runtime/src/infrastructure/web",
   "src/shared-infrastructure",
   "src/shared-kernel",
   "src/social",
@@ -96,6 +97,7 @@ wot-resources = { path = "src/resources" }
 wot-server-runtime = { path = "src/server-runtime" }
 wot-shared-kernel = { path = "src/shared-kernel" }
 wot-social = { path = "src/social" }
+wot-web-build = { path = "src/server-runtime/src/infrastructure/web" }
 
 [package]
 name = "wot-server"

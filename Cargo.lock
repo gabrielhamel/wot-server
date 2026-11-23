@@ -3635,6 +3635,7 @@ dependencies = [
  "wot-player-sessions",
  "wot-resources",
  "wot-social",
+ "wot-web-build",
 ]
 
 [[package]]
@@ -3655,6 +3656,13 @@ dependencies = [
  "wot-accounts",
  "wot-platform",
  "wot-shared-kernel",
+]
+
+[[package]]
+name = "wot-web-build"
+version = "0.18.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]

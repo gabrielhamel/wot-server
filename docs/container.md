@@ -26,7 +26,9 @@ The extractor and server builds share BuildKit caches for the Cargo registry
 and compiled dependencies. They reuse these caches while the runner's Docker
 storage is available and rebuild the workspace crates when source layers change.
 The E2E test build shares the Cargo registry cache and uses a separate
-cache for compiled test dependencies.
+cache for compiled test dependencies. The server and E2E build stages provide
+Node.js and npm to Cargo. The final image packages the browser bundle produced
+by the server build.
 
 Before pushing any tags, the workflow starts the final image alongside a
 fresh PostgreSQL instance on an isolated Docker network. It then copies the

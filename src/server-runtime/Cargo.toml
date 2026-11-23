@@ -35,6 +35,9 @@ wot-player-sessions.workspace = true
 wot-resources.workspace = true
 wot-social.workspace = true
 
+[build-dependencies]
+wot-web-build.workspace = true
+
 [dev-dependencies]
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 tower.workspace = true

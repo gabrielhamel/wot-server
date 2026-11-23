@@ -43,13 +43,14 @@ only after all models render. The workflow regenerates them on `main`.
 
 ## Browser pages
 
-From the repository root, use Node 22.22.2 or a newer supported LTS and run:
+Rust builds of the server need Node.js and npm for the web bundle. To run
+the browser checks independently, use Node 22.22.2 or a newer supported
+release from the repository root:
 
 ```sh
-npm ci
+cargo web-build
 npm run check --workspace src/server-runtime/src/infrastructure/web
 npm run test --workspace src/server-runtime/src/infrastructure/web
-npm run build --workspace src/server-runtime/src/infrastructure/web
 ```
 
 Vite+ runs formatting and lint checks and executes the Testing Library suites.
