@@ -2,11 +2,11 @@
 members = [
   "src/accounts",
   "src/battles",
-  "src/platform",
   "src/player-administration",
   "src/player-sessions",
   "src/resources",
-  "src/server",
+  "src/server-runtime",
+  "src/shared-infrastructure",
   "src/shared-kernel",
   "src/social",
   "tools/wot-binary-map",
@@ -89,11 +89,11 @@ tracing-subscriber = "0.3"
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
 wot-accounts = { path = "src/accounts" }
 wot-battles = { path = "src/battles" }
-wot-platform = { path = "src/platform" }
+wot-platform = { path = "src/shared-infrastructure" }
 wot-player-administration = { path = "src/player-administration" }
 wot-player-sessions = { path = "src/player-sessions" }
 wot-resources = { path = "src/resources" }
-wot-server-runtime = { path = "src/server" }
+wot-server-runtime = { path = "src/server-runtime" }
 wot-shared-kernel = { path = "src/shared-kernel" }
 wot-social = { path = "src/social" }
 

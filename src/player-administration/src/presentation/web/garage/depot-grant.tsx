@@ -10,7 +10,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { errorMessage } from "../../../../../platform/src/infrastructure/web/http";
+import { errorMessage } from "../../../../../shared-infrastructure/src/infrastructure/web/http";
 import type {
   DepotGrantKind,
   DepotItem,

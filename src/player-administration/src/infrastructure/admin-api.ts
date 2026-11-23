@@ -1,8 +1,11 @@
 import type { Context, Attributes } from "@opentelemetry/api";
 import { defaultDataProvider } from "react-admin";
 import type { AuthProvider, DataProvider, Identifier, RaRecord } from "react-admin";
-import { request, responseStatus } from "../../../platform/src/infrastructure/web/http";
-import { webOperation } from "../../../platform/src/infrastructure/web/telemetry";
+import {
+  request,
+  responseStatus,
+} from "../../../shared-infrastructure/src/infrastructure/web/http";
+import { webOperation } from "../../../shared-infrastructure/src/infrastructure/web/telemetry";
 import type { StoreCatalog, StoreTransport } from "../../../player-sessions/src/web";
 import type {
   AdminSession,

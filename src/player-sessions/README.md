@@ -57,8 +57,8 @@ ddd.bounded_context.name without architecture layer labels. The gateway exports
 its online session count, the active arena count from Battles, and shared battle
 tick timings and skipped intervals. See the [telemetry contract](../../docs/telemetry.md).
 
-The [server composition](../server/src/lib.rs) runs LoginApp and BaseApp together. Player Sessions uses [Platform Mercury](../platform/src/mercury) for shared UDP transport
-and shares the [client format codecs](../platform/src/infrastructure/client_formats/README.md)
+The [server composition](../server-runtime/src/lib.rs) runs LoginApp and BaseApp together. Player Sessions uses [Platform Mercury](../shared-infrastructure/src/mercury) for shared UDP transport
+and shares the [client format codecs](../shared-infrastructure/src/infrastructure/client_formats/README.md)
 with Accounts.
 
 | Term | Meaning |

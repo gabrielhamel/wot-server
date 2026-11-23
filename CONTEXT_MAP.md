@@ -7,15 +7,15 @@ published contracts, and storage ownership rules.
 
 Accounts, Social, Player Sessions, Battles, and Player Administration compile
 as separate Rust libraries under `src/`. The server binary starts the [server
-runtime library](src/server/README.md), which wires the contexts’ published
+runtime library](src/server-runtime/README.md), which wires the contexts’ published
 contracts and adapters.
-The [web workspace](src/server/src/infrastructure/web/package.json) bundles the context-owned browser pages.
+The [web workspace](src/server-runtime/src/infrastructure/web/package.json) bundles the context-owned browser pages.
 
 ![wot-server context map](docs/context-maps/generated/wot-server.svg)
 
 [Shared Kernel](src/shared-kernel/README.md) supplies the account ID model to
 Player Administration, Player Sessions, and Social.
-[Platform](src/platform/README.md) supplies shared codecs to Accounts and
+[Platform](src/shared-infrastructure/README.md) supplies shared codecs to Accounts and
 Player Sessions, shared Mercury transport to Player Sessions and Battles, bounded HTTP serving to the shared web listener, and
 tracing adapters to runtime infrastructure and server composition. The admin and Store browser views use Platform's TypeScript HTTP transport, telemetry and theme. Both support boundaries are independent of their consumers.
 
@@ -28,7 +28,7 @@ inventory/balance changes and purchase receipts. Player Sessions binds garage RP
 uses the live garage session to publish Accounts offers and route checkout through
 the revision-checked account transaction. Player Sessions publishes Premium Account
 activation, renewal and expiry to the garage. Both contexts use the shared
-[client formats](src/platform/src/infrastructure/client_formats/README.md) infrastructure.
+[client formats](src/shared-infrastructure/src/infrastructure/client_formats/README.md) infrastructure.
 
 [Resource Extraction](tools/wot-extract/README.md) runs offline and publishes
 the [bundle contract](src/resources/README.md) to Accounts, Player Sessions and Battles. The

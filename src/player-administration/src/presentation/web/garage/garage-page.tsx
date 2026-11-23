@@ -4,7 +4,7 @@ import { ListButton, Title, useDataProvider, useGetRecordId } from "react-admin"
 import type { Identifier } from "react-admin";
 import type { Garage, Grant } from "../../../application/admin-contracts";
 import type { AdminDataProvider } from "../../../infrastructure/admin-api";
-import { errorMessage } from "../../../../../platform/src/infrastructure/web/http";
+import { errorMessage } from "../../../../../shared-infrastructure/src/infrastructure/web/http";
 import { CosmeticGrant } from "./cosmetic-grant";
 import { DepotGrant } from "./depot-grant";
 import { CurrencyGrant } from "./currency-grant";

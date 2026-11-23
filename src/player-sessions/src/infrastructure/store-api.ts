@@ -1,6 +1,6 @@
 import type { Context } from "@opentelemetry/api";
-import { request } from "../../../platform/src/infrastructure/web/http";
-import { webOperation } from "../../../platform/src/infrastructure/web/telemetry";
+import { request } from "../../../shared-infrastructure/src/infrastructure/web/http";
+import { webOperation } from "../../../shared-infrastructure/src/infrastructure/web/telemetry";
 import type {
   StoreCatalog,
   StoreOffer,

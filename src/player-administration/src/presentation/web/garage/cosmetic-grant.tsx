@@ -11,7 +11,7 @@ import {
 } from "@mui/material";
 
 import type { FormEvent } from "react";
-import { errorMessage } from "../../../../../platform/src/infrastructure/web/http";
+import { errorMessage } from "../../../../../shared-infrastructure/src/infrastructure/web/http";
 import type {
   Cosmetic,
   GarageVehicle,

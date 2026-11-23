@@ -27,7 +27,7 @@ longer rely on unchecked indexing or `unwrap`.
 
 ## Operational bounds
 
-Protocol constants live in [Mercury limits](../src/platform/src/mercury/net/limits.rs). These are
+Protocol constants live in [Mercury limits](../src/shared-infrastructure/src/mercury/net/limits.rs). These are
 hard transport guardrails, independent of PostgreSQL and application admission.
 They are currently compile-time limits, not extra configuration-file fields.
 

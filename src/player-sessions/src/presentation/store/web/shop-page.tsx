@@ -11,7 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import { createTheme, ThemeProvider } from "@mui/material/styles";
-import { serverTheme } from "../../../../../platform/src/presentation/web/theme";
+import { serverTheme } from "../../../../../shared-infrastructure/src/presentation/web/theme";
 import type { StoreCategory, StoreTransport } from "../../../application/store-contracts";
 import { garageStoreTransport } from "../../../infrastructure/store-api";
 import { OfferCard } from "./offer-card";

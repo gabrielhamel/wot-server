@@ -156,17 +156,17 @@ used for earlier observations.
 
 ## Server source layout
 
-[Server composition](../src/server/src/lib.rs) handles startup, dependency wiring,
-and graceful shutdown. [Server infrastructure](../src/server/src/infrastructure)
+[Server composition](../src/server-runtime/src/lib.rs) handles startup, dependency wiring,
+and graceful shutdown. [Server infrastructure](../src/server-runtime/src/infrastructure)
 contains configuration I/O, PostgreSQL connection and migration orchestration,
 login key storage, console and OTLP export, browser telemetry ingestion, and
 static UI serving. Browser routing lives in
-[server presentation](../src/server/src/presentation/web/main.tsx), and the
-[web workspace](../src/server/src/infrastructure/web/package.json) bundles the browser application.
+[server presentation](../src/server-runtime/src/presentation/web/main.tsx), and the
+[web workspace](../src/server-runtime/src/infrastructure/web/package.json) bundles the browser application.
 
 ## Protocol implementation
 
-The server owns its [Mercury adapter](../src/platform/src/mercury) for
+The server owns its [Mercury adapter](../src/shared-infrastructure/src/mercury) for
 UDP packet and bundle framing, LoginApp RSA, BaseApp Blowfish and dynamic
 entity dispatch. [Player Sessions](../src/player-sessions/README.md) binds
 Account RPCs for the garage. [Battles](../src/battles/README.md) binds arena
@@ -175,7 +175,7 @@ Mercury adapter maps participant IDs to live BaseApp connections, translates
 incoming methods into typed battle commands and publishes native arena
 updates. The gateway runs the battle tick in the same loop as the session
 transport. Both adapters validate their method tables and creation layout
-against the configured bundle. The [shared codecs](../src/platform/src/infrastructure/client_formats/README.md)
+against the configured bundle. The [shared codecs](../src/shared-infrastructure/src/infrastructure/client_formats/README.md)
 read packed resources and serialize Python values for Player Sessions and Accounts.
 
 A standalone checkout builds with `cargo build --locked`. See the

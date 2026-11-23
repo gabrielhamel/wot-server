@@ -18,8 +18,8 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 
 Supporting sources: [Admin HTTP middleware](../src/player-administration/src/presentation/mod.rs),
 [Store API middleware](../src/player-sessions/src/presentation/store/mod.rs),
-[Web UI middleware](../src/server/src/infrastructure/web.rs),
-[HTTP address validation](../src/platform/src/infrastructure/http.rs),
+[Web UI middleware](../src/server-runtime/src/infrastructure/web.rs),
+[HTTP address validation](../src/shared-infrastructure/src/infrastructure/http.rs),
 [Mercury gateway](../src/player-sessions/src/infrastructure/gateway/mod.rs), and
 [XMPP listener](../src/player-sessions/src/infrastructure/xmpp/mod.rs).
 Child spans retain the causal parent rather than copying its source attributes.
@@ -60,7 +60,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.training_room.visible`](../src/player-sessions/src/infrastructure/gateway/mod.rs) | Boolean Training Room visibility flag on `player_sessions.enable` after the Account creation is queued. |
 | [`output.account.version_property`](../src/player-sessions/src/infrastructure/gateway/mod.rs) | Account version field name from the bundle on `player_sessions.enable` after Account creation is queued. |
 | [`output.training_room.description_enabled`](../src/player-sessions/src/infrastructure/gateway/mod.rs) | Boolean Description field enable flag for Create Room and Modify Room on `player_sessions.enable` after the Account creation is queued. |
-| [`rpc.method`](../src/platform/src/mercury/app/base/mod.rs) | Known incoming entity method on `game.command` or outbound entity method on `mercury.response`. |
+| [`rpc.method`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Known incoming entity method on `game.command` or outbound entity method on `mercury.response`. |
 | [`wot.client.protocol_version`](../src/player-sessions/src/infrastructure/gateway/mod.rs) | Protocol number supplied by the game login request; not a confirmed game release version. |
 | [`wot.client.resource_digest`](../src/player-sessions/src/infrastructure/gateway/mod.rs) | Optional login digest encoded as hexadecimal. Omitted when the request does not supply a digest. |
 | [`wot.client.language`](../src/player-sessions/src/infrastructure/gateway/mod.rs) | Login context `lang_id`, when valid JSON provides a string of at most 32 bytes; otherwise omitted. |
@@ -108,8 +108,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.bind_retries.count`](../src/player-sessions/src/infrastructure/gateway/sockets.rs) | Number of automatic port selections retried because the TCP port was in use. |
 | [`input.request_id`](../src/player-sessions/src/infrastructure/gateway/ammunition.rs) | Decoded Mercury command or legacy chat request correlation ID; also recorded by operation, resource, LoginApp reply and garage completion spans. Mercury client method spans record it for `onCmdResponse`, `onCmdResponseExt` and `onTokenReceived`. Omitted when the operation has no decoded correlation ID. |
 | [`input.command_id`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Decoded account command number on `game.command` and `player_sessions.commands.command`. |
-| [`input.method_id`](../src/platform/src/mercury/app/base/mod.rs) | Numeric exposed Mercury method ID after wire decoding. |
-| [`input.entity_id`](../src/platform/src/mercury/app/base/mod.rs) | Protocol entity ID of the player's target entity. |
+| [`input.method_id`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Numeric exposed Mercury method ID after wire decoding. |
+| [`input.entity_id`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Protocol entity ID of the player's target entity. |
 | [`input.string.bytes`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Byte length of the `doCmdStr` argument, Training Room creation description, or Training Room invitation message. The text stays out of telemetry. |
 | [`input.arena_type_id`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Client-supplied arena type ID on Training Room creation, or the server-selected arena on battle preparation, obstacle loading and entry. |
 | [`input.round_length.seconds`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Requested duration in seconds on Training Room creation and battle preparation. |
@@ -129,7 +129,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.avatar_control`](../src/battles/src/infrastructure/mod.rs) | `server` once the Avatar control handoff is queued during arena entry. The child Mercury delivery span records the send outcome. |
 | [`input.force`](../src/player-sessions/src/infrastructure/gateway/training/start.rs) | Native team-ready flag supplied with command `411`. Values `0` and `1` are accepted. |
 | [`input.ready`](../src/battles/src/infrastructure/mod.rs) | True for a team confirmation and false for a team unlock. On arena roster updates, true once the Avatar is ready and false on departure. |
-| [`input.element_id`](../src/platform/src/mercury/app/base/mod.rs) | One-byte Mercury element ID on arena delivery and incoming cell commands. |
+| [`input.element_id`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | One-byte Mercury element ID on arena delivery and incoming cell commands. |
 | [`input.drive.flags`](../src/battles/src/infrastructure/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. The accepted mask is also recorded on the drive step. |
 | [`input.ground.hard_contacts`](../src/battles/src/domain/vehicle.rs), `input.ground.medium_contacts`, `input.ground.soft_contacts` | Number of chassis surface samples of each class in the drive step, out of four. Unpainted or unavailable surface samples count as medium. |
 | [`input.ground.pitch_radians`](../src/battles/src/domain/vehicle.rs) | Starting hull pitch in radians for the drive step. Positive values descend along the forward axis. |
@@ -311,9 +311,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.outcome`](../src/player-sessions/src/infrastructure/gateway/social.rs) | Mercury Social dispatch records early rejection reasons. Its worker records `busy`, `started` or `completion_unavailable`. Admin session checks, write-header checks and credential verification record `authorized` or `rejected`. Session status records `setup_required`, `signed_out`, or `authenticated`. Registration and provisioning record `created`, `duplicate_login`, `duplicate_username`, `registration_closed`, `conflict` or `failed`. The [registration handlers](../src/player-administration/src/presentation/registration.rs) also record `invalid_email`, `invalid_username`, `invalid_password`, or `password_mismatch` for HTTP 422. Role changes record `updated`, `unchanged`, `actor_not_admin`, `own_role`, `player_not_found`, `email_required`, or `last_admin`. |
 | [`output.session_count`](../src/accounts/src/infrastructure/player_access.rs) | Number of sessions removed by a sign-out request with a well-formed cookie. |
 | [`output.delivery`](../src/player-sessions/src/infrastructure/gateway/progression.rs) | Garage completion reports response enqueue (`queued`), absent session or entity (`unavailable`), or failure to enqueue (`failed`). XMPP enqueue reports `queued`, `offline` or `enqueue_failed`. |
-| [`output.delivery`](../src/platform/src/mercury/app/outbox.rs) | Mercury transport records `sent` on a successful socket write, `send_failed` on write failure, `enqueue_failed` on method encoding or enqueue failure, or `discarded` on removal of an unsent bundle. Login responses record `sent` or `send_failed`. |
-| [`output.packet.sequence`](../src/platform/src/mercury/app/base/mod.rs) | 28-bit unreliable Mercury sequence number after an arena acknowledgement datagram is sent. |
-| [`output.response_code`](../src/platform/src/mercury/app/entity.rs) | On-wire result from `onCmdResponse`, `onCmdResponseExt`, or the LoginApp reply. |
+| [`output.delivery`](../src/shared-infrastructure/src/mercury/app/outbox.rs) | Mercury transport records `sent` on a successful socket write, `send_failed` on write failure, `enqueue_failed` on method encoding or enqueue failure, or `discarded` on removal of an unsent bundle. Login responses record `sent` or `send_failed`. |
+| [`output.packet.sequence`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | 28-bit unreliable Mercury sequence number after an arena acknowledgement datagram is sent. |
+| [`output.response_code`](../src/shared-infrastructure/src/mercury/app/entity.rs) | On-wire result from `onCmdResponse`, `onCmdResponseExt`, or the LoginApp reply. |
 | [`output.players.online`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Number of current gateway sessions returned as cluster and region CCU by command 501. |
 | [`output.revision`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Current in-memory garage revision returned by the sync check. Grant planning records the planned revision and the HTTP grant handler records the committed revision. |
 | [`output.delivery`](../src/player-administration/src/presentation/garage.rs) | Successful HTTP grant reports `queued_for_garage` or `on_next_sync`. |
@@ -332,20 +332,20 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`input.resource_dir`](../src/server/src/lib.rs) | Configured extracted server resource-bundle path loaded at startup. |
-| [`input.pool.max_connections`](../src/server/src/infrastructure/database.rs) | Configured maximum PostgreSQL pool connections on `server.connect_database`. |
-| [`input.schema`](../src/server/src/infrastructure/database.rs) | Owning PostgreSQL schema selected for a context's embedded migrations. |
+| [`input.resource_dir`](../src/server-runtime/src/lib.rs) | Configured extracted server resource-bundle path loaded at startup. |
+| [`input.pool.max_connections`](../src/server-runtime/src/infrastructure/database.rs) | Configured maximum PostgreSQL pool connections on `server.connect_database`. |
+| [`input.schema`](../src/server-runtime/src/infrastructure/database.rs) | Owning PostgreSQL schema selected for a context's embedded migrations. |
 | [`input.ids.count`](../src/accounts/src/infrastructure/directory.rs) | Number of account IDs supplied to the published directory lookup. |
-| [`db.system.name`](../src/platform/src/infrastructure/observability.rs) | Database system, always `postgresql` in the shared database tracing adapter. |
-| [`db.operation.name`](../src/platform/src/infrastructure/observability.rs) | First SQL statement token, such as `SELECT`, `UPDATE`, `BEGIN`, or `COMMIT`; falls back to `QUERY` for an empty statement. |
-| [`db.query.text`](../src/platform/src/infrastructure/observability.rs) | Complete executed SQL statement with parameter placeholders. Bind values are not interpolated or serialized. |
-| [`error.type`](../src/platform/src/infrastructure/observability.rs) | Rust error type name when a database operation fails; omitted on success. |
-| [`otel.kind`](../src/platform/src/infrastructure/observability.rs) | Tracing bridge control field set to `client` for PostgreSQL operations. Exported as the intrinsic span kind, not an ordinary attribute. |
-| [`otel.status_code`](../src/platform/src/infrastructure/observability.rs) | Tracing bridge control field set to `ERROR` on failures such as database errors, rejected Exterior decisions, malformed progression input, Mercury decode and dispatch failures, XMPP request failures, and unimplemented game and chat operations. Exported as intrinsic span status. Diagnostic error events can also mark spans as failed. |
+| [`db.system.name`](../src/shared-infrastructure/src/infrastructure/observability.rs) | Database system, always `postgresql` in the shared database tracing adapter. |
+| [`db.operation.name`](../src/shared-infrastructure/src/infrastructure/observability.rs) | First SQL statement token, such as `SELECT`, `UPDATE`, `BEGIN`, or `COMMIT`; falls back to `QUERY` for an empty statement. |
+| [`db.query.text`](../src/shared-infrastructure/src/infrastructure/observability.rs) | Complete executed SQL statement with parameter placeholders. Bind values are not interpolated or serialized. |
+| [`error.type`](../src/shared-infrastructure/src/infrastructure/observability.rs) | Rust error type name when a database operation fails; omitted on success. |
+| [`otel.kind`](../src/shared-infrastructure/src/infrastructure/observability.rs) | Tracing bridge control field set to `client` for PostgreSQL operations. Exported as the intrinsic span kind, not an ordinary attribute. |
+| [`otel.status_code`](../src/shared-infrastructure/src/infrastructure/observability.rs) | Tracing bridge control field set to `ERROR` on failures such as database errors, rejected Exterior decisions, malformed progression input, Mercury decode and dispatch failures, XMPP request failures, and unimplemented game and chat operations. Exported as intrinsic span status. Diagnostic error events can also mark spans as failed. |
 
 ## Transport diagnostic spans
 
-The Mercury [protocol tracker](../src/platform/src/mercury/net/proto.rs)
+The Mercury [protocol tracker](../src/shared-infrastructure/src/mercury/net/proto.rs)
 also declares legacy TRACE-level spans with implicit argument fields. The
 production OTLP filter exports the server and runtime crate targets at INFO, so these spans and
 their fields are not currently exported. The `pigb` TRACE span has no declared
@@ -358,7 +358,7 @@ fields. If the export filter is expanded, the following fields become relevant:
 
 ## Metadata added by the tracing library
 
-[Logging initialization](../src/server/src/infrastructure/logging.rs) uses the defaults of the
+[Logging initialization](../src/server-runtime/src/infrastructure/logging.rs) uses the defaults of the
 `tracing-opentelemetry` version pinned in [Cargo.lock](../Cargo.lock) (currently
 0.34.0). Its span metadata is independent of the explicit field inventory above.
 Source locations describe where a span is created, not a distributed stack trace.
@@ -389,7 +389,7 @@ by the bridge.
 
 These describe the exporting process/resource, not individual operations. The
 same resource accompanies logs and metrics. Source:
-[telemetry initialization](../src/server/src/infrastructure/telemetry.rs).
+[telemetry initialization](../src/server-runtime/src/infrastructure/telemetry.rs).
 
 | Attribute | Meaning and emission |
 | --- | --- |
@@ -429,7 +429,7 @@ resources carry `service.name` (`wot-server-web`) and `service.version` (the
 serving release). Operation and transport outcomes use `output.outcome`
 with `success`, `rejected`, `conflict`, `cancelled` or a bounded failure
 code. On error, the exception event's `exception.type` is that failure code.
-[Browser tracing](../src/platform/src/infrastructure/web/telemetry.ts)
+[Browser tracing](../src/shared-infrastructure/src/infrastructure/web/telemetry.ts)
 
 | Attribute | Meaning and emission |
 | --- | --- |
@@ -455,19 +455,19 @@ code. On error, the exception event's `exception.type` is that failure code.
 | `exception.source` | Fixed browser error category on a standalone exception span. |
 | `exception.error_class`, `exception.asset_location` | Allowlisted built-in error class and bundled asset filename with line and column, when available. |
 
-Supporting sources include the [browser HTTP adapter](../src/platform/src/infrastructure/web/http.ts),
+Supporting sources include the [browser HTTP adapter](../src/shared-infrastructure/src/infrastructure/web/http.ts),
 [admin API adapter](../src/player-administration/src/infrastructure/admin-api.ts),
 [Store API adapter](../src/player-sessions/src/infrastructure/store-api.ts),
-[browser exception observer](../src/platform/src/infrastructure/web/browser-telemetry.ts),
-[entry point](../src/server/src/presentation/web/main.tsx) and
-[OTLP relay](../src/server/src/infrastructure/browser_telemetry.rs).
+[browser exception observer](../src/shared-infrastructure/src/infrastructure/web/browser-telemetry.ts),
+[entry point](../src/server-runtime/src/presentation/web/main.tsx) and
+[OTLP relay](../src/server-runtime/src/infrastructure/browser_telemetry.rs).
 
 ### Browser telemetry relay
 
 `browser.telemetry.ingest` is a Rust server span for a browser OTLP POST. It
 has `ddd.bounded_context.name=server` and covers forwarding through the
 HTTP response. It omits browser span contents, origins and collector URLs.
-[Relay implementation](../src/server/src/infrastructure/browser_telemetry.rs)
+[Relay implementation](../src/server-runtime/src/infrastructure/browser_telemetry.rs)
 
 | Attribute | Meaning and emission |
 | --- | --- |

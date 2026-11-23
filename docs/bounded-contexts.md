@@ -26,10 +26,10 @@ Each server bounded context belongs in its own Rust library crate and Cargo
 workspace member. A library owns its domain model, use cases, adapters, and
 published contract. Context libraries, their shared dependencies, and the web
 workspace live under `src/`. The server binary composes the libraries and
-supplies their runtime dependencies through the [server runtime library](../src/server/README.md).
+supplies their runtime dependencies through the [server runtime library](../src/server-runtime/README.md).
 The library owns composition and keeps adapters and presentation in their
 respective layers. The shared browser build and test workspace lives in
-`src/server/src/infrastructure/web/`. Browser pages stay in their owning
+`src/server-runtime/src/infrastructure/web/`. Browser pages stay in their owning
 contexts’ presentation layers.
 
 A crate boundary lets Rust enforce visibility across contexts and lets Cargo
@@ -45,7 +45,7 @@ and review changes with its consumers. A context's published contract stays
 with its owner. The map shows the extracted kernel and its consumers using
 [upstream and downstream relationships](https://contextmapper.org/docs/ar-extract-shared-kernel/).
 
-Put reusable infrastructure in [Platform](../src/platform/README.md) when it
+Put reusable infrastructure in [Platform](../src/shared-infrastructure/README.md) when it
 works independently of a domain context. Infrastructure specific to a workflow
 stays with that workflow. Offline tools with their own inputs, outputs, and
 research vocabulary remain explicit boundaries.

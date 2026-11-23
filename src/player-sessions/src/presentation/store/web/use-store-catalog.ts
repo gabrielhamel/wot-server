@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { errorMessage, responseStatus } from "../../../../../platform/src/infrastructure/web/http";
+import {
+  errorMessage,
+  responseStatus,
+} from "../../../../../shared-infrastructure/src/infrastructure/web/http";
 import type {
   StoreCatalog,
   StoreOffer,

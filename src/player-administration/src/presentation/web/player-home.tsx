@@ -14,7 +14,10 @@ import type { ReactNode } from "react";
 import { TitlePortal, useLogout } from "react-admin";
 import type { PlayerGarage } from "../../application/admin-contracts";
 import { dashboardStoreTransport, getOwnGarage } from "../../infrastructure/admin-api";
-import { errorMessage, responseStatus } from "../../../../platform/src/infrastructure/web/http";
+import {
+  errorMessage,
+  responseStatus,
+} from "../../../../shared-infrastructure/src/infrastructure/web/http";
 import { GarageBalances, OwnedTanks } from "./garage/garage-inventory";
 
 const DashboardStore = lazy(async () => ({

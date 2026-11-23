@@ -12,7 +12,7 @@ import {
 import { useDataProvider } from "react-admin";
 import type { CatalogVehicle, Garage, Grant } from "../../../application/admin-contracts";
 import type { AdminDataProvider } from "../../../infrastructure/admin-api";
-import { errorMessage } from "../../../../../platform/src/infrastructure/web/http";
+import { errorMessage } from "../../../../../shared-infrastructure/src/infrastructure/web/http";
 import { vehicleName } from "./garage-inventory";
 
 export function TankGrant({

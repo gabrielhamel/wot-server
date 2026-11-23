@@ -126,8 +126,8 @@ storage ownership.
 
 Put shared domain concepts with the same meaning and invariants in
 `src/shared-kernel/`. Put reusable infrastructure independent of the domain in
-`src/platform/`. Keep context-specific policies and published integration
-contracts with the context that owns them.
+`src/shared-infrastructure/`. Keep context-specific policies and published
+integration contracts with the context that owns them.
 
 ### Cross-context contracts and persistence
 
@@ -135,7 +135,7 @@ contracts with the context that owns them.
   Limit consumers to the published operations and their input and result types.
   Keep internal modules, helpers, repositories, database handles, and transaction
   steps private to the owning crate. Keep crate dependencies acyclic and wire
-  services and adapters in `src/server/`.
+  services and adapters in `src/server-runtime/`.
 - Give every persistent context its own PostgreSQL schema, embedded migration
   directory, and SQLx migration history. Use schema-qualified SQL against
   objects owned by the context. Runtime contexts share the server's database
@@ -167,10 +167,9 @@ standalone utilities that the server does not depend on at runtime. The
 server, libraries, and tools inherit their release version from
 `[workspace.package]` in the root Cargo manifest.
 
-Keep the server composition in a dedicated Rust library at `src/server/`. Its
-entry point owns startup and dependency wiring. Organize server-wide adapters
-and the web build workspace in infrastructure. Keep browser route
-composition in presentation.
+The server composition library at `src/server-runtime/` owns startup and
+dependency wiring. Organize server-wide adapters and the web build workspace
+in infrastructure. Keep browser route composition in presentation.
 Domain rules and context-specific use cases belong to their owning libraries.
 
 ### Browser application
@@ -179,8 +178,8 @@ Use strict TypeScript. Keep browser pages and components in their owning
 context's `presentation/` directory, with application contracts and HTTP
 adapters in the corresponding context layers. Keep common browser transport,
 telemetry and presentation primitives in Platform. Put browser route composition in
-`src/server/src/presentation/`. Keep the browser workspace, including Vite+
-configuration and test setup, under `src/server/src/infrastructure/web/`.
+`src/server-runtime/src/presentation/`. Keep the browser workspace, including Vite+
+configuration and test setup, under `src/server-runtime/src/infrastructure/web/`.
 
 Use Testing Library and MSW for admin and Store regression coverage. Render
 the full page, interact through accessible controls, and assert visible

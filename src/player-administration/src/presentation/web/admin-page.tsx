@@ -3,7 +3,7 @@ import { Admin, Resource, defaultDarkTheme } from "react-admin";
 import { authProvider, dataProvider } from "../../infrastructure/admin-api";
 import { PlayerCreate, PlayerList } from "./players";
 import { PlayerGarage } from "./garage/garage-page";
-import { serverTheme } from "../../../../platform/src/presentation/web/theme";
+import { serverTheme } from "../../../../shared-infrastructure/src/presentation/web/theme";
 import { AdminLogin } from "./admin-login";
 import { ServerLayout } from "./admin-layout";
 

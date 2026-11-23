@@ -8,7 +8,7 @@ import {
   errorMessage,
   fieldError,
   responseStatus,
-} from "../../../../platform/src/infrastructure/web/http";
+} from "../../../../shared-infrastructure/src/infrastructure/web/http";
 import { createFirstAdmin, getSession } from "../../infrastructure/admin-api";
 import {
   passwordHelp,

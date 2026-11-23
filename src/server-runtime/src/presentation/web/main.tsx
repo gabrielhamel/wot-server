@@ -1,9 +1,9 @@
 import { createRoot } from "react-dom/client";
-import { initializeBrowserTelemetry } from "../../../../platform/src/infrastructure/web/browser-telemetry";
+import { initializeBrowserTelemetry } from "../../../../shared-infrastructure/src/infrastructure/web/browser-telemetry";
 import {
   recordBrowserError,
   webOperation,
-} from "../../../../platform/src/infrastructure/web/telemetry";
+} from "../../../../shared-infrastructure/src/infrastructure/web/telemetry";
 
 declare const __WEB_MOCK_API__: boolean;
 

@@ -1,7 +1,10 @@
 import { Alert, Button, Stack, TextField } from "@mui/material";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { errorMessage, fieldError } from "../../../../platform/src/infrastructure/web/http";
+import {
+  errorMessage,
+  fieldError,
+} from "../../../../shared-infrastructure/src/infrastructure/web/http";
 import type { PlayerCredentials } from "../../application/admin-contracts";
 import { checkUsername } from "../../infrastructure/admin-api";
 import {

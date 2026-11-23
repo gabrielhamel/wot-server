@@ -6,8 +6,8 @@
     "dev": "vp dev --config vite.config.ts",
     "dev:server": "vp dev --config vite.config.ts --mode server",
     "build": "vp build --config vite.config.ts",
-    "check": "tsc --noEmit && cd ../../../../.. && vp fmt --check 'src/**/*.{ts,tsx}' package.json src/server/src/infrastructure/web/index.html src/server/src/infrastructure/web/package.json src/server/src/infrastructure/web/tsconfig.json && vp lint --config src/server/src/infrastructure/web/vite.config.ts src --react-plugin --deny-warnings",
-    "format": "cd ../../../../.. && vp fmt 'src/**/*.{ts,tsx}' package.json src/server/src/infrastructure/web/index.html src/server/src/infrastructure/web/package.json src/server/src/infrastructure/web/tsconfig.json",
+    "check": "tsc --noEmit && cd ../../../../.. && vp fmt --check 'src/**/*.{ts,tsx}' package.json src/server-runtime/src/infrastructure/web/index.html src/server-runtime/src/infrastructure/web/package.json src/server-runtime/src/infrastructure/web/tsconfig.json && vp lint --config src/server-runtime/src/infrastructure/web/vite.config.ts src --react-plugin --deny-warnings",
+    "format": "cd ../../../../.. && vp fmt 'src/**/*.{ts,tsx}' package.json src/server-runtime/src/infrastructure/web/index.html src/server-runtime/src/infrastructure/web/package.json src/server-runtime/src/infrastructure/web/tsconfig.json",
     "test": "vp test --config vite.config.ts"
   },
   "dependencies": {

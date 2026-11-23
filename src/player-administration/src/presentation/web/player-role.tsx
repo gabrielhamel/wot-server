@@ -10,7 +10,7 @@ import {
 } from "react-admin";
 import type { PlayerRecord } from "../../application/admin-contracts";
 import type { AdminDataProvider } from "../../infrastructure/admin-api";
-import { errorMessage } from "../../../../platform/src/infrastructure/web/http";
+import { errorMessage } from "../../../../shared-infrastructure/src/infrastructure/web/http";
 
 export function PlayerRoleAction() {
   const player = useRecordContext<PlayerRecord>();
