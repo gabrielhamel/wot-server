@@ -2,10 +2,10 @@
   "name": "wot-server-workspace",
   "private": true,
   "workspaces": [
-    "src/server/web"
+    "src/server/src/presentation/web"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace src/server/web --",
-    "dev:server": "npm run dev:server --workspace src/server/web --"
+    "dev": "npm run dev --workspace src/server/src/presentation/web --",
+    "dev:server": "npm run dev:server --workspace src/server/src/presentation/web --"
   }
 }

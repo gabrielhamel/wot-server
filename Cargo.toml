@@ -6,6 +6,7 @@ members = [
   "src/player-administration",
   "src/player-sessions",
   "src/resources",
+  "src/server",
   "src/shared-kernel",
   "src/social",
   "tools/wot-binary-map",
@@ -80,6 +81,7 @@ tokio = { version = "1", features = [
   "net",
   "io-util",
 ] }
+tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6.11", features = ["fs"] }
 tracing = "0.1"
 tracing-opentelemetry = { version = "0.34", default-features = false }
@@ -91,6 +93,7 @@ wot-platform = { path = "src/platform" }
 wot-player-administration = { path = "src/player-administration" }
 wot-player-sessions = { path = "src/player-sessions" }
 wot-resources = { path = "src/resources" }
+wot-server-runtime = { path = "src/server" }
 wot-shared-kernel = { path = "src/shared-kernel" }
 wot-social = { path = "src/social" }
 
@@ -100,12 +103,12 @@ version.workspace = true
 edition = "2024"
 license = "MIT"
 default-run = "wot-server"
-build = "src/server/build.rs"
 
 [features]
 integration-test-support = [
   "wot-accounts/integration-test-support",
   "wot-player-sessions/integration-test-support",
+  "wot-server-runtime/integration-test-support",
 ]
 
 [[test]]
@@ -138,33 +141,27 @@ required-features = ["integration-test-support"]
 
 [dependencies]
 anyhow.workspace = true
-axum.workspace = true
-clap.workspace = true
-opentelemetry.workspace = true
-opentelemetry-appender-tracing.workspace = true
-opentelemetry-otlp.workspace = true
-opentelemetry-proto.workspace = true
-opentelemetry_sdk.workspace = true
-prost.workspace = true
-reqwest.workspace = true
-rsa.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-sqlx.workspace = true
 tokio.workspace = true
-tower-http.workspace = true
-tracing.workspace = true
-tracing-opentelemetry.workspace = true
-tracing-subscriber.workspace = true
 wot-accounts.workspace = true
-wot-battles.workspace = true
 wot-platform.workspace = true
-wot-player-administration.workspace = true
 wot-player-sessions.workspace = true
-wot-resources.workspace = true
+wot-server-runtime.workspace = true
 wot-social.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
+tower.workspace = true
+opentelemetry.workspace = true
+prost.workspace = true
+rsa.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
+wot-battles.workspace = true
+wot-player-administration.workspace = true
+wot-resources.workspace = true
 glam.workspace = true
 flate2.workspace = true
 base64.workspace = true
@@ -175,7 +172,6 @@ hyper.workspace = true
 hyper-util.workspace = true
 quick-xml.workspace = true
 sha2.workspace = true
-tower = { version = "0.5", features = ["util"] }
 opentelemetry-proto = { version = "0.33", default-features = false, features = [
   "gen-tonic-messages",
   "trace",

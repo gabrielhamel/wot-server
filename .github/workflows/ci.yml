@@ -79,7 +79,7 @@ jobs:
           WG_RESOURCE_DIR: ${{ runner.temp }}/wot-e2e-resources
           WG_TEST_DATABASE_URL: postgresql://wot_test:ci-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/wot_test
         run: |
-          cargo +stable test --locked --lib initializes_context_storage -- --ignored
+          cargo +stable test --locked -p wot-server-runtime --lib initializes_context_storage -- --ignored
           # The access lifecycle test installs a process-wide tracing subscriber.
           cargo +stable test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored
           cargo +stable test --locked --features integration-test-support --test admin_traces exports_admin_http_access_lifecycle -- --ignored
@@ -98,6 +98,6 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run check --workspace src/server/web
-      - run: npm run test --workspace src/server/web
-      - run: npm run build --workspace src/server/web
+      - run: npm run check --workspace src/server/src/presentation/web
+      - run: npm run test --workspace src/server/src/presentation/web
+      - run: npm run build --workspace src/server/src/presentation/web

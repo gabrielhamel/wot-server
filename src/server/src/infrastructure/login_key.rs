@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
 };
 
-pub(in crate::server) fn load_login_key(path: &Path) -> Result<Arc<RsaPrivateKey>> {
+pub(crate) fn load_login_key(path: &Path) -> Result<Arc<RsaPrivateKey>> {
     let key = match std::fs::read_to_string(path) {
         Ok(pem) => RsaPrivateKey::from_pkcs8_pem(&pem).context("Decode login private key")?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

@@ -13,8 +13,8 @@
 !tests/support/**/*.rs
 !package.json
 !package-lock.json
-src/server/web/node_modules/
-src/server/web/dist/
+src/server/src/presentation/web/node_modules/
+src/server/src/presentation/web/dist/
 !resources/
 resources/*
 !resources/manifest.json

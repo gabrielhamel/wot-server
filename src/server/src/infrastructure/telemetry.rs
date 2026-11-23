@@ -5,7 +5,9 @@ use opentelemetry_sdk::{
 };
 use std::{env, path::Path, time::Instant};
 
-pub(in crate::server) struct Telemetry {
+const SERVICE_NAME: &str = "wot-server";
+
+pub(crate) struct Telemetry {
     logger: SdkLoggerProvider,
     tracer: SdkTracerProvider,
     meter: SdkMeterProvider,
@@ -38,7 +40,7 @@ impl Telemetry {
         let name = env::var("OTEL_SERVICE_NAME")
             .ok()
             .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| env!("CARGO_PKG_NAME").into());
+            .unwrap_or_else(|| SERVICE_NAME.into());
         let version = option_env!("WOT_SERVER_VERSION")
             .filter(|value| !value.is_empty())
             .unwrap_or(env!("CARGO_PKG_VERSION"));
@@ -70,7 +72,7 @@ impl Telemetry {
 
         let started = Instant::now();
         meter
-            .meter(env!("CARGO_PKG_NAME"))
+            .meter(SERVICE_NAME)
             .f64_observable_gauge("wot.server.uptime")
             .with_unit("s")
             .with_description("Seconds since the server started")
@@ -85,18 +87,18 @@ impl Telemetry {
     }
 
     pub(super) fn tracer(&self) -> opentelemetry_sdk::trace::SdkTracer {
-        self.tracer.tracer(env!("CARGO_PKG_NAME"))
+        self.tracer.tracer(SERVICE_NAME)
     }
 
     pub(super) fn logger(&self) -> &SdkLoggerProvider {
         &self.logger
     }
 
-    pub(in crate::server) fn meter(&self) -> opentelemetry::metrics::Meter {
-        self.meter.meter(env!("CARGO_PKG_NAME"))
+    pub(crate) fn meter(&self) -> opentelemetry::metrics::Meter {
+        self.meter.meter(SERVICE_NAME)
     }
 
-    pub(in crate::server) fn shutdown(self) {
+    pub(crate) fn shutdown(self) {
         for (signal, result) in [
             ("logs", self.logger.shutdown()),
             ("traces", self.tracer.shutdown()),

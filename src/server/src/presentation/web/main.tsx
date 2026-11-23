@@ -1,9 +1,9 @@
 import { createRoot } from "react-dom/client";
-import { initializeBrowserTelemetry } from "../../../platform/src/infrastructure/web/browser-telemetry";
+import { initializeBrowserTelemetry } from "../../../../platform/src/infrastructure/web/browser-telemetry";
 import {
   recordBrowserError,
   webOperation,
-} from "../../../platform/src/infrastructure/web/telemetry";
+} from "../../../../platform/src/infrastructure/web/telemetry";
 
 declare const __WEB_MOCK_API__: boolean;
 
@@ -11,12 +11,12 @@ const pages = {
   "/dashboard": {
     owner: "player_administration",
     title: "World of Tanks Server",
-    load: () => import("../../../player-administration/src/web"),
+    load: () => import("../../../../player-administration/src/web"),
   },
   "/shop": {
     owner: "player_sessions",
     title: "Garage Store",
-    load: () => import("../../../player-sessions/src/web"),
+    load: () => import("../../../../player-sessions/src/web"),
   },
 } as const;
 
@@ -48,7 +48,7 @@ async function start() {
 
   try {
     if (__WEB_MOCK_API__) {
-      const { startMockApi } = await import("../../web/mocks/browser");
+      const { startMockApi } = await import("./mocks/browser");
       await startMockApi(route);
     }
     await initializeBrowserTelemetry(page.owner);

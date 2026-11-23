@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { definePlugin, defineRule } from "vite-plus/lint/plugins";
 import type { ESTree } from "vite-plus/lint/plugins";
 
-const sourceRoot = fileURLToPath(new URL("../../", import.meta.url));
+const sourceRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const boundedContexts = new Set([
   "accounts",
   "battles",

@@ -14,7 +14,7 @@ use std::{
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::{Span, field::Empty};
 
-pub(in crate::server) fn pages(
+pub(crate) fn pages(
     directory: &Path,
     dashboard: bool,
     shop: bool,

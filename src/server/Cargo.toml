@@ -1,0 +1,40 @@
+[package]
+name = "wot-server-runtime"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+
+[features]
+integration-test-support = []
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+clap.workspace = true
+opentelemetry.workspace = true
+opentelemetry-appender-tracing.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry-proto.workspace = true
+opentelemetry_sdk.workspace = true
+prost.workspace = true
+reqwest.workspace = true
+rsa.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
+wot-accounts.workspace = true
+wot-battles.workspace = true
+wot-platform.workspace = true
+wot-player-administration.workspace = true
+wot-player-sessions.workspace = true
+wot-resources.workspace = true
+wot-social.workspace = true
+
+[dev-dependencies]
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+tower.workspace = true

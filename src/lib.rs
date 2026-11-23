@@ -7,4 +7,4 @@ pub use wot_social as social;
 #[doc(hidden)]
 pub use wot_platform::{self as platform, pickle};
 
-pub mod server;
+pub use wot_server_runtime as server;

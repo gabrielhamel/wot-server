@@ -206,6 +206,7 @@ fn assert_resource(resource: Option<Resource>) {
         }));
     }
     for (key, expected) in [
+        ("service.name", "wot-server"),
         (
             "service.version",
             option_env!("WOT_SERVER_VERSION")

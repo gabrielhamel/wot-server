@@ -106,7 +106,7 @@ impl Relay {
     }
 }
 
-pub(in crate::server) fn from_environment() -> Result<Option<Router>> {
+pub(crate) fn from_environment() -> Result<Option<Router>> {
     let origin = match env::var("WG_WEB_TELEMETRY_ORIGIN") {
         Ok(origin) if !origin.is_empty() => origin,
         Ok(_) | Err(env::VarError::NotPresent) => return Ok(None),

@@ -1,3 +1,7 @@
+#![forbid(unsafe_code)]
+
+//! Server startup, adapter composition, and shutdown.
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use std::sync::{
@@ -36,7 +40,7 @@ pub mod test_support {
 }
 
 #[derive(Parser)]
-#[command(version, about = "World of Tanks game server")]
+#[command(name = "wot-server", version, about = "World of Tanks game server")]
 struct Options {
     /// Console log level (defaults to server.json, then warn)
     #[arg(long, value_enum)]

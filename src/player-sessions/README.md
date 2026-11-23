@@ -57,7 +57,7 @@ ddd.bounded_context.name without architecture layer labels. The gateway exports
 its online session count, the active arena count from Battles, and shared battle
 tick timings and skipped intervals. See the [telemetry contract](../../docs/telemetry.md).
 
-The [server composition](../server/mod.rs) runs LoginApp and BaseApp together. Player Sessions uses [Platform Mercury](../platform/src/mercury) for shared UDP transport
+The [server composition](../server/src/lib.rs) runs LoginApp and BaseApp together. Player Sessions uses [Platform Mercury](../platform/src/mercury) for shared UDP transport
 and shares the [client format codecs](../platform/src/infrastructure/client_formats/README.md)
 with Accounts.
 
@@ -98,7 +98,7 @@ Administration. Both use the same write slot and cache publication as other
 external account changes.
 
 Player Administration uses the [published grants and Store contract](src/contract.rs)
-and the [Store browser entry point](src/server/web.ts). The embedded Store receives a
+and the [Store browser entry point](src/web.ts). The embedded Store receives a
 transport from the dashboard and uses it for catalog reads and orders. The
 server injects Accounts and Social contracts into the gateway. The catalog,
 account view, and committed changes expose the projections needed for client

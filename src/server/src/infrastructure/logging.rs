@@ -6,7 +6,7 @@ use tracing_subscriber::{filter::Targets, prelude::*};
 pub fn server_targets(level: LevelFilter) -> Targets {
     Targets::new().with_targets(
         [
-            "wot_server",
+            "wot_server_runtime",
             "wot_accounts",
             "wot_battles",
             "wot_platform",
@@ -19,7 +19,7 @@ pub fn server_targets(level: LevelFilter) -> Targets {
     )
 }
 
-pub(in crate::server) fn initialize(
+pub(crate) fn initialize(
     level: LogLevel,
     resource_dir: &std::path::Path,
 ) -> Result<Option<Telemetry>> {
