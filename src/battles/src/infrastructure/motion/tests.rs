@@ -127,7 +127,7 @@ fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
     let subscriber = tracing_subscriber::registry()
         .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("scenery-test")));
     tracing::subscriber::with_default(subscriber, || {
-        let drive = |simulation: &mut BattleSimulation, delivery: &mut QueuedDelivery| {
+        let drive = |simulation: &mut BattleSimulation, delivery: &mut QueuedDelivery, flags| {
             tracing::info_span!("game.command").in_scope(|| {
                 simulation.vehicle_control_with_delivery(
                     delivery,
@@ -136,25 +136,27 @@ fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
                         entity_id: 11,
                         method: "vehicle_moveWith".into(),
                         argument_count: 1,
-                        command: VehicleCommand::Drive(1),
+                        command: VehicleCommand::Drive(flags),
                     },
                 )
             });
         };
-        drive(&mut simulation, &mut delivery);
+        drive(&mut simulation, &mut delivery, 1);
         simulation.tick_with_delivery(&mut delivery, next);
         let battle = simulation.active.get_mut(&id).unwrap();
         battle.players.get_mut(&ParticipantId(2)).unwrap().observer = true;
-        let hull = battle.players[&ParticipantId(1)].tank.collision_hull();
+        let player = battle.players.get_mut(&ParticipantId(1)).unwrap();
+        player.tank.hold_world_position();
+        let hull = player.tank.collision_hull();
         let forward = Vec3::new(forward.x, 0.0, forward.y);
         let side = Vec3::new(forward.z, 0.0, -forward.x);
-        let center = hull.position + forward * (hull.half_size.y + 0.005);
+        let center = hull.position + side * (hull.half_size.x + 0.005);
         battle.obstacles = Scenery::test_numbered_mesh(
             Some(0x7f7f_0003),
             vec![(
                 [
-                    center - side * 4.0 - Vec3::Y,
-                    center + side * 4.0 - Vec3::Y,
+                    center - forward * 4.0 - Vec3::Y,
+                    center + forward * 4.0 - Vec3::Y,
                     center + Vec3::Y * 4.0,
                 ],
                 Some((crate::infrastructure::obstacles::TREE_PART, 1)),
@@ -162,12 +164,12 @@ fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
         );
         battle.obstacles.test_register_tree(0x7f7f_0003, center);
         battle.areas.assign(&battle.obstacles, || 101);
-        drive(&mut simulation, &mut delivery);
+        drive(&mut simulation, &mut delivery, 8);
         simulation.tick_with_delivery(&mut delivery, next + Duration::from_millis(100));
         assert!(
             simulation.active[&id]
                 .obstacles
-                .intersect(hull.position + Vec3::Y, forward, 20.0)
+                .intersect(hull.position + Vec3::Y, side, 20.0)
                 .is_none()
         );
         simulation
@@ -253,6 +255,7 @@ fn drive_contact_moves_the_other_tank_and_parents_its_position_delivery() {
             span.name == "battles.world_motion"
                 && has_field(span, "input.entity_id", "12")
                 && has_field(span, "output.world.fragments_destroyed", "1")
+                && has_field(span, "output.world.turn_contact", "true")
         })
         .unwrap();
     assert!(
@@ -294,6 +297,8 @@ fn vehicle_motion(id: u64, distance: f32, travel: f32, inverse_mass: f32) -> Veh
         scenery_impulse: Vec2::ZERO,
         vehicle_normal: None,
         vehicle_contacts: 0,
+        turn_contact: false,
+        scenery_speed_scale: 1.0,
         impulse: Vec2::ZERO,
         slid: false,
         scenery_breaks: Vec::new(),
@@ -321,6 +326,77 @@ fn heavier_tank_pushes_a_lighter_tank_and_stops_at_an_immovable_wreck() {
     let [pusher, wreck] = vehicles;
     assert!((pusher.travel.y - (1.0 - CONTACT_SKIN)).abs() < 0.001);
     assert_eq!(wreck.travel, Vec2::ZERO);
+}
+
+#[test]
+fn steering_into_a_parallel_wall_can_fracture_it_without_translation() {
+    let wall = [
+        Vec3::new(1.14, -2.0, -8.0),
+        Vec3::new(1.14, -2.0, 8.0),
+        Vec3::new(1.14, 8.0, 0.0),
+    ];
+    let hull = Hull {
+        position: Vec3::ZERO,
+        yaw: 0.0,
+        half_size: Vec2::new(1.0, 2.5),
+        offset: Vec2::ZERO,
+    };
+    let mut solid = Scenery::test_mesh(vec![(wall, None)]);
+    let turn = 0.2;
+    let mut motion = SceneryMotion::new(1.0 / 36_000.0, 0.1);
+    let (blocked, surface) = motion.turn(&mut solid, hull, turn, 7.0, true);
+    assert!(surface.is_some());
+    assert!(blocked.yaw >= 0.0 && blocked.yaw < turn);
+    assert_eq!(blocked.position, hull.position);
+
+    let mut destructible = Scenery::test_mesh(vec![(wall, Some((73, 80)))]);
+    let (mut stalled, surface) = motion.turn(&mut destructible, hull, turn, 7.0, true);
+    assert!(surface.is_some());
+    assert!(motion.broken.is_empty());
+    for _ in 0..12 {
+        let mut next = SceneryMotion::new(1.0 / 36_000.0, 0.1);
+        let (turned, surface) = next.turn(&mut destructible, stalled, turn, 7.0, true);
+        assert_eq!(turned.position, hull.position);
+        if surface.is_none() {
+            assert!((turned.yaw - turn).abs() < 1e-6);
+            assert_eq!(next.broken.len(), 1);
+            return;
+        }
+        stalled = turned;
+    }
+    panic!("the pivot should eventually break the wall");
+}
+
+#[test]
+fn engine_pressure_breaks_from_rest_and_light_vehicles_lose_more_speed() {
+    let wall = [
+        Vec3::new(-4.0, -1.0, 2.03),
+        Vec3::new(4.0, -1.0, 2.03),
+        Vec3::new(0.0, 5.0, 2.03),
+    ];
+    let hull = Hull {
+        position: Vec3::ZERO,
+        yaw: 0.0,
+        half_size: Vec2::new(1.0, 2.0),
+        offset: Vec2::ZERO,
+    };
+    let apply = |mass: f32, reach, travel, press| {
+        let mut scene = Scenery::test_mesh(vec![(wall, Some((73, 12)))]);
+        let mut motion = SceneryMotion::new(1.0 / mass, 0.1);
+        motion.push(&mut scene, hull, reach, travel, press);
+        motion
+    };
+    let stopped = apply(36_000.0, Vec2::Y * PRESS_REACH, Vec2::ZERO, Vec2::Y * 12.0);
+    assert_eq!(stopped.broken.len(), 1);
+    let coast = apply(36_000.0, Vec2::Y * PRESS_REACH, Vec2::ZERO, Vec2::ZERO);
+    assert!(coast.broken.is_empty());
+
+    let light = apply(2_500.0, Vec2::Y, Vec2::Y, Vec2::ZERO);
+    let medium = apply(36_000.0, Vec2::Y, Vec2::Y, Vec2::ZERO);
+    assert_eq!(light.broken.len(), 1);
+    assert_eq!(medium.broken.len(), 1);
+    assert!(light.speed_scale < 0.95);
+    assert!(medium.speed_scale > 0.98);
 }
 
 #[test]
@@ -354,10 +430,9 @@ fn scenery_fracture_is_local_and_removes_only_the_hit_fragment() {
         half_size: Vec2::ONE,
         offset: Vec2::ZERO,
     };
-    assert_eq!(
-        crush_along(&mut scene, hull, Vec2::Y * 3.0, 1.0 / 30_000.0, 0.1, 0.0).len(),
-        1
-    );
+    let mut motion = SceneryMotion::new(1.0 / 30_000.0, 0.1);
+    motion.push(&mut scene, hull, Vec2::Y * 3.0, Vec2::Y * 3.0, Vec2::ZERO);
+    assert_eq!(motion.broken.len(), 1);
     assert!(scene.damage(fragment, 100).is_empty());
     assert!(scene.sweep_hull(hull, Vec2::Y * 3.0).is_none());
     assert_eq!(

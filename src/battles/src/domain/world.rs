@@ -32,6 +32,11 @@ impl Hull {
         )
     }
 
+    pub fn reach(self, axis: Vec2) -> f32 {
+        let [right, forward] = self.axes();
+        (right * self.offset.x + forward * self.offset.y).dot(axis) + self.radius(axis)
+    }
+
     fn radius(self, axis: Vec2) -> f32 {
         let [right, forward] = self.axes();
         right.dot(axis).abs() * self.half_size.x + forward.dot(axis).abs() * self.half_size.y

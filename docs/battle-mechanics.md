@@ -220,10 +220,21 @@ simulation step and the whole set stops blocking hulls or projectiles.
 Independent parts remain in place. Havok bodies can allow shells or vehicles
 to pass independently. In Widepark, the vehicle-only bodies for the street
 lamps trigger a fall, and the center locomotive's vehicle-only walls block
-tanks and share destruction state with the corresponding shootable modules.
+tanks and share damage with the corresponding shootable modules. Authored
+vehicle-only walls on carriages and locomotives keep blocking when their
+visual fragments break. This is Training policy pending a native check
+after destruction. The [Widepark capture](battle-replays.md#widepark-training-capture-from-2026-11-23)
+locates the stock Leopard 1 stop beside a flat carriage.
 Numbered placements scale base fragment
 health by the square of the model scale. Drive contact estimates scenery damage
-from mass and approach speed. Shell impacts use the configured shell damage.
+from mass and contact speed. The solver samples a turning hull's contact
+envelope, so steering alone can damage a wall when a corner closes on it.
+Powered input adds sustained pressure at contact even while the hull is
+stationary. Breaking scenery consumes a bounded share of the assumed impact
+energy, so a light vehicle can lose more speed than a heavier one at the same
+approach speed. The client reference supplies the kinetic damage coefficient.
+Sustained pressure and speed loss need native calibration. Shell impacts use
+the configured shell damage.
 Contact with scenery or another tank leaves tank HP unchanged.
 
 The server publishes broken modules, fragile props and fallen columns through
@@ -312,7 +323,7 @@ the Toolkit's matching captured battle in its `WGDE` decoder and
 
 | Remaining gap | What is missing |
 | --- | --- |
-| Scenery and ground contact fidelity | The solver uses oriented chassis and hull envelopes, an estimated hull height and upward triangles for support. Dedicated movement materials, exact suspension contact, rotating or airborne hull sweeps and fully coupled 3D pileups remain open. |
+| Scenery and ground contact fidelity | The solver uses oriented chassis and hull envelopes, an estimated hull height and upward triangles for support. Dedicated movement materials, exact suspension contact, continuous angular sweeps, airborne collision and fully coupled 3D pileups remain open. |
 | Destruction coverage and fidelity | Unnumbered scenery lacks native synchronization. Trunk shapes, contact loads and pitch limits are estimates. Fall collisions with tanks and other trees, authoritative debris motion, and foliage concealment from standing and fallen vegetation remain open. Exact shell damage rules, shell continuation through broken cover and splash destruction remain open. |
 | Rollover fidelity and feedback | The current model tips onto a side. Full rotational dynamics, tumbles onto the roof, rollover destruction rules and native recovery HUD messages remain open. Ramming damage is outside this work. |
 | Environmental hazards | Airborne motion lands on the height map or a supporting surface. Landing and fall damage, water volumes and depth, drowning warnings and timers, and their battle outcomes remain open. |

@@ -62,7 +62,7 @@ pub(crate) fn extract(
                     Some(triangles) if !triangles.is_empty() => {
                         let path = mesh_root.join(format!("{id:08x}.mesh"));
                         let mut output = BufWriter::new(File::create(&path)?);
-                        output.write_all(b"WCM4")?;
+                        output.write_all(b"WCM5")?;
                         for triangle in triangles {
                             output.write_u32::<LE>(triangle.material)?;
                             output.write_u32::<LE>(triangle.pass_flags)?;
@@ -120,9 +120,12 @@ fn read_collision(
         return Ok(None);
     }
     let data = client.read_bounded(path, 16 * 1024 * 1024)?;
+    let railway_stock = path.strip_prefix("content/Railway/").is_some_and(|path| {
+        path.starts_with("hd_rw_UNI_004_Carriage/") || path.starts_with("hd_rw_UNI_005_Locomotive/")
+    });
     Ok(tagfile::Tagfile::from_bytes(&data)
         .ok()
-        .and_then(|tagfile| collision::triangles(&tagfile, model)))
+        .and_then(|tagfile| collision::triangles(&tagfile, model, railway_stock)))
 }
 
 pub(crate) fn is_vehicle_contact_model(path: &str) -> bool {

@@ -5,9 +5,11 @@ use crate::domain::world::{CONTACT_SKIN, Hull, vehicle_contact};
 use glam::Vec3Swizzles;
 use tracing::Span;
 
+mod scenery;
+use scenery::{PRESS_REACH, SceneryMotion};
+
 const CONTACT_PASSES: usize = 12;
 const PILEUP_TOLERANCE_METRES: f32 = 0.005;
-const DESTRUCTIBLES_PER_STEP: usize = 4;
 const MAX_SUPPORT_STEP_METRES: f32 = 0.45;
 
 pub(super) struct VehicleMotion {
@@ -24,6 +26,8 @@ pub(super) struct VehicleMotion {
     scenery_impulse: Vec2,
     vehicle_normal: Option<Vec2>,
     vehicle_contacts: u32,
+    turn_contact: bool,
+    scenery_speed_scale: f32,
     impulse: Vec2,
     slid: bool,
     pub scenery_breaks: Vec<Breakage>,
@@ -64,8 +68,8 @@ impl Battle {
             let mut scenery_normal = None;
             let mut scenery_impulse = Vec2::ZERO;
             let mut slid = false;
-            let mut scenery_breaks = Vec::new();
-            let mut impact_travel = Vec2::ZERO;
+            let mut scenery = SceneryMotion::new(inverse_mass, seconds);
+            let mut turn_contact = false;
             if inverse_mass == 0.0 {
                 tank.stop_motion();
             } else {
@@ -91,36 +95,40 @@ impl Battle {
                 let (passive, sliding) = tank.passive_travel(support.xy(), ground, seconds);
                 slid = sliding;
                 travel = tank.position.xz() - hull.position.xz() + passive;
-                let turned_hull = Hull {
-                    yaw: tank.yaw,
-                    ..hull
-                };
-                if hull.yaw != tank.yaw {
-                    if let Some(hit) = self.obstacles.sweep_hull(turned_hull, Vec2::ZERO) {
-                        tank.yaw = hull.yaw;
-                        scenery_normal = Some(hit.contact.normal);
-                    } else {
-                        hull = turned_hull;
-                    }
-                }
-                if self.round.phase == RoundPhase::Battle && travel.length_squared() > 1e-8 {
-                    let bounded = (hull.position.xz() + travel)
+                let can_damage = self.round.phase == RoundPhase::Battle;
+                (hull, scenery_normal) = scenery.turn(
+                    &mut self.obstacles,
+                    hull,
+                    tank.yaw,
+                    tank.scenery_push_load(seconds, true),
+                    can_damage,
+                );
+                tank.yaw = hull.yaw;
+                turn_contact = scenery.turn_contact;
+                if can_damage {
+                    let pressure = tank.scenery_push_load(seconds, false);
+                    let direction = tank.scenery_push_direction();
+                    let probe = travel + direction * if pressure > 0.0 { PRESS_REACH } else { 0.0 };
+                    let probe = (hull.position.xz() + probe)
                         .clamp(self.map.bounds[0], self.map.bounds[1])
                         - hull.position.xz();
-                    let reachable = occupants
-                        .iter()
-                        .filter(|(id, _)| *id != client)
-                        .filter_map(|(_, other)| vehicle_contact(hull, *other, bounded, Vec2::ZERO))
-                        .fold(1.0_f32, |fraction, (hit, _)| fraction.min(hit.fraction));
-                    impact_travel = bounded * reachable;
-                    scenery_breaks = crush_along(
-                        &mut self.obstacles,
-                        hull,
-                        impact_travel,
-                        inverse_mass,
-                        seconds,
-                        tank.tree_push_load(seconds),
-                    );
+                    if probe.length_squared() > 1e-8 {
+                        let reachable = occupants
+                            .iter()
+                            .filter(|(id, _)| *id != client)
+                            .filter_map(|(_, other)| {
+                                vehicle_contact(hull, *other, probe, Vec2::ZERO)
+                            })
+                            .fold(1.0_f32, |fraction, (hit, _)| fraction.min(hit.fraction));
+                        scenery.push(
+                            &mut self.obstacles,
+                            hull,
+                            probe * reachable,
+                            travel * reachable,
+                            direction * pressure,
+                        );
+                    }
+                    tank.apply_scenery_drag(scenery.speed_scale);
                 }
                 let (allowed, contact) = constrain(&self.obstacles, hull, travel, self.map.bounds);
                 if let Some(normal) = contact {
@@ -143,13 +151,12 @@ impl Battle {
                 scenery_impulse,
                 vehicle_normal: None,
                 vehicle_contacts: 0,
+                turn_contact,
+                scenery_speed_scale: scenery.speed_scale,
                 impulse: Vec2::ZERO,
                 slid,
-                scenery_breaks,
-                scenery_cause: BreakageCause::Contact {
-                    yaw: impact_travel.x.atan2(impact_travel.y),
-                    speed: impact_travel.length() / seconds,
-                },
+                scenery_breaks: scenery.broken,
+                scenery_cause: scenery.fall,
                 pileup_held: false,
             });
         }
@@ -224,6 +231,8 @@ impl Battle {
                     "output.world.roll_radians" = direction.x,
                     "output.world.scenery_support" = deck,
                     "output.world.fragments_destroyed" = motion.scenery_breaks.len(),
+                    "output.world.turn_contact" = motion.turn_contact,
+                    "output.world.scenery_speed_scale" = motion.scenery_speed_scale,
                     "output.outcome" = outcome,
                 );
                 motion.parent = Some(span);
@@ -231,44 +240,6 @@ impl Battle {
         }
         moves
     }
-}
-
-fn crush_along(
-    scenery: &mut Scenery,
-    hull: Hull,
-    travel: Vec2,
-    inverse_mass: f32,
-    seconds: f32,
-    tree_push_load: f32,
-) -> Vec<Breakage> {
-    let mut destroyed = Vec::new();
-    if travel.length_squared() < 1e-8 {
-        return destroyed;
-    }
-    for _ in 0..DESTRUCTIBLES_PER_STEP {
-        let Some(hit) = scenery.sweep_hull(hull, travel) else {
-            break;
-        };
-        let Some(fragment) = hit.fragment else { break };
-        let impact_speed = (-travel.dot(hit.contact.normal) / seconds).clamp(0.0, 25.0);
-        if impact_speed <= 0.02 {
-            break;
-        }
-        // A bounded contact load, independent of the tank HP damage model.
-        let kinetic = impact_speed * impact_speed / (inverse_mass * 8_000.0);
-        let pushing = if fragment.is_tree() {
-            tree_push_load
-        } else {
-            0.0
-        };
-        let damage = (kinetic + pushing).clamp(1.0, 250.0) as u32;
-        let broken = scenery.damage(fragment, damage);
-        if broken.is_empty() {
-            break;
-        }
-        destroyed.extend(broken);
-    }
-    destroyed
 }
 
 fn surface_pose(

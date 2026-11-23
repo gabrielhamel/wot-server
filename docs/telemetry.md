@@ -276,7 +276,8 @@ speed and yaw rate, and whether track-lock steering was used.
 When the world step detects contact, elevated support, scenery destruction,
 a held pileup, slope sliding, tipping or recovery,
 `battles.world_motion` records the surviving displacement, contact counts and
-hull roll. Projectile impact additionally records whether a hit exhausted a
+hull roll. It also records whether turning contacted scenery and the retained
+speed multiplier after a break. Projectile impact additionally records whether a hit exhausted a
 scenery fragment's health. A pushed vehicle without its own drive span uses the initiating
 vehicle's available drive parent. The world span then parents pose and chassis
 replication for the affected vehicle.

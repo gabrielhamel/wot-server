@@ -54,7 +54,9 @@ server. Older manifests without the field remain supported.
   Re-extract the installed EU client to enable native destruction updates
   and cascades. `WCM4` also stores independent vehicle and shell pass flags.
   This preserves vehicle contact for props such as lamps and for trackside
-  walls and ramps that shells ignore. Older `WCM1`–`WCM3` meshes remain readable.
+  walls and ramps that shells ignore. `WCM5` also marks the authored vehicle
+  walls of carriages and locomotives that persist after a visual fragment
+  breaks. Older mesh versions remain readable.
   Re-extract the client bundle to recover contact bodies omitted by older
   extractors.
   The optional `spaces/<map>/trees.bin` (`WCT1`) stores each numbered SpeedTree's

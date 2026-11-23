@@ -161,14 +161,29 @@ impl Tank {
         }
     }
 
-    pub fn tree_push_load(&self, seconds: f32) -> f32 {
-        if !self.drive.has_throttle() || self.vertical_speed.is_some() || self.is_tipped() {
+    pub fn scenery_push_load(&self, seconds: f32, turning: bool) -> f32 {
+        let powered = if turning {
+            self.drive.has_steering()
+        } else {
+            self.drive.throttle() != 0.0
+        };
+        if !powered || self.vertical_speed.is_some() || self.is_tipped() {
             return 0.0;
         }
         let power = self.performance.as_ref().map_or(300_000.0, |profile| {
             profile.mobility.mass_kg * profile.mobility.power_per_kg
         });
-        power * (1.13 / 2.0) * 0.0002 * seconds
+        let press_force = 1.13 * power / 2.0;
+        press_force * 0.0002 * seconds
+    }
+
+    pub fn scenery_push_direction(&self) -> Vec2 {
+        let (sin, cos) = self.yaw.sin_cos();
+        Vec2::new(sin, cos) * self.drive.throttle()
+    }
+
+    pub fn apply_scenery_drag(&mut self, speed_scale: f32) {
+        self.drive.speed *= speed_scale;
     }
 
     pub fn passive_travel(

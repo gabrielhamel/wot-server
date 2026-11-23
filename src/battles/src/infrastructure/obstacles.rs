@@ -32,8 +32,12 @@ pub(super) struct Fragment {
 }
 
 impl Fragment {
-    pub(super) fn is_tree(self) -> bool {
+    #[cfg(test)]
+    fn is_tree(self) -> bool {
         self.part == TREE_PART && matches!(self.object, Object::Native(_))
+    }
+    pub(super) fn same_part(self, other: Self) -> bool {
+        self.object == other.object && self.part == other.part
     }
 }
 
@@ -52,6 +56,7 @@ pub(super) struct Breakage {
 pub(super) const FIRST_MODULE: u32 = 73;
 const VEHICLES_PASS: u32 = 1;
 const SHELLS_PASS: u32 = 2;
+const RETAIN_VEHICLE_WALL: u32 = 4;
 const CASCADE_MASK: u32 = (1 << 13) - 1;
 
 #[derive(Clone, Copy)]
@@ -99,6 +104,14 @@ impl Scenery {
                 .filter(|_| self.geometry.meshes[instance.mesh].has_fragments)
                 .map(|number| (number >> 16) as u16)
         })
+    }
+
+    pub fn remaining_health(&self, fragment: Fragment) -> u32 {
+        self.damage
+            .0
+            .get(&(fragment.object, fragment.part))
+            .copied()
+            .unwrap_or(fragment.health)
     }
 
     pub fn damage(&mut self, fragment: Fragment, amount: u32) -> Vec<Breakage> {
@@ -338,9 +351,12 @@ impl Obstacles {
                     if triangle.pass_flags & VEHICLES_PASS != 0 {
                         continue;
                     }
-                    let fragment = triangle.fragment(instance);
+                    let mut fragment = triangle.fragment(instance);
                     if damage.destroyed(fragment) {
-                        continue;
+                        if triangle.pass_flags & RETAIN_VEHICLE_WALL == 0 {
+                            continue;
+                        }
+                        fragment = None;
                     }
                     let [a, b, c] = triangle.vertices;
                     let triangle_bounds = Bounds {
@@ -378,7 +394,7 @@ impl Mesh {
             b"WCM1" => 40,
             b"WCM2" => 48,
             b"WCM3" => 52,
-            b"WCM4" => 56,
+            b"WCM4" | b"WCM5" => 56,
             _ => anyhow::bail!("Invalid mesh format in {path}"),
         };
         let data = read_records(&path, input, stride, 1_000_000)?;
@@ -391,8 +407,14 @@ impl Mesh {
             } else {
                 0
             };
+            let known_flags = (VEHICLES_PASS | SHELLS_PASS)
+                | if &header == b"WCM5" {
+                    RETAIN_VEHICLE_WALL
+                } else {
+                    0
+                };
             anyhow::ensure!(
-                pass_flags & !(VEHICLES_PASS | SHELLS_PASS) == 0,
+                pass_flags & !known_flags == 0,
                 "Invalid collision flags in {path}"
             );
             let fragment = if stride >= 48 {
@@ -734,6 +756,31 @@ mod tests {
     use glam::Vec3Swizzles;
 
     #[test]
+    #[ignore = "Requires freshly extracted EU Widepark railway geometry"]
+    fn replay_leopard_approach_stops_at_the_flat_car_even_after_visual_destruction() {
+        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
+        let geometry = Arc::new(Obstacles::load(&resources, "spaces/17_munchen", 17).unwrap());
+        let mut scene = Scenery::new(geometry);
+        // Replay clock 55.92 s and the preceding approach direction.
+        let hull = Hull {
+            position: Vec3::new(125.017, 8.349, -35.483),
+            yaw: -2.691,
+            half_size: Vec2::new(1.625, 3.356),
+            offset: Vec2::new(0.0, -0.0406),
+        };
+        let travel = Vec2::new(-0.445, -0.919);
+        let intact = scene.sweep_hull(hull, travel).unwrap();
+        let fragment = intact.fragment.unwrap();
+        assert!(matches!(fragment.object, Object::Native(0x807e_002e)));
+        let result = scene.damage(fragment, fragment.health);
+        assert_eq!(result[0].native, Some(0x807e_002e));
+        let damaged = scene.sweep_hull(hull, travel).unwrap();
+        assert!(damaged.fragment.is_none());
+        assert!((damaged.contact.fraction - intact.contact.fraction).abs() < 0.15);
+    }
+
+    #[test]
     #[ignore = "Requires WG_RESOURCE_DIR with freshly extracted EU Widepark WCM4 geometry"]
     fn widepark_lamps_and_train_use_their_native_vehicle_contact_bodies() {
         let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
@@ -755,7 +802,7 @@ mod tests {
                         .iter()
                         .filter(|triangle| {
                             triangle.material == helper_material
-                                && triangle.pass_flags == SHELLS_PASS
+                                && triangle.pass_flags & SHELLS_PASS != 0
                         })
                         .find_map(|triangle| {
                             let part = triangle.fragment(instance)?;

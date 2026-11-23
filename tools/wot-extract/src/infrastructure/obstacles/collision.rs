@@ -19,6 +19,7 @@ pub(super) struct Triangle {
 pub(super) fn triangles(
     tagfile: &Tagfile,
     model: Option<&super::destructibles::Model>,
+    railway_stock: bool,
 ) -> Option<Vec<Triangle>> {
     let mut triangles = Vec::new();
     for named in tagfile.root()?.get("namedVariants")?.elements()? {
@@ -65,6 +66,15 @@ pub(super) fn triangles(
                 continue;
             }
             let fragment = model.and_then(|model| model.fragment(name, material, flags as u32));
+            let collision_flags = (flags as u32 & 3)
+                | if railway_stock
+                    && flags & 8 != 0
+                    && name.strip_prefix("s_").unwrap_or(name).starts_with("wall_")
+                {
+                    4
+                } else {
+                    0
+                };
             let shape = body.get("shape")?.deref()?;
             if shape.type_name() == "hknpCompressedMeshShape" {
                 let mesh = compressed_mesh_triangles(shape)?;
@@ -77,7 +87,7 @@ pub(super) fn triangles(
                         .map(|vertices| Triangle {
                             vertices,
                             material,
-                            pass_flags: flags as u32 & 3,
+                            pass_flags: collision_flags,
                             fragment,
                         }),
                 );

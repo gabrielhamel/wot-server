@@ -47,8 +47,16 @@ pub(super) struct Drive {
 }
 
 impl Drive {
-    pub fn has_throttle(&self) -> bool {
-        self.flags & BRAKE == 0 && axis(self.flags, FORWARD, REVERSE) != 0.0
+    pub fn throttle(&self) -> f32 {
+        if self.flags & BRAKE == 0 {
+            axis(self.flags, FORWARD, REVERSE)
+        } else {
+            0.0
+        }
+    }
+
+    pub fn has_steering(&self) -> bool {
+        self.flags & BRAKE == 0 && axis(self.flags, RIGHT, LEFT) != 0.0
     }
 
     pub fn step(
