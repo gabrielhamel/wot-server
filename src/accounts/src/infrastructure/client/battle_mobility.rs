@@ -90,6 +90,7 @@ impl BattleMobility {
         input.mobility.equipment_count = vehicle.equipment.iter().filter(|&&id| id != 0).count(),
         input.mobility.consumable_count = vehicle.consumables.iter().filter(|&&id| id != 0).count(),
         input.mobility.directive_id = vehicle.directive,
+        output.mobility.collision_bounds_available = performance.mobility.collision_bounds.is_some(),
         output.mobility.equipment_mass_kg = tracing::field::Empty,
         output.mobility.power_watts_per_kg = tracing::field::Empty,
         output.mobility.forward_speed_mps = tracing::field::Empty,
@@ -336,6 +337,22 @@ mod tests {
     use crate::{AccountSnapshot, Balances, CrewPassport, CrewSeat, CrewTraining, OwnedVehicle};
     use std::path::Path;
 
+    #[test]
+    #[ignore = "Requires WG_RESOURCE_DIR with extracted AMX 30 B contact bounds"]
+    fn amx_30_b_contact_footprint_includes_the_rear_overhang() {
+        let root = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let resources = ResourceBundle::open(Path::new(&root)).unwrap();
+        let catalog = super::super::GarageCatalog::load(resources, &[]).unwrap();
+        let vehicle = catalog.vehicle("france:F72_AMX_30").unwrap();
+        let mobility = vehicle
+            .modules
+            .battle_performance(&vehicle.modules.rules.stock)
+            .unwrap()
+            .mobility;
+        let [rear, front] = mobility.collision_bounds.unwrap();
+        assert!(rear.y < -3.3 && front.y > 3.1);
+        assert!(rear.y < -mobility.track_half_length - 1.0);
+    }
     #[test]
     #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
     fn training_loadout_applies_mobility_equipment_fuel_and_driver_perks() {

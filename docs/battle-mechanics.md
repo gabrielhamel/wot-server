@@ -205,12 +205,23 @@ Bridges and ramps can carry vehicles above the terrain while a vehicle below
 a deck can continue on the underlying surface. Bundles without collision
 placements still support terrain and tank contact.
 
+Hull sweeps use the loaded Havok chassis and mounted hull bounds on the X/Z
+plane, including rear overhang and any offset from the vehicle origin. Track
+dimensions remain the fallback when the bundle lacks those bounds. The tank
+keeps its own movement and replication origin. The AMX 30 B in the recorded EU
+resources has a track half-length of about 2.04 m and its chassis reaches about
+3.33 m behind the origin.
+
 The extractor joins placed Havok models to the destruction definitions and
 uses the compiled map's `WGDE` section to identify each object by chunk and
 index. Placements that share that identity share fragment health within an
 arena. When a fragment breaks, its transitive dependencies break in the same
 simulation step and the whole set stops blocking hulls or projectiles.
-Independent parts remain in place. Numbered placements scale base fragment
+Independent parts remain in place. Havok bodies can allow shells or vehicles
+to pass independently. In Widepark, the vehicle-only bodies for the street
+lamps trigger a fall, and the center locomotive's vehicle-only walls block
+tanks and share destruction state with the corresponding shootable modules.
+Numbered placements scale base fragment
 health by the square of the model scale. Drive contact estimates scenery damage
 from mass and approach speed. Shell impacts use the configured shell damage.
 Contact with scenery or another tank leaves tank HP unchanged.
@@ -287,7 +298,13 @@ state. The exported trace also records a closed delivery queue as an error.
 The EU executable launched on macOS through Wargaming.net Game Center, which
 reported build `2.4.1.5514` as current. The Wine game window was unavailable to
 the automation. Live observation of tree falls, debris, model changes and entry snapshots
-in a native Training battle remains pending. The protocol evidence comes
+in a native Training battle remains pending. A Training player confirmed
+placed object destruction and tree falls, then reported passing through
+Widepark street lamps and the center train and backing partly into a wall
+with the AMX 30 B. The refreshed bundle regression checks the numbered
+Widepark lamp and locomotive, and the AMX 30 B contact envelope and reverse
+sweep have dedicated tests. Those three fixes still need a native retest.
+The protocol evidence comes
 from the extracted EU entity definitions, the supplied
 `AreaDestructibles.py`, `DestructiblesCache.py` and `Avatar.py` references, and
 the Toolkit's matching captured battle in its `WGDE` decoder and
@@ -295,7 +312,7 @@ the Toolkit's matching captured battle in its `WGDE` decoder and
 
 | Remaining gap | What is missing |
 | --- | --- |
-| Scenery and ground contact fidelity | The solver uses chassis-sized boxes, an estimated hull height and upward triangles for support. Dedicated movement materials, exact suspension contact, rotating or airborne hull sweeps and fully coupled 3D pileups remain open. |
+| Scenery and ground contact fidelity | The solver uses oriented chassis and hull envelopes, an estimated hull height and upward triangles for support. Dedicated movement materials, exact suspension contact, rotating or airborne hull sweeps and fully coupled 3D pileups remain open. |
 | Destruction coverage and fidelity | Unnumbered scenery lacks native synchronization. Trunk shapes, contact loads and pitch limits are estimates. Fall collisions with tanks and other trees, authoritative debris motion, and foliage concealment from standing and fallen vegetation remain open. Exact shell damage rules, shell continuation through broken cover and splash destruction remain open. |
 | Rollover fidelity and feedback | The current model tips onto a side. Full rotational dynamics, tumbles onto the roof, rollover destruction rules and native recovery HUD messages remain open. Ramming damage is outside this work. |
 | Environmental hazards | Airborne motion lands on the height map or a supporting surface. Landing and fall damage, water volumes and depth, drowning warnings and timers, and their battle outcomes remain open. |

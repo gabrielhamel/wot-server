@@ -62,9 +62,10 @@ pub(crate) fn extract(
                     Some(triangles) if !triangles.is_empty() => {
                         let path = mesh_root.join(format!("{id:08x}.mesh"));
                         let mut output = BufWriter::new(File::create(&path)?);
-                        output.write_all(b"WCM3")?;
+                        output.write_all(b"WCM4")?;
                         for triangle in triangles {
                             output.write_u32::<LE>(triangle.material)?;
+                            output.write_u32::<LE>(triangle.pass_flags)?;
                             let (part, health, cascade) =
                                 triangle.fragment.map_or((0, 0, 0), |fragment| {
                                     (fragment.part, fragment.health, fragment.cascade)
@@ -122,4 +123,47 @@ fn read_collision(
     Ok(tagfile::Tagfile::from_bytes(&data)
         .ok()
         .and_then(|tagfile| collision::triangles(&tagfile, model)))
+}
+
+pub(crate) fn is_vehicle_contact_model(path: &str) -> bool {
+    path.starts_with("vehicles/")
+        && path
+            .rsplit_once("/collision_client/")
+            .is_some_and(|(_, file)| {
+                file.strip_suffix(".havok").is_some_and(|name| {
+                    !name.contains('/') && (name.starts_with("Chassis") || name.starts_with("Hull"))
+                })
+            })
+}
+
+pub(crate) fn extract_vehicle_bounds(
+    client: &mut ClientResources,
+    paths: &[String],
+    root: &Path,
+) -> Result<(usize, u64)> {
+    let mut count = 0;
+    let mut bytes = 0;
+    for path in paths {
+        let data = client.read_bounded(path, 16 * 1024 * 1024)?;
+        let Some(bounds) = tagfile::Tagfile::from_bytes(&data)
+            .ok()
+            .and_then(|tag| collision::bounds(&tag))
+        else {
+            continue;
+        };
+        let dest = root.join(path).with_extension("bounds");
+        create_dir_all(
+            dest.parent()
+                .context("Missing vehicle collision directory")?,
+        )?;
+        let mut file = BufWriter::new(File::create(&dest)?);
+        file.write_all(b"WVB1")?;
+        for value in bounds.into_iter().flat_map(|point| point.to_array()) {
+            file.write_f32::<LE>(value)?;
+        }
+        file.flush()?;
+        count += 1;
+        bytes += dest.metadata()?.len();
+    }
+    Ok((count, bytes))
 }

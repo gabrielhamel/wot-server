@@ -286,6 +286,7 @@ fn vehicle_motion(id: u64, distance: f32, travel: f32, inverse_mass: f32) -> Veh
             position: Vec3::Z * distance,
             yaw: 0.0,
             half_size: Vec2::new(1.0, 2.0),
+            offset: Vec2::ZERO,
         },
         travel: Vec2::Y * travel,
         inverse_mass,
@@ -351,6 +352,7 @@ fn scenery_fracture_is_local_and_removes_only_the_hit_fragment() {
         position: Vec3::ZERO,
         yaw: 0.0,
         half_size: Vec2::ONE,
+        offset: Vec2::ZERO,
     };
     assert_eq!(
         crush_along(&mut scene, hull, Vec2::Y * 3.0, 1.0 / 30_000.0, 0.1, 0.0).len(),
@@ -391,6 +393,7 @@ fn ramps_can_be_climbed_and_bridge_support_respects_the_underpass() {
         position: Vec3::new(-0.2, 0.0, 0.0),
         yaw: std::f32::consts::FRAC_PI_2,
         half_size: Vec2::new(1.0, 1.5),
+        offset: Vec2::ZERO,
     };
     for _ in 0..12 {
         let travel = Vec2::X;
@@ -454,6 +457,7 @@ fn extracted_serene_coast_bridge_keeps_its_deck_separate_from_the_terrain() {
         position: Vec3::new(point.x, deck_y, point.y),
         yaw: 0.0,
         half_size: Vec2::new(1.0, 2.0),
+        offset: Vec2::ZERO,
     };
     let (deck, _, elevated) = surface_pose(&terrain, &scenery, hull, Vec2::ZERO).unwrap();
     assert!(elevated);

@@ -19,12 +19,23 @@ pub(super) enum Model {
 }
 
 impl Model {
-    pub(super) fn fragment(&self, name: &str, material: u32) -> Option<Fragment> {
+    pub(super) fn fragment(&self, name: &str, material: u32, flags: u32) -> Option<Fragment> {
         match self {
             Self::Single(fragment) => Some(*fragment),
             Self::Structure(parts) => parts
                 .get(material_name(name))
-                .or_else(|| parts.values().find(|fragment| fragment.part == material))
+                .or_else(|| {
+                    let kind = if flags & 8 != 0 {
+                        material_name(name)
+                            .strip_prefix("wall_")
+                            .and_then(|index| index.parse::<u32>().ok())
+                            .filter(|&index| index < MAX_MODULES as u32)
+                            .map_or(material, |index| FIRST_MODULE_KIND + index)
+                    } else {
+                        material
+                    };
+                    parts.values().find(|fragment| fragment.part == kind)
+                })
                 .copied(),
         }
     }

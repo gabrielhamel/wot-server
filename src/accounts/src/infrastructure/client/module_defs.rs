@@ -10,7 +10,7 @@ use crate::{
     VehicleSurface,
 };
 use anyhow::{Context, Result};
-use glam::Vec3;
+use glam::{Vec3, Vec3Swizzles};
 use std::collections::{BTreeMap, BTreeSet};
 use wot_platform::client_formats::pxml::Element;
 use wot_resources::ResourceBundle;
@@ -244,6 +244,10 @@ impl VehicleModules {
         let mut chassis_mobility = BTreeMap::new();
         let mut engine_power_hp = BTreeMap::new();
         let mut hull_positions = BTreeMap::new();
+        let hull_bounds = match vehicle.get_child_element("hull") {
+            Some(hull) => battle_performance::collision_bounds(fs, None, hull)?,
+            None => None,
+        };
         let turret_position = vehicle
             .get_child_element("hull")
             .and_then(|hull| hull.get_child_element("turretPositions"))
@@ -312,11 +316,23 @@ impl VehicleModules {
                         .and_then(|chassis| chassis.get_child_element(name));
                     let mut mobility = battle_performance::mobility(local, base, physics, wheeled);
                     mobility.track_lock = track_lock;
-                    chassis_mobility.insert(id, mobility);
-                    if let Some(position) = battle_performance::vector(local, base, "hullPosition")
-                    {
+                    let hull_position = battle_performance::vector(local, base, "hullPosition");
+                    if let Some(position) = hull_position {
                         hull_positions.insert(id, position);
                     }
+                    let chassis_bounds = battle_performance::collision_bounds(fs, local, base)?;
+                    let mounted_hull = hull_bounds
+                        .zip(hull_position)
+                        .map(|(bounds, position)| bounds.map(|point| point + position));
+                    mobility.collision_bounds = match (chassis_bounds, mounted_hull) {
+                        (Some([chassis_min, chassis_max]), Some([hull_min, hull_max])) => Some([
+                            chassis_min.min(hull_min).xz(),
+                            chassis_max.max(hull_max).xz(),
+                        ]),
+                        (Some(bounds), None) => Some(bounds.map(|point| point.xz())),
+                        (None, _) => None,
+                    };
+                    chassis_mobility.insert(id, mobility);
                     if let Some(traverse) = battle_performance::traverse(local, base) {
                         hull_traverse.insert(id, traverse);
                     }

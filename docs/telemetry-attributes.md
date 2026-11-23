@@ -152,6 +152,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.mobility.equipment_count`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Number of mounted optional devices in the projected Training loadout. |
 | [`input.mobility.consumable_count`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Number of mounted consumables in the projected Training loadout. |
 | [`input.mobility.directive_id`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Installed directive compact descriptor, when present. |
+| [`output.mobility.collision_bounds_available`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Whether the equipped loadout has a Havok-derived contact envelope. False when Training falls back to track dimensions. |
 | [`output.mobility.equipment_mass_kg`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Mounted optional-device mass from the bundle, in kilograms. |
 | [`output.mobility.power_watts_per_kg`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Effective engine power per kilogram used by Training movement. |
 | [`output.mobility.forward_speed_mps`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Effective forward powered speed limit in metres per second before downhill movement. |

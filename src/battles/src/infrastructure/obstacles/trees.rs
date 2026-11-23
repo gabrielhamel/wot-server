@@ -150,6 +150,7 @@ fn trunk() -> Mesh {
             [[a, b, c], [a, c, d]].map(|vertices| Triangle {
                 vertices,
                 material: 71,
+                pass_flags: SHELLS_PASS,
                 fragment: Some((TREE_PART, 1, 0)),
             })
         })

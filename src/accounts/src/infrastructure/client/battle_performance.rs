@@ -1,7 +1,49 @@
 use glam::{Vec3, Vec3Swizzles};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io::Read};
 use wot_platform::client_formats::pxml::{Element, Value};
+use wot_resources::ResourceBundle;
 use wot_shared_kernel::{GunLoading, GunPerformance, Mobility, ShellEffects, Wheel};
+
+pub(super) fn collision_bounds(
+    fs: &ResourceBundle,
+    local: Option<&Element>,
+    base: &Element,
+) -> anyhow::Result<Option<[Vec3; 2]>> {
+    let Some(model) = field(local, base, &["hitTester", "collisionModelClient"])
+        .and_then(Value::as_string)
+        .and_then(|path| path.strip_suffix(".model"))
+    else {
+        return Ok(None);
+    };
+    let path = format!("{model}.bounds");
+    if !fs.has_file(&path) {
+        return Ok(None);
+    }
+    let mut bytes = [0; 28];
+    fs.read(&path)?.read_exact(&mut bytes)?;
+    let (header, values) = bytes.split_at(4);
+    anyhow::ensure!(
+        header == b"WVB1",
+        "Invalid vehicle collision bounds in {path}"
+    );
+    let mut floats = values
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .copied()
+        .map(f32::from_le_bytes);
+    let mut read = || Vec3::from_array(std::array::from_fn(|_| floats.next().unwrap_or(f32::NAN)));
+    let [min, max] = [read(), read()];
+    anyhow::ensure!(
+        min.is_finite()
+            && max.is_finite()
+            && min.cmplt(max).all()
+            && (max - min).max_element() <= 32.0
+            && min.abs().max(max.abs()).max_element() <= 32.0,
+        "Invalid vehicle collision extent in {path}"
+    );
+    Ok(Some([min, max]))
+}
 
 pub(super) fn speed_limits(vehicle: &Element) -> Option<[f32; 2]> {
     let speed = vehicle.get_child_element("speedLimits")?;

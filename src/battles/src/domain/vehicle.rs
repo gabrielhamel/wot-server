@@ -125,9 +125,20 @@ impl Tank {
     }
 
     pub fn collision_hull(&self) -> Hull {
-        let half_size = self.performance.as_ref().map_or(Vec2::new(1.25, 2.5), |p| {
-            Vec2::new(p.mobility.track_half_width, p.mobility.track_half_length)
-        });
+        let mobility = self.performance.as_ref().map(|p| &p.mobility);
+        let (half_size, offset) = mobility
+            .and_then(|profile| profile.collision_bounds)
+            .map_or_else(
+                || {
+                    (
+                        mobility.map_or(Vec2::new(1.25, 2.5), |profile| {
+                            Vec2::new(profile.track_half_width, profile.track_half_length)
+                        }),
+                        Vec2::ZERO,
+                    )
+                },
+                |[min, max]| ((max - min) * 0.5, (max + min) * 0.5),
+            );
         let mut position = self.position;
         if self.world.is_tipped() {
             position.y -= (half_size.x - 0.35).max(0.0);
@@ -136,6 +147,7 @@ impl Tank {
             position,
             yaw: self.yaw,
             half_size,
+            offset,
         }
     }
 

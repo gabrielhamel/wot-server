@@ -35,7 +35,7 @@ the [bundle contract](src/resources/README.md) to Accounts, Player Sessions and 
 extractor reads installed client packages and loose files. Accounts loads the
 garage catalog from the bundle, and Player Sessions loads its ABI definitions and
 component class metadata. Battles loads the arena catalog, terrain and scenery
-collision meshes with destructible fragments.
+collision meshes with destructible fragments and vehicle contact bounds.
 
 [Battles](src/battles/README.md) owns live arenas, round phases, participants,
 vehicle simulation and native battle replication. Player Sessions submits a

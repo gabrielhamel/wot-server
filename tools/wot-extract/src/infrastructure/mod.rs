@@ -87,6 +87,7 @@ impl ClientResources {
             }
         }
         resources.index_loose(&root, "spaces")?;
+        resources.index_loose(&root, "vehicles")?;
         resources.index_loose(&root, "system/data/material_kinds.xml")?;
         Ok(resources)
     }
@@ -276,6 +277,7 @@ pub fn is_terrain(path: &str) -> bool {
 fn is_candidate(path: &str) -> bool {
     if is_terrain(path)
         || obstacles::is_placement(path)
+        || obstacles::is_vehicle_contact_model(path)
         || (path.starts_with("content/") && path.ends_with(".havok"))
         || path == "system/data/material_kinds.xml"
     {

@@ -52,8 +52,11 @@ server. Older manifests without the field remain supported.
   `WCM3` meshes store triangle materials, native fragment kinds, initial
   health and the transitive dependency mask from `scripts/destructibles.xml`.
   Re-extract the installed EU client to enable native destruction updates
-  and cascades. Older `WCP1` placements with `WCM2` files retain independent
-  fragment damage. `WCM1` files use solid collision geometry.
+  and cascades. `WCM4` also stores independent vehicle and shell pass flags.
+  This preserves vehicle contact for props such as lamps and for trackside
+  walls and ramps that shells ignore. Older `WCM1`–`WCM3` meshes remain readable.
+  Re-extract the client bundle to recover contact bodies omitted by older
+  extractors.
   The optional `spaces/<map>/trees.bin` (`WCT1`) stores each numbered SpeedTree's
   `WGDE` identity, scaled health, foot position, scale and fall height. The
   extractor joins `SpTr` placements to `scripts/destructibles.xml` and excludes
@@ -67,6 +70,11 @@ server. Older manifests without the field remain supported.
   The server logs a startup warning when the mark catalog is missing.
   Re-extract the bundle and restart the server with its new `--resource-dir`
   to enable the corresponding obstacle effects and vehicle marks.
+- **Accounts** reads optional `WVB1` vehicle collision bounds under
+  `vehicles/.../collision_client/*.bounds`. Each record stores the model-local
+  minimum and maximum from the Havok asset without copying the asset itself.
+  The equipped chassis and mounted hull determine the horizontal contact
+  footprint. Older bundles fall back to the track-derived footprint.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
   item definitions, customization price groups, style, camouflage, paint, decal, projected decal, effect, personal-number attachment and stat tracker definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle

@@ -8,6 +8,7 @@ pub(crate) struct Hull {
     pub position: Vec3,
     pub yaw: f32,
     pub half_size: Vec2,
+    pub offset: Vec2,
 }
 
 impl Hull {
@@ -16,12 +17,18 @@ impl Hull {
         [Vec2::new(cos, -sin), Vec2::new(sin, cos)]
     }
 
+    fn center(self) -> Vec3 {
+        let [right, forward] = self.axes();
+        let offset = right * self.offset.x + forward * self.offset.y;
+        self.position + Vec3::new(offset.x, 0.0, offset.y)
+    }
+
     pub fn bounds(self) -> (Vec3, Vec3) {
         let [right, forward] = self.axes();
         let extent = right.abs() * self.half_size.x + forward.abs() * self.half_size.y;
         (
-            self.position - Vec3::new(extent.x, 0.0, extent.y),
-            self.position + Vec3::new(extent.x, HULL_HEIGHT, extent.y),
+            self.center() - Vec3::new(extent.x, 0.0, extent.y),
+            self.center() + Vec3::new(extent.x, HULL_HEIGHT, extent.y),
         )
     }
 
@@ -35,7 +42,7 @@ impl Hull {
     pub fn sweep_triangle(self, vertices: [Vec3; 3], travel: Vec2) -> Option<Contact> {
         let [right, forward] = self.axes();
         let to_local = |v: Vec3| Vec3::new(v.xz().dot(right), v.y, v.xz().dot(forward));
-        let center = self.position + Vec3::Y * (HULL_HEIGHT * 0.5);
+        let center = self.center() + Vec3::Y * (HULL_HEIGHT * 0.5);
         let [a, b, c] = vertices.map(|v| to_local(v - center));
         let edges = [b - a, c - b, a - c];
         let face = edges[0].cross(edges[1]).normalize_or_zero();
@@ -89,7 +96,7 @@ pub(crate) fn vehicle_contact(
     if (first.position.y - other.position.y).abs() >= HULL_HEIGHT {
         return None;
     }
-    let displacement = other.position.xz() - first.position.xz();
+    let displacement = other.center().xz() - first.center().xz();
     let relative_travel = first_travel - other_travel;
     let reach = first.half_size.length() + other.half_size.length() + CONTACT_SKIN;
     if displacement
@@ -275,9 +282,25 @@ mod tests {
             position: Vec3::new(x, y, 0.0),
             yaw,
             half_size: Vec2::new(1.0, 2.0),
+            offset: Vec2::ZERO,
         }
     }
 
+    #[test]
+    fn reverse_sweep_stops_the_rear_overhang_at_a_wall() {
+        let mut body = hull(0.0, 0.0, 0.0);
+        body.position.z = 4.0;
+        body.half_size = Vec2::new(1.55, 3.264);
+        body.offset = Vec2::new(0.0, -0.064);
+        let wall = [
+            Vec3::new(-6.0, -1.0, 0.0),
+            Vec3::new(6.0, -1.0, 0.0),
+            Vec3::new(0.0, 6.0, 0.0),
+        ];
+        let contact = body.sweep_triangle(wall, -Vec2::Y * 2.0).unwrap();
+        assert!((contact.fraction - (4.0 - 3.328) / 2.0).abs() < 0.001);
+        assert_eq!(contact.normal, Vec2::Y);
+    }
     #[test]
     fn swept_hulls_resolve_fast_crossings_and_allow_separation() {
         let a = hull(0.0, 0.0, 0.0);
