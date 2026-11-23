@@ -86,7 +86,8 @@ server. Older manifests without the field remain supported.
   vertices. Accounts joins material IDs with the vehicle armor overrides and
   the common material definitions. Battles uses the same part bounds to encode
   the impact ray for the client. Re-extract earlier bundles before testing
-  vehicle fire. Textures and rendering assets stay in the game client.
+  vehicle fire. The bundle includes the common vehicle and stun definitions for
+  shell damage and artillery modifiers. Textures and rendering assets stay in the game client.
 - **Accounts** uses vehicle, module and shell definitions, crew data, garage
   item definitions, customization price groups, style, camouflage, paint, decal, projected decal, effect, personal-number attachment and stat tracker definitions from the client, plus
   the personal-number restriction list and regular tech trees for starter garages and available vehicle

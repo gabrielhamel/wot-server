@@ -1,6 +1,9 @@
-use super::vehicle::{Shot, Tank};
+use super::{
+    devices::{DeviceStrike, MAX_DEVICE_HITS},
+    vehicle::{Shot, Tank},
+};
 use glam::Vec3;
-use wot_shared_kernel::{ArmorPlate, ShellKind};
+use wot_shared_kernel::{ArmorPlate, ShellKind, shell_value_at_distance};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ArmorOutcome {
@@ -40,7 +43,8 @@ pub(crate) struct ArmorHit {
     pub outcome: ArmorOutcome,
     pub damage: u16,
     reflected: Option<Vec3>,
-    thickness_mm: f32,
+    pub devices: [Option<DeviceStrike>; MAX_DEVICE_HITS],
+    pub thickness_mm: f32,
     effective_mm: f32,
     remaining_mm: f32,
 }
@@ -93,10 +97,17 @@ impl Shot {
     }
 
     pub fn penetration_at(&self, distance: f32) -> f32 {
-        (at_distance(self.ballistics.penetration_mm, self.travelled + distance)
-            * self.penetration_roll
-            - self.penetration_loss)
-            .max(0.0)
+        let penetration =
+            (shell_value_at_distance(self.ballistics.penetration_mm, self.travelled + distance)
+                * self.penetration_roll
+                - self.penetration_loss)
+                .max(0.0);
+        if self.heat_jet
+            && let ShellKind::HollowCharge { jet_loss_per_metre } = self.ballistics.kind
+        {
+            return penetration * (1.0 - distance * jet_loss_per_metre).max(0.0);
+        }
+        penetration
     }
 
     pub fn continue_from(self, distance: f32, direction: Vec3) -> Option<Self> {
@@ -109,6 +120,18 @@ impl Shot {
             direction,
             ..self
         })
+    }
+
+    pub fn through_screen(self, hit: ArmorHit) -> Option<Self> {
+        if hit.outcome != ArmorOutcome::ScreenPenetrated || hit.remaining_mm <= 0.0 {
+            return None;
+        }
+        let mut next = self.continue_from(hit.distance, self.direction)?;
+        let unspent = shell_value_at_distance(self.ballistics.penetration_mm, next.travelled)
+            * self.penetration_roll;
+        next.penetration_loss = (unspent - hit.remaining_mm).max(0.0);
+        next.heat_jet = matches!(self.ballistics.kind, ShellKind::HollowCharge { .. });
+        Some(next)
     }
 
     pub fn ricochet_from(self, hit: ArmorHit) -> Option<Self> {
@@ -175,6 +198,21 @@ impl Shot {
         (!surfaces.is_empty()).then_some(ArmorPath(surfaces))
     }
 
+    pub fn exposed_armor(&self, target: &Tank, range: f32) -> Option<(f32, f32)> {
+        self.armor_path(target, range)?
+            .0
+            .into_iter()
+            .find(|contact| contact.plate.damage_factor > 0.0)
+            .map(|contact| (contact.distance, contact.plate.thickness_mm))
+    }
+
+    pub fn damage_at(&self, distance: f32) -> f32 {
+        shell_value_at_distance(
+            [f32::from(self.damage), self.ballistics.far_damage],
+            self.travelled + distance,
+        ) * self.damage_roll
+    }
+
     fn resolve_surfaces(&self, surfaces: &[Surface]) -> Option<ArmorHit> {
         let shell = self.ballistics;
         let first = surfaces.first()?;
@@ -182,7 +220,8 @@ impl Shot {
         let mut last_hit = None;
         let mut jet_exit: Option<f32> = None;
         let mut seen = Vec::new();
-        for &surface in surfaces {
+        let mut devices = [None; MAX_DEVICE_HITS];
+        for (index, &surface) in surfaces.iter().enumerate() {
             let Surface {
                 distance,
                 segment,
@@ -215,9 +254,11 @@ impl Shot {
                 outcome: ArmorOutcome::Blocked,
                 damage: 0,
                 reflected: None,
+                devices,
             };
             if (ap || heat)
                 && jet_exit.is_none()
+                && !self.heat_jet
                 && plate.ricochets
                 && thickness > 0.0
                 && cosine <= shell.ricochet_cos
@@ -242,28 +283,62 @@ impl Shot {
             if plate.damage_factor > 0.0 {
                 if penetration >= effective && !matches!(shell.kind, ShellKind::Other) {
                     hit.outcome = ArmorOutcome::Penetrated;
+                    let internal_range = shell.caliber_mm * 0.01;
+                    let mut internal_penetration = penetration - effective;
+                    for internal in &surfaces[index + 1..] {
+                        if internal.distance - distance > internal_range
+                            || internal.plate.damage_factor > 0.0
+                            || internal_penetration < internal.plate.thickness_mm
+                        {
+                            break;
+                        }
+                        self.record_device(*internal, false, &mut hit.devices);
+                        internal_penetration -= internal.plate.thickness_mm;
+                    }
                     hit.remaining_mm = penetration - effective;
                     hit.damage = rolled_damage(
-                        at_distance(
+                        shell_value_at_distance(
                             [f32::from(self.damage), shell.far_damage],
                             self.travelled + distance,
                         ),
                         self.damage_roll,
                         plate.damage_factor,
                     );
-                } else if let ShellKind::HighExplosive { spall_damage, .. } = shell.kind
-                    && spall_damage > 0.0
+                } else if let Some(he) = shell.explosive {
+                    let travel = self.travelled + distance;
+                    let spall = shell_value_at_distance(he.spall_damage, travel);
+                    let fragments = (shell_value_at_distance(he.fragment_damage, travel)
+                        - thickness * he.fragment_absorption)
+                        .max(0.0);
+                    if spall > 0.0 || fragments > 0.0 {
+                        hit.outcome = ArmorOutcome::Spall;
+                        // The current client supplies damage curves and absorption factors,
+                        // but the server's spall transfer function is not in its scripts.
+                        let spall = spall * shell.penetration_mm[0]
+                            / (shell.penetration_mm[0] + thickness).max(1.0);
+                        hit.damage = rolled_damage(
+                            spall.max(fragments),
+                            self.damage_roll,
+                            plate.damage_factor,
+                        )
+                        .max(1);
+                    }
+                }
+                if hit.outcome == ArmorOutcome::Spall
+                    && let Some(he) = shell.explosive
+                    && surface.cosine >= he.spall_cone_cos
                 {
-                    hit.outcome = ArmorOutcome::Spall;
-                    // The client exposes base spall damage, but the server's exact absorption
-                    // curve is unavailable. Attenuate at the directly struck plate.
-                    hit.damage = rolled_damage(
-                        spall_damage * shell.penetration_mm[0]
-                            / (shell.penetration_mm[0] + thickness).max(1.0),
-                        self.damage_roll,
-                        plate.damage_factor,
-                    )
-                    .max(1);
+                    for internal in &surfaces[index + 1..] {
+                        if internal.distance - distance > he.spall_radius
+                            || internal.plate.damage_factor > 0.0
+                        {
+                            break;
+                        }
+                        self.record_device(*internal, true, &mut hit.devices);
+                        if !he.piercing_spalls && internal.plate.thickness_mm > 0.0 {
+                            break;
+                        }
+                    }
                 }
                 return Some(hit);
             }
@@ -285,6 +360,8 @@ impl Shot {
                 hit.outcome = ArmorOutcome::ScreenBlocked;
                 return Some(hit);
             }
+            self.record_device(surface, false, &mut devices);
+            hit.devices = devices;
             penetration = (penetration - effective * loss_factor).max(0.0);
             hit.remaining_mm = penetration;
             hit.outcome = ArmorOutcome::ScreenPenetrated;
@@ -298,11 +375,52 @@ impl Shot {
         }
         last_hit
     }
-}
-
-fn at_distance([near, far]: [f32; 2], distance: f32) -> f32 {
-    // Default arena interpolation distances in the client common helpers.
-    (near + (far - near) * ((distance - 50.0).max(0.0) / 450.0)).max(0.0)
+    fn record_device(
+        &self,
+        hit: Surface,
+        explosion: bool,
+        devices: &mut [Option<DeviceStrike>; MAX_DEVICE_HITS],
+    ) {
+        let Some(device) = hit.plate.device else {
+            return;
+        };
+        if devices
+            .iter()
+            .flatten()
+            .any(|existing| existing.device == device.device)
+        {
+            return;
+        }
+        let chance = if explosion {
+            device.explosion_chance
+        } else {
+            device.projectile_chance
+        };
+        if chance <= 0.0 || fastrand::f32() >= chance {
+            return;
+        }
+        let damage = if explosion {
+            self.ballistics
+                .explosive
+                .map_or([0.0; 2], |he| he.spall_device_damage)
+        } else {
+            self.ballistics.device_damage
+        };
+        let damage = rolled_damage(
+            shell_value_at_distance(damage, self.travelled + hit.distance),
+            self.damage_roll,
+            1.0,
+        );
+        if damage > 0
+            && let Some(slot) = devices.iter_mut().find(|slot| slot.is_none())
+        {
+            *slot = Some(DeviceStrike {
+                device: device.device,
+                health: device.health,
+                damage,
+            });
+        }
+    }
 }
 
 fn rolled_damage(nominal: f32, roll: f32, factor: f32) -> u16 {

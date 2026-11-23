@@ -370,10 +370,26 @@ mod tests {
                 .iter()
                 .all(|t| t.plate.damage_factor == 0.0 && t.plate.thickness_mm > 0.0)
         );
-        assert!(t1.gun.shell_ballistics.values().any(|shell| matches!(shell.kind,
-            wot_shared_kernel::ShellKind::HighExplosive { spall_damage, shield_penetration: true, .. }
-                if spall_damage > 0.0
+        assert!(t1.gun.shell_ballistics.values().any(|shell| matches!(
+            shell.kind,
+            wot_shared_kernel::ShellKind::HighExplosive {
+                shield_penetration: true,
+                ..
+            }
         )));
+        assert!(t1.gun.shell_ballistics.values().any(|shell| {
+            shell
+                .explosive
+                .is_some_and(|he| he.spall_damage[0] > 0.0 && he.artillery_radius == 0.0)
+        }));
+        let artillery = performance("usa:A18_M41");
+        assert!(artillery.gun.shell_ballistics.values().any(|shell| {
+            shell.gravity > 0.0
+                && shell
+                    .explosive
+                    .is_some_and(|he| he.artillery_radius > 0.0 && he.stun.is_some())
+        }));
+
         assert_eq!(t1.gun.shell_ballistics.len(), t1.gun.shell_damage.len());
 
         let su85 = performance("ussr:R02_SU-85");

@@ -543,6 +543,7 @@ impl ArenaWire {
                 effects: shot.effects,
                 start: shot.origin,
                 velocity: shot.direction * shot.ballistics.speed,
+                gravity: shot.ballistics.gravity,
                 range: shot.max_distance,
             },
         )?;

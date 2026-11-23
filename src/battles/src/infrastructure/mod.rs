@@ -40,6 +40,7 @@ use wire::{ArenaEntry, ArenaWire, DamageStickers, ShotImpact};
 mod avatar;
 mod controls;
 mod delivery;
+mod explosions;
 mod maps;
 pub(crate) mod mercury;
 mod motion;
@@ -48,6 +49,7 @@ mod preparation;
 mod projectiles;
 mod scenery;
 mod terrain;
+mod vehicle_damage;
 mod wire;
 mod worker;
 
@@ -155,6 +157,8 @@ struct Participant {
     pending_drive: Option<tracing::Span>,
     pending_aim: Option<tracing::Span>,
     pending_reload: Option<tracing::Span>,
+    pending_stun: Option<(Instant, tracing::Span)>,
+    pending_condition: Option<vehicle_damage::DamageSource>,
     damage_stickers: DamageStickers,
 }
 
@@ -489,6 +493,8 @@ impl BattleRuntime {
                         pending_drive: None,
                         pending_aim: None,
                         pending_reload: None,
+                        pending_stun: None,
+                        pending_condition: None,
                         damage_stickers: DamageStickers::default(),
                     },
                 ))
@@ -714,6 +720,10 @@ impl BattleSimulation {
             }
             if let Some(wire) = &self.wire {
                 battle.advance_projectiles(delivery, wire, battle_id, now);
+                battle.expire_stuns(delivery, wire, now);
+                if battle.round.phase == RoundPhase::Battle {
+                    battle.advance_damage(delivery, wire, battle_id, now);
+                }
             }
             if battle.round.advance(now, false) {
                 battle.publish_period(delivery, battle_id, now);

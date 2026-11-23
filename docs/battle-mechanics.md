@@ -68,7 +68,7 @@ rates, exceptions and mode-specific settlement need independent evidence.
 
 | Mechanic | Game mechanic | Server coverage |
 | --- | --- | --- |
-| Draw distance and tracers | Local rendering, the server's vehicle draw radius, minimap knowledge and tracer visibility are separate. [Wargaming Player Support][eu-spotting] gives a 565 m vehicle draw circle. The archive lists 564 m and describes historical camera-dependent rules for tracers from hidden vehicles. | **Open.** The arena sends vehicle state and shot effects to entered peers without a per-viewer spotting or draw gate. See [vehicle replication](../src/battles/src/infrastructure/controls.rs) and [shot delivery](../src/battles/src/infrastructure/projectiles.rs). |
+| Draw distance and tracers | Local rendering, the server's vehicle draw radius, minimap knowledge and tracer visibility are separate. [Wargaming Player Support][eu-spotting] gives a 565 m vehicle draw circle. The archive lists 564 m and describes historical camera-dependent rules for tracers from hidden vehicles. | **Partial.** Training supplies known sources for every viewer. Tracer delivery enforces draw range and remembers recipients for tracer stops. The policy also accepts hidden sources, a direct-view direction, or strategic viewport containment. Camera and spotting providers for the hidden-source path are open. See [vehicle replication](../src/battles/src/infrastructure/controls.rs) and [shot delivery](../src/battles/src/infrastructure/projectiles.rs). |
 | View and spotting range | View range is an input to detection. A vehicle can spot an enemy itself up to 445 m, with proximity detection within 50 m even through cover. Extra view range helps detect concealed targets within the cap. See [Wargaming Player Support][eu-spotting]. | **Open.** There is no detection state or per-viewer enemy discovery. |
 | Visibility checks and camouflage | Beyond proximity range, detection depends on line of sight and concealment. The archive describes view ports and target checkpoints, changes to concealment from movement, firing and vegetation, and how long a vehicle stays spotted. Its check intervals are explicitly flagged as outdated after 9.16. See [Wargaming's visibility system changes][eu-cadence]. | **Open.** Terrain and obstacle queries are used for projectile contact. Exterior customization is carried with the arena loadout, with no corresponding spotting or concealment calculation. See [garage camouflage](camouflage.md) and [scene impacts](battle-replays.md#scene-impacts-and-gun-audio). |
 | Radio range | Allies within signal range share spotted positions, which can appear on the minimap beyond the recipient's vehicle draw range. See [Wargaming Player Support][eu-spotting]. The combined-range formula and relay behavior in the archive need current-client verification. | **Open.** The arena has no signal-range or shared-spotting model. |
@@ -124,7 +124,7 @@ illustrate the calculation.
 | Movement and physics | Engine power relative to mass, suspension, surface resistance and slope govern acceleration and traverse. Forward and reverse limits constrain powered speed. The article also covers physical interactions such as falling and drowning. | **Partial.** Training resolves mounted mobility modifiers, simulates terrain-aware driving and replicates vehicle pose and chassis motion. See [Training movement coverage](#training-movement-coverage). |
 | Aiming | Player aiming includes arcade and sniper views, target lead, auto-aim, penetration feedback and a strategic view for SPGs. Gun traverse, elevation and flight time affect where a shot can land. | **Partial.** The server accepts aim points and angles, advances the gun within traversal and pitch limits, and publishes an optional server marker. Target-tracking auto-aim, armor-derived feedback and the SPG trajectory workflow are open. See [turret and reticle evidence](battle-replays.md#turret-and-reticle-replication). |
 | Accuracy and dispersion | The aiming circle represents dispersion. Movement, traverse and firing can widen it, and it contracts as the gun settles. The server's shot distribution determines the shot direction within that model. | **Partial.** The marker uses the gun's base dispersion value. The shot follows the center ray, with no dynamic bloom, settling model or sampled dispersion. See the [vehicle model](../src/battles/src/domain/vehicle.rs). |
-| Ballistic trajectory | Flight time and projectile drop affect target lead and the ability to hit over terrain. Shell types and gun definitions can differ in range and velocity. | **Partial.** The shot follows the gun ray at the shell’s configured speed and range. The server selects each contact at the start of its flight segment and delays the impact by travel time. Gravity and collision checks against targets moving during a segment are open. See [projectile resolution](../src/battles/src/infrastructure/projectiles.rs) and [range expiry](battle-replays.md#range-expiry). |
+| Ballistic trajectory | Flight time and projectile drop affect target lead and the ability to hit over terrain. Shell types and gun definitions can differ in range and velocity. | **Partial.** Direct-fire shots follow the gun ray at the shell’s configured velocity. SPG shots use the shell’s configured gravity and bounded curved segments. The tracer receives the matching velocity, gravity and effective range. The solver selects contacts from current poses and schedules the impact by travel time. Collision against a target moving during flight is open. See [projectile resolution](../src/battles/src/infrastructure/projectiles.rs) and [range expiry](battle-replays.md#range-expiry). |
 | Damage per shot and per minute | Nominal damage per shot describes one hit. Sustained damage also depends on the gun's firing cycle, including time between shots within a magazine and the time to replenish it. | **Partial.** Training tracks rounds and supports single-shot, magazine and autoreloading cycles, plus shell selection and manual magazine reload. Live damage and reload modifiers can change actual sustained output in the official game. See [ammunition state](../src/battles/src/domain/ammunition.rs). |
 
 ### Driving and gun control
@@ -373,10 +373,10 @@ mobility profile to vehicle preparation and drive steps to replication.
 
 | Mechanic | Game mechanic | Server coverage |
 | --- | --- | --- |
-| Penetration | Plate angle, normalization, caliber, range and the shell's remaining penetration determine the outcome. | **Partial.** The gun ray intersects the equipped chassis, hull, turret and gun collision meshes. The solver resolves AP-family normalization and overmatch, AP-family and HEAT ricochets, screen penetration and HEAT jet loss. AP-family shells retain 75% of rolled penetration after the first ricochet. Eligible shells can continue on the reflected ray once. Internal post-penetration tracing and contacts with allied vehicles or wrecks are open. |
+| Penetration | Plate angle, normalization, caliber, range and the shell's remaining penetration determine the outcome. | **Partial.** The gun ray intersects the equipped chassis, hull, turret and gun collision meshes. The solver resolves AP-family normalization and overmatch, AP-family and HEAT ricochets, screen penetration and HEAT jet loss. AP-family shells retain 75% of rolled penetration after the first ricochet. Eligible shells can continue on the reflected ray once. A shell can carry unused penetration past a screen-only contact, and a hull penetration traces internal devices for ten calibers or until the next hull surface. Contacts with allies or wrecks and server-only internal geometry remain open. |
 | Shell and armor damage | A penetrating hit applies rolled damage and the plate's damage factor. Some contacts produce an impact with zero vehicle HP loss. | **Partial.** The server rolls penetration and hull damage from the equipped shell definitions and caps HP loss at the target's current health. The client receives the actual part and a short component-local ray through the contact. The normal roll distribution is an approximation. |
-| Modern direct-fire HE | Armor penetration deals hull damage. An exterior detonation against main armor causes spall. Screens can stop the shell or reduce penetration before it reaches main armor. [Wargaming's HE rework][eu-he] | **Partial.** Modern shells can penetrate permitted screens and destructible fragments. A penetrated screen subtracts three times its effective thickness. A shell stopped at a screen or passing through a screen with no armor behind it causes zero HP damage. Spall HP uses the configured base and attenuates with nominal plate thickness. The attenuation formula and default destructible-material loss still need production measurements. SPG splash and stun are open. |
-| Module and crew damage, ramming and repair | Module and crew damage have effects independent of vehicle HP. Ramming, fire, detonation and repair have separate conditions. | **Open.** Tracks, wheels and guns can obstruct the shell where their collision geometry is available. Module HP, crew injury, fires, ammo-rack explosions, damage from collisions and falls, and repair remain open. |
+| Modern direct-fire HE | Armor penetration deals hull damage. An exterior detonation against main armor causes spall. Screens can stop the shell or reduce penetration before it reaches main armor. [Wargaming's HE rework][eu-he] | **Partial.** Modern shells can penetrate permitted screens and destructible fragments. A penetrated screen subtracts three times its effective thickness. A shell stopped at a screen or passing through a screen with no armor behind it causes zero HP damage. Spall and fragments use the shell damage curves and configured fragment absorption. Exact spall transfer and fragment geometry still need production evidence. Ground impacts can break trees. Ground splash affects vehicle HP only for artillery. [Wargaming HE support][eu-he-support] |
+| Module and crew damage, ramming and repair | Module and crew damage have effects independent of vehicle HP. Ramming, fire, detonation and repair have separate conditions. | **Partial.** Model materials carry device hit probabilities. The server tracks hits to modeled devices and crew, disabled tracks and engines, gun disablement, passive module recovery, fire ticks and loaded ammunition-rack explosions. Full crew and module penalties, active repair and first aid, native per-device indicators, damage from collisions and falls, and exact fire tuning remain open. |
 | Zero-damage hits and ghost shells | Surface contact can occur without a loss of HP. A visual shot can also miss its intended target. | **Partial.** Armor blocks, screen stops, screen penetrations, ricochets, scene impacts and range expiry have distinct results. The server sends health and damage-log updates only for actual HP loss. |
 | Crew voice messages | The client chooses announcements based on battle events such as penetration, ricochet and destruction. | **Partial.** The server sends the appropriate shot results and impact effects. Native cue selection and sticker placement still need a controlled client session. |
 
@@ -392,7 +392,7 @@ required to supply these collision meshes. See [resource files](resources.md).
 
 Penetration and damage interpolate between the shell definition's near and far
 values, using the default **50 m** and **500 m** anchors in the client common
-helpers. The formula extends past the far anchor and clamps at zero. A shell
+helpers. The formula extends past the far anchor and clamps at zero. Effective shell reach is the shortest of the nominal range and the zero crossings for penetration, armor damage, device damage, and modern HE impact damage curves. A shell
 rolls damage and penetration independently at launch. The armor solver applies
 the struck material's hit-angle, normalization, overmatch and ricochet flags.
 The angle is measured from the plate normal. A 100 mm plate at 60° presents
@@ -407,8 +407,13 @@ hull damage. When the shell reaches main armor and fails the penetration roll,
 spall damage currently scales the configured base by the ratio of nominal
 penetration to nominal penetration plus plate thickness. This is a gameplay
 approximation. The previous area-splash rule is historical for direct-fire HE.
-The separate artillery model and modern shell fragments, spall cones, internal
-damage and armor modifiers still need implementation. A modern HE shell can
+Artillery has a separate ground splash path. It checks terrain and scenery
+cover along sample rays toward exposed main armor, then applies radius falloff
+and armor absorption. Shells with a stun profile can stun targets within their
+own radius. A direct hit can stun without dealing splash damage twice. Training
+uses the vehicle's stun property and reduces gun traverse while stunned.
+The server approximates blast exposure and stun falloff. It still needs a
+native comparison for timers and the full stun effects on vehicle stats. A modern HE shell can
 continue after breaking a destructible fragment when its shell definition
 permits it. The resolver honors an explicit shell power reduction and currently
 has no material-specific default.
@@ -427,9 +432,21 @@ encoding and decoding. The preview supplies evidence for the mechanics it
 describes, while server-specific damage and RNG behavior need live comparison.
 [Wargaming's penetration guide][eu-penetration] · [Wargaming's HE rework][eu-he]
 
+### Projectile tracers
+
+Training uses the published 565 m draw range for known sources. The archived
+section 6.2 describes the policy for unspotted enemies. In arcade and sniper
+views, it accepts origins within
+445 m and 25° of the viewing direction. In strategic view it accepts origins
+inside the viewport. These inputs belong to tracer delivery. Training currently
+provides known sources, and no spotting or camera detection was added.
+The client receives the same launch velocity used by flight simulation and
+the shell's effective range. The effect metadata controls how the native client
+draws that tracer, including artillery visuals.
+
 ### Critical damage and recovery
 
-Vehicle HP, module HP and crew state are independent. One projectile can
+Vehicle HP, module HP and crew state are independent. The implementation uses packaged client collision materials. It cannot trace production server-only device or crew geometry that is absent from those meshes. One projectile can
 affect more than one of them along its path. The archive describes a
 module-specific chance to take damage after a hit and a separate crew chance
 for direct hits and explosions. Treat the historical probabilities and perk
@@ -467,6 +484,21 @@ cue. It also lists historical unused cues for reload, spotting, nearby
 explosions, allied and enemy deaths, and round results. Map these to semantic
 events and verify cue selection in the client.
 
+## Remaining projectile and damage work
+
+- **HE and artillery.** Establish the production spall and fragmentation
+  formulas, splash exposure and falloff, and stun stacking and penalties.
+- **Modules and crew.** Fill gaps in the internal hit geometry, implement the
+  remaining module and crew penalties, and handle full crew incapacitation.
+  Calibrate fire damage and passive module repair timing.
+- **Active consumables.** Implement repair kits, first-aid kits, and fire
+  extinguishers with their cooldowns.
+- **Tracers and flight.** Connect the hidden-source tracer policy to future
+  spotting and camera inputs. Spotting belongs to a separate workstream.
+  Check for collisions against vehicles that move during shell flight.
+- **Native client validation.** Verify stun timers, module and crew indicators,
+  ammo-rack effects, and artillery tracers in a live client session.
+
 ## Evidence for unresolved rules
 
 - Use the [current resource bundle](resources.md) to identify vehicle, shell
@@ -486,6 +518,7 @@ events and verify cue selection in the client.
 [eu-spotting]: https://wargaming.net/support/en/products/wot/article/10222/
 [eu-cadence]: https://worldoftanks.eu/en/news/general-news/version-916-spotting-improvement/
 [eu-penetration]: https://worldoftanks.eu/en/content/guide/newcomers-guide/how_to_survive/
+[eu-he-support]: https://wargaming.net/support/en/products/wot/article/15053/
 [eu-he]: https://worldoftanks.eu/en/news/general-news/1-13-HE-shells/
 [eu-movement]: https://worldoftanks.eu/en/news/general-news/ver914-new-physics-final/
 [eu-recovery]: https://worldoftanks.eu/en/content/docs/release_notes/release-notes-1-22/
