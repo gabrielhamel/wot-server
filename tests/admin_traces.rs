@@ -1016,7 +1016,6 @@ async fn exports_admin_http_access_lifecycle() {
         ("/styles-2d", "Veteran (Carro da Combattimento 45 t)"),
         ("/styles-3d", "Proserpina ("),
         ("/crew-skins", "Birthday Skill4ltu"),
-        ("/special-recruits", "Miho Nishizumi"),
     ] {
         assert_eq!(
             send("GET", path, &player_cookie, "")
@@ -1071,27 +1070,51 @@ async fn exports_admin_http_access_lifecycle() {
                     .is_some_and(|name| name.ends_with("(M4A3E8 Sherman, outfit locked)"))
             }));
         }
-        if path == "/special-recruits" {
-            let list = entries.as_array().unwrap();
-            let birthday: Vec<_> = list
-                .iter()
-                .filter(|entry| entry["name"] == "Claudia Cat")
-                .collect();
-            assert_eq!(birthday.len(), 1);
-            let countries = birthday[0]["countries"].as_array().unwrap();
-            assert!(countries.iter().any(|country| country["name"] == "France"));
-            assert!(countries.iter().any(|country| country["name"] == "Germany"));
-            let countries = item["countries"].as_array().unwrap();
-            assert_eq!(countries.len(), 1);
-            assert_eq!(countries[0]["name"], "Germany");
-            cosmetics.push(countries[0]["id"].as_i64().unwrap());
-        } else {
-            cosmetics.push(item["id"].as_i64().unwrap());
-        }
+        cosmetics.push(item["id"].as_i64().unwrap());
     }
-    let [style_2d, style, skin, recruit] = cosmetics[..] else {
-        panic!("Expected new grant catalogs")
+    let [style_2d, style, skin] = cosmetics[..] else {
+        panic!("Expected new cosmetic grant catalogs");
     };
+    let path = "/special-recruits";
+    assert_eq!(
+        send("GET", path, &player_cookie, "")
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let response = send("GET", path, &owner_cookie, "").await.unwrap();
+    assert_eq!(response.status(), 200);
+    let entries = json(response).await;
+    let nation_group = |nation: &str, group| {
+        let index = wot_resources::NATIONS
+            .iter()
+            .position(|&code| code == nation)
+            .unwrap();
+        (i64::try_from(index).unwrap() << 16) | group
+    };
+    let country_options = |id| {
+        let mut matching = entries
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["countries"].as_array().unwrap())
+            .filter(|countries| countries.iter().any(|country| country["id"] == id));
+        let countries = matching.next().expect("Recruit country is in the catalog");
+        assert!(matching.next().is_none());
+        countries
+    };
+    let birthday = country_options(nation_group("france", 218));
+    assert!(birthday.iter().any(|country| country["name"] == "France"));
+    assert!(
+        birthday
+            .iter()
+            .any(|country| country["id"] == nation_group("germany", 218))
+    );
+    let recruit = nation_group("germany", 74);
+    let miho = country_options(recruit);
+    assert_eq!(miho.len(), 1);
+    assert_eq!(miho[0]["name"], "Germany");
     let grant_path = format!("/players/{player_id}/grants");
     let components = r#"{"kind":"currency","currency":"equipment_components","amount":71}"#;
     assert_eq!(
