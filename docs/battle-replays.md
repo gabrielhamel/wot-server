@@ -340,7 +340,7 @@ appearance from its effect tables. New arena viewers receive the current
 array as part of entry. The server keeps the 15 most recent distinct marks
 per vehicle, because a one-byte count plus 16 bytes per point fits the
 property's Variable8 wire framing. This is a server limit. The client's
-renderer limit and visible appearance still require a native battle check.
+renderer limit remains unmeasured.
 The hit segment still crosses an approximate hull volume.
 
 The November 23 Mac LAN Training Room capture on Munich at 14:04 Paris
@@ -351,6 +351,13 @@ and prefab 255, and no Vehicle property 33 updates. The running server's
 bundle lacked the shot effect and damage sticker definitions. That bundle
 explains the absence of sticker updates even though the impacts reached the
 client.
+
+After restarting Mac LAN with the newly extracted bundle, the next Training
+Room replay recorded property 33 with a single hull sticker at 44.62 s
+(offset 170370, APCR, sticker 12, prefab 3) and at 62.22 s (offset 220972,
+HE, sticker 14, prefab 5). The in-progress replay snapshot had SHA-256
+`e0852264206934c55573f78fae7b612db22650731df0828a7605fe9870fb7934`.
+The tester confirmed visible marks on the vehicles in that battle.
 
 ## Range expiry
 
