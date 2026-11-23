@@ -110,8 +110,9 @@ jobs:
           trap cleanup EXIT
           cat > "$config_dir/server.json" <<'JSON'
           {
+            "resource_dir": "resources",
             "database_url": "postgresql://wot_smoke:ci-only@postgres:5432/wot_smoke",
-            "web": { "bind": "127.0.0.1:8080", "ui_dir": "web" }
+            "private_key": "login.pem"
           }
           JSON
           chmod 644 "$config_dir/server.json"

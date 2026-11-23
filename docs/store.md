@@ -104,28 +104,15 @@ and sign in as `commander@example.test` with `demo-player`.
 
 ## Configuration
 
-Building the server with Cargo also builds the browser bundle. Run
-`cargo web-build` to build the bundle by itself. Configure the HTTP listener used by the
-[admin dashboard](admin.md). The Store can be enabled on its own.
+The server embeds the Store UI at build time and serves it at
+`http://127.0.0.1:8080/shop/` by default. The client sends requests to
+`/api/shop/`. Set `store` to `null` to disable the Store, or set `admin`
+to `null` to run the Store independently of the dashboard.
 
-```json
-{
-  "web": {
-    "bind": "127.0.0.1:8080",
-    "ui_dir": "../../src/server-runtime/src/infrastructure/web/dist"
-  },
-  "store": {
-    "origin": "http://127.0.0.1:8080"
-  }
-}
-```
-
-The client opens `/shop/` and sends requests to `/api/shop/`.
 For remote clients, set `store.origin` to a reachable HTTPS origin and route
 `/shop`, `/shop/*`, `/assets/*` and `/api/shop/*` to the shared listener
 through your TLS reverse proxy. Keep admin routes on the access policy used
-by your deployment. The container ships the compiled web UI in `web/`
-beside the server binary.
+by your deployment.
 
 If upgrading a development configuration that used a separate Store bind,
 move the shared address to `web.bind` and update `store.origin` to match the

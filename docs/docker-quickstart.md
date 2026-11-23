@@ -35,13 +35,10 @@ the same computer, use `127.0.0.1` instead.
 {
   "database_url": "postgresql://wot_server:local-development@postgres:5432/wot_server",
   "resource_dir": "resources",
-  "login_bind": "0.0.0.0:20016",
-  "base_bind": "0.0.0.0:20017",
   "advertised_base": "192.168.1.10:20017",
   "private_key": "/state/login.pem",
   "web": {
-    "bind": "0.0.0.0:8080",
-    "ui_dir": "web"
+    "bind": "0.0.0.0:8080"
   },
   "admin": {
     "secure_cookies": false
@@ -103,8 +100,10 @@ These are the host ports published by the commands above:
 Allow/forward **all three game mappings**, including both UDP and TCP on `20017`,
 through the host firewall and router when needed. Game clients do not need the
 admin or database ports. Docker's `EXPOSE` declarations alone do not publish
-ports; the `-p` options above do. The web listener is optional: remove the
-`admin` object and its port mapping to disable it.
+ports. The `-p` options above publish them. To disable the web listener,
+remove the `web` object and its port mapping and set both `admin` and
+`store` to `null`. For remote Store access, configure a
+[reachable HTTPS origin](store.md#configuration).
 
 ## Add the server to the game's server list
 

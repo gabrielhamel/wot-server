@@ -32,7 +32,7 @@ impl ServerHome {
         fs::copy(env!("CARGO_BIN_EXE_wot-server"), home.executable()).unwrap();
         fs::write(
             home.0.join("server.json"),
-            r#"{"resource_dir":"resources","database_url":"invalid"}"#,
+            r#"{"resource_dir":"resources","database_url":"invalid","private_key":"login.pem","log_level":"warn"}"#,
         )
         .unwrap();
         fs::create_dir(home.0.join("resources")).unwrap();

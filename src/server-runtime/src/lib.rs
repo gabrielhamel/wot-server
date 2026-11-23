@@ -42,7 +42,7 @@ pub mod test_support {
 #[derive(Parser)]
 #[command(name = "wot-server", version, about = "World of Tanks game server")]
 struct Options {
-    /// Console log level (defaults to server.json, then warn)
+    /// Console log level (defaults to server.json, then debug)
     #[arg(long, value_enum)]
     log_level: Option<LogLevel>,
 }
@@ -129,9 +129,9 @@ async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Mete
             Vec::new()
         };
         let mut router = axum::Router::new();
-        if let Some(directory) = &settings.ui_dir {
+        if settings.ui_dir.is_some() || config.admin.is_some() || config.store.is_some() {
             router = web::pages(
-                directory,
+                settings.ui_dir.as_deref(),
                 config.admin.is_some(),
                 config.store.is_some(),
                 trusted_proxies.clone(),
@@ -164,7 +164,9 @@ async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Mete
                 gateway.player_grants(),
                 store,
                 player_administration::DashboardConfig {
-                    secure_cookies: admin.secure_cookies,
+                    secure_cookies: admin
+                        .secure_cookies
+                        .unwrap_or(!settings.bind.ip().is_loopback()),
                     trusted_proxies,
                 },
             ));

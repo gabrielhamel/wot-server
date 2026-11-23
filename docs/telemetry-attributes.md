@@ -14,6 +14,7 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 | `client.port` | Caller source port, in TCP/UDP port units, on the same roots when the socket identifies the caller. Omitted for forwarded HTTP callers because the header supplies no source port. |
 | `network.peer.address` | Immediate socket peer IP without port on those roots and `store.http.request` or `web.ui.request`; remains the proxy address for forwarded HTTP requests. |
 | `network.peer.port` | Immediate socket peer TCP/UDP source port on those roots and `store.http.request` or `web.ui.request`. |
+| `input.web.asset_source` | Static UI asset source on `web.ui.request`. `bundle` means embedded in the server executable and `directory` means a configured filesystem override. |
 | `network.transport` | `tcp` for HTTP/XMPP and `udp` for Mercury on those roots and `store.http.request` or `web.ui.request` as applicable. |
 
 Supporting sources: [Admin HTTP middleware](../src/player-administration/src/presentation/mod.rs),

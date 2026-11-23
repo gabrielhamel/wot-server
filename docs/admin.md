@@ -28,26 +28,12 @@ Both builds require Node.js and npm. Use Node.js 22.22.2 or a newer supported
 release. Cargo installs the locked dependencies as needed and writes the
 browser bundle to `src/server-runtime/src/infrastructure/web/dist/`.
 
-Add these top-level settings to the `server.json` beside the game server
-executable for local HTTP development.
-
-```json
-{
-  "web": {
-    "bind": "127.0.0.1:8080",
-    "ui_dir": "../../src/server-runtime/src/infrastructure/web/dist"
-  },
-  "admin": {
-    "secure_cookies": false
-  }
-}
-```
-
-The relative UI path works with the executable in `target/debug/` or
-`target/release/`. Use `web.ui_dir` to point to the built web project. Omit it
-for admin API-only mode. The shared listener defaults to `127.0.0.1:8080`.
+The server serves the embedded dashboard at `127.0.0.1:8080` by default.
+Set `web.bind` to change the listener. To serve a separate build, set
+`web.ui_dir` to its directory. Relative paths resolve beside `server.json`.
 Legacy `admin.bind` and `admin.dashboard_dir` still supply the listener
-settings when there is no `web` object.
+settings when there is no `web` object. Set `admin` to `null` to disable the
+dashboard and admin API.
 
 Restart the server and open <http://127.0.0.1:8080/dashboard/>. If the database has
 no players, the dashboard opens the first administrator form. Enter an email

@@ -6,6 +6,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("cargo:rustc-env={name}={value}");
         }
     }
-    wot_web_build::build(true)?;
+    let output =
+        std::path::PathBuf::from(std::env::var_os("OUT_DIR").ok_or("Missing Cargo OUT_DIR")?);
+    wot_web_build::build(Some(&output))?;
     Ok(())
 }

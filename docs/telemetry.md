@@ -79,7 +79,8 @@ Training Room visibility and Description field availability sent in the queued A
 `mercury.response` child records delivery of `showGUI`.
 
 The shared web listener composes the admin and Store APIs. Page shells and
-shared assets emit `web.ui.request` with their matched route and HTTP status.
+shared assets emit `web.ui.request` with their matched route, HTTP status and
+asset source. They preserve a valid sampled W3C trace parent when supplied.
 Admin and Store API requests keep their own request spans.
 
 Managed player creation traces the input lengths and validation outcome

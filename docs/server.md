@@ -25,35 +25,35 @@ The built binary also starts directly:
 ```
 
 On first start, the server creates **`server.json` beside the executable**, then
-starts using its defaults. Existing configuration files are never overwritten.
+starts using that file. Existing configuration files are never overwritten.
 With Cargo the file is `target/release/server.json`; moving the binary to its own
 folder makes that folder the server's home. Relative resource and key paths resolve
 against this folder, independently of the shell's working directory. Restart after
 editing the file. See [logging and telemetry](#logging-and-telemetry) for the
 console option and the OpenTelemetry environment variables.
 
-The generated JSON contains the following settings:
+The generated JSON contains the three required fields. All other fields are optional.
 
 | Field | Default / meaning |
 | --- | --- |
-| `resource_dir` | `resources`; directory containing the generated bundle manifest and `res/` |
-| `database_url` | `postgresql://wot_server:local-development@127.0.0.1:54329/wot_server` |
+| `resource_dir` | Required. First-start file uses `resources`, the directory containing the generated bundle manifest and `res/` |
+| `database_url` | Required. First-start file uses `postgresql://wot_server:local-development@127.0.0.1:54329/wot_server` |
 | `login_bind` | `0.0.0.0:20016` UDP |
 | `base_bind` | `0.0.0.0:20017` UDP for BaseApp and TCP for native XMPP. Port zero selects a port available on both transports. |
 | `advertised_base` | `null`: automatically choose the route to each client; set e.g. `"192.168.1.10:20017"` for an explicit non-local handoff destination |
-| `private_key` | `login.pem`; its public key is exported as `login.pubkey` |
+| `private_key` | Required. First-start file uses `login.pem`. Its public key is exported as `login.pubkey`. |
 | `db_connections` | `16`, allowed range 1–256 |
 | `max_clients` | `256`, admitted/pending handoff capacity, allowed range 1–256 |
 | `max_pending` | `32`, authentication worker capacity, allowed range 1–256 |
 | `training_room_visible` | `true`. Advertises the Training Room card at login and allows room creation when the resource bundle contains arena definitions. Set to `false` and restart the server to disable creation and hide the card for new logins. |
 | `periphery_id` | `250`. Local server ID used for Training Room invitations. Match the `periphery_id` on the clients' server-list entry so the game accepts the invitation on the current server. |
-| `log_level` | `"warn"`; also accepts `"error"`, `"info"`, `"debug"`, `"trace"` |
-| `web` | `null`; shared HTTP bind and compiled UI directory for `/dashboard/` and `/shop/` |
-| `admin` | `null`; set to `{}` to enable the [admin API](admin.md) with secure session cookies by default |
-| `store` | `null`; set a [Store origin](store.md#configuration) to enable the in-game Store |
+| `log_level` | `"debug"`. Also accepts `"error"`, `"warn"`, `"info"`, and `"trace"`. |
+| `web` | Serves the dashboard and Store embedded by Cargo on `127.0.0.1:8080`. Set `web.bind` to change the listener or `web.ui_dir` to serve assets from disk. Relative override paths resolve beside `server.json`. |
+| `admin` | [Dashboard and admin API](admin.md) enabled. Session cookies require HTTPS on non-loopback binds by default. Set `admin` to `{}` to also require HTTPS on a loopback bind, or to `null` to disable admin. |
+| `store` | In-game [Store](store.md#configuration) enabled with origin `http://127.0.0.1:8080`. Set `store.origin` for remote clients or `store` to `null` to disable the Store. |
 
 Unknown fields, invalid types and invalid limits stop startup with a diagnostic.
-Missing fields use defaults. In an existing configuration, replace `game_dir`
+Missing required fields stop startup. In an existing configuration, replace `game_dir`
 with `resource_dir` and point it to the generated bundle. The configuration contains the database password;
 new files have owner-only permissions on Unix. Do not commit or share this file.
 
@@ -89,9 +89,9 @@ from roster and conversation responses.
 
 ### Logging and telemetry
 
-The server writes warnings and errors to stderr by default. To include startup
-and session events use `info`; use `debug` for protocol method names and
-transfer sizes, or `trace` for packet diagnostics. The CLI overrides
+The console defaults to `debug` on stderr, including protocol method names and
+transfer sizes. Use `info` for startup and session events with less detail,
+or `trace` for packet diagnostics. The CLI overrides
 `log_level` in `server.json`; `RUST_LOG` is not read.
 
 ```sh

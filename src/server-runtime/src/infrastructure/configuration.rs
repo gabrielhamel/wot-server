@@ -1,18 +1,18 @@
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{
     io::Write,
     net::SocketAddrV4,
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Copy, Default, Deserialize, Serialize, clap::ValueEnum)]
+#[derive(Clone, Copy, Default, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum LogLevel {
     Error,
-    #[default]
     Warn,
     Info,
+    #[default]
     Debug,
     Trace,
 }
@@ -29,25 +29,32 @@ impl LogLevel {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AdminConfiguration {
-    #[serde(default = "default_web_bind")]
-    pub bind: SocketAddrV4,
+    bind: Option<SocketAddrV4>,
     #[serde(default = "secure_admin_cookies")]
-    pub secure_cookies: bool,
+    pub secure_cookies: Option<bool>,
     pub dashboard_dir: Option<PathBuf>,
 }
 
-fn secure_admin_cookies() -> bool {
-    true
+fn secure_admin_cookies() -> Option<bool> {
+    Some(true)
+}
+
+fn default_admin() -> Option<AdminConfiguration> {
+    Some(AdminConfiguration {
+        bind: None,
+        secure_cookies: None,
+        dashboard_dir: None,
+    })
 }
 
 fn default_web_bind() -> SocketAddrV4 {
     SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 8080)
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct WebConfiguration {
     #[serde(default = "default_web_bind")]
@@ -55,11 +62,23 @@ pub(crate) struct WebConfiguration {
     pub ui_dir: Option<PathBuf>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoreConfiguration {
     bind: Option<SocketAddrV4>,
+    #[serde(default = "default_store_origin")]
     pub origin: String,
+}
+
+fn default_store_origin() -> String {
+    "http://127.0.0.1:8080".into()
+}
+
+fn default_store() -> Option<StoreConfiguration> {
+    Some(StoreConfiguration {
+        bind: None,
+        origin: default_store_origin(),
+    })
 }
 
 impl StoreConfiguration {
@@ -84,48 +103,70 @@ impl StoreConfiguration {
     }
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(default, deny_unknown_fields)]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Configuration {
     pub resource_dir: PathBuf,
     pub database_url: String,
+    #[serde(default = "default_login_bind")]
     pub login_bind: SocketAddrV4,
+    #[serde(default = "default_base_bind")]
     pub base_bind: SocketAddrV4,
     pub advertised_base: Option<SocketAddrV4>,
     pub private_key: PathBuf,
+    #[serde(default = "default_db_connections")]
     pub db_connections: u32,
+    #[serde(default = "default_max_clients")]
     pub max_clients: usize,
+    #[serde(default = "default_max_pending")]
     pub max_pending: usize,
+    #[serde(default = "default_training_room_visible")]
     pub training_room_visible: bool,
+    #[serde(default = "default_periphery_id")]
     pub periphery_id: u32,
+    #[serde(default)]
     pub log_level: LogLevel,
     pub web: Option<WebConfiguration>,
+    #[serde(default = "default_admin")]
     pub admin: Option<AdminConfiguration>,
+    #[serde(default = "default_store")]
     pub store: Option<StoreConfiguration>,
 }
 
-impl Default for Configuration {
-    fn default() -> Self {
-        Self {
-            resource_dir: "resources".into(),
-            database_url: "postgresql://wot_server:local-development@127.0.0.1:54329/wot_server"
-                .into(),
-            login_bind: "0.0.0.0:20016".parse().unwrap(),
-            base_bind: "0.0.0.0:20017".parse().unwrap(),
-            advertised_base: None,
-            private_key: "login.pem".into(),
-            db_connections: 16,
-            max_clients: 256,
-            max_pending: 32,
-            training_room_visible: true,
-            periphery_id: 250,
-            log_level: LogLevel::default(),
-            web: None,
-            admin: None,
-            store: None,
-        }
-    }
+fn default_login_bind() -> SocketAddrV4 {
+    SocketAddrV4::new(std::net::Ipv4Addr::UNSPECIFIED, 20016)
 }
+
+fn default_base_bind() -> SocketAddrV4 {
+    SocketAddrV4::new(std::net::Ipv4Addr::UNSPECIFIED, 20017)
+}
+
+fn default_db_connections() -> u32 {
+    16
+}
+
+fn default_max_clients() -> usize {
+    256
+}
+
+fn default_max_pending() -> usize {
+    32
+}
+
+fn default_training_room_visible() -> bool {
+    true
+}
+
+fn default_periphery_id() -> u32 {
+    250
+}
+
+const INITIAL_CONFIGURATION: &str = r#"{
+  "resource_dir": "resources",
+  "database_url": "postgresql://wot_server:local-development@127.0.0.1:54329/wot_server",
+  "private_key": "login.pem"
+}
+"#;
 
 impl Configuration {
     pub(crate) fn load(path: &Path) -> Result<Self> {
@@ -138,9 +179,7 @@ impl Configuration {
         }
         match options.open(path) {
             Ok(mut file) => {
-                let mut defaults = serde_json::to_string_pretty(&Self::default())?;
-                defaults.push('\n');
-                file.write_all(defaults.as_bytes())
+                file.write_all(INITIAL_CONFIGURATION.as_bytes())
                     .context("Write default configuration")?;
                 file.sync_all()?;
             }
@@ -193,7 +232,7 @@ impl Configuration {
             let bind = config
                 .admin
                 .as_ref()
-                .map(|admin| admin.bind)
+                .and_then(|admin| admin.bind)
                 .or_else(|| config.store.as_ref().and_then(|store| store.bind))
                 .unwrap_or_else(default_web_bind);
             let ui_dir = config
@@ -202,18 +241,13 @@ impl Configuration {
                 .and_then(|admin| admin.dashboard_dir.clone());
             config.web = Some(WebConfiguration { bind, ui_dir });
         }
-        if let Some(web) = &mut config.web {
-            if config.store.is_some() && web.ui_dir.is_none() {
-                web.ui_dir = Some(PathBuf::from("web"));
-            }
-            if let Some(ui_dir) = &mut web.ui_dir {
-                ensure!(
-                    !ui_dir.as_os_str().is_empty(),
-                    "Web UI directory must be nonempty"
-                );
-                if ui_dir.is_relative() {
-                    *ui_dir = directory.join(&*ui_dir);
-                }
+        if let Some(ui_dir) = config.web.as_mut().and_then(|web| web.ui_dir.as_mut()) {
+            ensure!(
+                !ui_dir.as_os_str().is_empty(),
+                "Web UI directory must be nonempty"
+            );
+            if ui_dir.is_relative() {
+                *ui_dir = directory.join(&*ui_dir);
             }
         }
         Ok(config)
@@ -286,11 +320,23 @@ mod tests {
         assert_eq!(defaults.periphery_id, 250);
         assert_eq!(
             defaults.log_level.filter(),
-            tracing::level_filters::LevelFilter::WARN
+            tracing::level_filters::LevelFilter::DEBUG
         );
         let mut settings: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert!(settings.get("log_file").is_none());
+        assert_eq!(settings.as_object().unwrap().len(), 3);
+        let web = defaults.web.unwrap();
+        assert_eq!(web.bind, "127.0.0.1:8080".parse().unwrap());
+        assert!(web.ui_dir.is_none());
+        assert_eq!(defaults.store.unwrap().origin, "http://127.0.0.1:8080");
+        assert_eq!(defaults.admin.unwrap().secure_cookies, None);
+        for field in ["resource_dir", "database_url", "private_key"] {
+            let mut incomplete = settings.clone();
+            incomplete.as_object_mut().unwrap().remove(field);
+            std::fs::write(&path, serde_json::to_vec(&incomplete).unwrap()).unwrap();
+            let error = Configuration::load(&path).err().unwrap();
+            assert!(format!("{error:#}").contains(&format!("missing field `{field}`")));
+        }
         settings["log_level"] = "trace".into();
         settings["max_clients"] = 7.into();
         settings["periphery_id"] = 251.into();

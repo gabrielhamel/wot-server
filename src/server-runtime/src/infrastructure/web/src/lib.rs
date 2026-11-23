@@ -7,13 +7,14 @@ use std::{
     collections::hash_map::DefaultHasher,
     env, fs,
     hash::{Hash, Hasher},
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
     process::Command,
 };
 
 const WORKSPACE: &str = "wot-server-web";
 
-pub fn build(watch_inputs: bool) -> Result<PathBuf> {
+pub fn build(embedded_output: Option<&Path>) -> Result<PathBuf> {
     let web = Path::new(env!("CARGO_MANIFEST_DIR"));
     let root = web
         .ancestors()
@@ -47,31 +48,73 @@ pub fn build(watch_inputs: bool) -> Result<PathBuf> {
     let stamp = local.join("web-bundle.stamp");
     let previous = local.join("web-dist-previous");
     recover_bundle(&dist, &previous)?;
-    if watch_inputs {
+    if embedded_output.is_some() {
         for path in sources.iter().chain([&dist]) {
             println!("cargo:rerun-if-changed={}", path.display());
         }
     }
-    if bundle_stamp(&dist, inputs)?
-        .is_some_and(|value| fs::read_to_string(&stamp).is_ok_and(|existing| existing == value))
-    {
-        return Ok(dist);
+    let current = bundle_stamp(&dist, inputs)?
+        .is_some_and(|value| fs::read_to_string(&stamp).is_ok_and(|existing| existing == value));
+    if !current {
+        install_dependencies(root, &manifests)?;
+        let staging = local.join("web-dist");
+        run_npm(
+            npm(root)
+                .args(["run", "build", "--workspace", WORKSPACE, "--", "--outDir"])
+                .arg(&staging)
+                .arg("--emptyOutDir"),
+            "Bundle dashboard and Store assets",
+        )?;
+        let value =
+            bundle_stamp(&staging, inputs)?.context("Vite produced an incomplete web bundle")?;
+        publish_bundle(&staging, &dist, &previous)?;
+        fs::write(stamp, value)?;
     }
-
-    install_dependencies(root, &manifests)?;
-    let staging = local.join("web-dist");
-    run_npm(
-        npm(root)
-            .args(["run", "build", "--workspace", WORKSPACE, "--", "--outDir"])
-            .arg(&staging)
-            .arg("--emptyOutDir"),
-        "Bundle dashboard and Store assets",
-    )?;
-    let value =
-        bundle_stamp(&staging, inputs)?.context("Vite produced an incomplete web bundle")?;
-    publish_bundle(&staging, &dist, &previous)?;
-    fs::write(stamp, value)?;
+    if let Some(output) = embedded_output {
+        write_embedded_bundle(&dist, output)?;
+    }
     Ok(dist)
+}
+
+fn write_embedded_bundle(dist: &Path, output: &Path) -> Result<()> {
+    let output = output.join("web-bundle");
+    fs::create_dir_all(&output)?;
+    fs::copy(dist.join("index.html"), output.join("index.html"))?;
+    let mut assets = Vec::new();
+    collect_files(&dist.join("assets"), &mut assets, |_| true)?;
+    assets.sort_unstable();
+
+    let mut source = BufWriter::new(fs::File::create(output.join("bundle.rs"))?);
+    writeln!(
+        source,
+        "pub(super) const INDEX: &[u8] = include_bytes!(\"index.html\");"
+    )?;
+    writeln!(
+        source,
+        "pub(super) fn asset(path: &str) -> Option<&'static [u8]> {{"
+    )?;
+    writeln!(source, "    match path {{")?;
+    for asset in assets {
+        let relative = asset.strip_prefix(dist)?;
+        let destination = output.join(relative);
+        fs::create_dir_all(
+            destination
+                .parent()
+                .context("Asset has no parent directory")?,
+        )?;
+        fs::copy(&asset, &destination)?;
+        let name = relative
+            .to_str()
+            .context("Web asset name is not UTF-8")?
+            .replace(std::path::MAIN_SEPARATOR, "/");
+        writeln!(
+            source,
+            "        {name:?} => Some(include_bytes!({name:?})),"
+        )?;
+    }
+    writeln!(source, "        _ => None,\n    }}\n}}")?;
+    source.flush()?;
+    Ok(())
 }
 
 fn collect_files(

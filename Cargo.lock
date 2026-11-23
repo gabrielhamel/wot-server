@@ -3611,6 +3611,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap",
+ "mime_guess",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
