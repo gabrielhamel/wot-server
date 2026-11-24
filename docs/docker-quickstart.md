@@ -92,64 +92,34 @@ the Docker host's LAN address.
 
 ## Add the server to the game's server list
 
-Close the game first. Its `res/scripts_config.xml` server list uses **BigWorld
-Packed XML**. Use the Toolkit's `wgtk pxml` editor to append an entry while
-preserving the official servers. This editor needs Rust on the machine where you
-run it; the server container does not modify game files.
-
-From the repository root, build the editor:
+Close the game first. Export the server's public key from the running
+container. If the game is on another computer, transfer the public key to
+the computer where you will run the editor. Keep the private `login.pem`
+on the server.
 
 ```sh
-git submodule update --init docs/references/wg-toolkit-rs
-cargo build --release \
-  --manifest-path docs/references/wg-toolkit-rs/Cargo.toml \
-  -p wg-toolkit-cli --no-default-features
-```
-
-Set the game directory and copy the server's **public** key from the running
-container. If the game is on another computer, transfer the exported file to
-that computer's game `res/` directory. Keep the private `login.pem` on the server.
-
-```sh
-export WOT_GAME_DIR='/path/to/World_of_Tanks'
 docker cp wot-server:/state/login.pubkey ./loginapp_wot_server.pubkey
-cp ./loginapp_wot_server.pubkey "$WOT_GAME_DIR/res/loginapp_wot_server.pubkey"
-cp -n "$WOT_GAME_DIR/res/scripts_config.xml" "$WOT_GAME_DIR/res/scripts_config.xml.wot-server.bak"
 ```
 
-Inspect the existing entries and choose an unused `periphery_id`. The example
-uses `250`, which was free in the validated EU installation. If you choose a
-different ID, pass it to `--periphery-id` for Training Room
-invitations.
+Run the Rust tool from the repository root on a machine that can access the
+game installation. Replace `192.168.1.10:20016` with the Docker host's
+reachable LoginApp address. Use `127.0.0.1:20016` if the game runs on the host.
 
 ```sh
-./docs/references/wg-toolkit-rs/target/release/wgtk pxml \
-  -f "$WOT_GAME_DIR/res/scripts_config.xml"
+cargo run --locked -p wot-server-list -- insert --game-dir '/path/to/World_of_Tanks_EU' \
+  --address 192.168.1.10:20016 --key-name loginapp_wot_server_250.pubkey
+cp ./loginapp_wot_server.pubkey '/path/to/World_of_Tanks_EU/res/loginapp_wot_server_250.pubkey'
 ```
 
-Append the entry below **once**. Replace both `127.0.0.1:20016` values with
-`SERVER_IPV4:20016` if the game runs on another computer. The single quotes around
-the filter are required to preserve its `$tmp` variables. Write to a temporary
-file first so an editing failure leaves the original intact.
+The tool keeps the existing entries in the Packed XML list. If another
+server uses periphery ID 250, choose a free ID with `--periphery-id` and set
+the same value on the game server for Training Room invitations.
 
-```sh
-./docs/references/wg-toolkit-rs/target/release/wgtk pxml \
-  -f "$WOT_GAME_DIR/res/scripts_config.xml" --raw \
-  '$tmp=login/host;$tmp/name=str(WoT Server);$tmp/short_name=str(WOTSERVER);$tmp/url=str(127.0.0.1:20016);$tmp/url_token=str(127.0.0.1:20016);$tmp/public_key_path=str(loginapp_wot_server.pubkey);$tmp/periphery_id=int(250);login/host[^]=$tmp' \
-  > "$WOT_GAME_DIR/res/scripts_config.xml.wot-server.tmp" && \
-  mv "$WOT_GAME_DIR/res/scripts_config.xml.wot-server.tmp" "$WOT_GAME_DIR/res/scripts_config.xml"
-```
-
-Start the game, select **WoT Server**, choose **Switch Account** if Game Center
+Start the game, select **WoT Local**, choose **Switch Account** if Game Center
 tries its official account, and log in with the player you created in the admin
-dashboard. Official Wargaming credentials and launcher tokens are not local
-server credentials.
-
-If the server's login key changes, copy its new public key into every client.
-Game Center repair/update can replace the server list. To undo the list change,
-close the game and restore `scripts_config.xml.wot-server.bak` over
-`res/scripts_config.xml`. See [client validation](client-validation.md) for
-the tested installation and [server configuration](server.md) for details.
+dashboard. If the server's login key changes, manually replace the public key
+in the game folder. Game Center repairs and updates can replace the server list.
+See the [server guide](server.md#connecting-the-game) for more options.
 
 ## Build from source
 

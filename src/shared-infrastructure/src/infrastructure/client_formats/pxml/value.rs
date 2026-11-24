@@ -60,6 +60,10 @@ impl Element {
         self.children.push((key.into(), value));
     }
 
+    pub fn remove_child(&mut self, index: usize) -> Option<(String, Value)> {
+        (index < self.children.len()).then(|| self.children.remove(index))
+    }
+
     pub fn iter_children<'k, 's: 'k>(
         &'s self,
         key: &'k str,

@@ -23,7 +23,7 @@ pub fn to_writer<W: Write + Seek>(mut writer: W, element: &Element) -> io::Resul
     let mut dict = HashMap::new();
     // Walk the entire tree to map each child name to a unique index,
     // each new index is also written to the writer as a cstring.
-    write_and_fill_dict(&mut writer, element, &mut dict, &mut 0)?;
+    write_and_fill_dict(&mut writer, element, &mut dict)?;
     // Write a last empty cstring to mark the end.
     writer.write_cstring("")?;
 
@@ -36,17 +36,19 @@ fn write_and_fill_dict<'a, W: Write + Seek>(
     writer: &mut W,
     element: &'a Element,
     dict: &mut HashMap<&'a String, u16>,
-    next_index: &mut u16,
 ) -> io::Result<()> {
     for (k, v) in element.iter_children_all() {
+        let next_index = dict.len();
         if let Entry::Vacant(v) = dict.entry(k) {
+            let index = u16::try_from(next_index).map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidData, "too many element names")
+            })?;
             writer.write_cstring(k)?;
-            v.insert(*next_index);
-            *next_index += 1;
+            v.insert(index);
         }
 
         if let Value::Element(child_element) = v {
-            write_and_fill_dict(&mut *writer, child_element, &mut *dict, &mut *next_index)?;
+            write_and_fill_dict(&mut *writer, child_element, &mut *dict)?;
         }
     }
 
@@ -60,12 +62,14 @@ fn write_element<W: Write + Seek>(
 ) -> io::Result<usize> {
     let self_start_offset = writer.stream_position()?;
 
-    writer.write_u16(element.len() as u16)?;
+    let children = u16::try_from(element.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "too many element children"))?;
+    writer.write_u16(children)?;
 
     // Here we write placeholder descriptors, that will be later written.
     // Save the start offset of the element.
     writer.write_u32(0)?;
-    for _ in 0..element.len() {
+    for _ in 0..children {
         writer.write_u16(0)?;
         writer.write_u32(0)?;
     }

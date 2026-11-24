@@ -1,0 +1,11 @@
+[package]
+name = "wot-server-list"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+tempfile = "3.27.0"
+wot-platform.workspace = true

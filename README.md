@@ -5,48 +5,96 @@ client**. Game updates can require a new server release.
 
 ## Play on the public server
 
+These steps assume you have the latest World of Tanks EU client installed on Windows.
+
 **WoT Server** is online at `82.66.254.119:20016` and automatically follows
 the project's latest published server release.
 
 1. Go to [wot.gabrielhamel.fr](https://wot.gabrielhamel.fr/) and choose
    **Create a player account**.
-2. Close World of Tanks. In your installation's `res` folder, back up your
-   existing `scripts_config.xml`.
-3. Download [scripts_config.xml](docs/public-server/scripts_config.xml) and
-   [loginapp_wot_server.pubkey](docs/public-server/loginapp_wot_server.pubkey).
-   On GitHub, use **Download raw file** to save each file with its original
-   name. Copy both into `res` and replace `scripts_config.xml` when prompted.
-4. Launch World of Tanks, select **WoT Server**, and sign in with the email
-   and password you registered with. If Game Center signs you in automatically,
-   choose **Switch Account** first.
+2. Close World of Tanks. In File Explorer, open `C:\Games\World_of_Tanks_EU\res`.
+   If you installed the game somewhere else, open the `res` folder under that
+   installation. You can optionally keep a copy of `scripts_config.xml`.
+3. Download [scripts_config.xml](https://raw.githubusercontent.com/gabrielhamel/wot-server/main/docs/public-server/scripts_config.xml)
+   and [loginapp_wot_server.pubkey](https://raw.githubusercontent.com/gabrielhamel/wot-server/main/docs/public-server/loginapp_wot_server.pubkey).
+   Put both files in the `res` folder and replace `scripts_config.xml` when prompted.
+4. Launch World of Tanks. **WoT Server** will appear in the server list on the
+   sign-in screen. If Game Center signs you in automatically, choose **Switch
+   Account** to reach that screen. Select **WoT Server** and sign in with the
+   email and password you registered with.
 
-The supplied server list includes the official EU entries.
-To undo the change, restore your backup. Game Center updates and repairs can
-replace the server list.
+The supplied server list keeps the official EU entries. Game Center updates
+and repairs can replace the server list.
 
-## Getting started
+## How to run the server in development
 
-The server needs a **PostgreSQL database**. Start one with the included
-[Compose file](compose.yaml):
+The server needs a **PostgreSQL database**. Start one with the included [Compose file](compose.yaml).
 
-```sh
-docker compose up -d --wait postgres
+```bash
+docker compose up -d
 ```
 
-For a native installation, prepare an [extracted resource bundle](docs/resources.md)
-in `resources/` and start the server with the local Compose connection URL.
+### 1. Extract the game resources
 
-```sh
-export WOT_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
-mkdir -p .local
-cargo run --release -- --resource-dir resources --private-key .local/login.pem
+Extract the game resources into `.local/extracted-client`. Replace
+`/path/to/World_of_Tanks_EU` with your game installation path in the commands below.
+
+The [extractor](docs/resources.md) requires a new output directory.
+
+```bash
+cargo run -p wot-extract -- --output .local/extracted-client '/path/to/World_of_Tanks_EU'
 ```
 
-The server applies database migrations automatically.
+### 2. Generate a login key pair
 
-See the [Docker quickstart](docs/docker-quickstart.md) to run the server and add
-it to your game's server list, or the [server guide](docs/server.md) for a native
-installation and configuration.
+Generate a 2048-bit RSA key pair in `.local`. The tool asks before replacing
+either key file.
+
+```bash
+cargo run -p wot-login-key -- --name login --output .local/
+```
+
+### 3. Add the local server to the game
+
+Close World of Tanks. From the repository root, run `wot-server-list insert` with
+your game installation directory and the server details.
+
+```bash
+cargo run -p wot-server-list -- insert --game-dir '/path/to/World_of_Tanks_EU' \
+  --address 127.0.0.1:20016 \
+  --name 'WoT Local' --short-name WOTLOCAL \
+  --key-name loginapp_wot_server_250.pubkey \
+  --periphery-id 250
+```
+
+Manually copy the server's exported `.local/login.pubkey` into the game's
+`res` folder as `loginapp_wot_server_250.pubkey`. The filename must match
+`--key-name`. Use the server's reachable IPv4 address and UDP port in
+`--address` if the game runs on another computer. Choose an unused
+`--periphery-id` and use the same value on the game server.
+
+The [server guide](docs/server.md#connecting-the-game)
+shows how to list existing IDs and delete entries.
+
+### 4. Run the server
+
+```bash
+cargo run -- \
+  --resource-dir '.local/extracted-client' \
+  --database-url 'postgresql://wot_server:local-development@127.0.0.1:54329/wot_server' \
+  --private-key '.local/login.pem'
+```
+
+The server applies database migrations automatically. Open the [local dashboard](http://127.0.0.1:8080/dashboard/)
+and follow the first-administrator setup. You can use that account's email and
+password to sign in to the game.
+
+Launch the game. **WoT Local** will appear in the server list on the sign-in
+screen. Choose **Switch Account** if Game Center signs you in automatically,
+then select **WoT Local** and sign in with your local account.
+
+See the [server guide](docs/server.md) for more configuration options or the
+[Docker quickstart](docs/docker-quickstart.md) to run the server in a container.
 
 ## Features
 
@@ -106,30 +154,36 @@ installation and configuration.
   text chat. Hosts can set the map and time limit, organize teams, and start
   a shared battle once both teams are ready.
   [Training Rooms](docs/wg-toolkit/session-flows.md#training-room-visibility)
-- Drive forward and in reverse, aim and fire using the equipped vehicle's
-  movement and gun settings, and switch shells or reload the magazine. Direct
-  hits apply the loaded shell's nominal damage, capped by the target's remaining
-  health. Eliminating the opposing team ends the round. Players return to the
-  garage when they leave or the round closes.
-  [Training battles](docs/wg-toolkit/session-flows.md#starting-a-training-room-battle)
+- Drive with terrain-dependent grip and slopes, push other tanks, and collide
+  with or destroy supported scenery. Aim, select shells, and reload single-shot,
+  magazine-fed, or autoreloading guns.
+- Shells take time to reach their targets. Battles resolve penetration, screens,
+  ricochets, artillery trajectories and splash, and damage to modeled modules
+  and crew. The client receives tracers, impact effects, and directional
+  indicators for blocked shots. Vehicle impacts can leave persistent marks.
+- Finish a round by team elimination, departures, or a time-limit draw. Players
+  return to the garage when they leave or the round closes.
+  [Battle mechanics](docs/battle-mechanics.md)
 
 </details>
 
 <details>
 <summary>Player and admin dashboard</summary>
 
-- Register a player account, sign in, and view your own tanks and balances.
-- Create player accounts, manage roles, and inspect player garages as an
-  administrator.
+- Register, check your garage and balances, and shop in the browser.
+- Set up the first administrator, create player accounts, manage roles, and
+  inspect players' garages and balances.
 - Grant tanks, credits, gold, bonds, free XP, Experimental Equipment components,
-  crew books, Improved Equipment, Bounty and Experimental Equipment, 3D
-  attachments, and stat trackers.
-- Open the dashboard and use the first-administrator setup
-  to get started. [Dashboard guide](docs/admin.md)
+  crew books, Improved, Bounty and Experimental Equipment, 2D and 3D styles,
+  3D attachments, stat trackers, crew skins, and special recruits.
+- Launch Training battles directly from players' garages. Choose the map and
+  teams, assign owned tanks or Observer seats where available, and add
+  stationary dummy tanks with custom equipment, consumables, and crew perks.
+  [Dashboard guide](docs/admin.md)
 
 ![Admin dashboard showing a player's balances, resource grants and garage](docs/images/dashboard.png)
 
-*Dashboard preview with sample player data.*
+_Dashboard preview with sample player data._
 
 </details>
 
@@ -150,7 +204,14 @@ installation and configuration.
 
 - **Battle results and progression.** Apply battle results and rewards to
   account progression. [Battle results](https://github.com/gabrielhamel/wot-server/issues/28)
-- **More Training Room support.** Voice audio and in-battle spectating.
+- **Spotting and radio.** Add vehicle detection, line of sight, concealment,
+  and sharing of spotted positions with allies over radio.
+  [Visibility and replication](docs/battle-mechanics.md#visibility-and-replication)
+- **More combat mechanics.** Complete module damage and crew injury effects,
+  implement repair kits, first-aid kits and fire extinguishers, and add ramming
+  and fall damage. [Penetration and damage](docs/battle-mechanics.md#penetration-damage-and-feedback)
+- **More battle modes and Training Room support.** Add Random Battle
+  matchmaking, base capture, Training Room voice chat, and in-battle spectating.
   [Training Room behavior](docs/wg-toolkit/session-flows.md#creating-a-training-room)
 - **More Store and exterior support.** Editable and progressive styles, Personal
   Reserves, and Premium Account battle benefits remain open.

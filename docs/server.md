@@ -177,13 +177,34 @@ coverage, and [third-party notices](../THIRD_PARTY_NOTICES.md) for provenance.
 
 ## Connecting the game
 
-The real client's server list must contain this server. The existing toolkit's
-`wg-toolkit-wot/src/main.rs` documents its proven Packed XML server registration
-filter. Use a separate/local entry with `url` and `url_token` set to
-`127.0.0.1:20016` (or this machine's reachable address), a unique name/short name,
-and an unused `periphery_id` (250 in the validated installation; 205 is EU5). Preserve a backup of `res/scripts_config.xml` before editing.
-The binary does not automatically change client files. The installed client was
-configured and tested separately; see [live validation](client-validation.md).
+Close the game and run the offline `wot-server-list insert` command against its
+installation directory. By default it adds **WoT Local** at `127.0.0.1:20016`.
+
+```sh
+cargo run --locked -p wot-server-list -- insert --game-dir '/path/to/World_of_Tanks_EU'
+```
+
+The tool reads and writes the game's Packed XML `res/scripts_config.xml`.
+It preserves existing hosts and rejects any periphery ID already present.
+Run `insert --help` for these options.
+
+| Option | Purpose | Default |
+| --- | --- | --- |
+| `--address <IP:PORT>` | Login server's IPv4 address and UDP port. Use a reachable address for clients on another computer. | `127.0.0.1:20016` |
+| `--name` | Server name shown in the game. | `WoT Local` |
+| `--short-name` | Unique short name in the game server list. | `WOTLOCAL` |
+| `--key-name` | Public key filename referenced in the game's `res` folder. | `loginapp_wot_server_<PERIPHERY_ID>.pubkey` |
+| `--periphery-id` | Unique entry ID. Use the same value on the server for Training Room invitations. | `250` |
+
+Manually copy the exported public key into the game's `res` folder using the
+configured filename. Use `list` to see the existing entries and their IDs.
+Use `delete` with the ID of the entry you want to remove. The public key file
+stays in the `res` folder.
+
+```sh
+cargo run --locked -p wot-server-list -- list --game-dir '/path/to/World_of_Tanks_EU'
+cargo run --locked -p wot-server-list -- delete --game-dir '/path/to/World_of_Tanks_EU' --periphery-id 250
+```
 
 RSA-encrypted login is enabled by default. Startup reuses the configured
 `--private-key` file and exports its matching public key alongside it with a
@@ -192,10 +213,19 @@ PKCS#8 key with owner-only permissions on Unix. Keep the key in a persistent
 location such as `.local/login.pem` to preserve the game client's matching
 public key across builds and deployments.
 
+To generate the pair before starting the server, give `wot-login-key` a base
+filename and output directory. It adds `.pem` for the private key and `.pubkey`
+for the public key. It asks for confirmation if either destination file exists.
+
+```sh
+cargo run --locked -p wot-login-key -- --name training --output .local/keys/
+```
+
 The [validated client entry](client-validation.md) references a file in the
 client's `res/` directory that must match the exported public key. The existing
 configured installation already has the matching key. If you generate a new
-key, copy its public key into each client that uses the server. BaseApp traffic uses the client's negotiated Blowfish key. Use
+key, replace the public key file in each client using the same filename. BaseApp traffic
+uses the client's negotiated Blowfish key. Use
 username/password login for an existing account; official Wargaming launcher/SSO
 tokens are not local database credentials.
 

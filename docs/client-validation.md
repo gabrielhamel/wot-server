@@ -62,6 +62,15 @@ cp .local/client-backup-20261111-184256/scripts_config.xml "$WOT_GAME_DIR/res/sc
 Game Center repair/update can replace the modified server list. Recheck the
 installed build and preserve the latest configuration before applying it again.
 
+On 2026-11-24, `wot-server-list` inserted and listed an entry with a custom
+public key filename in a temporary copy of the EU client configuration. A
+duplicate insert failed and left the list byte-for-byte unchanged. Deleting the
+entry restored the original list of servers and preserved the manually placed
+key file. The client reported `v.2.4.1.1 #993`, and
+`cargo game-client status --json` reported executable SHA-256
+`fc80a8fcd804dba1ce54482d87950f4cbe31b3742eefd0c3de03dc28e941af7c`.
+This check exercised the file editor. The live client login below predates it.
+
 ## Confirmed live result
 
 The real client authenticated the PostgreSQL account `DemoPlayer`, received its

@@ -10,6 +10,8 @@ use crate::client_formats::util::io::WgReadExt;
 
 use super::{DataType, Element, MAGIC, Value, Vector};
 
+const MAX_ELEMENT_DEPTH: usize = 128;
+
 /// Read a packed XML data from an readable and seek-able object.
 ///
 /// *The content will be read starting from the initial position of the reader.*
@@ -25,7 +27,7 @@ pub fn from_reader<R: Read + Seek>(mut reader: R) -> Result<Box<Element>, DeErro
     // Parsing
     let dict = read_dictionary(&mut reader)?;
     let mut element = Box::new(Element::new());
-    read_element(&mut reader, &mut element, &dict[..])?;
+    read_element(&mut reader, &mut element, &dict[..], 0)?;
     Ok(element)
 }
 
@@ -72,7 +74,11 @@ fn read_element<R: Read>(
     reader: &mut R,
     element: &mut Element,
     dict: &[String],
+    depth: usize,
 ) -> Result<(), DeError> {
+    if depth >= MAX_ELEMENT_DEPTH {
+        return Err(DeError::ElementDepth);
+    }
     let children_count = reader.read_u16()? as usize;
     let self_descriptor = read_data_descriptor(&mut *reader)?;
     let mut children_descriptors = SmallVec::<[ChildDescriptor; 16]>::new();
@@ -81,14 +87,24 @@ fn read_element<R: Read>(
         children_descriptors.push(read_child_descriptor(&mut *reader)?);
     }
 
-    read_data(&mut *reader, &mut element.value, &self_descriptor, dict, 0)?;
+    read_data(
+        &mut *reader,
+        &mut element.value,
+        &self_descriptor,
+        dict,
+        0,
+        depth,
+    )?;
     let mut offset = self_descriptor.end_offset;
 
     for child in children_descriptors {
+        let name = dict
+            .get(child.name_index)
+            .ok_or(DeError::InvalidNameIndex(child.name_index))?;
         let mut value = Value::Boolean(false);
-        read_data(&mut *reader, &mut value, &child.data, dict, offset)?;
+        read_data(&mut *reader, &mut value, &child.data, dict, offset, depth)?;
         offset = child.data.end_offset;
-        element.add_children(&dict[child.name_index], value);
+        element.add_children(name, value);
     }
 
     Ok(())
@@ -101,12 +117,16 @@ fn read_data<R: Read>(
     desc: &DataDescriptor,
     dict: &[String],
     offset: u32,
+    depth: usize,
 ) -> Result<(), DeError> {
-    let len = (desc.end_offset - offset) as usize;
+    let len = desc
+        .end_offset
+        .checked_sub(offset)
+        .ok_or(DeError::InvalidOffset)? as usize;
     *value = match desc.ty {
         DataType::Element => {
             let mut element = Box::new(Element::new());
-            read_element(reader, &mut element, dict)?;
+            read_element(reader, &mut element, dict, depth + 1)?;
             Value::Element(element)
         }
         DataType::String => Value::String(read_string(reader, len)?),
@@ -195,6 +215,12 @@ pub enum DeError {
     /// Invalid data type while parsing.
     #[error("invalid data type id {0}")]
     InvalidDataType(u32),
+    #[error("invalid element name index {0}")]
+    InvalidNameIndex(usize),
+    #[error("element data offsets are out of order")]
+    InvalidOffset,
+    #[error("element nesting exceeds the decode limit")]
+    ElementDepth,
     /// Invalid data size for a number.
     #[error("invalid data length of {0} bytes for a number")]
     InvalidIntegerLen(usize),

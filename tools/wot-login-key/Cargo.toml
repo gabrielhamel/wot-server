@@ -1,0 +1,11 @@
+[package]
+name = "wot-login-key"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+rsa.workspace = true
+tempfile = "3.27.0"

@@ -3473,6 +3473,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "wot-login-key"
+version = "0.25.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "rsa 0.8.2",
+ "tempfile",
+]
+
+[[package]]
 name = "wot-platform"
 version = "0.25.0"
 dependencies = [
@@ -3611,6 +3621,16 @@ dependencies = [
  "wot-resources",
  "wot-server-runtime",
  "wot-social",
+]
+
+[[package]]
+name = "wot-server-list"
+version = "0.25.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "tempfile",
+ "wot-platform",
 ]
 
 [[package]]
