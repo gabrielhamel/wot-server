@@ -302,6 +302,8 @@ impl Gateway {
     }
 
     pub fn configure_metrics(&mut self, meter: &opentelemetry::metrics::Meter) {
+        self.login.configure_metrics(meter);
+        self.base.configure_metrics(meter);
         let metrics = metrics::GatewayMetrics::new(meter);
         metrics.record_counts(self.sessions.len(), self.battle_worker.active_count());
         self.metrics = Some(metrics);
