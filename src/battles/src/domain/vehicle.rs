@@ -699,6 +699,7 @@ mod tests {
                                 damage_log_type: Some(1),
                                 premium: false,
                                 pierced_sticker: None,
+                                resisted_sticker: None,
                             },
                         ),
                         (
@@ -711,6 +712,7 @@ mod tests {
                                 damage_log_type: Some(7),
                                 premium: false,
                                 pierced_sticker: None,
+                                resisted_sticker: None,
                             },
                         ),
                     ]

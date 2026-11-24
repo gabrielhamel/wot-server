@@ -121,10 +121,13 @@ impl ShotImpact {
     }
 
     fn sticker(self) -> Option<DamageSticker> {
-        let id = self
-            .effects
-            .pierced_sticker
-            .filter(|_| self.damage > 0 && self.outcome == ArmorOutcome::Penetrated)?;
+        let id = match self.outcome {
+            ArmorOutcome::Penetrated if self.damage > 0 => self.effects.pierced_sticker,
+            ArmorOutcome::Ricochet | ArmorOutcome::Blocked | ArmorOutcome::ScreenBlocked => {
+                self.effects.resisted_sticker
+            }
+            _ => None,
+        }?;
         Some(DamageSticker {
             segment: (self.segment & !0xff) | u64::from(id),
             params: self.params | (u32::from(self.effects.prefab_index) << 24),

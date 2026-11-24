@@ -1893,6 +1893,7 @@ pub fn exercise_battle(
         Some(health[1].as_i64().unwrap() - health[0].as_i64().unwrap())
     );
     assert_eq!(direction[6].as_i64(), Some(i64::from(second)));
+    assert_eq!(direction[4].as_i64(), Some(0));
     let Value::Float32(yaw) = direction[0] else {
         panic!("Expected hit bearing in radians");
     };
@@ -2488,6 +2489,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         &fixture.shell_speed.to_string()
     ));
     assert!(has(hit, "output.tracer.recipients", "1"));
+    assert!(has(hit, "output.hit_direction.blocked", "false"));
 
     let damage = attribute(hit, "output.damage")
         .unwrap()
@@ -2495,6 +2497,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         .unwrap();
     let [min, max] = [0.75, 1.25].map(|scale| (f32::from(shell_damage) * scale).round() as u16);
     assert!((min..=max).contains(&damage));
+    assert!(has(hit, "output.hit_direction.damage", &damage.to_string()));
     let armor = traces
         .iter()
         .find(|span| span.name == "battles.resolve_armor" && child_of(span, hit))

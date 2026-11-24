@@ -99,6 +99,8 @@ impl Battle {
         output.ammo_rack.detonated = tracing::field::Empty,
         output.target.entity_id = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.hit_direction.radians = tracing::field::Empty,
+        output.hit_direction.blocked = tracing::field::Empty,
+        output.hit_direction.damage = tracing::field::Empty,
         output.damage_log.shell_type = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty
     ), err)]
@@ -476,7 +478,6 @@ impl Battle {
                     let direction = shot.direction.x.atan2(shot.direction.z);
                     span.record("output.target.entity_id", id);
                     span.record("output.damage", damage);
-                    span.record("output.hit_direction.radians", direction);
                     if let Some(shell_type) = shot.effects.damage_log_type {
                         span.record("output.damage_log.shell_type", shell_type);
                     }
@@ -582,18 +583,30 @@ impl Battle {
                 if sticker_added && let Some(target) = self.players.get(&victim) {
                     wire.publish_damage_stickers(delivery, peer, id, &target.damage_stickers)?;
                 }
-                if peer == victim && (damage != 0 || criticals != 0) {
+                let blocked = damage == 0
+                    && matches!(
+                        outcome,
+                        ArmorOutcome::Blocked
+                            | ArmorOutcome::Ricochet
+                            | ArmorOutcome::ScreenBlocked
+                    );
+                if peer == victim && (damage != 0 || criticals != 0 || blocked) {
+                    let indicator_damage = if blocked { shot.damage } else { damage as u16 };
                     delivery.send_avatar(
                         peer,
                         AvatarUpdate::HitDirection {
                             yaw: direction,
                             attacker,
-                            damage: damage as u16,
+                            damage: indicator_damage,
                             criticals: u32::from(criticals),
+                            blocked,
                             explosive: shot.effects.kind == HIGH_EXPLOSIVE_SHELL_KIND,
                             victim: id,
                         },
                     )?;
+                    span.record("output.hit_direction.radians", direction);
+                    span.record("output.hit_direction.blocked", blocked);
+                    span.record("output.hit_direction.damage", indicator_damage);
                 }
                 if detonated {
                     delivery.arena_vehicle_method(

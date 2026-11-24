@@ -328,6 +328,3 @@ impl Battle {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -99,6 +99,7 @@ docker compose up -d --wait
 export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WG_RESOURCE_DIR='/path/to/resources'
+cargo test --locked -p wot-battles projectile_tests -- --ignored
 cargo test --locked -p wot-server-runtime --lib initializes_context_storage -- --ignored
 cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored
 cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_access_lifecycle -- --ignored

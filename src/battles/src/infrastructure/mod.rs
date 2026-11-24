@@ -46,6 +46,8 @@ pub(crate) mod mercury;
 mod motion;
 mod obstacles;
 mod preparation;
+#[cfg(test)]
+mod projectile_tests;
 mod projectiles;
 mod scenery;
 mod terrain;

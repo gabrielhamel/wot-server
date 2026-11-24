@@ -319,7 +319,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.projectile.flight_seconds`](../src/battles/src/infrastructure/projectiles.rs) | Seconds from launch to scheduled contact. Omitted for shots with no contact. |
 | [`output.damage_stickers.count`](../src/battles/src/infrastructure/projectiles.rs) | Number of retained damage stickers on the target when the hit adds a new sticker. |
 | [`input.damage_stickers.count`](../src/battles/src/infrastructure/wire/controls.rs) | Number of stickers in the full Vehicle damage sticker property sent to one participant. |
-| [`output.hit_direction.radians`](../src/battles/src/infrastructure/projectiles.rs) | Incoming projectile's world travel yaw in radians, sent to the victim and omitted on miss. |
+| [`output.hit_direction.radians`](../src/battles/src/infrastructure/projectiles.rs) | Incoming projectile's world travel yaw in radians, recorded when the victim's indicator is queued. |
+| [`output.hit_direction.blocked`](../src/battles/src/infrastructure/projectiles.rs) | Blocked flag sent to the victim. True for a ricochet, armor block or screen stop with zero HP loss. Recorded when the indicator is queued. |
+| [`output.hit_direction.damage`](../src/battles/src/infrastructure/projectiles.rs) | Indicator amount in HP, recorded when the victim's indicator is queued. Uses nominal shell damage for blocked indicators and actual HP loss for other indicators. |
 | [`output.damage_log.shell_type`](../src/battles/src/infrastructure/projectiles.rs) | Client damage-log shell type ID for a vehicle hit when known. |
 | [`output.scene_impact.distance_metres`](../src/battles/src/infrastructure/projectiles.rs) | Distance in metres from the muzzle to a ground or obstacle impact. |
 | [`output.obstacle.material_kind`](../src/battles/src/infrastructure/projectiles.rs) | Raw client material kind of the hit obstacle collision triangle, including 0 when the triangle carries no material. |
