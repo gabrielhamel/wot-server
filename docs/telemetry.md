@@ -303,10 +303,11 @@ devices and HP lost to fire. The child
 `battles.resolve_armor` records the selected material and part index, nominal
 and effective thickness, remaining penetration, damage before capping to
 remaining HP, and the penetration outcome. The shot records cumulative flight
-time when it continues after a ricochet or stops at another contact after
-breaking a destructible fragment. An impact that
-adds a persistent penetration or resisted mark records the retained sticker count and parents a
-`battles.damage_stickers` span per recipient. Scene impacts
+time through the next contact after a ricochet or a destructible fragment. It
+also records the reflected tracer's range when a ricochet continues. Both
+armor decisions and their deliveries share the shot span. An impact that
+adds a persistent penetration or resisted mark records the retained sticker
+count and parents a `battles.damage_stickers` span per recipient. Scene impacts
 record distance along the ray and parent the `explodeProjectile`
 deliveries. Obstacle impacts include the raw collision material kind. The same shot parents
 the shooter-only result, the victim-only direction and the private damage

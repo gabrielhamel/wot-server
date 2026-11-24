@@ -5,6 +5,9 @@ use super::{
 use glam::Vec3;
 use wot_shared_kernel::{ArmorPlate, ShellKind, shell_value_at_distance};
 
+const CONTACT_CLEARANCE_METRES: f32 = 0.002;
+const RICOCHET_RANGE_CALIBERS: f32 = 10.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ArmorOutcome {
     Penetrated,
@@ -111,10 +114,10 @@ impl Shot {
     }
 
     pub fn continue_from(self, distance: f32, direction: Vec3) -> Option<Self> {
-        let advance = distance + 0.002;
+        let advance = distance + CONTACT_CLEARANCE_METRES;
         let max_distance = self.max_distance - advance;
         (max_distance > 0.0).then_some(Self {
-            origin: self.origin + self.direction * distance + direction * 0.002,
+            origin: self.origin + self.direction * distance + direction * CONTACT_CLEARANCE_METRES,
             travelled: self.travelled + advance,
             max_distance,
             direction,
@@ -136,6 +139,9 @@ impl Shot {
 
     pub fn ricochet_from(self, hit: ArmorHit) -> Option<Self> {
         let mut shot = self.continue_from(hit.distance, hit.reflected?)?;
+        let reflected_range = self.ballistics.caliber_mm * (RICOCHET_RANGE_CALIBERS / 1000.0)
+            - CONTACT_CLEARANCE_METRES;
+        shot.max_distance = shot.max_distance.min(reflected_range);
         let retention = if matches!(self.ballistics.kind, ShellKind::ArmorPiercing) {
             0.75
         } else {

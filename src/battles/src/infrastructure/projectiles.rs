@@ -91,6 +91,7 @@ impl Battle {
         output.shot.id = tracing::field::Empty,
         output.obstacles_pierced.count = tracing::field::Empty,
         output.projectile.ricocheted = tracing::field::Empty,
+        output.projectile.ricochet_range_metres = tracing::field::Empty,
         output.projectile.screens_pierced = tracing::field::Empty,
         output.devices.damaged = tracing::field::Empty,
         output.devices.destroyed = tracing::field::Empty,
@@ -428,8 +429,12 @@ impl Battle {
                     .filter(|p| p.tank.health > 0)
                 {
                     if let Some(onward) = shot.ricochet_from(**hit) {
-                        continuation = Some((onward, Some(participant)));
+                        continuation = Some((onward, None));
                         span.record("output.projectile.ricocheted", true);
+                        span.record(
+                            "output.projectile.ricochet_range_metres",
+                            onward.max_distance,
+                        );
                     } else if screens_pierced < MAX_SCENE_SCREENS
                         && let Some(onward) = shot.through_screen(**hit)
                     {

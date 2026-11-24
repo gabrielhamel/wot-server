@@ -373,7 +373,7 @@ mobility profile to vehicle preparation and drive steps to replication.
 
 | Mechanic | Game mechanic | Server coverage |
 | --- | --- | --- |
-| Penetration | Plate angle, normalization, caliber, range and the shell's remaining penetration determine the outcome. | **Partial.** The gun ray intersects the equipped chassis, hull, turret and gun collision meshes. The solver resolves AP-family normalization and overmatch, AP-family and HEAT ricochets, screen penetration and HEAT jet loss. AP-family shells retain 75% of rolled penetration after the first ricochet. Eligible shells can continue on the reflected ray once. A shell can carry unused penetration past a screen-only contact, and a hull penetration traces internal devices for ten calibers or until the next hull surface. Contacts with allies or wrecks and server-only internal geometry remain open. |
+| Penetration | Plate angle, normalization, caliber, range and the shell's remaining penetration determine the outcome. | **Partial.** The gun ray intersects the equipped chassis, hull, turret and gun collision meshes. The solver resolves AP-family normalization and overmatch, AP-family and HEAT ricochets, screen penetration and HEAT jet loss. AP-family shells retain 75% of remaining penetration at the first ricochet. Eligible shells can continue on the reflected ray for up to ten calibers and can hit the same tank again or another nearby enemy tank. A shell can carry unused penetration past a screen-only contact, and a hull penetration traces internal devices for ten calibers or until the next hull surface. Contacts with allies or wrecks and server-only internal geometry remain open. |
 | Shell and armor damage | A penetrating hit applies rolled damage and the plate's damage factor. Some contacts produce an impact with zero vehicle HP loss. | **Partial.** The server rolls penetration and hull damage from the equipped shell definitions and caps HP loss at the target's current health. The client receives the actual part and a short component-local ray through the contact. The normal roll distribution is an approximation. |
 | Modern direct-fire HE | Armor penetration deals hull damage. An exterior detonation against main armor causes spall. Screens can stop the shell or reduce penetration before it reaches main armor. [Wargaming's HE rework][eu-he] | **Partial.** Modern shells can penetrate permitted screens and destructible fragments. A penetrated screen subtracts three times its effective thickness. A shell stopped at a screen or passing through a screen with no armor behind it causes zero HP damage. Spall and fragments use the shell damage curves and configured fragment absorption. Exact spall transfer and fragment geometry still need production evidence. Ground impacts can break trees. Ground splash affects vehicle HP only for artillery. [Wargaming HE support][eu-he-support] |
 | Module and crew damage, ramming and repair | Module and crew damage have effects independent of vehicle HP. Ramming, fire, detonation and repair have separate conditions. | **Partial.** Model materials carry device hit probabilities. The server tracks hits to modeled devices and crew, disabled tracks and engines, gun disablement, passive module recovery, fire ticks and loaded ammunition-rack explosions. Full crew and module penalties, active repair and first aid, native per-device indicators, damage from collisions and falls, and exact fire tuning remain open. |
@@ -401,6 +401,15 @@ increased normalization above two times the plate's thickness and can bypass
 ricochet above three times the thickness where that material permits it.
 HEAT loses penetration across air gaps after the first penetrated layer and
 does not ricochet as a jet.
+
+A ricochet ends the incoming tracer and can start a reflected tracer. The
+reflected projectile can travel up to ten times its caliber (1 m for a 100 mm
+round), bounded by the range left at the bounce. It can penetrate a different
+part of the same vehicle, such as the hull after striking the turret, or a
+nearby enemy vehicle if its remaining penetration defeats the next plate. The
+reflected leg checks terrain and scenery and can register a second ricochet,
+which ends the projectile's flight. See the
+[archived Wargaming Battle Mechanics guide][wg-archived-battle-mechanics].
 
 For modern direct-fire HE, a successful main-armor penetration applies rolled
 hull damage. When the shell reaches main armor and fails the penetration roll,
@@ -522,3 +531,5 @@ events and verify cue selection in the client.
 [eu-he]: https://worldoftanks.eu/en/news/general-news/1-13-HE-shells/
 [eu-movement]: https://worldoftanks.eu/en/news/general-news/ver914-new-physics-final/
 [eu-recovery]: https://worldoftanks.eu/en/content/docs/release_notes/release-notes-1-22/
+
+[wg-archived-battle-mechanics]: https://web.archive.org/web/20250303052442/https://wiki.wargaming.net/en/Battle_Mechanics
