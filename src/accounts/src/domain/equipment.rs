@@ -320,7 +320,7 @@ impl EquipmentRules {
         Ok(upgrade)
     }
 
-    fn validate(
+    pub(crate) fn validate(
         &self,
         vehicle: &EquipmentVehicle,
         target: &EquipmentLayout,

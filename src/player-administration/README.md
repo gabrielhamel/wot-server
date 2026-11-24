@@ -10,7 +10,9 @@ owns player identities, roles, dashboard session records and garage state.
 Player Administration uses the published account and catalog data and submits
 grants through [Player Sessions](../player-sessions/README.md) to coordinate
 with live game sessions. It authenticates dashboard Store requests and delegates
-checkout to the same context.
+checkout to the same context. The Battles page collects map, duration, teams
+and vehicles. Player Administration requests available players and launches
+through the Player Sessions contract and obtains dummy options from Accounts.
 
 | Layer | Responsibilities |
 | --- | --- |
@@ -18,7 +20,7 @@ checkout to the same context.
 | `application/admin-contracts.ts` | Browser contracts for player accounts, dashboard sessions, garages, catalogs and grants. |
 | `infrastructure/admin-api.ts` | React Admin authentication and data providers, HTTP serialization and browser operation spans. |
 | `presentation/` | HTTP routes, session cookies, JSON contracts and status mapping. |
-| `presentation/web/` | First-administrator setup, player registration and confirmation, sign-in, player garage and Store navigation, role controls and grant forms. |
+| `presentation/web/` | First-administrator setup, player registration and confirmation, sign-in, player garage and Store navigation, role controls, grant forms and the Training battle setup. |
 
 | Term | Meaning |
 | --- | --- |
@@ -26,13 +28,14 @@ checkout to the same context.
 | First administrator | Account created by the setup form when the database has no players. |
 | Self-service registration | Player account creation enabled once an administrator exists. The email is the sign-in name and the username is the in-game display name. |
 | Player record | Account ID, game login, display name and role returned by the admin API. |
+| Battle setup | An administrator-selected map, duration and roster of players and stationary dummies. |
 | Grant | Administrator-authorized addition of currency, inventory stock, a special recruit or a permanently owned tank. |
 
 The [admin guide](../../docs/admin.md) describes configuration and the HTTP
 contract.
 
 Player Administration continues the browser trace through HTTP handlers,
-Accounts operations and PostgreSQL. The grant and Store queues preserve the HTTP parent
+Accounts operations and PostgreSQL. The grant, Store and battle queues preserve the HTTP parent
 through gateway execution and response. See the [telemetry contract](../../docs/telemetry.md).
 
 Player Administration uses the Accounts contract for player access, garage

@@ -115,6 +115,28 @@ proxy and start the server with `--secure-cookies`. Route
 `/dashboard/`, `/assets/*` and `/api/admin/*` to the web listener. By default,
 the dashboard supports sign-in over HTTP.
 
+### Launch a Training battle
+
+Open **Admin → Battles** with Training enabled. Select the map and battle
+type, then set a round duration of 5–30 minutes. Add one or more players
+connected to the game in their garage. Assign each player to a team and
+choose an owned vehicle or the Observer seat when available. **Refresh players**
+updates the list after a login, disconnect or garage return.
+
+Use **Add dummy** to fill either team with stationary targets. Each dummy starts
+with the selected tank's stock modules, default ammunition and a 100% crew.
+Open **Customize Dummy** to pick compatible equipment and consumables by slot
+and fully trained perks by crew seat. The battle uses the simulator's supported
+passive modifiers, including the extra HP from Improved Hardening. Dummies
+remain in place when pushed, take hits, and have no player controls to fire or
+activate a consumable.
+
+Start with at least one connected player and a combat vehicle on each team.
+A single player can face a team of dummies. The roster holds up to 30 entrants.
+The selected game clients transition directly from the garage to the Training
+arena. Players already in a Training Room or battle become available once
+they return to the garage and leave their room.
+
 ### Upgrade an existing database
 
 Existing accounts start with the **Player** role. If the database already has
@@ -150,8 +172,8 @@ belong in the API and application state.
 
 ## API
 
-The self-service garage requires a session cookie. Player management and
-grant routes require a current administrator session. Send
+The self-service garage requires a session cookie. Player management,
+grants and battle launches require a current administrator session. Send
 `X-Wot-Admin: 1` on every POST and `Content-Type: application/json` when
 sending a JSON body. The browser sends the cookie on same-origin API calls.
 
@@ -169,6 +191,9 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | `POST /api/admin/players` | `201 Created` with the new player record. The new account has the `player` role. |
 | `POST /api/admin/players/{id}/role` | Accepts `{ "role": "admin" }` or `{ "role": "player" }` and returns `204 No Content`. Self-role changes return `403 Forbidden`. |
 | `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks, an `attachments` map from item ID to total owned copies, and a `depot` map from grantable crew book, Bounty Equipment and Experimental Equipment IDs to depot counts. The `styles_2d`, `styles_3d`, `crew_skins` and `special_recruits` maps track owned copies. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
+| `GET /api/admin/battles` | Returns `maps`, available garage `players` with owned `vehicles`, `observer_available` and catalog `dummy_vehicles`. |
+| `GET /api/admin/battles/vehicles/{vehicle}` | Returns equipment and consumable slot counts, compatible items and perks by crew seat for the given catalog vehicle ID. |
+| `POST /api/admin/battles` | Accepts `arena_type`, `duration_seconds`, `players` and `dummies`. Returns `battle_id` and `players_handed_off` after queuing activation, `400` for an invalid setup, `409` for an unavailable player or owned vehicle, or `503` when the queue is busy. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |
 | `GET /api/admin/crew-books`, `GET /api/admin/improved-equipment`, `GET /api/admin/bounty-equipment`, `GET /api/admin/experimental-equipment` | `200 OK` with grantable depot items containing `id` and `name`. |
 | `GET /api/admin/attachments` | `200 OK` with grantable 3D attachments containing `id`, `name`, and `max_owned` (null if the catalog sets no limit). |
@@ -206,6 +231,15 @@ logins yield `409`. Creation returns `503` while two other creations are in
 progress. Request bodies are capped at 8 KiB. A successful creation commits the account and inventory together.
 If the connection drops during a creation, look up the login in the list
 before retrying.
+
+### Battle roster payload
+
+Each player entry contains `account_id`, `team` (1 or 2) and `inventory_id`
+from that player's available vehicles. Use `null` for an observer when
+`observer_available` is true. Each dummy entry contains `team` and a
+`loadout` with the catalog `vehicle` ID. Optional `equipment` and
+`consumables` arrays contain item IDs in slot order with `0` for an empty
+slot. Optional `crew_perks` contains one array of perk IDs per crew seat.
 
 ### Grants
 

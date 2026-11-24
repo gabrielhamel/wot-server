@@ -1,5 +1,5 @@
-import { Alert, Button, CircularProgress } from "@mui/material";
-import { useGetIdentity, useLocation, useNavigate } from "react-admin";
+import { Alert, Button, CircularProgress, Stack } from "@mui/material";
+import { Link, useGetIdentity, useLocation, useNavigate } from "react-admin";
 import type { LayoutProps } from "react-admin";
 import { PlayerHome } from "./player-home";
 
@@ -25,7 +25,9 @@ export function ServerLayout({ children }: LayoutProps) {
 
   const administrator = identity.role === "admin";
   const storeEnabled = identity.storeEnabled === true;
-  const adminRoute = pathname === viewPaths.admin || pathname.startsWith(`${viewPaths.admin}/`);
+  const battleRoute = pathname === "/battles";
+  const adminRoute =
+    battleRoute || pathname === viewPaths.admin || pathname.startsWith(`${viewPaths.admin}/`);
   const view =
     administrator && adminRoute
       ? "admin"
@@ -41,6 +43,14 @@ export function ServerLayout({ children }: LayoutProps) {
       view={view}
       onViewChange={(next) => navigate(viewPaths[next])}
     >
+      <Stack component="nav" aria-label="Administration" direction="row" spacing={1} sx={{ mb: 2 }}>
+        <Button component={Link} to="/players" variant={battleRoute ? "text" : "outlined"}>
+          Player accounts
+        </Button>
+        <Button component={Link} to="/battles" variant={battleRoute ? "outlined" : "text"}>
+          Battles
+        </Button>
+      </Stack>
       {children}
     </PlayerHome>
   );

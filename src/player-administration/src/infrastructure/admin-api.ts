@@ -9,6 +9,9 @@ import { webOperation } from "../../../shared-infrastructure/src/infrastructure/
 import type { StoreCatalog, StoreTransport } from "../../../player-sessions/src/web";
 import type {
   AdminSession,
+  AdminBattleSetup,
+  BattleOptions,
+  DummyLoadoutOptions,
   CatalogVehicle,
   Cosmetic,
   DepotItem,
@@ -334,3 +337,48 @@ export const dataProvider: AdminDataProvider = {
     );
   },
 };
+
+export function getBattleOptions(signal: AbortSignal) {
+  return webOperation(owner, "web.admin.battle_options", {}, async (parent, span) => {
+    const options = await adminRequest<BattleOptions>(parent, "/battles", { signal });
+    span.setAttribute("output.maps.count", options.maps.length);
+    span.setAttribute("output.players.count", options.players.length);
+    return options;
+  });
+}
+
+export function getDummyLoadout(vehicle: number, signal: AbortSignal) {
+  return webOperation(
+    owner,
+    "web.admin.dummy_loadout",
+    { "input.vehicle_type": vehicle },
+    (parent) =>
+      adminRequest<DummyLoadoutOptions>(parent, "/battles/vehicles/{vehicle}", {
+        path: `/battles/vehicles/${vehicle}`,
+        signal,
+      }),
+  );
+}
+
+export function startBattle(body: AdminBattleSetup) {
+  return webOperation(
+    owner,
+    "web.admin.start_battle",
+    {
+      "input.arena_type_id": body.arena_type,
+      "input.round_length.seconds": body.duration_seconds,
+      "input.players.count": body.players.length,
+      "input.dummies.count": body.dummies.length,
+    },
+    async (parent, span) => {
+      const result = await adminRequest<{ battle_id: number; players_handed_off: number }>(
+        parent,
+        "/battles",
+        { body },
+      );
+      span.setAttribute("output.battle.id", result.battle_id);
+      span.setAttribute("output.players.handoff_count", result.players_handed_off);
+      return result;
+    },
+  );
+}

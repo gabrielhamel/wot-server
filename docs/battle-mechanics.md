@@ -17,12 +17,20 @@ observed client behavior and wire evidence.
 
 ## Battle flow and progression
 
+An [admin launch](admin.md#launch-a-training-battle) uses the Training arena
+with an assigned roster. Stationary dummies start ready, appear in the arena
+roster and participate in collision, damage and team elimination. Dummies
+have fixed hull positions and stay in the arena until the round ends or all
+connected participants leave. The native roster marks them as bots with an
+empty `avatarSessionID`, matching `PlayerInfoVO.isBot` in the client reference.
+
+
 | Mechanic | Game mechanic | Server coverage |
 | --- | --- | --- |
 | Base capture | Occupying an objective can accrue capture progress and decide a round. The objective and victory conditions depend on the mode. | **Partial.** Training supports team elimination, departure-based outcomes and a time-limit draw. Capture zones, progress, resets and capture wins are open. See [round state](../src/battles/src/domain/round.rs) and [outcome delivery](../src/battles/src/infrastructure/mod.rs). |
 | Battle communication | Players can send contextual requests and ping vehicles or map locations. See [Wargaming's communication guide][eu-communication]. | **Open.** The Training channel handles room text chat in the garage. In-arena text, quick commands and contextual pings are separate workflows. See [Player Sessions](../src/player-sessions/README.md). |
 | Matchmaking | Random Battles assemble teams using tier, vehicle role, class limits, and queue and map policies. Wargaming has revised those policies since the snapshot. See the [2.0 matchmaker notes][eu-matchmaker] and [update history][eu-history]. | **Open.** Player Sessions hands an assigned Training roster to Battles. See the [launch contract](../src/battles/src/contract.rs). |
-| Tank stats | Equipped modules define base characteristics. Crew, equipment, consumables and directives can modify applicable stats. The archive's crew formulas and examples need separate verification against the current crew system. See the [EU crew rework][eu-crew]. | **Partial.** The launch profile includes base mobility, gun and ammunition data derived from the equipped modules. Full battle modifier calculation and application remain open. See [profile extraction](../src/accounts/src/infrastructure/client/battle_performance.rs), [crew](crew.md), [equipment](equipment.md), [consumables](consumables.md) and [directives](directives.md). |
+| Tank stats | Equipped modules define base characteristics. Crew, equipment, consumables and directives can modify applicable stats. The archive's crew formulas and examples need separate verification against the current crew system. See the [EU crew rework][eu-crew]. | **Partial.** The launch profile includes base mobility, gun and ammunition data derived from the equipped modules. Supported passive modifiers apply during projection, including `miscAttrs/healthFactor` from equipment and matching slots. Full battle modifier calculation and application remain open. See [profile extraction](../src/accounts/src/infrastructure/client/battle_performance.rs), [crew](crew.md), [equipment](equipment.md), [consumables](consumables.md) and [directives](directives.md). |
 | Experience and credits | Eligible battle modes award credits and progression based on the result and contributions such as damage and assistance. Combat XP, Free XP and Crew XP have distinct destinations and rules. | **Partial.** Accounts has a rule to route trusted Combat and Crew XP awards. Training publishes a round outcome and returns players to the garage. Battle award calculation, persistent settlement, repair charges and resupply deductions are open. See [Battle XP routing](crew.md#battle-xp-routing). |
 
 ### Effective vehicle stats

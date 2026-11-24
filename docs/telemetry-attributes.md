@@ -113,12 +113,12 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.entity_id`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Protocol entity ID of the player's target entity. |
 | [`input.string.bytes`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Byte length of the `doCmdStr` argument, Training Room creation description, or Training Room invitation message. The text stays out of telemetry. |
 | [`input.arena_type_id`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Client-supplied arena type ID on Training Room creation, or the server-selected arena on battle preparation, obstacle loading and entry. |
-| [`input.round_length.seconds`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Requested duration in seconds on Training Room creation and battle preparation. |
+| [`input.round_length.seconds`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Requested duration in seconds on Training Room creation, dashboard battle launch and battle preparation. |
 | [`input.room.open_flag`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Wire privacy flag on Training Room creation. `0` denotes invite-only and `1` denotes open. |
 | [`input.room.id`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Training Room ID supplied by the client on join or decline, or set by the server for invitation delivery, channel membership and Training launch preparation. |
 | [`input.battle.id`](../src/battles/src/infrastructure/mod.rs) | Server-assigned battle ID on activation, arena entry, period and readiness broadcasts, vehicle controls and shots. |
 | [`input.participant.id`](../src/battles/src/infrastructure/mod.rs) | Numeric admission generation scoped to the gateway. Recorded on arena entry and participant removal, and on [decoded vehicle controls](../src/battles/src/infrastructure/controls.rs), [shots](../src/battles/src/infrastructure/projectiles.rs), and [damage sticker deliveries](../src/battles/src/infrastructure/wire/controls.rs). |
-| [`output.battle.id`](../src/battles/src/infrastructure/mod.rs) | Battle ID allocated during preparation or resolved on participant removal. |
+| [`output.battle.id`](../src/battles/src/infrastructure/mod.rs) | Battle ID allocated during preparation, returned from a dashboard launch or resolved on participant removal. |
 | [`input.cluster.id`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Cluster supplied on Training Room join or decline, or configured periphery on invitation delivery. Public room-list joins use `0`. |
 | [`input.invitation`](../src/player-sessions/src/infrastructure/gateway/training.rs) | True when the join request accepts an invitation. |
 | [`input.recipients.count`](../src/player-sessions/src/infrastructure/gateway/training/invites.rs) | Number of requested recipient IDs before deduplication. The IDs stay out of telemetry. |
@@ -174,7 +174,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.arena.tick`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Low 8 bits of the arena tick written into the snapshot's TickSync element. One unit is 100 ms. |
 | [`input.geometry`](../src/battles/src/infrastructure/terrain.rs) | Bundle geometry path when loading terrain or obstacles for the selected arena. |
 | [`input.roster.row`](../src/battles/src/infrastructure/mod.rs) | Zero-based row index when updating a player's ready state in the arena roster. |
-| [`input.players.count`](../src/battles/src/infrastructure/mod.rs) | Roster size during preparation and activation, or current participant count on a period transition. |
+| [`input.players.count`](../src/battles/src/infrastructure/mod.rs) | Requested connected player count on dashboard battle launch, total roster size during preparation and activation, or current participant count on a period transition. |
 | [`input.cache.bytes`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Cached shop length in bytes reported by the client. |
 | [`input.cache.crc`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Signed CRC32 of the shop cache reported by the client. |
 | [`input.token_type`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Numeric token kind from the Mercury request. Credential material stays out of telemetry. |
@@ -487,6 +487,20 @@ calls under `src/`; event/log fields are a separate inventory. The regression
 capture in [tests/support/telemetry_capture.rs](../tests/support/telemetry_capture.rs)
 checks representative exported fields and parent links through real entry points.
 
+
+### Admin battle setup
+
+| Attribute | Meaning |
+| --- | --- |
+| [`input.arena_type_id`](../src/player-administration/src/presentation/battles.rs), `input.round_length.seconds` | Selected arena variant and requested duration in seconds on dashboard launch. |
+| [`input.sessions.count`](../src/player-sessions/src/infrastructure/gateway/admin_battles.rs) | Number of admitted sessions inspected for available players. |
+| [`input.dummies.count`](../src/player-sessions/src/infrastructure/gateway/admin_battles.rs), `input.players.count` | Number of dummy and connected-player seats requested on launch. Emitted by the browser, HTTP handler and gateway. |
+| [`output.maps.count`](../src/player-sessions/src/infrastructure/gateway/admin_battles.rs), `output.players.count`, `output.vehicles.count` | Counts of available map variants, eligible garage players and catalog dummy vehicles on successful options requests. The vehicle count is recorded by the HTTP handler. |
+| [`input.equipment.count`](../src/accounts/src/infrastructure/client/dummy_loadout.rs), `input.consumables.count`, `input.crew.count` | Counts of submitted equipment slots, consumable slots and crew seats on a dummy projection. Includes explicit empty slots. The vehicle type descriptor is recorded as `input.vehicle_type`. |
+| [`output.equipment.count`](../src/accounts/src/infrastructure/client/dummy_loadout.rs), `output.consumables.count`, `output.crew.count` | Compatible item counts and number of crew seats on a successful dummy options lookup. |
+| [`output.vehicle.health_factor`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Unitless combined health multiplier from supported passive equipment, emitted on successful battle vehicle loadout projection. |
+| [`output.players.handoff_count`](../src/player-administration/src/presentation/battles.rs), `output.battle.id` | Count of successful queued garage-to-arena handoffs and ID of the activated arena. The gateway also records zero handoffs when no selected client could transfer. |
+| [`output.outcome`](../src/player-administration/src/presentation/battles.rs) | Dashboard battle routes record `loaded`, `launched`, `launched_partial`, `invalid_payload`, `invalid_setup`, `player_unavailable`, `invalid_dummy`, `vehicle_unavailable`, `loadout_failed`, `unavailable` or `preparation_failed`. Dummy vehicle projection records `prepared`, `invalid_loadout` or `projection_failed`. |
 
 ## Browser spans
 

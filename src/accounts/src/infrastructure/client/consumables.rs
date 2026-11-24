@@ -10,7 +10,13 @@ use anyhow::{Context, Result};
 use std::collections::BTreeMap;
 use wot_resources::ResourceBundle;
 
-pub(super) fn load(fs: &ResourceBundle, prices: &ItemPrices) -> Result<ConsumableRules> {
+pub(super) fn load(
+    fs: &ResourceBundle,
+    prices: &ItemPrices,
+) -> Result<(ConsumableRules, BTreeMap<i32, String>)> {
+    let translations = super::localization::localized_names(fs, "text/lc_messages/artefacts.mo")
+        .unwrap_or_default();
+    let mut names = BTreeMap::new();
     let definitions = read_xml(fs, "scripts/item_defs/vehicles/common/equipments.xml")?;
     let mut items = BTreeMap::new();
     for (name, item) in definitions.iter_child_elements() {
@@ -54,8 +60,16 @@ pub(super) fn load(fs: &ResourceBundle, prices: &ItemPrices) -> Result<Consumabl
                     .collect()
             })
             .unwrap_or_default();
+        let id = i32::try_from(cd.to_int())?;
+        let label = item
+            .get_child_string("userString")
+            .and_then(|value| value.trim().strip_prefix("#artefacts:"))
+            .and_then(|key| translations.get(key))
+            .cloned()
+            .unwrap_or_else(|| super::localization::humanize_item_name(name));
+        names.insert(id, label);
         items.insert(
-            i32::try_from(cd.to_int())?,
+            id,
             ConsumableDefinition {
                 price,
                 tags,
@@ -65,8 +79,11 @@ pub(super) fn load(fs: &ResourceBundle, prices: &ItemPrices) -> Result<Consumabl
             },
         );
     }
-    Ok(ConsumableRules {
-        items,
-        gold_to_credits: AMMO_EXCHANGE_RATE,
-    })
+    Ok((
+        ConsumableRules {
+            items,
+            gold_to_credits: AMMO_EXCHANGE_RATE,
+        },
+        names,
+    ))
 }

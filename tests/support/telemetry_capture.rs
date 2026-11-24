@@ -101,10 +101,12 @@ where
     S: tracing::Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
 {
     fn on_enter(&self, id: &tracing::Id, context: tracing_subscriber::layer::Context<'_, S>) {
-        if !context
-            .span(id)
-            .is_some_and(|span| span.name() == "battles.prepare")
-        {
+        if !context.span(id).is_some_and(|span| {
+            span.name() == "battles.prepare"
+                && span.parent().is_some_and(|parent| {
+                    parent.name() == "player_sessions.prepare_training_battle"
+                })
+        }) {
             return;
         }
         let gate = PREPARATION_GATE.lock().unwrap().take();

@@ -83,6 +83,7 @@ fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_comman
                         team,
                         is_host: team == 1,
                         observer: false,
+                        stationary_dummy: false,
                         customization_display_type: 0,
                         vehicle: vehicle(),
                     })

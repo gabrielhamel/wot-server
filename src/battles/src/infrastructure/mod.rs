@@ -72,6 +72,7 @@ struct Entrant {
     team: u8,
     is_host: bool,
     observer: bool,
+    stationary_dummy: bool,
     customization_display_type: u8,
     vehicle: VehicleLoadout,
     avatar_id: u32,
@@ -103,6 +104,7 @@ impl Entrant {
             team: 1,
             is_host: true,
             observer: false,
+            stationary_dummy: false,
             customization_display_type: 2,
             vehicle: VehicleLoadout {
                 descriptor: vec![1],
@@ -144,7 +146,7 @@ struct Participant {
     avatar_id: u32,
     roster_row: usize,
     team: u8,
-    entry: ArenaEntry,
+    entry: Option<ArenaEntry>,
     entered: bool,
     ready: bool,
     tank: Tank,
@@ -322,6 +324,10 @@ impl PreparedBattle {
         self.battle.players.contains_key(&client)
     }
 
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
     pub fn participant_count(&self) -> usize {
         self.battle.players.len()
     }
@@ -455,6 +461,7 @@ impl BattleRuntime {
                     team: player.team,
                     is_host: player.is_host,
                     observer: player.observer,
+                    stationary_dummy: player.stationary_dummy,
                     customization_display_type: player.customization_display_type,
                     vehicle: player.vehicle,
                     avatar_id: ids.avatar,
@@ -480,9 +487,13 @@ impl BattleRuntime {
                         avatar_id: player.avatar_id,
                         roster_row,
                         team: player.team,
-                        entry: wire.entry(battle_id, arena_type, launch.mode, player, &roster)?,
+                        entry: (!player.stationary_dummy)
+                            .then(|| {
+                                wire.entry(battle_id, arena_type, launch.mode, player, &roster)
+                            })
+                            .transpose()?,
                         entered: false,
-                        ready: false,
+                        ready: player.stationary_dummy,
                         tank: player.tank(),
                         observer: player.observer,
                         customization_display_type: player.customization_display_type,
@@ -544,8 +555,10 @@ impl BattleSimulation {
         let now = Instant::now();
         battle.started_at = now;
         battle.round.deadline = now + LOAD_TIMEOUT;
-        for &client in battle.players.keys() {
-            self.engagements.insert(client, id);
+        for (&client, player) in &battle.players {
+            if player.entry.is_some() {
+                self.engagements.insert(client, id);
+            }
         }
         self.active.insert(id, battle);
         tracing::Span::current().record("output.outcome", "activated");
@@ -565,6 +578,9 @@ impl BattleSimulation {
         let Some(player) = battle.players.get(&client).filter(|player| !player.entered) else {
             return Ok(());
         };
+        let Some(entry) = &player.entry else {
+            return Ok(());
+        };
         let span = tracing::info_span!(
             parent: battle.launch.as_ref().unwrap_or(&tracing::Span::none()),
             "battles.enter",
@@ -582,12 +598,8 @@ impl BattleSimulation {
             "otel.status_code" = tracing::field::Empty,
         );
         let result = span.in_scope(|| -> Result<_> {
-            delivery.create_avatar(
-                client,
-                player.avatar_id,
-                player.entry.base_properties.clone(),
-            )?;
-            player.entry.publish(
+            delivery.create_avatar(client, player.avatar_id, entry.base_properties.clone())?;
+            entry.publish(
                 delivery,
                 client,
                 &battle.map,
@@ -635,7 +647,11 @@ impl BattleSimulation {
                 if let Some(player) = battle.players.get_mut(&client) {
                     player.entered = true;
                 }
-                if battle.players.values().all(|player| player.entered) {
+                if battle
+                    .players
+                    .values()
+                    .all(|player| player.entered || player.entry.is_none())
+                {
                     battle.launch = None;
                 }
                 span.record("output.outcome", "entered");
@@ -709,15 +725,21 @@ impl BattleSimulation {
         let mut ending = Vec::new();
         for (&battle_id, battle) in &mut self.active {
             if battle.round.ended(now) {
-                ending.extend(battle.players.keys().map(|&client| {
-                    (
-                        client,
-                        battle
-                            .finish_span
-                            .clone()
-                            .unwrap_or_else(tracing::Span::none),
-                    )
-                }));
+                ending.extend(
+                    battle
+                        .players
+                        .iter()
+                        .filter(|(_, player)| player.entry.is_some())
+                        .map(|(&client, _)| {
+                            (
+                                client,
+                                battle
+                                    .finish_span
+                                    .clone()
+                                    .unwrap_or_else(tracing::Span::none),
+                            )
+                        }),
+                );
                 continue;
             }
             if let Some(wire) = &self.wire {
@@ -758,7 +780,7 @@ impl BattleSimulation {
             for (&client, player) in &battle.players {
                 if player.entered {
                     recipients.push(client);
-                } else if now >= battle.started_at + LOAD_TIMEOUT {
+                } else if player.entry.is_some() && now >= battle.started_at + LOAD_TIMEOUT {
                     delivery.disconnect(client);
                 }
             }
@@ -793,7 +815,7 @@ impl BattleSimulation {
         let span = tracing::Span::current();
         span.record("output.battle.id", id);
         span.record("output.players.count", battle.players.len());
-        if battle.players.is_empty() {
+        if battle.players.values().all(|player| player.entry.is_none()) {
             self.active.remove(&id);
         } else {
             if removed.ready
@@ -814,7 +836,11 @@ impl BattleSimulation {
                     error!(%error, "Could not remove departed battle vehicle");
                 }
             }
-            if battle.players.values().all(|p| p.entered) {
+            if battle
+                .players
+                .values()
+                .all(|p| p.entered || p.entry.is_none())
+            {
                 battle.launch = None;
             }
             let now = Instant::now();

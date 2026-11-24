@@ -165,7 +165,7 @@ impl ConsumableRules {
         Ok(purchases)
     }
 
-    fn validate(
+    pub(crate) fn validate(
         &self,
         vehicle: &EquipmentVehicle,
         layout: &ConsumableLayout,

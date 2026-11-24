@@ -47,6 +47,7 @@ fn projectile_battle(teams: &[u8]) -> (u32, Battle, Arc<ArenaWire>) {
                             team,
                             is_host: index == 0,
                             observer: false,
+                            stationary_dummy: false,
                             customization_display_type: 0,
                             vehicle,
                         }

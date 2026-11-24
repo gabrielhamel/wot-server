@@ -70,6 +70,7 @@ async fn exports_admin_http_request_inputs() {
         None,
         DashboardConfig {
             secure_cookies: true,
+            battles: None,
             trusted_proxies: vec!["192.0.2.10".parse().unwrap()],
         },
     ));
@@ -657,6 +658,7 @@ async fn exports_admin_http_access_lifecycle() {
             Some(store.clone()),
             DashboardConfig {
                 secure_cookies: true,
+                battles: None,
                 trusted_proxies: vec![],
             },
         ))

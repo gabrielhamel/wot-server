@@ -29,7 +29,7 @@ The gateway refreshes both count gauges on its own loop. The battle worker
 samples duration and delay when at least one arena is active at the start of
 its tick. Both histograms use buckets around the 100 ms interval. The worker
 preserves the originating span with each queued command and delivery. Arena
-preparation and its terrain and obstacle loads run in the Training launch trace.
+preparation and its terrain and obstacle loads run in the Training Room or admin launch trace.
 Player Sessions retains the launch span until it acknowledges activation or
 rejects preparation. The simulation scheduler measures its own tick timings
 independently of the preparation task. Mercury
@@ -88,6 +88,12 @@ The shared web listener composes the admin and Store APIs. Page shells and
 shared assets emit `web.ui.request` with their matched route, HTTP status and
 asset source. They preserve a valid sampled W3C trace parent when supplied.
 Admin and Store API requests keep their own request spans.
+
+Dashboard battle launches keep the browser parent through authentication,
+`admin.start_battle`, the gateway request and the arena worker. Accounts records
+the selected dummy vehicle and loadout counts. Arena preparation and the
+subsequent native client entry share the launch trace. The launch response
+records the allocated battle ID and the count of client handoffs queued.
 
 Managed player creation traces the input lengths and validation outcome
 through `admin.players.create` and `accounts.registration.validate`. An accepted

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vite-plus/test";
@@ -1107,4 +1107,128 @@ describe("Server Administration", () => {
       await telemetry.stop();
     }
   });
+});
+
+it("launches a Training battle with selected players and a customized stationary dummy", async () => {
+  const telemetry = captureTraces();
+  const posts: { trace: string | null; body: unknown }[] = [];
+  let optionsTrace: string | null = null;
+  let loadoutTrace: string | null = null;
+  httpServer.use(
+    players(),
+    http.get(`${origin}/battles`, ({ request }) => {
+      optionsTrace = request.headers.get("traceparent");
+      return HttpResponse.json({
+        maps: [{ id: 5, name: "Prokhorovka · Standard Battle" }],
+        players: [
+          { id: 123, name: "Commander", vehicles: [{ id: 209, name: "T1 Cunningham" }] },
+          { id: 124, name: "Wingmate", vehicles: [{ id: 210, name: "T-34" }] },
+        ],
+        observer_available: true,
+        dummy_vehicles: [{ id: 81, key: "ussr:R04_T-34", name: "T-34", tier: 5 }],
+      });
+    }),
+    http.get(`${origin}/battles/vehicles/81`, ({ request }) => {
+      loadoutTrace = request.headers.get("traceparent");
+      return HttpResponse.json({
+        equipment_slots: 3,
+        consumable_slots: 3,
+        equipment: [{ id: 120, name: "Improved Hardening" }],
+        consumables: [{ id: 121, name: "Small Repair Kit" }],
+        crew: [{ name: "Commander", perks: [{ id: 9, name: "Brothers in Arms" }] }],
+      });
+    }),
+    http.post(`${origin}/battles`, async ({ request }) => {
+      expect(request.headers.get("x-wot-admin")).toBe("1");
+      posts.push({ trace: request.headers.get("traceparent"), body: await request.json() });
+      if (posts.length === 1) {
+        return HttpResponse.json(
+          { message: "A selected player is no longer available." },
+          { status: 409 },
+        );
+      }
+      return HttpResponse.json({ battle_id: 7, players_handed_off: 2 });
+    }),
+  );
+  try {
+    const { user } = openAdmin(true);
+    await user.click(await screen.findByRole("tab", { name: "Admin" }));
+    await user.click(await screen.findByRole("link", { name: "Battles" }));
+    await user.selectOptions(
+      await screen.findByLabelText("Map and battle type"),
+      "Prokhorovka · Standard Battle",
+    );
+    await user.selectOptions(screen.getByLabelText("Battle duration"), "10 minutes");
+    for (const name of ["Commander", "Wingmate"]) {
+      const picker = screen.getByRole("combobox", { name: "Add connected player" });
+      await user.clear(picker);
+      await user.type(picker, name);
+      await user.click(await screen.findByRole("option", { name }));
+    }
+    expect(screen.getByRole("button", { name: "Start battle" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Add dummy" }));
+    await user.click(screen.getByRole("combobox", { name: "Vehicle for Dummy 1" }));
+    await user.click(
+      within(await screen.findByRole("listbox")).getByRole("option", { name: "T-34" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Customize Dummy 1" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Customize Dummy 1" }));
+    await user.selectOptions(
+      await dialog.findByLabelText("Equipment slot 1"),
+      "Improved Hardening",
+    );
+    await user.selectOptions(dialog.getByLabelText("Consumable slot 1"), "Small Repair Kit");
+    await user.click(dialog.getByRole("combobox", { name: "Commander perks (seat 1)" }));
+    await user.click(await screen.findByRole("option", { name: "Brothers in Arms" }));
+    await user.click(dialog.getByRole("button", { name: "Apply loadout" }));
+    await user.click(screen.getByRole("button", { name: "Start battle" }));
+    expect(await screen.findByText("A selected player is no longer available.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Refresh players" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start battle" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Start battle" }));
+    expect(await screen.findByText("Battle started.")).toBeVisible();
+    expect(posts).toHaveLength(2);
+    expect(posts[1]?.body).toEqual({
+      arena_type: 5,
+      duration_seconds: 600,
+      players: [
+        { account_id: 123, team: 1, inventory_id: 209 },
+        { account_id: 124, team: 1, inventory_id: 210 },
+      ],
+      dummies: [
+        {
+          team: 2,
+          loadout: { vehicle: 81, equipment: [120], consumables: [121], crew_perks: [[9]] },
+        },
+      ],
+    });
+    telemetry.expectRequest(optionsTrace, "web.admin.battle_options", "/api/admin/battles", 200);
+    telemetry.expectRequest(
+      loadoutTrace,
+      "web.admin.dummy_loadout",
+      "/api/admin/battles/vehicles/{vehicle}",
+      200,
+    );
+    telemetry.expectRequest(
+      posts[0]?.trace ?? null,
+      "web.admin.start_battle",
+      "/api/admin/battles",
+      409,
+    );
+    const { parent } = telemetry.expectRequest(
+      posts[1]?.trace ?? null,
+      "web.admin.start_battle",
+      "/api/admin/battles",
+      200,
+    );
+    expect(parent?.attributes).toMatchObject({
+      "input.arena_type_id": 5,
+      "input.round_length.seconds": 600,
+      "input.players.count": 2,
+      "input.dummies.count": 1,
+      "output.battle.id": 7,
+    });
+  } finally {
+    await telemetry.stop();
+  }
 });

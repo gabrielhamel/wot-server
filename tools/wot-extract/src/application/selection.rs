@@ -129,6 +129,8 @@ pub(super) fn is_definition(root: &str, path: &str) -> bool {
                 path,
                 "text/lc_messages/vehicle_customization.mo"
                     | "text/lc_messages/artefacts.mo"
+                    | "text/lc_messages/arenas.mo"
+                    | "text/lc_messages/crew_perks.mo"
                     | "text/lc_messages/crew_skins.mo"
                     | "text/lc_messages/crew_books.mo"
                     | "text/lc_messages/nations.mo"

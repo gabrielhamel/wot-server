@@ -5,6 +5,7 @@ import { PlayerCreate, PlayerList } from "./players";
 import { PlayerGarage } from "./garage/garage-page";
 import { serverTheme } from "../../../../shared-infrastructure/src/presentation/web/theme";
 import { AdminLogin } from "./admin-login";
+import { BattleSetup } from "./battle-setup";
 import { ServerLayout } from "./admin-layout";
 
 const theme = {
@@ -31,6 +32,7 @@ export default function AdminApp() {
       requireAuth
       disableTelemetry
     >
+      <Resource name="battles" options={{ label: "Start battle" }} list={BattleSetup} />
       <Resource
         name="players"
         options={{ label: "Player accounts" }}

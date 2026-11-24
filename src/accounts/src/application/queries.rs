@@ -82,6 +82,38 @@ impl GarageQueries {
         self.0.battle_vehicle(&account.0, inventory_id)
     }
 
+    pub fn dummy_vehicle(
+        &self,
+        loadout: &crate::contract::DummyLoadout,
+    ) -> anyhow::Result<Option<BattleVehicle>> {
+        self.0.dummy_vehicle(loadout)
+    }
+
+    pub fn dummy_loadout_options(
+        &self,
+        vehicle: i32,
+    ) -> anyhow::Result<Option<crate::contract::DummyLoadoutOptions>> {
+        self.0.dummy_loadout_options(vehicle)
+    }
+
+    pub fn battle_vehicle_choices(&self, account: &AccountView) -> Vec<(i64, String)> {
+        account
+            .0
+            .vehicles
+            .iter()
+            .map(|vehicle| {
+                let name = self
+                    .0
+                    .vehicle_catalog_entry(&vehicle.catalog_key)
+                    .map_or_else(
+                        || "Vehicle unavailable".into(),
+                        |entry| entry.name.to_owned(),
+                    );
+                (vehicle.inventory_id, name)
+            })
+            .collect()
+    }
+
     pub fn outfit_change<'a>(
         &self,
         account: &AccountView,

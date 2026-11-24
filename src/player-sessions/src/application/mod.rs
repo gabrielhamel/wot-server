@@ -1,3 +1,4 @@
+pub(crate) mod admin_battles;
 use std::collections::BTreeMap;
 use wot_accounts::contract::{AccountView, GameAccounts};
 pub(crate) mod grants;

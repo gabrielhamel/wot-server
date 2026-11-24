@@ -1,3 +1,5 @@
+#[path = "support/admin_battle_flow.rs"]
+mod admin_battle_flow;
 #[path = "support/ammunition_flow.rs"]
 mod ammunition_flow;
 #[path = "support/camouflage_flow.rs"]

@@ -9,7 +9,7 @@ use super::{
 };
 use crate::application::{BattleEntityIds, BattleLaunch, BattlePreparationId, VehicleControl};
 use std::{
-    collections::HashSet,
+    collections::BTreeMap,
     net::SocketAddrV4,
     sync::{
         Arc,
@@ -78,13 +78,29 @@ pub struct BattleWorker {
     outputs: mpsc::Receiver<BattleOutput>,
     preparation: PreparationWorker,
     active: Arc<AtomicUsize>,
-    maps: HashSet<i32>,
+    maps: BTreeMap<i32, Option<String>>,
     task: JoinHandle<()>,
 }
 
 impl BattleRuntime {
     pub fn spawn_worker(mut self, runtime: &Handle, address: SocketAddrV4) -> BattleWorker {
-        let maps = self.maps.keys().copied().collect();
+        let maps = self
+            .maps
+            .iter()
+            .map(|(&id, map)| {
+                let name = self
+                    .wire
+                    .as_ref()
+                    .and(map.as_ref())
+                    .filter(|map| {
+                        self.resources
+                            .read_dir(&format!("{}/terrain", map.geometry))
+                            .is_ok_and(|mut tiles| tiles.next().is_some())
+                    })
+                    .map(|map| map.name.clone());
+                (id, name)
+            })
+            .collect();
         let wire = self.wire.clone();
         let preparation =
             PreparationWorker::spawn(runtime, move |launch, ids| self.prepare(launch, ids));
@@ -97,7 +113,7 @@ impl BattleWorker {
         runtime: &Handle,
         address: SocketAddrV4,
         wire: Option<Arc<ArenaWire>>,
-        maps: HashSet<i32>,
+        maps: BTreeMap<i32, Option<String>>,
         preparation: PreparationWorker,
     ) -> Self {
         let (commands, inbox) = mpsc::channel(COMMAND_CAPACITY);
@@ -133,7 +149,13 @@ impl BattleWorker {
     }
 
     pub fn has_map(&self, arena_type: i32) -> bool {
-        self.maps.contains(&arena_type)
+        self.maps.contains_key(&arena_type)
+    }
+
+    pub fn maps(&self) -> impl Iterator<Item = (i32, &str)> {
+        self.maps
+            .iter()
+            .filter_map(|(&id, name)| Some((id, name.as_deref()?)))
     }
 
     pub fn prepare(
@@ -298,7 +320,7 @@ mod tests {
             outputs,
             preparation: PreparationWorker::spawn(&Handle::current(), |_, _| Ok(None)),
             active: Arc::new(AtomicUsize::new(0)),
-            maps: HashSet::new(),
+            maps: BTreeMap::new(),
             task: tokio::spawn(async {}),
         };
         let participant = ParticipantId(3);
@@ -341,7 +363,7 @@ mod tests {
             &handle,
             SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0),
             None,
-            HashSet::new(),
+            BTreeMap::new(),
             preparation,
         );
         let now = Instant::now();
@@ -349,6 +371,7 @@ mod tests {
             id: 1,
             battle: Battle {
                 map: ArenaMap {
+                    name: "Test Map".into(),
                     geometry: String::new(),
                     spawns: [Vec2::ZERO; 2],
                     bounds: [Vec2::ZERO; 2],
@@ -377,7 +400,7 @@ mod tests {
         ));
         worker
             .prepare(
-                BattlePreparationId(2),
+                BattlePreparationId::TrainingRoom(2),
                 BattleLaunch {
                     arena_type: 2,
                     duration: Duration::from_secs(300),

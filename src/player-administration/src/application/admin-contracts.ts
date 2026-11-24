@@ -99,3 +99,34 @@ export type AdminSession =
   | { status: "setup_required" }
   | { status: "signed_out"; registration_open: boolean }
   | { status: "authenticated"; player: PlayerRecord; store_enabled: boolean };
+
+export type BattleChoice = { id: number; name: string };
+
+export type BattleOptions = {
+  maps: BattleChoice[];
+  players: (BattleChoice & { vehicles: BattleChoice[] })[];
+  observer_available: boolean;
+  dummy_vehicles: CatalogVehicle[];
+};
+
+export type DummyLoadoutOptions = {
+  equipment_slots: number;
+  consumable_slots: number;
+  equipment: BattleChoice[];
+  consumables: BattleChoice[];
+  crew: { name: string; perks: BattleChoice[] }[];
+};
+
+export type DummyLoadout = {
+  vehicle: number;
+  equipment: number[];
+  consumables: number[];
+  crew_perks: number[][];
+};
+
+export type AdminBattleSetup = {
+  arena_type: number;
+  duration_seconds: number;
+  players: { account_id: number; team: number; inventory_id: number | null }[];
+  dummies: { team: number; loadout: DummyLoadout }[];
+};
