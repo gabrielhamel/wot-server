@@ -343,7 +343,11 @@ export function BattleSetup() {
                         updateDummy(key, { loadout: emptyLoadout(value?.id) })
                       }
                       renderInput={(params) => (
-                        <TextField {...params} label={`Vehicle for Dummy ${index + 1}`} />
+                        <TextField
+                          {...params}
+                          margin="none"
+                          label={`Vehicle for Dummy ${index + 1}`}
+                        />
                       )}
                     />
                   </Stack>
