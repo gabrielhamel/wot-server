@@ -83,6 +83,7 @@ fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_comman
                         team,
                         is_host: team == 1,
                         observer: false,
+                        stationary_dummy: false,
                         customization_display_type: 0,
                         vehicle: vehicle(),
                     })
@@ -463,7 +464,7 @@ fn engine_pressure_breaks_from_rest_and_light_vehicles_lose_more_speed() {
     let medium = apply(36_000.0, Vec2::Y, Vec2::Y, Vec2::ZERO);
     assert_eq!(light.broken.len(), 1);
     assert_eq!(medium.broken.len(), 1);
-    assert!((0.91..0.93).contains(&light.speed_scale));
+    assert!((0.89..0.91).contains(&light.speed_scale));
     assert!(medium.speed_scale > 0.99);
 }
 
@@ -494,7 +495,7 @@ fn tks_20_entry_speed_affects_how_many_widepark_strength_panels_it_breaks() {
         offset: Vec2::ZERO,
         body: None,
     };
-    for (entry_speed, expected_breaks) in [(8.5, 3), (9.8, 5)] {
+    for (entry_speed, expected_breaks) in [(8.5, 3), (9.8, 4), (10.3, 5)] {
         let mut scene = Scenery::test_mesh(panels.clone());
         let mut hull = start;
         let mut speed = entry_speed;
@@ -519,9 +520,9 @@ fn tks_20_entry_speed_affects_how_many_widepark_strength_panels_it_breaks() {
                 break;
             }
         }
-        assert_eq!(broken, expected_breaks);
+        assert_eq!(broken, expected_breaks, "entry speed {entry_speed} m/s");
         assert_eq!(stalled, expected_breaks < 5);
-        assert!((entry_speed * 0.60..entry_speed * 0.75).contains(&speed));
+        assert!((entry_speed * 0.58..entry_speed * 0.81).contains(&speed));
     }
 }
 

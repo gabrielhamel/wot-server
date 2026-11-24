@@ -7,6 +7,7 @@ use wot_resources::ResourceBundle;
 #[derive(Clone)]
 pub(super) struct ArenaMap {
     pub(super) geometry: String,
+    pub(super) name: String,
     pub(super) spawns: [Vec2; 2],
     pub(super) bounds: [Vec2; 2],
 }
@@ -37,6 +38,7 @@ impl ArenaMap {
         Some(Self {
             bounds,
             geometry: geometry.to_owned(),
+            name: String::new(),
             spawns: [spawn("team1")?, spawn("team2")?],
         })
     }
@@ -51,6 +53,11 @@ pub(super) fn load(resources: &ResourceBundle) -> Result<HashMap<i32, Option<Are
     let defaults = pxml::from_reader(BufReader::new(
         resources.read("scripts/arena_defs/_default_.xml")?,
     ))?;
+    let names = resources
+        .read("text/lc_messages/arenas.mo")
+        .ok()
+        .and_then(wot_platform::client_formats::gettext::localized_names)
+        .unwrap_or_default();
     let mut arenas = HashMap::new();
     for map in list
         .iter_children("map")
@@ -94,7 +101,35 @@ pub(super) fn load(resources: &ResourceBundle) -> Result<HashMap<i32, Option<Are
                     if explicit != Some(true) {
                         arenas.insert(
                             (id << 16) | i32::from(geometry),
-                            ArenaMap::from_definition(&map, gameplay),
+                            ArenaMap::from_definition(&map, gameplay).map(|mut arena| {
+                                let label = map.get_child_string("name").unwrap_or(name);
+                                let key = label.strip_prefix("#arenas:").unwrap_or(label);
+                                let fallback = name.split_once('_').map_or(name, |(_, rest)| rest);
+                                let label = names
+                                    .get(key)
+                                    .or_else(|| names.get(&format!("{name}/name")))
+                                    .cloned()
+                                    .unwrap_or_else(|| {
+                                        fallback
+                                            .split('_')
+                                            .map(|word| {
+                                                let mut letters = word.chars();
+                                                letters.next().map_or_else(String::new, |first| {
+                                                    first.to_uppercase().chain(letters).collect()
+                                                })
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join(" ")
+                                    });
+                                let mode = match gameplay {
+                                    "domination" => "Encounter",
+                                    "assault" => "Assault",
+                                    "assault2" => "Assault (reversed)",
+                                    _ => "Standard Battle",
+                                };
+                                arena.name = format!("{label} · {mode}");
+                                arena
+                            }),
                         );
                     }
                 }

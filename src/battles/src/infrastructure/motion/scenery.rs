@@ -3,7 +3,7 @@ use crate::infrastructure::obstacles::{Fragment, HullHit};
 use std::f32::consts::{PI, TAU};
 
 const MAX_CONTACTS_PER_STEP: usize = 4;
-const SCENERY_BREAK_ENERGY_LOSS: f32 = 0.25;
+const SCENERY_BREAK_ENERGY_LOSS: f32 = 0.30;
 const MAX_TURN_SAMPLE_RADIANS: f32 = 0.035;
 pub(super) const PRESS_REACH: f32 = 0.05;
 

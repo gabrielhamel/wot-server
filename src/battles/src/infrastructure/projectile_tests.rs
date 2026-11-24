@@ -17,8 +17,9 @@ use wot_shared_kernel::{
 
 const SHOOTER: ParticipantId = ParticipantId(1);
 const VICTIM: ParticipantId = ParticipantId(2);
+const NEARBY_VICTIM: ParticipantId = ParticipantId(3);
 
-fn projectile_battle() -> (u32, Battle, Arc<ArenaWire>) {
+fn projectile_battle(teams: &[u8]) -> (u32, Battle, Arc<ArenaWire>) {
     let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
     let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
     let dispatch = Arc::new(ScriptDispatch::new(
@@ -32,36 +33,34 @@ fn projectile_battle() -> (u32, Battle, Arc<ArenaWire>) {
                 arena_type: (1 << 16) | 5,
                 duration: Duration::from_secs(60),
                 mode: BattleMode::Training,
-                participants: [1_u8, 2]
-                    .into_iter()
-                    .map(|team| {
+                participants: teams
+                    .iter()
+                    .enumerate()
+                    .map(|(index, &team)| {
+                        let player = index as u64 + 1;
                         let mut vehicle = Entrant::sample().vehicle;
                         vehicle.performance = Some(profile());
                         BattleParticipant {
-                            id: ParticipantId(u64::from(team)),
-                            account_id: i64::from(team),
-                            name: format!("Player {team}"),
+                            id: ParticipantId(player),
+                            account_id: player as i64,
+                            name: format!("Player {player}"),
                             team,
-                            is_host: team == 1,
+                            is_host: index == 0,
                             observer: false,
+                            stationary_dummy: false,
                             customization_display_type: 0,
                             vehicle,
                         }
                     })
                     .collect(),
             },
-            vec![
-                BattleEntityIds {
-                    avatar: 11,
-                    vehicle: 12,
-                    info: 13,
-                },
-                BattleEntityIds {
-                    avatar: 21,
-                    vehicle: 22,
-                    info: 23,
-                },
-            ],
+            (1..=teams.len() as u32)
+                .map(|player| BattleEntityIds {
+                    avatar: player * 10 + 1,
+                    vehicle: player * 10 + 2,
+                    info: player * 10 + 3,
+                })
+                .collect(),
         )
         .unwrap()
         .unwrap();
@@ -87,6 +86,10 @@ fn projectile_battle() -> (u32, Battle, Arc<ArenaWire>) {
 struct ImpactDelivery {
     indicators: Vec<(ParticipantId, AvatarUpdate)>,
     stickers: Vec<(ParticipantId, Vec<u8>)>,
+    tracers: Vec<(i32, bool, f32)>,
+    stops: Vec<i32>,
+    health_changes: Vec<u32>,
+    damage_logs: usize,
 }
 
 impl ArenaDelivery for ImpactDelivery {
@@ -116,7 +119,19 @@ impl ArenaDelivery for ImpactDelivery {
                 let _delivery = tracing::info_span!("test.hit_direction_delivery").entered();
                 self.indicators.push((recipient, update));
             }
-            AvatarUpdate::BattleEvents(_) => panic!("Unexpected damage log"),
+            AvatarUpdate::BattleEvents(_) => self.damage_logs += 1,
+            AvatarUpdate::Tracer {
+                id,
+                ricochet,
+                range,
+                ..
+            } if recipient == SHOOTER => {
+                let _delivery = tracing::info_span!("test.tracer_delivery").entered();
+                self.tracers.push((id, ricochet, range));
+            }
+            AvatarUpdate::StopTracer { id, .. } if recipient == SHOOTER => {
+                self.stops.push(id);
+            }
             _ => {}
         }
         Ok(())
@@ -149,11 +164,14 @@ impl ArenaDelivery for ImpactDelivery {
     fn arena_vehicle_method(
         &mut self,
         _: ParticipantId,
-        _: u32,
+        entity: u32,
         name: &str,
         _: Vec<ScriptValue>,
     ) -> std::io::Result<()> {
-        assert_ne!(name, "onHealthChanged");
+        if name == "onHealthChanged" {
+            let _delivery = tracing::info_span!("test.health_delivery").entered();
+            self.health_changes.push(entity);
+        }
         Ok(())
     }
 
@@ -167,7 +185,7 @@ impl ArenaDelivery for ImpactDelivery {
 fn blocked_impacts_publish_direction_and_vehicle_marks() {
     use crate::domain::vehicle::Aim;
 
-    let (id, mut battle, wire) = projectile_battle();
+    let (id, mut battle, wire) = projectile_battle(&[1, 2]);
     let tank = &mut battle.players.get_mut(&SHOOTER).unwrap().tank;
     tank.performance.as_mut().unwrap().gun.shell_effects.insert(
         10,
@@ -256,6 +274,8 @@ fn blocked_impacts_publish_direction_and_vehicle_marks() {
             };
             assert!((*yaw - bearing).abs() < 0.001);
             assert_eq!(battle.players[&VICTIM].tank.health, 100);
+            assert!(delivery.health_changes.is_empty());
+            assert_eq!(delivery.damage_logs, 0);
             delivery.indicators.clear();
             delivery.stickers.sort_by_key(|(recipient, _)| recipient.0);
             let [(SHOOTER, shooter_marks), (VICTIM, victim_marks)] = delivery.stickers.as_slice()
@@ -331,8 +351,226 @@ fn blocked_impacts_publish_direction_and_vehicle_marks() {
 
 #[test]
 #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+fn ricochet_continues_to_a_second_plate_within_ten_calibers() {
+    for (first_part, second_part, second_target, second_entity, distance, penetrates) in [
+        (2, 1, VICTIM, 22, 0.75, true),
+        (1, 2, VICTIM, 22, 0.75, true),
+        (2, 1, NEARBY_VICTIM, 32, 0.99, true),
+        (2, 1, NEARBY_VICTIM, 32, 1.01, false),
+    ] {
+        let (id, mut battle, wire) = projectile_battle(&[1, 2, 2]);
+        for participant in [VICTIM, NEARBY_VICTIM] {
+            battle
+                .players
+                .get_mut(&participant)
+                .unwrap()
+                .tank
+                .performance
+                .as_mut()
+                .unwrap()
+                .armor = Default::default();
+        }
+        let shooter = &mut battle.players.get_mut(&SHOOTER).unwrap().tank;
+        let gun = &mut shooter.performance.as_mut().unwrap().gun;
+        gun.shell_damage.insert(10, 40);
+        gun.shell_ballistics.insert(
+            10,
+            ShellBallistics {
+                kind: ShellKind::ArmorPiercing,
+                caliber_mm: 100.0,
+                penetration_mm: [90.0; 2],
+                penetration_randomization: 0.0,
+                damage_randomization: 0.0,
+                uniform_penetration: false,
+                uniform_damage: false,
+                far_damage: 40.0,
+                damage_limited_range: f32::INFINITY,
+                device_damage: [0.0; 2],
+                explosive: None,
+                speed: 100.0,
+                gravity: 0.0,
+                normalization: 0.0,
+                ricochet_cos: 70.0_f32.to_radians().cos(),
+                trace_ricochet: true,
+                obstacle_damage: None,
+                obstacle_penetration_loss: 0.0,
+            },
+        );
+        let ray = shooter.gun_ray();
+        let contact = ray.origin + ray.direction * 3.0;
+        let normal = Vec3::new(
+            15.0_f32.to_radians().cos(),
+            0.0,
+            -15.0_f32.to_radians().sin(),
+        );
+        let reflected = Vec3::new(0.5, 0.0, 3.0_f32.sqrt() / 2.0);
+        mount_test_plate(&mut battle, VICTIM, first_part, contact, normal, true);
+        mount_test_plate(
+            &mut battle,
+            second_target,
+            second_part,
+            contact + reflected * distance,
+            -reflected,
+            false,
+        );
+
+        let mut delivery = ImpactDelivery::default();
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("ricochet-test")));
+        tracing::subscriber::with_default(subscriber, || {
+            let now = battle.started_at;
+            assert_eq!(
+                battle.fire(&mut delivery, &wire, id, SHOOTER, now).unwrap(),
+                "launched"
+            );
+            battle.advance_projectiles(&mut delivery, &wire, id, now + Duration::from_millis(32));
+            assert_eq!(battle.players[&VICTIM].tank.health, 100);
+            assert_eq!(battle.players[&NEARBY_VICTIM].tank.health, 100);
+            assert!(matches!(
+                delivery.indicators.as_slice(),
+                [(
+                    VICTIM,
+                    AvatarUpdate::HitDirection {
+                        blocked: true,
+                        victim: 22,
+                        ..
+                    }
+                )]
+            ));
+            let &[(direct_id, false, _), (reflected_id, true, range)] = delivery.tracers.as_slice()
+            else {
+                panic!("Expected a direct and a reflected tracer");
+            };
+            assert_ne!(direct_id, reflected_id);
+            assert!((range - 0.998).abs() < 1e-6);
+            assert_eq!(delivery.stops, [direct_id]);
+
+            battle.advance_projectiles(&mut delivery, &wire, id, now + Duration::from_millis(50));
+            if penetrates {
+                assert_eq!(battle.players[&second_target].tank.health, 60);
+                assert!(matches!(
+                    delivery.indicators.get(1),
+                    Some((target, AvatarUpdate::HitDirection { blocked: false, damage: 40, victim, .. }))
+                        if *target == second_target && *victim == second_entity
+                ));
+                assert_eq!(delivery.stops, [direct_id, reflected_id]);
+                assert_eq!(delivery.health_changes, [second_entity; 3]);
+                assert_eq!(delivery.damage_logs, 2);
+            } else {
+                assert_eq!(battle.players[&second_target].tank.health, 100);
+                assert_eq!(delivery.indicators.len(), 1);
+                assert_eq!(delivery.stops, [direct_id]);
+                assert!(delivery.health_changes.is_empty());
+                assert_eq!(delivery.damage_logs, 0);
+            }
+            battle.players.get_mut(&SHOOTER).unwrap().pending_reload = None;
+        });
+
+        let spans = exporter.get_finished_spans().unwrap();
+        let shot = spans
+            .iter()
+            .find(|span| span.name == "battles.shot")
+            .unwrap();
+        let field = |span: &opentelemetry_sdk::trace::SpanData, key: &str| {
+            span.attributes
+                .iter()
+                .rfind(|field| field.key.as_str() == key)
+                .map(|field| field.value.to_string())
+                .unwrap()
+        };
+        assert_eq!(field(shot, "output.projectile.ricocheted"), "true");
+        let traced_range: f64 = field(shot, "output.projectile.ricochet_range_metres")
+            .parse()
+            .unwrap();
+        assert!((traced_range - 0.998).abs() < 1e-6);
+        assert_eq!(
+            field(shot, "output.outcome"),
+            if penetrates { "penetrated" } else { "ricochet" }
+        );
+        let children = |name: &str| {
+            spans
+                .iter()
+                .filter(|span| span.name == name)
+                .inspect(|span| {
+                    assert_eq!(span.parent_span_id, shot.span_context.span_id());
+                    assert_eq!(span.span_context.trace_id(), shot.span_context.trace_id());
+                })
+                .collect::<Vec<_>>()
+        };
+        let armor = children("battles.resolve_armor");
+        assert_eq!(armor.len(), if penetrates { 2 } else { 1 });
+        assert_eq!(field(armor[0], "output.outcome"), "ricochet");
+        assert_eq!(field(armor[0], "output.part.index"), first_part.to_string());
+        if penetrates {
+            assert_eq!(field(armor[1], "output.outcome"), "penetrated");
+            assert_eq!(
+                field(armor[1], "output.part.index"),
+                second_part.to_string()
+            );
+            assert_eq!(
+                field(armor[1], "input.target.entity_id"),
+                second_entity.to_string()
+            );
+            assert_eq!(field(armor[1], "output.penetration.remaining_mm"), "17.5");
+        }
+        assert_eq!(children("test.tracer_delivery").len(), 2);
+        assert_eq!(
+            children("test.health_delivery").len(),
+            if penetrates { 3 } else { 0 }
+        );
+    }
+}
+
+fn mount_test_plate(
+    battle: &mut Battle,
+    participant: ParticipantId,
+    part: usize,
+    center: Vec3,
+    normal: Vec3,
+    ricochets: bool,
+) {
+    let tank = &mut battle.players.get_mut(&participant).unwrap().tank;
+    let (origin, rotation) = tank.armor_pose(part, Vec3::ZERO);
+    let across = Vec3::Y.cross(normal).normalize() * 0.15;
+    let up = Vec3::Y * 0.15;
+    let [a, b, c, d] = [-across - up, across - up, across + up, -across + up]
+        .map(|offset| rotation.inverse() * (center + offset - origin));
+    let padding = Vec3::splat(0.001);
+    tank.performance.as_mut().unwrap().armor[part] = Some(MountedArmor {
+        offset: Vec3::ZERO,
+        mesh: Arc::new(ArmorMesh {
+            bounds: [
+                a.min(b).min(c).min(d) - padding,
+                a.max(b).max(c).max(d) + padding,
+            ],
+            triangles: [[a, b, c], [a, c, d]]
+                .map(|vertices| ArmorTriangle {
+                    vertices,
+                    material: 1,
+                    plate: ArmorPlate {
+                        thickness_mm: 50.0,
+                        damage_factor: 1.0,
+                        angled: ricochets,
+                        ricochets,
+                        caliber_ricochet: true,
+                        caliber_normalization: false,
+                        once: false,
+                        device: None,
+                    },
+                })
+                .to_vec(),
+        }),
+    });
+}
+
+#[test]
+#[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
 fn ground_explosion_damages_and_stuns_vehicles_only_for_artillery() {
-    let (id, mut battle, wire) = projectile_battle();
+    let (id, mut battle, wire) = projectile_battle(&[1, 2]);
     let shooter = SHOOTER;
     let victim = VICTIM;
     let shot_profile = |artillery: bool| ShellBallistics {

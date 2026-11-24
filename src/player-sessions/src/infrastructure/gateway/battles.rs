@@ -1,12 +1,48 @@
 //! Routes typed battle work and delivers the worker outputs to live sessions.
 
 use super::*;
-use wot_battles::contract::{BattleOutput, BattleQueueError, ParticipantDeparture};
+use wot_accounts::contract::BattleVehicle;
+use wot_battles::contract::{
+    BattleEntityIds, BattleOutput, BattlePreparationId, BattleQueueError, ParticipantDeparture,
+    VehicleLoadout,
+};
 
 const DELIVERY_BUDGET: usize = 256;
 const PREPARATION_BUDGET: usize = 4;
 
+pub(super) fn vehicle_loadout(vehicle: BattleVehicle) -> VehicleLoadout {
+    VehicleLoadout {
+        descriptor: vehicle.descriptor,
+        outfit: vehicle.outfit,
+        health: vehicle.health,
+        crew_size: vehicle.crew_size,
+        performance: Some(vehicle.performance),
+        ammunition: vehicle.ammunition,
+    }
+}
+
 impl Gateway {
+    pub(super) fn observer_battle_loadout(&self) -> Option<VehicleLoadout> {
+        self.catalog
+            .training_observer_descriptor()
+            .map(|descriptor| VehicleLoadout {
+                descriptor: descriptor.to_vec(),
+                outfit: Vec::new(),
+                health: 1,
+                crew_size: 0,
+                ammunition: Vec::new(),
+                performance: None,
+            })
+    }
+
+    pub(super) fn reserve_battle_entity_ids(&mut self) -> BattleEntityIds {
+        BattleEntityIds {
+            avatar: self.base.arena_entity_id(),
+            vehicle: self.base.arena_entity_id(),
+            info: self.base.arena_entity_id(),
+        }
+    }
+
     pub(super) fn poll_battles(&mut self) {
         for _ in 0..DELIVERY_BUDGET {
             let Some(output) = self.battle_worker.try_output() else {
@@ -59,7 +95,12 @@ impl Gateway {
             let Some(prepared) = self.battle_worker.try_prepared() else {
                 break;
             };
-            self.complete_training_preparation(prepared.request.0, prepared.result);
+            match prepared.request {
+                BattlePreparationId::TrainingRoom(id) => {
+                    self.complete_training_preparation(id, prepared.result)
+                }
+                BattlePreparationId::Admin(id) => self.complete_admin_battle(id, prepared.result),
+            }
         }
         let failed_task = if self.battle_worker.is_stopped() {
             Some("Battle simulation stopped")
@@ -69,6 +110,9 @@ impl Gateway {
             None
         };
         if let Some(reason) = failed_task {
+            while let Some(&id) = self.pending_admin_battles.keys().next() {
+                self.complete_admin_battle(id, Err(anyhow::anyhow!("{reason}")));
+            }
             while let Some(&room_id) = self.pending_battle_launches.keys().next() {
                 self.complete_training_preparation(room_id, Err(anyhow::anyhow!("{reason}")));
             }

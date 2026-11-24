@@ -160,6 +160,7 @@ async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Mete
                 player_administration::DashboardConfig {
                     secure_cookies: config.secure_cookies,
                     trusted_proxies,
+                    battles: Some(gateway.admin_battles()),
                 },
             ));
         }

@@ -2,6 +2,9 @@ mod account;
 mod battle_armor;
 mod battle_mobility;
 mod battle_performance;
+mod battle_readiness;
+pub(super) mod dummy_loadout;
+pub use dummy_loadout::{DummyLoadout, DummyLoadoutOptions};
 mod cosmetic_catalog;
 mod cosmetic_inventory;
 mod outfit;
@@ -71,6 +74,8 @@ pub struct GarageCatalog {
     store_offers: Vec<StoreOffer>,
     directives: crate::DirectiveRules,
     consumables: crate::ConsumableRules,
+    consumable_names: BTreeMap<i32, String>,
+    perk_names: BTreeMap<u8, String>,
     supply_slots: supply_slots::SupplySlots,
     observer_descriptor: Option<Vec<u8>>,
     elite_progression_trees: BTreeSet<String>,
@@ -170,7 +175,7 @@ impl GarageCatalog {
             .locked_style(self.offers.get(self.keys.get(key)?)?)
     }
 
-    #[tracing::instrument(name = "accounts.battle_vehicle", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.inventory_id = inventory_id, output.bytes = tracing::field::Empty, output.crew.count = tracing::field::Empty, output.outfit.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "accounts.battle_vehicle", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = (snapshot.id > 0).then_some(snapshot.id), input.inventory_id = inventory_id, output.bytes = tracing::field::Empty, output.crew.count = tracing::field::Empty, output.outfit.bytes = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     pub(crate) fn battle_vehicle(
         &self,
         snapshot: &AccountSnapshot,
@@ -209,7 +214,7 @@ impl GarageCatalog {
         } else {
             None
         };
-        self.battle_mobility.apply(
+        let health_factor = self.battle_mobility.apply(
             &mut performance,
             &projected,
             &catalog,
@@ -217,6 +222,12 @@ impl GarageCatalog {
             inventory_id,
             &loadout,
         );
+        let health = if health_factor == 1.0 {
+            health
+        } else {
+            let scaled = f32::from(health) * health_factor;
+            ((scaled.round() / 10.0).ceil() * 10.0) as i16
+        };
         let outfit = projected
             .locked_style
             .map_or_else(Vec::new, outfit::encode_style);
@@ -253,7 +264,8 @@ impl GarageCatalog {
         let special_recruits = special_recruits::load(&fs)?;
         let (equipment, equipment_grants) = equipment::load(&fs, &prices)?;
         let directives = directives::load(&fs, &prices)?;
-        let consumables = consumables::load(&fs, &prices)?;
+        let (consumables, consumable_names) = consumables::load(&fs, &prices)?;
+        let perk_names = dummy_loadout::perk_names(&fs);
         let battle_mobility = battle_mobility::BattleMobility::load(&fs)?;
         let supply_slots = supply_slots::SupplySlots::load(&fs)?;
         // The client reserves tree IDs starting at 10000 for vehicle skill trees.
@@ -333,6 +345,8 @@ impl GarageCatalog {
             store_offers: Vec::new(),
             directives,
             consumables,
+            consumable_names,
+            perk_names,
             supply_slots,
             observer_descriptor,
             elite_progression_trees,

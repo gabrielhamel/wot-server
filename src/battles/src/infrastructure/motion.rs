@@ -108,7 +108,11 @@ impl Battle {
             let previous_tracks = tank.track_speeds();
             let drive = player.pending_drive.take();
             let parent = self.finish_span.clone().or_else(|| drive.clone());
-            let inverse_mass = tank.collision_inverse_mass();
+            let inverse_mass = if player.entry.is_none() {
+                0.0
+            } else {
+                tank.collision_inverse_mass()
+            };
             let mut travel = Vec2::ZERO;
             let mut scenery_normal = None;
             let mut scenery_impulse = Vec2::ZERO;

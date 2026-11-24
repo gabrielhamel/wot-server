@@ -1,9 +1,10 @@
 //! Translate a locked Training Room roster into a battle launch.
 
 use super::*;
+use crate::infrastructure::gateway::battles::vehicle_loadout;
 use wot_battles::contract::{
-    BattleEntityIds, BattleLaunch, BattleMode, BattleParticipant, BattlePreparationId,
-    BattleQueueError, BattleStart, PreparedBattle, VehicleLoadout,
+    BattleLaunch, BattleMode, BattleParticipant, BattlePreparationId, BattleQueueError,
+    BattleStart, PreparedBattle,
 };
 
 pub(in crate::infrastructure::gateway) const TEAM_READY: i16 = 411;
@@ -372,27 +373,11 @@ impl Gateway {
             };
             let observer = inventory_id == OBSERVER_INVENTORY_ID;
             let vehicle = if observer {
-                self.catalog
-                    .training_observer_descriptor()
-                    .map(|descriptor| VehicleLoadout {
-                        descriptor: descriptor.to_vec(),
-                        outfit: Vec::new(),
-                        health: 1,
-                        crew_size: 0,
-                        ammunition: Vec::new(),
-                        performance: None,
-                    })
+                self.observer_battle_loadout()
             } else {
                 self.catalog
                     .battle_vehicle(&session.account.snapshot, inventory_id)?
-                    .map(|vehicle| VehicleLoadout {
-                        descriptor: vehicle.descriptor,
-                        outfit: vehicle.outfit,
-                        health: vehicle.health,
-                        crew_size: vehicle.crew_size,
-                        ammunition: vehicle.ammunition,
-                        performance: Some(vehicle.performance),
-                    })
+                    .map(vehicle_loadout)
             };
             let Some(vehicle) = vehicle else {
                 return Ok(false);
@@ -404,21 +389,18 @@ impl Gateway {
                 team,
                 is_host: room.host == client,
                 observer,
+                stationary_dummy: false,
                 customization_display_type: session.account.snapshot.customization_display_type(),
                 vehicle,
             });
         }
         let entity_ids = entrants
             .iter()
-            .map(|_| BattleEntityIds {
-                avatar: self.base.arena_entity_id(),
-                vehicle: self.base.arena_entity_id(),
-                info: self.base.arena_entity_id(),
-            })
+            .map(|_| self.reserve_battle_entity_ids())
             .collect();
         tracing::Span::current().record("output.players.count", entrants.len());
         self.battle_worker.prepare(
-            BattlePreparationId(room_id),
+            BattlePreparationId::TrainingRoom(room_id),
             BattleLaunch {
                 arena_type: roster.arena_type,
                 duration: roster.duration,

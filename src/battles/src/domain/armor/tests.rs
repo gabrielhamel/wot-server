@@ -92,7 +92,12 @@ fn ap_normalizes_and_uses_both_caliber_rules() {
     let onward = shot.ricochet_from(bounce).unwrap();
     assert!(onward.ricocheted);
     assert_eq!(onward.penetration_at(0.0), 85.0 * 0.75);
-    assert!(onward.max_distance < shot.max_distance);
+    assert!((onward.max_distance + CONTACT_CLEARANCE_METRES - 0.9).abs() < 1e-6);
+    shot.max_distance = bounce.distance + 0.3;
+    let onward = shot.ricochet_from(bounce).unwrap();
+    assert!((onward.max_distance + CONTACT_CLEARANCE_METRES - 0.3).abs() < 1e-5);
+    shot.max_distance = bounce.distance;
+    assert!(shot.ricochet_from(bounce).is_none());
     assert!(
         onward
             .resolve_surfaces(&[steep])

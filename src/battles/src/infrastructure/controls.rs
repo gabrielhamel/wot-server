@@ -187,6 +187,9 @@ impl Battle {
             let Some(player) = self.players.get_mut(&client) else {
                 continue;
             };
+            if player.entry.is_none() {
+                continue;
+            }
             let movement_parent = motion.parent.as_ref();
             if motion.changed
                 && let Some(parent) = movement_parent

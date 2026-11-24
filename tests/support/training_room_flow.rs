@@ -2741,16 +2741,32 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
                     && matches!(attribute.value, opentelemetry::Value::I64(0..=0x0fff_ffff))
             })
     }));
+    let host_id = host.to_string();
+    let guest_id = guest.to_string();
+    let readiness_commands = traces
+        .iter()
+        .filter(|span| {
+            span.name == "game.command"
+                && has(span, "rpc.method", "setClientReady")
+                && (has(span, "user.id", &host_id) || has(span, "user.id", &guest_id))
+        })
+        .collect::<Vec<_>>();
+    let caused_by_readiness = |span: &SpanData| {
+        readiness_commands
+            .iter()
+            .any(|request| child_of(span, request))
+    };
     let readiness: Vec<_> = traces
         .iter()
-        .filter(|span| span.name == "battles.roster_ready" && has(span, "input.ready", "true"))
+        .filter(|span| {
+            span.name == "battles.roster_ready"
+                && has(span, "input.ready", "true")
+                && caused_by_readiness(span)
+        })
         .collect();
     assert_eq!(readiness.len(), 2);
     for span in readiness {
         assert!(has(span, "output.recipients.count", "2"));
-        assert!(traces.iter().any(|root| root.name == "game.command"
-            && child_of(span, root)
-            && has(root, "rpc.method", "setClientReady")));
         assert_eq!(
             traces
                 .iter()
@@ -2765,11 +2781,12 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
 
     let countdown = traces
         .iter()
-        .find(|s| s.name == "battles.period" && has(s, "output.phase", "countdown"))
+        .find(|s| {
+            s.name == "battles.period"
+                && has(s, "output.phase", "countdown")
+                && caused_by_readiness(s)
+        })
         .expect("countdown broadcast");
-    assert!(traces.iter().any(|s| s.name == "game.command"
-        && child_of(countdown, s)
-        && has(s, "rpc.method", "setClientReady")));
     assert_eq!(
         traces
             .iter()

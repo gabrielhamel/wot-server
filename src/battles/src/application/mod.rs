@@ -4,9 +4,15 @@ mod commands;
 
 pub use commands::{AvatarCommand, VehicleCommand, VehicleControl};
 
-/// The admission generation of a player session, unique within the gateway.
+/// Identifies a live admission generation or a stationary dummy in the battle worker.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ParticipantId(pub u64);
+
+impl ParticipantId {
+    pub fn stationary_dummy(vehicle_entity: u32) -> Self {
+        Self(u64::MAX - u64::from(vehicle_entity))
+    }
+}
 
 #[derive(Clone, Copy)]
 pub enum BattleMode {
@@ -14,7 +20,10 @@ pub enum BattleMode {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct BattlePreparationId(pub u32);
+pub enum BattlePreparationId {
+    TrainingRoom(u32),
+    Admin(u32),
+}
 
 /// Native entity IDs reserved by the gateway for one entrant, in roster order.
 pub struct BattleEntityIds {
@@ -37,6 +46,7 @@ pub struct BattleParticipant {
     pub team: u8,
     pub is_host: bool,
     pub observer: bool,
+    pub stationary_dummy: bool,
     pub customization_display_type: u8,
     pub vehicle: VehicleLoadout,
 }
@@ -55,6 +65,10 @@ impl BattleLaunch {
         !self.duration.is_zero()
             && Instant::now().checked_add(self.duration).is_some()
             && self.participants.len() <= 256
+            && self
+                .participants
+                .iter()
+                .any(|player| !player.stationary_dummy)
             && self.participants.iter().all(|player| {
                 matches!(player.team, 1 | 2)
                     && (player.observer || player.vehicle.performance.is_some())

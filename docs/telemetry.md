@@ -29,7 +29,7 @@ The gateway refreshes both count gauges on its own loop. The battle worker
 samples duration and delay when at least one arena is active at the start of
 its tick. Both histograms use buckets around the 100 ms interval. The worker
 preserves the originating span with each queued command and delivery. Arena
-preparation and its terrain and obstacle loads run in the Training launch trace.
+preparation and its terrain and obstacle loads run in the Training Room or admin launch trace.
 Player Sessions retains the launch span until it acknowledges activation or
 rejects preparation. The simulation scheduler measures its own tick timings
 independently of the preparation task. Mercury
@@ -88,6 +88,12 @@ The shared web listener composes the admin and Store APIs. Page shells and
 shared assets emit `web.ui.request` with their matched route, HTTP status and
 asset source. They preserve a valid sampled W3C trace parent when supplied.
 Admin and Store API requests keep their own request spans.
+
+Dashboard battle launches keep the browser parent through authentication,
+`admin.start_battle`, the gateway request and the arena worker. Accounts records
+the selected dummy vehicle and loadout counts. Arena preparation and the
+subsequent native client entry share the launch trace. The launch response
+records the allocated battle ID and the count of client handoffs queued.
 
 Managed player creation traces the input lengths and validation outcome
 through `admin.players.create` and `accounts.registration.validate`. An accepted
@@ -303,10 +309,11 @@ devices and HP lost to fire. The child
 `battles.resolve_armor` records the selected material and part index, nominal
 and effective thickness, remaining penetration, damage before capping to
 remaining HP, and the penetration outcome. The shot records cumulative flight
-time when it continues after a ricochet or stops at another contact after
-breaking a destructible fragment. An impact that
-adds a persistent penetration or resisted mark records the retained sticker count and parents a
-`battles.damage_stickers` span per recipient. Scene impacts
+time through the next contact after a ricochet or a destructible fragment. It
+also records the reflected tracer's range when a ricochet continues. Both
+armor decisions and their deliveries share the shot span. An impact that
+adds a persistent penetration or resisted mark records the retained sticker
+count and parents a `battles.damage_stickers` span per recipient. Scene impacts
 record distance along the ray and parent the `explodeProjectile`
 deliveries. Obstacle impacts include the raw collision material kind. The same shot parents
 the shooter-only result, the victim-only direction and the private damage

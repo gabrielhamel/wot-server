@@ -1,4 +1,5 @@
 mod access;
+mod battles;
 #[cfg(test)]
 mod client_address;
 mod garage;
@@ -20,7 +21,9 @@ use std::{
 use tokio::sync::Semaphore;
 use tracing::Instrument;
 use wot_accounts::contract::{GameAccounts, GarageQueries, PlayerAccess};
-use wot_player_sessions::contract::{PlayerGrants, StoreRequests, dashboard_store_router};
+use wot_player_sessions::contract::{
+    AdminBattles, PlayerGrants, StoreRequests, dashboard_store_router,
+};
 
 #[derive(Clone)]
 struct AdminState {
@@ -31,6 +34,8 @@ struct AdminState {
     garage_accounts: GameAccounts,
     catalog: GarageQueries,
     grants: PlayerGrants,
+    battles: Option<AdminBattles>,
+    battle_loadout_slots: Arc<Semaphore>,
     create_slots: Arc<Semaphore>,
     username_check_slots: Arc<Semaphore>,
 }
@@ -41,6 +46,7 @@ struct RequestSpan(tracing::Span);
 pub struct DashboardConfig {
     pub secure_cookies: bool,
     pub trusted_proxies: Vec<IpAddr>,
+    pub battles: Option<AdminBattles>,
 }
 
 pub fn router(
@@ -52,6 +58,7 @@ pub fn router(
     DashboardConfig {
         secure_cookies,
         trusted_proxies,
+        battles,
     }: DashboardConfig,
 ) -> Router {
     let state = AdminState {
@@ -61,11 +68,15 @@ pub fn router(
         garage_accounts,
         catalog,
         grants,
+        battles,
+        battle_loadout_slots: Arc::new(Semaphore::new(2)),
         create_slots: Arc::new(Semaphore::new(2)),
         username_check_slots: Arc::new(Semaphore::new(4)),
         sign_in_slots: Arc::new(Semaphore::new(2)),
     };
     let protected = Router::new()
+        .route("/battles", get(battles::options).post(battles::start))
+        .route("/battles/vehicles/{vehicle}", get(battles::loadout))
         .route("/players", get(players::list).post(players::create))
         .route("/players/{id}/role", post(access::change_role))
         .route("/players/{id}/garage", get(garage::show))

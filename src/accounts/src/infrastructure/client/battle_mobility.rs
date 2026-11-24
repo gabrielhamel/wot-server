@@ -38,6 +38,7 @@ struct Modifiers {
     turning_resistance: f32,
     rolling_friction: f32,
     crew_bonus: f32,
+    health: f32,
 }
 
 impl Default for Modifiers {
@@ -51,6 +52,7 @@ impl Default for Modifiers {
             turning_resistance: 1.0,
             rolling_friction: 1.0,
             crew_bonus: 0.0,
+            health: 1.0,
         }
     }
 }
@@ -65,6 +67,7 @@ impl Modifiers {
         self.turning_resistance *= other.turning_resistance;
         self.rolling_friction *= other.rolling_friction;
         self.crew_bonus += other.crew_bonus;
+        self.health *= other.health;
     }
 }
 
@@ -90,6 +93,7 @@ impl BattleMobility {
         input.mobility.equipment_count = vehicle.equipment.iter().filter(|&&id| id != 0).count(),
         input.mobility.consumable_count = vehicle.consumables.iter().filter(|&&id| id != 0).count(),
         input.mobility.directive_id = vehicle.directive,
+        output.vehicle.health_factor = tracing::field::Empty,
         output.mobility.collision_bounds_available = performance.mobility.collision_bounds.is_some(),
         output.mobility.equipment_mass_kg = tracing::field::Empty,
         output.mobility.power_watts_per_kg = tracing::field::Empty,
@@ -105,7 +109,7 @@ impl BattleMobility {
         crew: Option<&CrewRoster>,
         inventory_id: i64,
         loadout: &ModuleLoadout,
-    ) {
+    ) -> f32 {
         let mut modifiers = Modifiers::default();
         let mut equipment_mass = 0.0;
         let mut turbocharger = false;
@@ -227,6 +231,8 @@ impl BattleMobility {
             "output.mobility.hull_traverse_rad_per_second",
             performance.hull_traverse,
         );
+        span.record("output.vehicle.health_factor", modifiers.health);
+        modifiers.health
     }
 }
 
@@ -327,6 +333,24 @@ fn read_modifiers(item: &Element, specialized: bool) -> Modifiers {
         modifiers.traverse = factor("trackRotateSpeedFactor").unwrap_or(modifiers.traverse);
         modifiers.turning_resistance = factor("rotationFactor").unwrap_or(1.0);
         modifiers.rolling_friction = factor("rollingFrictionFactor").unwrap_or(1.0);
+        modifiers.health = script
+            .get_child_element("factors")
+            .and_then(|factors| {
+                factors.iter_child_elements().find_map(|(_, factor)| {
+                    if factor.get_child_string("attribute")?.trim() != "miscAttrs/healthFactor"
+                        || factor.get_child_string("type")?.trim() != "mul"
+                    {
+                        return None;
+                    }
+                    let value = factor.get_child("valueByLevel")?;
+                    let value = value
+                        .as_vec2()
+                        .map(|pair| pair.to_array()[usize::from(specialized)])
+                        .or_else(|| value.as_float())?;
+                    (0.01..=3.0).contains(&value).then_some(value)
+                })
+            })
+            .unwrap_or(1.0);
     }
     modifiers
 }

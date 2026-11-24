@@ -318,13 +318,31 @@ impl ArenaWire {
                             bytes(field(&rows.ty, "compDescr")?, &player.vehicle.descriptor),
                         ),
                         ("name", string(&player.name)),
-                        ("fakeName", string(&player.name)),
+                        (
+                            "fakeName",
+                            if player.stationary_dummy {
+                                string(&format!(
+                                    "BotLoc_{} {}",
+                                    player.vehicle_id,
+                                    player.name.replace(' ', "_")
+                                ))
+                            } else {
+                                string(&player.name)
+                            },
+                        ),
                         ("team", WireValue::Int8(i8::try_from(player.team)?)),
                         (
                             "accountDBID",
                             WireValue::UInt64(u64::try_from(player.account_id)?),
                         ),
-                        ("avatarSessionID", string(&player.avatar_id.to_string())),
+                        (
+                            "avatarSessionID",
+                            if player.stationary_dummy {
+                                string("")
+                            } else {
+                                string(&player.avatar_id.to_string())
+                            },
+                        ),
                         ("maxHealth", WireValue::Int16(player.vehicle.health)),
                         ("badges", python(wot_platform::pickle!(([], [])))),
                         ("ranked", WireValue::Seq(vec![WireValue::UInt16(0); 2])),

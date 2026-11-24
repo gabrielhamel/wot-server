@@ -1,6 +1,6 @@
 # Player Sessions
 
-The `wot-player-sessions` library publishes grants and Store requests through
+The `wot-player-sessions` library publishes grants, Store requests and admin battle launches through
 `wot_player_sessions::contract`. Server composition supplies the Battles adapter
 when binding the gateway.
 
@@ -18,7 +18,10 @@ duration and equipped roster through the [Battles contract](../battles/src/contr
 The room remains discoverable during the round. Player Sessions handles the
 arena handoff and restores the same membership on garage return. It maps the
 current admission generation to the live Mercury client for battle delivery and
-for returns scheduled by Battles.
+for returns scheduled by Battles. The dashboard uses the same handoff from
+synchronized garages and can include stationary dummy vehicles projected by
+Accounts. Pending launches recheck the current session, entity and account
+revision before transferring players.
 
 | Layer | Responsibilities |
 | --- | --- |
@@ -29,6 +32,8 @@ for returns scheduled by Battles.
 | `infrastructure/gateway/battles.rs` | Submit typed battle work, deliver queued outputs through the live BaseApp, and reset sessions for garage entry. |
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
 | `infrastructure/gateway/training.rs` | Check map IDs through Battles and manage shared room settings, membership, roster, readiness and deletion. |
+| `application/admin_battles.rs` | Bounded request and reply contract for dashboard battle setup. |
+| `infrastructure/gateway/admin_battles.rs` | List connected players and vehicle readiness, validate the selected roster, resolve loadouts and transfer sessions into a prepared Training arena. |
 | `infrastructure/gateway/training/start.rs` | Validate team confirmation, submit the roster for asynchronous arena preparation, and revalidate the room and account snapshots before handing off sessions. |
 | `infrastructure/gateway/training/chat.rs` | Open and close the native Training channel and relay messages to the active room roster. |
 | `infrastructure/gateway/training/invites.rs` | Keep active invitations by account ID and deliver them immediately or on garage sync. |
@@ -72,6 +77,7 @@ with Accounts.
 | Store session token | Random credential issued in the Store URL fragment, kept for the game session and accepted while the garage is synchronized. |
 | Account entity | Client protocol representation created after the client enables entities. |
 | Resource stream | CRC-described, fragmented transfer correlated with an account command request ID. |
+| Admin battle launch | A direct handoff of selected garage sessions to a Training arena commissioned by the dashboard. |
 | Training Room | A discoverable lobby with one host and optional guests. Membership spans rounds and the host can close the room by leaving. |
 | Training channel | Live text conversation shared by Training Room members in the garage. |
 | Training invitation | An account-addressed invitation to join a specific active Training Room. |

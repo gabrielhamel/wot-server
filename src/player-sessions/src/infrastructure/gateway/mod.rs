@@ -12,6 +12,7 @@ use wot_battles::{
     mercury::MercuryArena,
 };
 mod account_updates;
+mod admin_battles;
 mod admission;
 mod ammunition;
 mod battles;
@@ -167,6 +168,11 @@ pub struct Gateway {
     tickets: HashMap<u32, Ticket>,
     sessions: HashMap<ClientKey, Session>,
     battle_worker: BattleWorker,
+    last_admin_battle_request: u32,
+    pending_admin_battles: HashMap<u32, admin_battles::PendingAdminBattle>,
+    admin_battle_requests:
+        tokio::sync::mpsc::Receiver<crate::application::admin_battles::BattleRequest>,
+    admin_battles: crate::contract::AdminBattles,
     pending_battle_launches: HashMap<u32, training::PendingTrainingBattle>,
     battle_participants: HashSet<ParticipantId>,
     battle_departures: VecDeque<(ParticipantId, tracing::Span)>,
@@ -225,6 +231,7 @@ impl Gateway {
         let battles = bind_battles(&mut base, resources, config.training_room_visible)?;
         let (sender, completions) = mpsc::sync_channel(config.max_pending + 2 * config.max_clients);
         let workers = Arc::new(Semaphore::new(config.max_pending));
+        let (admin_battles, admin_battle_requests) = crate::contract::AdminBattles::channel();
         let (grant_handle, grants) = crate::PlayerGrants::channel();
         let admissions = Admissions::new(config.max_pending);
         let xmpp = super::xmpp::XmppServer::from_listener(
@@ -259,6 +266,10 @@ impl Gateway {
             sessions: HashMap::new(),
             battle_worker,
             pending_battle_launches: HashMap::new(),
+            pending_admin_battles: HashMap::new(),
+            last_admin_battle_request: 0,
+            admin_battles,
+            admin_battle_requests,
             battle_participants: HashSet::new(),
             battle_departures: VecDeque::new(),
             battle_clients: HashMap::new(),
@@ -282,6 +293,10 @@ impl Gateway {
         Ok((self.login.addr()?, self.base.addr()?))
     }
 
+    pub fn admin_battles(&self) -> crate::contract::AdminBattles {
+        self.admin_battles.clone()
+    }
+
     pub fn player_grants(&self) -> crate::PlayerGrants {
         self.grant_handle.clone()
     }
@@ -300,6 +315,9 @@ impl Gateway {
                 self.remove_session(client);
             }
             self.poll_battles();
+            if let Ok(request) = self.admin_battle_requests.try_recv() {
+                self.handle_admin_battle_request(request);
+            }
             while let Ok(completion) = self.completions.try_recv() {
                 let TracedCompletion { parent, value } = completion;
                 parent.in_scope(|| self.complete(value));

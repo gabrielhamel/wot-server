@@ -10,9 +10,11 @@ to connected players. Active battles and simulation state live in memory.
 Player Sessions owns Training Room discovery, invitations, text chat, team
 confirmation and the handoff between the garage and the arena. When the room
 is ready, it resolves the equipped vehicles through Accounts and submits the
-map, duration and assigned roster to Battles. The launch contract can also
-accept a roster from a future matchmaker. Training is the implemented battle
-mode.
+map, duration and assigned roster to Battles. A dashboard launch submits
+the same Training battle mode and can include stationary dummies. Battles
+gives dummies a vehicle and a roster row, pre-marks them as ready and keeps
+their hulls fixed in vehicle contact resolution. The last player's departure
+releases the arena and its dummies.
 
 The [Battle mechanics guide](../../docs/battle-mechanics.md) maps the official
 game's rules to the current Training implementation and identifies open work.
@@ -24,7 +26,7 @@ game's rules to the current Training implementation and identifies open work.
 | `infrastructure/` | In-memory arena and participant lifecycle, bundled arena definitions, terrain and obstacle collision, and native battle payload encoders. The delivery port connects those encoders to the local Mercury adapter. |
 
 Callers use [the published contract](src/contract.rs). Player Sessions assigns each
-participant the identifier of the current session admission and keeps the
+connected participant the identifier of the current session admission and keeps the
 mapping to the live Mercury client. The Mercury adapter translates incoming
 methods into typed commands and applies outputs from the arena delivery port.
 The runtime holds participant IDs and arena entity IDs. The adapter owns
@@ -77,6 +79,7 @@ viewers. See the [replay and resource evidence](../../docs/battle-replays.md#per
 
 | Term | Meaning |
 | --- | --- |
+| Stationary dummy | A vehicle and roster entry with no client admission or Avatar. It can collide and take damage. |
 | Battle | A live match on one arena with an assigned roster and round clock. |
 | Arena | The shared space where the battle runs, identified by its geometry and gameplay variant. |
 | Participant | A connected player assigned to a team with a combat or observer vehicle. |

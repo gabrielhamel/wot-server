@@ -17,6 +17,30 @@ pub struct BattleVehicle {
     pub ammunition: Vec<(i32, u16)>,
 }
 
+#[derive(Clone, Copy, Debug, thiserror::Error)]
+pub enum BattleVehicleUnavailable {
+    #[error("Crew incomplete")]
+    CrewIncomplete,
+    #[error("Vehicle unavailable for battle")]
+    Unavailable,
+}
+
+impl BattleVehicleUnavailable {
+    pub fn outcome(self) -> &'static str {
+        match self {
+            Self::CrewIncomplete => "crew_incomplete",
+            Self::Unavailable => "vehicle_unavailable",
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct BattleVehicleChoice {
+    pub id: i64,
+    pub name: String,
+    pub unavailable_reason: Option<String>,
+}
+
 /// Read operations for player sessions and the administration dashboard.
 #[derive(Clone)]
 pub struct GarageQueries(Arc<GarageCatalog>);
@@ -80,6 +104,32 @@ impl GarageQueries {
         inventory_id: i64,
     ) -> anyhow::Result<Option<BattleVehicle>> {
         self.0.battle_vehicle(&account.0, inventory_id)
+    }
+
+    pub fn dummy_vehicle(
+        &self,
+        loadout: &crate::contract::DummyLoadout,
+    ) -> anyhow::Result<Option<BattleVehicle>> {
+        self.0.dummy_vehicle(loadout)
+    }
+
+    pub fn dummy_loadout_options(
+        &self,
+        vehicle: i32,
+    ) -> anyhow::Result<Option<crate::contract::DummyLoadoutOptions>> {
+        self.0.dummy_loadout_options(vehicle)
+    }
+
+    pub fn battle_vehicle_choices(&self, account: &AccountView) -> Vec<BattleVehicleChoice> {
+        self.0.battle_vehicle_choices(&account.0)
+    }
+
+    pub fn admin_battle_vehicle(
+        &self,
+        account: &AccountView,
+        inventory_id: i64,
+    ) -> anyhow::Result<Result<BattleVehicle, BattleVehicleUnavailable>> {
+        self.0.admin_battle_vehicle(&account.0, inventory_id)
     }
 
     pub fn outfit_change<'a>(

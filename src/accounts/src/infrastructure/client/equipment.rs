@@ -22,6 +22,7 @@ const EXPERIMENTAL_TAGS: [&str; 3] = ["modernized_1", "modernized_2", "modernize
 
 #[derive(Default)]
 pub(super) struct EquipmentGrantCatalog {
+    pub(super) names: BTreeMap<i32, String>,
     pub(super) improved: BTreeMap<i32, String>,
     pub(super) bounty: BTreeMap<i32, String>,
     pub(super) experimental: BTreeMap<i32, String>,
@@ -130,6 +131,10 @@ pub(super) fn load(
         } else {
             None
         };
+        grants.names.insert(
+            item,
+            localized_name().unwrap_or_else(|| humanize_item_name(name)),
+        );
         rules.items.insert(
             item,
             EquipmentDefinition {

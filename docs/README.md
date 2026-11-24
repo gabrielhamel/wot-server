@@ -27,7 +27,7 @@ establish compatibility with the current client.
 | Required operation spans, SQL tracing, queue propagation and verification | [Telemetry](telemetry.md) |
 | Complete span attribute inventory, meanings and emission conditions | [Span attributes](telemetry-attributes.md) |
 | Running the server, database and client configuration | [Server guide](server.md) |
-| Listing players, creating accounts and granting resources or tanks | [Player Administration dashboard](admin.md) |
+| Managing players and garages, granting items and launching Training battles | [Player Administration dashboard](admin.md) |
 | Researching, buying and selling tanks, and buying garage slots | [Tank progression](vehicles.md) |
 | Researching, buying and installing tank modules | [Module progression](modules.md) |
 | Loading, unloading and buying tank shells | [Garage ammunition](ammunition.md) |

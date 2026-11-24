@@ -1,6 +1,8 @@
 //! Operations, command inputs, and projections published to runtime contexts.
 
-pub use super::application::queries::BattleVehicle;
+pub use super::application::queries::{
+    BattleVehicle, BattleVehicleChoice, BattleVehicleUnavailable,
+};
 pub use super::application::{
     AccountNotFound, CreatePlayerError, DepotSaleRequest, GameAccounts, MAX_DEPOT_SALE_LINES,
     PlayerAccess, ProgressionCommand, VehicleSaleRequest,
@@ -21,6 +23,7 @@ pub use super::infrastructure::client::{
     StoreCatalog, StoreCategory, StoreListing, StoreOffer, StoreOrder, StoreOrderError, StorePrice,
     VehicleCatalogEntry,
 };
+pub use super::infrastructure::client::{DummyLoadout, DummyLoadoutOptions};
 
 use super::AccountSnapshot;
 use std::{future::Future, pin::Pin, sync::Arc};

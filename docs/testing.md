@@ -88,6 +88,11 @@ the latest default-branch server code and a fresh PostgreSQL database.
 The run summary records the extracted version. The workflow can also run from
 the Actions tab and has read-only repository permissions.
 
+The admin battle E2E case drives an authenticated dashboard launch through
+PostgreSQL, the gateway and an encrypted Mercury peer. It checks stationary
+dummy replication, a customized dummy's extra HP, countdown readiness, the
+garage return and the exported HTTP-to-arena trace, including rejected setups.
+
 The database-dependent tests are opt-in when running Cargo locally.
 
 The default suite does not require PostgreSQL or proprietary resources. To exercise

@@ -17,12 +17,20 @@ observed client behavior and wire evidence.
 
 ## Battle flow and progression
 
+An [admin launch](admin.md#launch-a-training-battle) uses the Training arena
+with an assigned roster. Stationary dummies start ready, appear in the arena
+roster and participate in collision, damage and team elimination. Dummies
+have fixed hull positions and stay in the arena until the round ends or all
+connected participants leave. The native roster marks them as bots with an
+empty `avatarSessionID`, matching `PlayerInfoVO.isBot` in the client reference.
+
+
 | Mechanic | Game mechanic | Server coverage |
 | --- | --- | --- |
 | Base capture | Occupying an objective can accrue capture progress and decide a round. The objective and victory conditions depend on the mode. | **Partial.** Training supports team elimination, departure-based outcomes and a time-limit draw. Capture zones, progress, resets and capture wins are open. See [round state](../src/battles/src/domain/round.rs) and [outcome delivery](../src/battles/src/infrastructure/mod.rs). |
 | Battle communication | Players can send contextual requests and ping vehicles or map locations. See [Wargaming's communication guide][eu-communication]. | **Open.** The Training channel handles room text chat in the garage. In-arena text, quick commands and contextual pings are separate workflows. See [Player Sessions](../src/player-sessions/README.md). |
 | Matchmaking | Random Battles assemble teams using tier, vehicle role, class limits, and queue and map policies. Wargaming has revised those policies since the snapshot. See the [2.0 matchmaker notes][eu-matchmaker] and [update history][eu-history]. | **Open.** Player Sessions hands an assigned Training roster to Battles. See the [launch contract](../src/battles/src/contract.rs). |
-| Tank stats | Equipped modules define base characteristics. Crew, equipment, consumables and directives can modify applicable stats. The archive's crew formulas and examples need separate verification against the current crew system. See the [EU crew rework][eu-crew]. | **Partial.** The launch profile includes base mobility, gun and ammunition data derived from the equipped modules. Full battle modifier calculation and application remain open. See [profile extraction](../src/accounts/src/infrastructure/client/battle_performance.rs), [crew](crew.md), [equipment](equipment.md), [consumables](consumables.md) and [directives](directives.md). |
+| Tank stats | Equipped modules define base characteristics. Crew, equipment, consumables and directives can modify applicable stats. The archive's crew formulas and examples need separate verification against the current crew system. See the [EU crew rework][eu-crew]. | **Partial.** The launch profile includes base mobility, gun and ammunition data derived from the equipped modules. Supported passive modifiers apply during projection, including `miscAttrs/healthFactor` from equipment and matching slots. Full battle modifier calculation and application remain open. See [profile extraction](../src/accounts/src/infrastructure/client/battle_performance.rs), [crew](crew.md), [equipment](equipment.md), [consumables](consumables.md) and [directives](directives.md). |
 | Experience and credits | Eligible battle modes award credits and progression based on the result and contributions such as damage and assistance. Combat XP, Free XP and Crew XP have distinct destinations and rules. | **Partial.** Accounts has a rule to route trusted Combat and Crew XP awards. Training publishes a round outcome and returns players to the garage. Battle award calculation, persistent settlement, repair charges and resupply deductions are open. See [Battle XP routing](crew.md#battle-xp-routing). |
 
 ### Effective vehicle stats
@@ -235,9 +243,9 @@ such a wall, and a turn that clears an existing contact can continue.
 Powered input adds sustained pressure at contact even while the hull is
 stationary. Breaking scenery consumes a bounded share of the assumed impact
 energy, so a light vehicle can lose more speed than a heavier one at the same
-approach speed. The server deducts 25% of the share of impact energy required
+approach speed. The server deducts 30% of the share of impact energy required
 for the break, after accounting for engine pressure. This caps the speed loss
-at about 13.4% per fragment. The active EU client's
+at about 16.3% per fragment. The active EU client's
 `scripts.pkg/scripts/client/Vehicle.pyc` confirms the impact damage
 coefficient in `_isDestructibleMayBeBroken`. The method returns a fracture
 prediction. Toolkit's `base/physics/rubble.rs` uses a separate speed-loss
@@ -247,9 +255,9 @@ normalized vehicle mass.
 The server's previous 35% energy deduction was introduced in commit
 `5c09940`. A synthetic test using the extracted stock TKS 20 mass of 2,800 kg
 and the 10 health of Widepark panel 45 in chunk `0x817e` reproduced a stall
-after two breaks at an entry speed of 8.5 m/s. With the 25% deduction the TKS
-breaks three at that speed. At 9.8 m/s it breaks all five test panels while
-losing speed. Sustained pressure and slowdown through an actual row of panels
+after two breaks at an entry speed of 8.5 m/s. With the current 30% deduction
+the TKS breaks three at that speed, four at 9.8 m/s and all five at
+10.3 m/s while losing speed. Sustained pressure and slowdown through an actual row of panels
 remain open for native calibration. Shell impacts use the configured shell damage.
 Contact with scenery or another tank leaves tank HP unchanged.
 
@@ -373,7 +381,7 @@ mobility profile to vehicle preparation and drive steps to replication.
 
 | Mechanic | Game mechanic | Server coverage |
 | --- | --- | --- |
-| Penetration | Plate angle, normalization, caliber, range and the shell's remaining penetration determine the outcome. | **Partial.** The gun ray intersects the equipped chassis, hull, turret and gun collision meshes. The solver resolves AP-family normalization and overmatch, AP-family and HEAT ricochets, screen penetration and HEAT jet loss. AP-family shells retain 75% of rolled penetration after the first ricochet. Eligible shells can continue on the reflected ray once. A shell can carry unused penetration past a screen-only contact, and a hull penetration traces internal devices for ten calibers or until the next hull surface. Contacts with allies or wrecks and server-only internal geometry remain open. |
+| Penetration | Plate angle, normalization, caliber, range and the shell's remaining penetration determine the outcome. | **Partial.** The gun ray intersects the equipped chassis, hull, turret and gun collision meshes. The solver resolves AP-family normalization and overmatch, AP-family and HEAT ricochets, screen penetration and HEAT jet loss. AP-family shells retain 75% of remaining penetration at the first ricochet. Eligible shells can continue on the reflected ray for up to ten calibers and can hit the same tank again or another nearby enemy tank. A shell can carry unused penetration past a screen-only contact, and a hull penetration traces internal devices for ten calibers or until the next hull surface. Contacts with allies or wrecks and server-only internal geometry remain open. |
 | Shell and armor damage | A penetrating hit applies rolled damage and the plate's damage factor. Some contacts produce an impact with zero vehicle HP loss. | **Partial.** The server rolls penetration and hull damage from the equipped shell definitions and caps HP loss at the target's current health. The client receives the actual part and a short component-local ray through the contact. The normal roll distribution is an approximation. |
 | Modern direct-fire HE | Armor penetration deals hull damage. An exterior detonation against main armor causes spall. Screens can stop the shell or reduce penetration before it reaches main armor. [Wargaming's HE rework][eu-he] | **Partial.** Modern shells can penetrate permitted screens and destructible fragments. A penetrated screen subtracts three times its effective thickness. A shell stopped at a screen or passing through a screen with no armor behind it causes zero HP damage. Spall and fragments use the shell damage curves and configured fragment absorption. Exact spall transfer and fragment geometry still need production evidence. Ground impacts can break trees. Ground splash affects vehicle HP only for artillery. [Wargaming HE support][eu-he-support] |
 | Module and crew damage, ramming and repair | Module and crew damage have effects independent of vehicle HP. Ramming, fire, detonation and repair have separate conditions. | **Partial.** Model materials carry device hit probabilities. The server tracks hits to modeled devices and crew, disabled tracks and engines, gun disablement, passive module recovery, fire ticks and loaded ammunition-rack explosions. Full crew and module penalties, active repair and first aid, native per-device indicators, damage from collisions and falls, and exact fire tuning remain open. |
@@ -401,6 +409,15 @@ increased normalization above two times the plate's thickness and can bypass
 ricochet above three times the thickness where that material permits it.
 HEAT loses penetration across air gaps after the first penetrated layer and
 does not ricochet as a jet.
+
+A ricochet ends the incoming tracer and can start a reflected tracer. The
+reflected projectile can travel up to ten times its caliber (1 m for a 100 mm
+round), bounded by the range left at the bounce. It can penetrate a different
+part of the same vehicle, such as the hull after striking the turret, or a
+nearby enemy vehicle if its remaining penetration defeats the next plate. The
+reflected leg checks terrain and scenery and can register a second ricochet,
+which ends the projectile's flight. See the
+[archived Wargaming Battle Mechanics guide][wg-archived-battle-mechanics].
 
 For modern direct-fire HE, a successful main-armor penetration applies rolled
 hull damage. When the shell reaches main armor and fails the penetration roll,
@@ -522,3 +539,5 @@ events and verify cue selection in the client.
 [eu-he]: https://worldoftanks.eu/en/news/general-news/1-13-HE-shells/
 [eu-movement]: https://worldoftanks.eu/en/news/general-news/ver914-new-physics-final/
 [eu-recovery]: https://worldoftanks.eu/en/content/docs/release_notes/release-notes-1-22/
+
+[wg-archived-battle-mechanics]: https://web.archive.org/web/20250303052442/https://wiki.wargaming.net/en/Battle_Mechanics
