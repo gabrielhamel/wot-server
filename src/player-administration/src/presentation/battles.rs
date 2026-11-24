@@ -27,7 +27,9 @@ fn service(state: &AdminState) -> Result<&AdminBattles, ApiError> {
 fn battle_error(error: AdminBattleError) -> ApiError {
     let status = match error {
         AdminBattleError::InvalidSetup | AdminBattleError::InvalidDummy => StatusCode::BAD_REQUEST,
-        AdminBattleError::PlayerUnavailable => StatusCode::CONFLICT,
+        AdminBattleError::PlayerUnavailable | AdminBattleError::VehicleUnavailable(_) => {
+            StatusCode::CONFLICT
+        }
         AdminBattleError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
         AdminBattleError::PreparationFailed => StatusCode::INTERNAL_SERVER_ERROR,
     };

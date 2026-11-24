@@ -1,6 +1,8 @@
 //! Operations, command inputs, and projections published to runtime contexts.
 
-pub use super::application::queries::BattleVehicle;
+pub use super::application::queries::{
+    BattleVehicle, BattleVehicleChoice, BattleVehicleUnavailable,
+};
 pub use super::application::{
     AccountNotFound, CreatePlayerError, DepotSaleRequest, GameAccounts, MAX_DEPOT_SALE_LINES,
     PlayerAccess, ProgressionCommand, VehicleSaleRequest,

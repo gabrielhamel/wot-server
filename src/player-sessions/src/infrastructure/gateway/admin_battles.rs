@@ -30,7 +30,7 @@ struct SelectedPlayer {
 impl SelectedPlayer {
     fn matches(&self, gateway: &Gateway) -> bool {
         gateway.sessions.get(&self.client).is_some_and(|session| {
-            gateway.available_for_admin_battle(session)
+            gateway.admin_battle_unavailable_reason(session).is_none()
                 && session.generation == self.generation
                 && session.entity == Some(self.entity)
                 && session.account.snapshot.revision() == self.revision
@@ -83,16 +83,34 @@ impl Gateway {
         }
     }
 
-    fn available_for_admin_battle(&self, session: &Session) -> bool {
-        session.entity.is_some()
-            && session.garage_synced
-            && session.training_room.is_none()
-            && !session.saving
-            && !session.crew_running
-            && !self.pending_writes.contains(&session.account.snapshot.id())
-            && !self
-                .battle_participants
-                .contains(&ParticipantId(session.generation))
+    fn admin_battle_unavailable_reason(&self, session: &Session) -> Option<&'static str> {
+        if self
+            .battle_participants
+            .contains(&ParticipantId(session.generation))
+        {
+            return Some("In battle");
+        }
+        if session.training_room.is_some() {
+            return Some("In a Training Room");
+        }
+        if self.pending_admin_battles.values().any(|pending| {
+            pending
+                .players
+                .iter()
+                .any(|player| player.generation == session.generation)
+        }) {
+            return Some("Battle is being prepared");
+        }
+        if session.entity.is_none() || !session.garage_synced {
+            return Some("Garage is loading");
+        }
+        if session.saving
+            || session.crew_running
+            || self.pending_writes.contains(&session.account.snapshot.id())
+        {
+            return Some("Garage update in progress");
+        }
+        None
     }
 
     #[tracing::instrument(name = "player_sessions.admin_battle_options", skip_all, fields(
@@ -112,19 +130,14 @@ impl Gateway {
         let mut players: Vec<_> = self
             .sessions
             .values()
-            .filter(|session| self.available_for_admin_battle(session))
             .map(|session| {
                 let account = &session.account.snapshot;
-                let mut vehicles: Vec<_> = self
-                    .catalog
-                    .battle_vehicle_choices(account)
-                    .into_iter()
-                    .map(|(id, name)| BattleChoice { id, name })
-                    .collect();
+                let mut vehicles = self.catalog.battle_vehicle_choices(account);
                 vehicles.sort_unstable_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
                 AvailablePlayer {
                     id: account.id(),
                     name: account.display_name().into(),
+                    unavailable_reason: self.admin_battle_unavailable_reason(session),
                     vehicles,
                 }
             })
@@ -221,25 +234,18 @@ impl Gateway {
             .iter()
             .find(|(_, session)| {
                 session.account.snapshot.id() == player.account_id
-                    && self.available_for_admin_battle(session)
+                    && self.admin_battle_unavailable_reason(session).is_none()
             })
             .ok_or(PlayerUnavailable)?;
         let entity = session.entity.ok_or(PlayerUnavailable)?;
-        if self.pending_admin_battles.values().any(|pending| {
-            pending
-                .players
-                .iter()
-                .any(|other| other.generation == session.generation)
-        }) {
-            return Err(PlayerUnavailable);
-        }
         let account = &session.account.snapshot;
         let vehicle = match player.inventory_id {
-            Some(id) => self
-                .catalog
-                .battle_vehicle(account, id)
-                .map_err(projection_failed)?
-                .map(vehicle_loadout),
+            Some(id) => Some(vehicle_loadout(
+                self.catalog
+                    .admin_battle_vehicle(account, id)
+                    .map_err(projection_failed)?
+                    .map_err(AdminBattleError::VehicleUnavailable)?,
+            )),
             None => self.observer_battle_loadout(),
         }
         .ok_or(PlayerUnavailable)?;

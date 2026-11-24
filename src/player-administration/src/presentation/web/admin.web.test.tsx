@@ -1114,6 +1114,7 @@ it("launches a Training battle with selected players and a customized stationary
   const posts: { trace: string | null; body: unknown }[] = [];
   let optionsTrace: string | null = null;
   let loadoutTrace: string | null = null;
+  let wingmateBusy = false;
   httpServer.use(
     players(),
     http.get(`${origin}/battles`, ({ request }) => {
@@ -1121,8 +1122,21 @@ it("launches a Training battle with selected players and a customized stationary
       return HttpResponse.json({
         maps: [{ id: 5, name: "Prokhorovka · Standard Battle" }],
         players: [
-          { id: 123, name: "Commander", vehicles: [{ id: 209, name: "T1 Cunningham" }] },
-          { id: 124, name: "Wingmate", vehicles: [{ id: 210, name: "T-34" }] },
+          {
+            id: 123,
+            name: "Commander",
+            vehicles: [
+              { id: 208, name: "FT", unavailable_reason: "Crew incomplete" },
+              { id: 209, name: "T1 Cunningham" },
+            ],
+          },
+          {
+            id: 124,
+            name: "Wingmate",
+            unavailable_reason: wingmateBusy ? "In battle" : null,
+            vehicles: [{ id: 210, name: "T-34" }],
+          },
+          { id: 125, name: "Scout", unavailable_reason: "In battle", vehicles: [] },
         ],
         observer_available: true,
         dummy_vehicles: [{ id: 81, key: "ussr:R04_T-34", name: "T-34", tier: 5 }],
@@ -1142,6 +1156,7 @@ it("launches a Training battle with selected players and a customized stationary
       expect(request.headers.get("x-wot-admin")).toBe("1");
       posts.push({ trace: request.headers.get("traceparent"), body: await request.json() });
       if (posts.length === 1) {
+        wingmateBusy = true;
         return HttpResponse.json(
           { message: "A selected player is no longer available." },
           { status: 409 },
@@ -1159,12 +1174,26 @@ it("launches a Training battle with selected players and a customized stationary
       "Prokhorovka · Standard Battle",
     );
     await user.selectOptions(screen.getByLabelText("Battle duration"), "10 minutes");
+    const playerPicker = screen.getByRole("combobox", { name: "Add connected player" });
+    await user.type(playerPicker, "Scout");
+    expect(await screen.findByRole("option", { name: "Scout · In battle" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     for (const name of ["Commander", "Wingmate"]) {
       const picker = screen.getByRole("combobox", { name: "Add connected player" });
       await user.clear(picker);
       await user.type(picker, name);
       await user.click(await screen.findByRole("option", { name }));
     }
+    const commanderVehicle = screen.getByLabelText("Vehicle for Commander");
+    const unreadyTank = within(commanderVehicle).getByRole("option", {
+      name: "FT · Crew incomplete",
+    });
+    expect(unreadyTank).toBeDisabled();
+    expect(commanderVehicle).toHaveValue("209");
+    await user.selectOptions(commanderVehicle, unreadyTank);
+    expect(commanderVehicle).toHaveValue("209");
     expect(screen.getByRole("button", { name: "Start battle" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Add dummy" }));
     await user.click(screen.getByRole("combobox", { name: "Vehicle for Dummy 1" }));
@@ -1183,6 +1212,11 @@ it("launches a Training battle with selected players and a customized stationary
     await user.click(dialog.getByRole("button", { name: "Apply loadout" }));
     await user.click(screen.getByRole("button", { name: "Start battle" }));
     expect(await screen.findByText("A selected player is no longer available.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Refresh players" }));
+    expect(await screen.findByText("In battle", { exact: true })).toBeVisible();
+    expect(screen.getByLabelText("Vehicle for Wingmate")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Start battle" })).toBeDisabled();
+    wingmateBusy = false;
     await user.click(screen.getByRole("button", { name: "Refresh players" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Start battle" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Start battle" }));

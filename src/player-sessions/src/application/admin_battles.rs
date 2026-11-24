@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
-use wot_accounts::contract::DummyLoadout;
+use wot_accounts::contract::{BattleVehicleChoice, BattleVehicleUnavailable, DummyLoadout};
 
 #[derive(Clone)]
 pub struct AdminBattles(mpsc::Sender<BattleRequest>);
@@ -37,7 +37,8 @@ pub struct BattleChoice<T> {
 pub struct AvailablePlayer {
     pub id: i64,
     pub name: String,
-    pub vehicles: Vec<BattleChoice<i64>>,
+    pub unavailable_reason: Option<&'static str>,
+    pub vehicles: Vec<BattleVehicleChoice>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,6 +75,8 @@ pub enum AdminBattleError {
         "A selected player or vehicle is no longer available. Refresh the player list and try again."
     )]
     PlayerUnavailable,
+    #[error("{0}. Refresh the player list and try again.")]
+    VehicleUnavailable(BattleVehicleUnavailable),
     #[error("A dummy has an unavailable vehicle or incompatible loadout.")]
     InvalidDummy,
     #[error("The battle server is busy or unavailable. Try again shortly.")]
@@ -87,6 +90,7 @@ impl AdminBattleError {
         match self {
             Self::InvalidSetup => "invalid_setup",
             Self::PlayerUnavailable => "player_unavailable",
+            Self::VehicleUnavailable(reason) => reason.outcome(),
             Self::InvalidDummy => "invalid_dummy",
             Self::Unavailable => "unavailable",
             Self::PreparationFailed => "preparation_failed",

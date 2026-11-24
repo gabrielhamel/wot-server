@@ -33,7 +33,7 @@ revision before transferring players.
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
 | `infrastructure/gateway/training.rs` | Check map IDs through Battles and manage shared room settings, membership, roster, readiness and deletion. |
 | `application/admin_battles.rs` | Bounded request and reply contract for dashboard battle setup. |
-| `infrastructure/gateway/admin_battles.rs` | List available garage players, validate the selected roster, resolve loadouts and transfer sessions into a prepared Training arena. |
+| `infrastructure/gateway/admin_battles.rs` | List connected players and vehicle readiness, validate the selected roster, resolve loadouts and transfer sessions into a prepared Training arena. |
 | `infrastructure/gateway/training/start.rs` | Validate team confirmation, submit the roster for asynchronous arena preparation, and revalidate the room and account snapshots before handing off sessions. |
 | `infrastructure/gateway/training/chat.rs` | Open and close the native Training channel and relay messages to the active room roster. |
 | `infrastructure/gateway/training/invites.rs` | Keep active invitations by account ID and deliver them immediately or on garage sync. |

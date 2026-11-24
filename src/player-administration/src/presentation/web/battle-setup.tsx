@@ -33,7 +33,10 @@ const ROUND_LENGTHS = Array.from({ length: 26 }, (_, index) => ({
   name: `${index + 5} minutes`,
 }));
 
-type Player = AdminBattleSetup["players"][number];
+const OBSERVER = 0;
+type Player = Omit<AdminBattleSetup["players"][number], "inventory_id"> & {
+  vehicle: number | "";
+};
 type Dummy = { key: number; team: number; loadout: DummyLoadout };
 
 function RosterCard({
@@ -72,18 +75,22 @@ function isReady(options: BattleOptions, map: number | "", players: Player[], du
     players.length > 0 &&
     players.every((player) =>
       options.players.some(
-        ({ id, vehicles }) =>
+        ({ id, vehicles, unavailable_reason }) =>
           id === player.account_id &&
-          (player.inventory_id === null
+          !unavailable_reason &&
+          (player.vehicle === OBSERVER
             ? options.observer_available
-            : vehicles.some((vehicle) => vehicle.id === player.inventory_id)),
+            : vehicles.some(
+                ({ id, unavailable_reason }) => id === player.vehicle && !unavailable_reason,
+              )),
       ),
     ) &&
     dummies.every(({ loadout }) => loadout.vehicle !== 0) &&
     [1, 2].every(
       (team) =>
-        players.some((player) => player.team === team && player.inventory_id !== null) ||
-        dummies.some((dummy) => dummy.team === team),
+        players.some(
+          (player) => player.team === team && player.vehicle !== OBSERVER && player.vehicle !== "",
+        ) || dummies.some((dummy) => dummy.team === team),
     )
   );
 }
@@ -147,7 +154,10 @@ export function BattleSetup() {
       const started = await startBattle({
         arena_type: map,
         duration_seconds: duration,
-        players,
+        players: players.map(({ vehicle, ...player }) => ({
+          ...player,
+          inventory_id: vehicle === OBSERVER ? null : Number(vehicle),
+        })),
         dummies: dummies.map(({ team, loadout }) => ({ team, loadout })),
       });
       setReceipt({ joined: started.players_handed_off, requested: players.length });
@@ -226,7 +236,10 @@ export function BattleSetup() {
                 options={options.players.filter(
                   ({ id }) => !players.some(({ account_id }) => id === account_id),
                 )}
-                getOptionLabel={({ name }) => name}
+                getOptionLabel={({ name, unavailable_reason }) =>
+                  unavailable_reason ? `${name} · ${unavailable_reason}` : name
+                }
+                getOptionDisabled={({ unavailable_reason }) => Boolean(unavailable_reason)}
                 getOptionKey={({ id }) => id}
                 onChange={(_, player) => {
                   if (player) {
@@ -236,7 +249,8 @@ export function BattleSetup() {
                       {
                         account_id: player.id,
                         team: 1,
-                        inventory_id: player.vehicles[0]?.id ?? null,
+                        vehicle:
+                          player.vehicles.find((vehicle) => !vehicle.unavailable_reason)?.id ?? "",
                       },
                     ]);
                   }
@@ -246,16 +260,20 @@ export function BattleSetup() {
               {players.map((player) => {
                 const available = options.players.find(({ id }) => id === player.account_id);
                 const name = available?.name ?? "Unavailable player";
+                const playerUnavailable =
+                  available?.unavailable_reason ??
+                  (available ? null : "This player is no longer available.");
                 const vehicles = available?.vehicles ?? [];
+                const choices = options.observer_available
+                  ? [...vehicles, { id: OBSERVER, name: "Observer" }]
+                  : vehicles;
                 return (
                   <RosterCard
                     key={player.account_id}
                     title={name}
                     remove={() => setPlayers(players.filter((entry) => entry !== player))}
                   >
-                    {!available && (
-                      <Alert severity="warning">This player is no longer available.</Alert>
-                    )}
+                    {playerUnavailable && <Alert severity="warning">{playerUnavailable}</Alert>}
                     <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                       <ChoiceSelect
                         label={`Team for ${name}`}
@@ -267,12 +285,13 @@ export function BattleSetup() {
                       />
                       <ChoiceSelect
                         label={`Vehicle for ${name}`}
-                        value={player.inventory_id ?? ""}
-                        choices={vehicles}
-                        placeholder={options.observer_available ? "Observer" : "Select a vehicle"}
-                        onChange={(id) =>
-                          updatePlayer(player.account_id, { inventory_id: id === "" ? null : id })
+                        value={
+                          choices.some(({ id }) => id === player.vehicle) ? player.vehicle : ""
                         }
+                        choices={choices}
+                        disabled={Boolean(playerUnavailable)}
+                        placeholder="Select a vehicle"
+                        onChange={(vehicle) => updatePlayer(player.account_id, { vehicle })}
                       />
                     </Stack>
                   </RosterCard>

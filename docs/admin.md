@@ -120,8 +120,11 @@ the dashboard supports sign-in over HTTP.
 Open **Admin → Battles** with Training enabled. Select the map and battle
 type, then set a round duration of 5–30 minutes. Add one or more players
 connected to the game in their garage. Assign each player to a team and
-choose an owned vehicle or the Observer seat when available. **Refresh players**
-updates the list after a login, disconnect or garage return.
+choose an owned vehicle or the Observer seat when available. The picker disables
+tanks with incomplete crews and shows why a tank or player is unavailable.
+Players already in battle or in a Training Room appear disabled. **Refresh
+players** updates availability after a crew change, login, disconnect or
+garage return. The server checks readiness again when starting the battle.
 
 Use **Add dummy** to fill either team with stationary targets. Each dummy starts
 with the selected tank's stock modules, default ammunition and a 100% crew.
@@ -191,7 +194,7 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | `POST /api/admin/players` | `201 Created` with the new player record. The new account has the `player` role. |
 | `POST /api/admin/players/{id}/role` | Accepts `{ "role": "admin" }` or `{ "role": "player" }` and returns `204 No Content`. Self-role changes return `403 Forbidden`. |
 | `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks, an `attachments` map from item ID to total owned copies, and a `depot` map from grantable crew book, Bounty Equipment and Experimental Equipment IDs to depot counts. The `styles_2d`, `styles_3d`, `crew_skins` and `special_recruits` maps track owned copies. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
-| `GET /api/admin/battles` | Returns `maps`, available garage `players` with owned `vehicles`, `observer_available` and catalog `dummy_vehicles`. |
+| `GET /api/admin/battles` | Returns `maps`, connected `players` and their owned `vehicles`, with `unavailable_reason` for disabled choices, `observer_available` and catalog `dummy_vehicles`. |
 | `GET /api/admin/battles/vehicles/{vehicle}` | Returns equipment and consumable slot counts, compatible items and perks by crew seat for the given catalog vehicle ID. |
 | `POST /api/admin/battles` | Accepts `arena_type`, `duration_seconds`, `players` and `dummies`. Returns `battle_id` and `players_handed_off` after queuing activation, `400` for an invalid setup, `409` for an unavailable player or owned vehicle, or `503` when the queue is busy. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |

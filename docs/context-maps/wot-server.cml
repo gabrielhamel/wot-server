@@ -63,7 +63,7 @@ ContextMap Server {
     implementationTechnology = "Accounts Rust library PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections for vehicles, cosmetics, crew items, recruit groups with country options, and equipment, and vehicle-specific dummy equipment, consumable and crew perk options"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "Player Sessions Rust library contracts for bounded PlayerGrants and StoreRequests coordinate dashboard requests with garage writes. AdminBattles lists available garage sessions and Training maps, and launches an assigned roster. The embedded Store web entry point accepts the dashboard transport."
+    implementationTechnology = "Player Sessions Rust library contracts for bounded PlayerGrants and StoreRequests coordinate dashboard requests with garage writes. AdminBattles lists connected players, vehicle readiness and Training maps, and launches a validated roster. The embedded Store web entry point accepts the dashboard transport."
   }
   Accounts [U,OHS,PL] -> [D,ACL] Social {
     implementationTechnology = "Accounts Rust library PlayerDirectory operations resolve account IDs and display names in the Accounts schema. Social persists scalar IDs in its own schema."
@@ -72,7 +72,7 @@ ContextMap Server {
     implementationTechnology = "Social Rust library contract for contacts/search and durable private message APIs adapted to native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Accounts Rust library contract for authentication, opaque account view, garage and equipped vehicle projections with catalog-defined locked outfits, loadout-adjusted mobility, gun performance and equipped armor geometry for battle, plus ephemeral dummy vehicle projections, and revision-checked commands. Sessions orders commands and delivers committed results."
+    implementationTechnology = "Accounts Rust library contract for authentication, opaque account view, garage and equipped vehicle projections with catalog-defined locked outfits, loadout-adjusted mobility, gun performance and equipped armor geometry for battle, plus owned vehicle readiness checks, ephemeral dummy vehicle projections, and revision-checked commands. Sessions orders commands and delivers committed results."
   }
 }
 BoundedContext GameClient {

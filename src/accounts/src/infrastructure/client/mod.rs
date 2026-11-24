@@ -2,6 +2,7 @@ mod account;
 mod battle_armor;
 mod battle_mobility;
 mod battle_performance;
+mod battle_readiness;
 pub(super) mod dummy_loadout;
 pub use dummy_loadout::{DummyLoadout, DummyLoadoutOptions};
 mod cosmetic_catalog;

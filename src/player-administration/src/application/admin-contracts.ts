@@ -100,7 +100,7 @@ export type AdminSession =
   | { status: "signed_out"; registration_open: boolean }
   | { status: "authenticated"; player: PlayerRecord; store_enabled: boolean };
 
-export type BattleChoice = { id: number; name: string };
+export type BattleChoice = { id: number; name: string; unavailable_reason?: string | null };
 
 export type BattleOptions = {
   maps: BattleChoice[];

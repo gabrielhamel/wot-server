@@ -48,7 +48,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         &login_name,
         "Battle Commander",
         "password",
-        std::slice::from_ref(&tank),
+        &[tank.clone(), "france:F01_RenaultFT".into()],
     )
     .await
     .unwrap();
@@ -58,6 +58,11 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         .await
         .unwrap();
 
+    sqlx::query("UPDATE accounts.owned_vehicles SET has_crew = false WHERE account_id = $1 AND inventory_id = 2")
+        .bind(account)
+        .execute(&repository.connection_pool())
+        .await
+        .unwrap();
     let catalog =
         Arc::new(GarageCatalog::load(resources.clone(), std::slice::from_ref(&tank)).unwrap());
     let access =
@@ -142,7 +147,10 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let (status, options) = request("GET", "/battles", &cookie, Json::Null);
         assert_eq!(status, 200, "{options}");
         assert_eq!(options["players"][0]["id"], account);
-        assert_eq!(options["players"][0]["vehicles"][0]["id"], 1);
+        let vehicles = options["players"][0]["vehicles"].as_array().unwrap();
+        let unavailable = |id| vehicles.iter().find(|vehicle| vehicle["id"] == id).unwrap()["unavailable_reason"].clone();
+        assert_eq!(unavailable(1), Json::Null);
+        assert_eq!(unavailable(2), "Crew incomplete");
         let arena = (1 << 16) | 5;
         let maps = options["maps"].as_array().unwrap();
         assert!(maps.iter().any(|map| map["id"] == arena && map["name"].as_str().unwrap().contains("Encounter")));
@@ -166,11 +174,20 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         battle["dummies"][0]["loadout"]["equipment"] = json!([hardening]);
         battle["dummies"][0]["loadout"]["consumables"] = json!([consumable]);
         battle["dummies"][0]["loadout"]["crew_perks"] = json!([[9]]);
+        let mut unready = battle.clone();
+        unready["players"][0]["inventory_id"] = json!(2);
+        let (status, rejected) = request("POST", "/battles", &cookie, unready);
+        assert_eq!(status, 409);
+        assert!(rejected["message"].as_str().unwrap().contains("Crew incomplete"));
+
         let (status, launched) = request("POST", "/battles", &cookie, battle.clone());
         assert_eq!(status, 200, "{launched}");
         assert_eq!(launched["players_handed_off"], 1);
         let battle_id = launched["battle_id"].as_u64().unwrap();
         assert_eq!(request("POST", "/battles", &cookie, battle).0, 409);
+        let (status, busy) = request("GET", "/battles", &cookie, Json::Null);
+        assert_eq!(status, 200);
+        assert_eq!(busy["players"][0]["unavailable_reason"], "In battle");
 
         peer.until(&script, |p| p.resets == 1);
         assert!(peer.methods.iter().any(|(name, _)| name == "onArenaCreated"));
@@ -216,7 +233,21 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         peer.until(&script, |p| p.resets == 2);
         peer.enable_entities();
         peer.until(&script, |p| p.created && p.shown);
+        peer.clear_resource(617);
         equipment_flow::full_cache(&mut peer, &script);
+        let (status, back_in_garage) = request("GET", "/battles", &cookie, Json::Null);
+        assert_eq!(status, 200);
+        assert!(back_in_garage["players"][0]["unavailable_reason"].is_null());
+        peer.command(&script, "doCmdIntArr", vec![
+            Value::Int16(683),
+            Value::Int16(105),
+            Value::Seq([1, -1, -1, 0, 1].into_iter().map(Value::Int32).collect()),
+        ]);
+        peer.until(&script, |p| p.responses.contains(&(683, 0)));
+        let (status, after_crew_change) = request("GET", "/battles", &cookie, Json::Null);
+        assert_eq!(status, 200);
+        let vehicles = after_crew_change["players"][0]["vehicles"].as_array().unwrap();
+        assert_eq!(vehicles.iter().find(|vehicle| vehicle["id"] == 1).unwrap()["unavailable_reason"], "Crew incomplete");
         metrics.assert_snapshot(1, 0, true);
     }).await.unwrap();
     drop(stop);
@@ -270,7 +301,25 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     assert!(spans.iter().any(
         |s| s.name == "battles.enter" && s.parent_span_id == preparation.span_context.span_id()
     ));
-    for expected in ["invalid_dummy", "player_unavailable"] {
+    let crew_rejection = spans
+        .iter()
+        .find(|s| {
+            s.name == "accounts.admin_battle_vehicle"
+                && get(s, "output.outcome").as_deref() == Some("crew_incomplete")
+        })
+        .unwrap();
+    assert_eq!(
+        get(crew_rejection, "input.inventory_id").as_deref(),
+        Some("2")
+    );
+    assert!(
+        spans
+            .iter()
+            .any(|s| s.name == "player_sessions.start_admin_battle"
+                && s.span_context.span_id() == crew_rejection.parent_span_id
+                && get(s, "output.outcome").as_deref() == Some("crew_incomplete"))
+    );
+    for expected in ["invalid_dummy", "player_unavailable", "crew_incomplete"] {
         assert!(
             spans.iter().any(|s| s.name == "admin.start_battle"
                 && get(s, "output.outcome").as_deref() == Some(expected)),
