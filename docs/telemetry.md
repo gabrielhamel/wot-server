@@ -331,7 +331,8 @@ Training Room invitations record recipient counts and the optional message's
 byte length. Immediate delivery stays in the invite command trace. Delivery
 on garage sync links that trace to the original command for each pending
 invitation. A returning participant's first garage sync also traces the room
-roster, chat membership and fresh Account entity through
+roster, including how many members are still in battle, chat membership and
+the fresh Account entity through
 `player_sessions.restore_training_room`. Accept, decline and room cleanup trace
 the resulting invitation state. Invitation text and recipient lists stay out
 of spans.

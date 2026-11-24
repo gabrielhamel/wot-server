@@ -512,6 +512,7 @@ impl Gateway {
     #[tracing::instrument(name = "player_sessions.restore_training_room", skip_all, fields(
         ddd.bounded_context.name = "player_sessions", input.entity_id = entity.id().0,
         input.room.id = tracing::field::Empty, output.players.count = tracing::field::Empty,
+        output.players.in_battle.count = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
     ), err)]
     pub(super) fn restore_training_room(
@@ -539,9 +540,17 @@ impl Gateway {
         };
         member.entity = entity;
         member.in_battle = false;
+        member.ready_vehicle = None;
         let id = room.id;
         span.record("input.room.id", id);
         span.record("output.players.count", room.player_count());
+        span.record(
+            "output.players.in_battle.count",
+            room.members
+                .values()
+                .filter(|member| member.in_battle)
+                .count(),
+        );
         room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), Some(client));
         self.send_training_room_state(client, entity, id, true)
             .inspect_err(|_| {

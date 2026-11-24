@@ -452,7 +452,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
                     ));
                 };
                 check_store(1, axum::http::StatusCode::OK);
-                training_room_flow::exercise_battle(
+                let room_id = training_room_flow::exercise_battle(
                     &mut first_peer,
                     training_vehicle_id,
                     &mut second_peer,
@@ -476,7 +476,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
                     },
                 );
                 metrics.assert_snapshot(2, 0, true);
-                Some((router, shop_url))
+                Some((router, shop_url, room_id))
             } else {
                 None
             };
@@ -490,33 +490,16 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
             ]
         };
         let first_before = first_peer.methods.len();
-        let second_before = second_peer.methods.len();
         first_peer.command(&script, "doCmdInt3", sync(221, 100));
         second_peer.command(&script, "doCmdInt3", sync(221, 100));
         first_peer.until(&script, |p| p.has_resource(221));
         second_peer.until(&script, |p| p.has_resource(221));
-        if let Some((router, shop_url)) = store_after_battle {
-            let room = |peer: &Peer, start: usize| {
-                let (_, args) = peer.methods[start..]
-                    .iter()
-                    .find(|(name, _)| name == "onPrebattleJoined")
-                    .unwrap();
-                args[0].as_i64().unwrap()
-            };
-            for (peer, start) in [
-                (&mut first_peer, first_before),
-                (&mut second_peer, second_before),
-            ] {
-                peer.until(&script, |p| {
-                    p.methods[start..]
-                        .iter()
-                        .any(|(name, _)| name == "onPrebattleJoined")
-                });
-            }
-            assert_eq!(
-                room(&first_peer, first_before),
-                room(&second_peer, second_before)
-            );
+        if let Some((router, shop_url, room_id)) = store_after_battle {
+            first_peer.until(&script, |p| {
+                p.methods[first_before..].iter().any(|(name, args)| {
+                    name == "onPrebattleJoined" && args[0].as_i64() == Some(room_id)
+                })
+            });
             xmpp_flow::assert_roster_available_after_battle(
                 &mut second_peer,
                 &script,

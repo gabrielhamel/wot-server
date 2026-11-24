@@ -447,17 +447,18 @@ impl Gateway {
         );
         room.clear_team_readiness();
         for (&client, member) in &mut room.members {
-            member.ready_vehicle = None;
             member.ready_inventory = None;
             let Some(session) = self
                 .sessions
                 .get_mut(&client)
                 .filter(|session| battle.contains(ParticipantId(session.generation)))
             else {
+                member.ready_vehicle = None;
                 continue;
             };
             self.battle_participants
                 .insert(ParticipantId(session.generation));
+            // The client renders a vehicle descriptor for every in-battle roster entry.
             member.in_battle = true;
             session.entity = None;
             session.garage_synced = false;

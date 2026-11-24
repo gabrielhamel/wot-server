@@ -207,8 +207,18 @@ with command `400`, using the selected room and cluster IDs (cluster `0` on
 this server). A successful request gets the same initial state as the host,
 with the guest role and the shared roster. Existing players receive the
 player-added roster update. Guests can change their own readiness and observer selection.
-The host controls team assignments, swaps and room settings. Battle launch
-remains pending.
+The host controls team assignments, swaps, room settings and battle launch.
+
+When a participant leaves an active battle, the first garage sync restores the
+room with their fresh Account entity and a full roster. Roster entries for
+players still in the arena carry state `8` and retain their vehicle descriptors.
+The [client roster model](../references/wot-src/sources/res/scripts/client/gui/prb_control/items/prb_items.py#L54)
+treats this state as having a vehicle. The native EU `v.2.4.1.1 #993`
+`game.log` entry at 15:07:37 on November 23, 2026 shows the Training Room view
+aborting in `_makeAccountsData` when it tried to decode an integer zero as a
+vehicle descriptor. On return,
+the server clears the returning player's battle state and vehicle descriptor so
+they can ready up with their current garage vehicle.
 
 Both **Delete Room** and **Exit** go through
 [the client's leave action](../references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/lobby/trainings/TrainingRoomBase.py#L131)

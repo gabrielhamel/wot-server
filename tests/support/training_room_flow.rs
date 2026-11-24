@@ -1369,6 +1369,21 @@ pub fn battle_fixture(resources: &wot_resources::ResourceBundle) -> BattleFixtur
 // Lakeville Encounter has a clear firing line along the lakeside road.
 const BATTLE_ARENA_TYPE: i32 = (1 << 16) | 5;
 pub const BATTLE_TERRAIN: &str = "spaces/07_lakeville/terrain";
+const EARLY_RETURN_SYNC: i16 = 5120;
+
+fn room_roster(peer: &mut Peer, script: &ScriptDispatch, start: usize) -> Vec<Pickle> {
+    let roster = |peer: &Peer| {
+        peer.methods[start..].iter().find_map(|(name, args)| {
+            (name == "updatePrebattle" && args[0] == Value::UInt8(1))
+                .then(|| pickle_value(&args[1]))
+        })
+    };
+    peer.until(script, |peer| roster(peer).is_some());
+    let Some(Pickle::List(players)) = roster(peer) else {
+        panic!("expected Training Room roster");
+    };
+    players
+}
 
 pub fn join_during_battle(peer: &mut Peer, script: &ScriptDispatch, room_id: i64, host_id: i64) {
     invite::sync(peer, script);
@@ -1383,17 +1398,19 @@ pub fn join_during_battle(peer: &mut Peer, script: &ScriptDispatch, room_id: i64
         } else {
             training_command(peer, script, 202, join, room_id);
         }
-        peer.until(script, |p| {
-            p.methods[before..].iter().any(|(name, args)| {
-                if name != "updatePrebattle" || args[0] != Value::UInt8(1) {
-                    return false;
-                }
-                matches!(pickle_value(&args[1]), Pickle::List(roster)
-                    if roster.len() == 3 && roster.iter().filter(|entry|
-                        matches!(entry, Pickle::Tuple(fields) if fields[5] == Pickle::I64(8))
-                    ).count() == 2)
-            })
-        });
+        let roster = room_roster(peer, script, before);
+        assert_eq!(roster.len(), 3);
+        assert_eq!(
+            roster
+                .iter()
+                .filter(|entry| matches!(entry, Pickle::Tuple(fields)
+                    if fields[5] == Pickle::I64(8)
+                        && matches!(&fields[7], Pickle::Bytes(bytes) if !bytes.is_empty())
+                ))
+                .count(),
+            2,
+            "Every in-battle player must carry a vehicle descriptor the room can render"
+        );
         assert_eq!(peer.resets, 0);
         training_command(peer, script, request, 401, 0);
         peer.until(script, |p| p.responses.contains(&(request, 0)));
@@ -1410,7 +1427,7 @@ pub fn exercise_battle(
     fixture: BattleFixture,
     visitor_account: i64,
     visit_in_battle: impl FnOnce(i64),
-) {
+) -> i64 {
     let shell_damage = fixture.shell_damage;
     let command = |peer: &mut Peer, request, command, args: [i64; 3]| {
         let mut values = vec![Value::Int16(request), Value::Int16(command)];
@@ -2027,6 +2044,34 @@ pub fn exercise_battle(
     let outcome_start = host.methods.len();
     guest.command(script, "leaveArena", vec![]);
     guest.until(script, |p| p.resets == 2);
+    guest.enable_entities();
+    guest.until(script, |p| p.created && p.shown);
+    let return_start = guest.methods.len();
+    command(guest, EARLY_RETURN_SYNC, 100, [0, 0, 0]);
+    let roster = room_roster(guest, script, return_start);
+    assert!(
+        guest.methods[return_start..]
+            .iter()
+            .any(|(name, args)| name == "onPrebattleJoined" && args[0].as_i64() == Some(room_id))
+    );
+    assert_eq!(roster.len(), 2);
+    assert!(
+        roster
+            .iter()
+            .any(|entry| matches!(entry, Pickle::Tuple(fields)
+                if fields[4] == Pickle::I64(1) && fields[5] == Pickle::I64(8)
+                    && matches!(&fields[7], Pickle::Bytes(bytes) if !bytes.is_empty())
+            ))
+    );
+    assert!(
+        roster
+            .iter()
+            .any(|entry| matches!(entry, Pickle::Tuple(fields)
+                if fields[0] == Pickle::I64(i64::from(guest.player_entity_id))
+                    && fields[4] == Pickle::I64(2) && fields[5] == Pickle::I64(1)
+                    && fields[7] == Pickle::I64(0)
+            ))
+    );
     host.until(script, |p| {
         p.methods[outcome_start..].iter().any(|(name, args)| {
             name == "onRoundFinished" && args == &[Value::Int8(1), Value::UInt8(1)]
@@ -2057,12 +2102,11 @@ pub fn exercise_battle(
     );
     host.until(script, |p| p.resets == 2);
     host.enable_entities();
-    guest.enable_entities();
     host.until(script, |p| p.created && p.shown);
-    guest.until(script, |p| p.created && p.shown);
     let (total, rooms) = training_list(host, script, 0, 50);
     assert_eq!(total, 1);
     assert!(matches!(&rooms[..], [Pickle::Tuple(room)] if room[1] == Pickle::I64(room_id)));
+    room_id
 }
 
 fn assert_range_expiry(host: &mut Peer, guest: &mut Peer, script: &ScriptDispatch, range: f32) {
@@ -2817,6 +2861,36 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         .find(|s| s.name == "player_sessions.return_from_battle" && child_of(s, leave))
         .expect("garage return in the leave request trace");
     assert!(has(garage_return, "output.outcome", "garage_reset"));
+    let early_sync = traces
+        .iter()
+        .find(|span| {
+            span.name == "game.command"
+                && has(span, "user.id", &guest.to_string())
+                && has(span, "input.request_id", &EARLY_RETURN_SYNC.to_string())
+        })
+        .expect("early return garage sync");
+    let sync = traces
+        .iter()
+        .find(|span| span.name == "player_sessions.commands.command" && child_of(span, early_sync))
+        .expect("early return account command");
+    let sync = traces
+        .iter()
+        .find(|span| span.name == "player_sessions.sync_garage" && child_of(span, sync))
+        .expect("early return garage synchronization");
+    let restored = traces
+        .iter()
+        .find(|span| span.name == "player_sessions.restore_training_room" && child_of(span, sync))
+        .expect("Training Room restoration in the early return sync trace");
+    assert!(has(restored, "ddd.bounded_context.name", "player_sessions"));
+    assert!(has(restored, "output.outcome", "restored"));
+    assert!(has(restored, "output.players.count", "2"));
+    assert!(has(restored, "output.players.in_battle.count", "1"));
+    assert!(traces.iter().any(|span| {
+        span.name == "mercury.response"
+            && child_of(span, restored)
+            && has(span, "rpc.method", "updatePrebattle")
+            && has(span, "output.delivery", "sent")
+    }));
     let departed = traces
         .iter()
         .find(|span| span.name == "battles.remove_participant" && child_of(span, leave))

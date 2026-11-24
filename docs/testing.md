@@ -150,9 +150,13 @@ along with tick duration and delay samples. A unit test checks the skipped-tick
 counter at the 100 ms deadline boundary. A third peer connects
 during the round and receives the invitation sent while offline. That peer
 finds the same room in discovery and joins through both the invitation and
-the public list. The end-of-round check verifies both outcome messages,
-coasting poses before reset, and restoration of the original room on garage
-sync. The suite also fires a clear shot, checks its resource-derived tracer
+the public list. Both joins verify that in-battle roster entries have vehicle
+descriptors. A guest leaves before the host's reset and receives the original
+room roster on the first garage sync, with a fresh Account entity and a
+renderable entry for the host still in the arena. The end-of-round check
+verifies both outcome messages, coasting poses before reset and the host's
+return to the original room. The suite also fires a clear shot, checks its
+resource-derived tracer
 range and verifies the absence of impact messages through its travel time.
 The returned Account
 requests a fresh chat token and the XMPP connection retrieves its roster.
