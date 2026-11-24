@@ -64,6 +64,10 @@ impl App {
         })
     }
 
+    pub fn configure_metrics(&mut self, meter: &opentelemetry::metrics::Meter) {
+        self.protocol.configure_metrics(meter);
+    }
+
     /// Get the address this app is bound to.
     pub fn addr(&self) -> io::Result<SocketAddr> {
         self.socket.addr()

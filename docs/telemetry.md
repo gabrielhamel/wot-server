@@ -21,6 +21,7 @@ collector. Each series describes one server process.
 | `wot.battle.tick.duration` | Histogram | Seconds | Time for the worker to advance all active arenas and enqueue their outputs, including waits for output capacity. |
 | `wot.battle.tick.delay` | Histogram | Seconds | Time between the scheduled tick deadline and the worker starting arena processing. |
 | `wot.battle.tick.skipped` | Counter | Ticks | Number of subsequent deadlines the worker discarded when a tick started at least one full interval late. The interval is 100 ms. |
+| `wot.mercury.reliable_sequence.drops` | Counter | Packets | Unreliable on-channel Mercury packets discarded because their last-reliable-sequence footer differs from the receiver's last contiguous reliable sequence. |
 | `wot.db.operation.duration` | Histogram | Seconds | Elapsed time of each completed PostgreSQL operation observed by the shared adapter, including transaction boundaries. Sample counts give operation and error totals. |
 | `wot.db.pool.connections` | Gauge | Connections | SQLx pool occupancy by `state`, reported as `idle` or `non_idle`. The latter is the pool size minus idle connections and can include connections being opened or checked. |
 | `wot.db.pool.capacity` | Gauge | Connections | Configured maximum size of the shared SQLx pool. |
@@ -36,6 +37,17 @@ independently of the preparation task. Mercury
 delivery spans and position snapshot socket outcomes are recorded in the
 gateway when it drains the queue. See the [metric instruments](../src/player-sessions/src/infrastructure/gateway/metrics.rs)
 and [battle scheduler](../src/battles/src/infrastructure/worker.rs).
+
+The [Mercury receive check](../src/shared-infrastructure/src/mercury/net/proto.rs)
+counts each rejected packet once. The `direction` label is `behind` or
+`ahead` in Mercury's wrapping sequence space. Both series start at zero.
+The counter measures this specific transport rejection. Establishing packet
+reordering or congestion requires additional network evidence. In Mimir,
+query drops per five minutes by direction:
+
+```promql
+sum by (direction) (increase(wot_mercury_reliable_sequence_drops{job="wot-server"}[5m]))
+```
 
 PostgreSQL operation timing starts when the adapter polls the SQLx future, so
 it includes pool acquisition time for operations that acquire a connection.

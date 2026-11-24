@@ -96,6 +96,10 @@ impl App {
         }
     }
 
+    pub fn configure_metrics(&mut self, meter: &opentelemetry::metrics::Meter) {
+        self.protocol.configure_metrics(meter);
+    }
+
     /// The dispatch tables of the script model this app was created with.
     pub fn dispatch(&self) -> &ScriptDispatch {
         &self.dispatch

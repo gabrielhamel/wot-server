@@ -7,6 +7,10 @@ use std::net::SocketAddr;
 use std::num::NonZero;
 use std::time::{Duration, Instant};
 
+use opentelemetry::{
+    KeyValue,
+    metrics::{Counter, Meter},
+};
 use tracing::{debug, instrument, trace, trace_span, warn};
 
 use super::bundle::Bundle;
@@ -29,6 +33,7 @@ pub struct Protocol {
     maintenance_at: Instant,
     input_window: Instant,
     input_count: usize,
+    reliable_sequence_drops: Option<Counter<u64>>,
 }
 
 /// A structure referenced by any channel handle, containing shared states.
@@ -49,7 +54,20 @@ impl Protocol {
             maintenance_at: Instant::now(),
             input_window: Instant::now(),
             input_count: 0,
+            reliable_sequence_drops: None,
         }
+    }
+
+    pub(crate) fn configure_metrics(&mut self, meter: &Meter) {
+        let drops = meter
+            .u64_counter("wot.mercury.reliable_sequence.drops")
+            .with_unit("{packet}")
+            .with_description("Mercury packets dropped for a mismatched last reliable sequence")
+            .build();
+        for direction in ["behind", "ahead"] {
+            drops.add(0, &[KeyValue::new("direction", direction)]);
+        }
+        self.reliable_sequence_drops = Some(drops);
     }
 
     /// Drop channel state, pending reliable packets and fragment assemblies for a peer.
@@ -389,11 +407,18 @@ impl Protocol {
             // In this case we must ensure that current expected sequence is equal to
             // this given sequence number + 1.
             if let Some(on) = channel.on.as_deref_mut() {
-                if last_reliable_sequence_num != on.in_reliable_expected_seq - 1 {
+                let expected = on.in_reliable_expected_seq - 1;
+                let direction = match last_reliable_sequence_num.wrapping_cmp(expected) {
+                    Ordering::Less => Some("behind"),
+                    Ordering::Equal => None,
+                    Ordering::Greater => Some("ahead"),
+                };
+                if let Some(direction) = direction {
+                    if let Some(drops) = &self.reliable_sequence_drops {
+                        drops.add(1, &[KeyValue::new("direction", direction)]);
+                    }
                     warn!(
-                        "Invalid last reliable sequence number, expected: {}, got: {}",
-                        on.in_reliable_expected_seq - 1,
-                        last_reliable_sequence_num
+                        "Invalid last reliable sequence number, expected: {expected}, got: {last_reliable_sequence_num}"
                     );
                     return Err(packet.destruct().0);
                 }
@@ -1050,6 +1075,11 @@ impl Fragments {
 #[cfg(test)]
 mod tests {
 
+    use opentelemetry::metrics::MeterProvider;
+    use opentelemetry_sdk::metrics::{
+        InMemoryMetricExporter, SdkMeterProvider,
+        data::{AggregatedMetrics, MetricData},
+    };
     use std::net::{Ipv4Addr, SocketAddr};
 
     use super::*;
@@ -1088,5 +1118,63 @@ mod tests {
         let mut server = Protocol::new();
         accept_ten(&mut server, addr);
         assert_eq!(next_reliable(&mut server, addr), first);
+    }
+
+    #[test]
+    fn counts_reliable_sequence_drops_by_direction() {
+        let exporter = InMemoryMetricExporter::default();
+        let provider = SdkMeterProvider::builder()
+            .with_periodic_exporter(exporter.clone())
+            .build();
+        let meter = provider.meter("mercury-test");
+        let mut server = Protocol::new();
+        server.configure_metrics(&meter);
+        let mut other_listener = Protocol::new();
+        other_listener.configure_metrics(&meter);
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1));
+        accept_ten(&mut server, addr);
+
+        let packet = |sequence| {
+            let mut packet = Packet::new();
+            let mut config = PacketConfig::new();
+            config.set_on_channel(true);
+            config.set_last_reliable_sequence_num(sequence);
+            packet.write_config(&mut config);
+            packet
+        };
+        for sequence in [8, 7, 10] {
+            assert!(server.accept(packet(Seq::ZERO + sequence), addr).is_err());
+        }
+        assert!(server.accept(packet(Seq::ZERO + 9), addr).is_ok());
+        // A new channel expects the last reliable sequence to be MAX.
+        assert!(other_listener.accept(packet(Seq::ZERO), addr).is_err());
+        assert!(other_listener.accept(packet(Seq::ZERO - 1), addr).is_ok());
+
+        provider.force_flush().unwrap();
+        let exports = exporter.get_finished_metrics().unwrap();
+        let metric = exports
+            .last()
+            .unwrap()
+            .scope_metrics()
+            .flat_map(|scope| scope.metrics())
+            .find(|metric| metric.name() == "wot.mercury.reliable_sequence.drops")
+            .unwrap();
+        let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() else {
+            panic!("expected a counter");
+        };
+        assert!(sum.is_monotonic());
+        let counts: HashMap<_, _> = sum
+            .data_points()
+            .map(|point| {
+                let label = point.attributes().next().unwrap();
+                assert_eq!(label.key.as_str(), "direction");
+                assert_eq!(point.attributes().count(), 1);
+                (label.value.as_str().into_owned(), point.value())
+            })
+            .collect();
+        assert_eq!(
+            counts,
+            HashMap::from([("behind".into(), 2), ("ahead".into(), 2)])
+        );
     }
 }
