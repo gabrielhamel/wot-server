@@ -306,6 +306,27 @@ opposite yaw matches the player's report of a rear hit highlighting the
 front. Battles now sends the projectile travel yaw. The encrypted E2E
 asserts the wire angle, while native rendering still needs a walkthrough.
 
+The [Widepark Training capture](#widepark-training-capture-from-2026-11-23)
+contains two incoming non-penetrations from TKS entity `3654510` to Leopard 1
+entity `3654511`. At 172.42 s and 172.52 s, type-`0x37` records at stream
+offsets 772294 and 773009 contain a 21-byte hit direction value starting at
+payload byte 7. In [`VEHICLE_HIT_DIRECTION`](references/wot-src/sources/res/scripts/entity_defs/alias.xml)
+field order, the yaw is about −1.04 radians, the amount is 11 HP, and
+`isBlocked` is true. The matching `showDamageFromShot` records at offsets
+772391 and 773142 carry impact group 3 and zero actual damage. The
+[TKS 20 mm AP shell definitions](references/wot-src/sources/res/scripts/item_defs/vehicles/poland/components/shells.xml)
+list 11 nominal armor damage.
+
+For armor blocks, ricochets and screen stops with zero HP loss, Battles sends
+the same Avatar method with the incoming projectile's travel yaw and
+`isBlocked=true`. The [client Avatar](references/wot-src/sources/res/scripts/client/Avatar.py)
+forwards the flag to the battle HUD, whose [marker builder](references/wot-src/sources/res/scripts/client/gui/Scaleform/daapi/view/battle/shared/indicators.py)
+chooses the blocked marker before checking the amount. The extended marker
+uses that amount for its label and size. Battles supplies nominal shell damage
+for the blocked indicator. The resource-backed projectile test checks
+victim-only delivery and shot traces for armor blocks, ricochets and screen
+stops.
+
 ## Scene impacts and gun audio
 
 The two tracked EU replays carry Avatar method `explodeProjectile` at exposed
