@@ -12,7 +12,7 @@ use tracing_subscriber::prelude::*;
 use wot_platform::mercury::net::element::{Element, SimpleElement};
 use wot_shared_kernel::{
     ArmorMesh, ArmorPlate, ArmorTriangle, ExplosiveShell, GunLoading, GunPerformance, MountedArmor,
-    ShellBallistics, ShellKind, ShellStun, VehiclePerformance,
+    ShellBallistics, ShellEffects, ShellKind, ShellStun, VehiclePerformance,
 };
 
 const SHOOTER: ParticipantId = ParticipantId(1);
@@ -86,6 +86,7 @@ fn projectile_battle() -> (u32, Battle, Arc<ArenaWire>) {
 #[derive(Default)]
 struct ImpactDelivery {
     indicators: Vec<(ParticipantId, AvatarUpdate)>,
+    stickers: Vec<(ParticipantId, Vec<u8>)>,
 }
 
 impl ArenaDelivery for ImpactDelivery {
@@ -131,11 +132,17 @@ impl ArenaDelivery for ImpactDelivery {
 
     fn send_arena_property(
         &mut self,
-        _: ParticipantId,
-        _: Option<u32>,
+        recipient: ParticipantId,
+        entity: Option<u32>,
         _: u8,
-        _: impl Element<()> + Send + 'static,
+        property: impl Element<()> + Send + 'static,
     ) -> std::io::Result<()> {
+        if entity == Some(22) {
+            let _delivery = tracing::info_span!("test.damage_sticker_delivery").entered();
+            let mut payload = Vec::new();
+            property.write(&mut payload, &())?;
+            self.stickers.push((recipient, payload));
+        }
         Ok(())
     }
 
@@ -157,10 +164,21 @@ impl ArenaDelivery for ImpactDelivery {
 
 #[test]
 #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
-fn blocked_impacts_send_direction_only_to_the_victim() {
+fn blocked_impacts_publish_direction_and_vehicle_marks() {
     use crate::domain::vehicle::Aim;
 
     let (id, mut battle, wire) = projectile_battle();
+    let tank = &mut battle.players.get_mut(&SHOOTER).unwrap().tank;
+    tank.performance.as_mut().unwrap().gun.shell_effects.insert(
+        10,
+        ShellEffects {
+            caliber_mm: 20.0,
+            pierced_sticker: Some(12),
+            resisted_sticker: Some(1),
+            prefab_index: 2,
+            ..ShellEffects::default()
+        },
+    );
     let mut delivery = ImpactDelivery::default();
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
@@ -168,10 +186,11 @@ fn blocked_impacts_send_direction_only_to_the_victim() {
         .build();
     let subscriber = tracing_subscriber::registry()
         .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("hit-direction-test")));
-    let bearing = 1.5_f32.atan2(3.0);
     tracing::subscriber::with_default(subscriber, || {
-        for (i, (ricochet_cos, damage_factor)) in
-            [(0.0, 1.0), (0.9, 1.0), (0.0, 0.0)].into_iter().enumerate()
+        for (i, (ricochet_cos, damage_factor, hit_effect)) in
+            [(0.0, 1.0, 3), (0.9, 1.0, 2), (0.0, 0.0, 3)]
+                .into_iter()
+                .enumerate()
         {
             let now = battle.started_at + Duration::from_secs(i as u64 * 2);
             let target = &mut battle.players.get_mut(&VICTIM).unwrap().tank;
@@ -183,34 +202,31 @@ fn blocked_impacts_send_direction_only_to_the_victim() {
                 triangle.plate.damage_factor = damage_factor;
             }
             let tank = &mut battle.players.get_mut(&SHOOTER).unwrap().tank;
-            tank.performance
-                .as_mut()
-                .unwrap()
-                .gun
-                .shell_ballistics
-                .insert(
-                    10,
-                    ShellBallistics {
-                        kind: ShellKind::ArmorPiercing,
-                        caliber_mm: 20.0,
-                        penetration_mm: [1.0; 2],
-                        penetration_randomization: 0.0,
-                        damage_randomization: 0.0,
-                        uniform_penetration: true,
-                        uniform_damage: true,
-                        far_damage: 100.0,
-                        damage_limited_range: f32::INFINITY,
-                        device_damage: [0.0; 2],
-                        explosive: None,
-                        speed: 100.0,
-                        gravity: 0.0,
-                        normalization: 0.0,
-                        ricochet_cos,
-                        trace_ricochet: true,
-                        obstacle_damage: None,
-                        obstacle_penetration_loss: 0.0,
-                    },
-                );
+            let gun = &mut tank.performance.as_mut().unwrap().gun;
+            gun.shell_ballistics.insert(
+                10,
+                ShellBallistics {
+                    kind: ShellKind::ArmorPiercing,
+                    caliber_mm: 20.0,
+                    penetration_mm: [1.0; 2],
+                    penetration_randomization: 0.0,
+                    damage_randomization: 0.0,
+                    uniform_penetration: true,
+                    uniform_damage: true,
+                    far_damage: 100.0,
+                    damage_limited_range: f32::INFINITY,
+                    device_damage: [0.0; 2],
+                    explosive: None,
+                    speed: 100.0,
+                    gravity: 0.0,
+                    normalization: 0.0,
+                    ricochet_cos,
+                    trace_ricochet: true,
+                    obstacle_damage: None,
+                    obstacle_penetration_loss: 0.0,
+                },
+            );
+            let bearing = 1.5_f32.atan2(3.0 + 0.25 * i as f32);
             tank.aim_at(Aim::HullAngles {
                 yaw: bearing,
                 pitch: 0.0,
@@ -241,6 +257,24 @@ fn blocked_impacts_send_direction_only_to_the_victim() {
             assert!((*yaw - bearing).abs() < 0.001);
             assert_eq!(battle.players[&VICTIM].tank.health, 100);
             delivery.indicators.clear();
+            delivery.stickers.sort_by_key(|(recipient, _)| recipient.0);
+            let [(SHOOTER, shooter_marks), (VICTIM, victim_marks)] = delivery.stickers.as_slice()
+            else {
+                panic!("Expected the vehicle sticker array for both viewers");
+            };
+            assert_eq!(shooter_marks, victim_marks);
+            assert_eq!(victim_marks[0] as usize, i + 1);
+            assert_eq!(victim_marks.len(), 1 + 16 * (i + 1));
+            let mark = &victim_marks[1 + 16 * i..];
+            assert_eq!(&mark[..4], &[0; 4]);
+            assert_eq!(mark[4], 1);
+            assert_eq!(mark[5], 1);
+            assert_ne!(mark[6..9], mark[9..12]);
+            assert_eq!(
+                u32::from_le_bytes(mark[12..].try_into().unwrap()),
+                (2 << 24) | (200 << 8) | (2 << 4) | hit_effect,
+            );
+            delivery.stickers.clear();
         }
         battle.players.get_mut(&SHOOTER).unwrap().pending_reload = None;
     });
@@ -251,7 +285,16 @@ fn blocked_impacts_send_direction_only_to_the_victim() {
             .iter()
             .any(|field| field.key.as_str() == key && field.value.to_string() == value)
     };
-    for outcome in ["armor_blocked", "ricochet", "screen_blocked"] {
+    let child_of = |child: &opentelemetry_sdk::trace::SpanData,
+                    parent: &opentelemetry_sdk::trace::SpanData| {
+        child.parent_span_id == parent.span_context.span_id()
+            && child.span_context.trace_id() == parent.span_context.trace_id()
+    };
+    for (outcome, count) in [
+        ("armor_blocked", "1"),
+        ("ricochet", "2"),
+        ("screen_blocked", "3"),
+    ] {
         let shot = spans
             .iter()
             .find(|span| span.name == "battles.shot" && has(span, "output.outcome", outcome))
@@ -259,12 +302,27 @@ fn blocked_impacts_send_direction_only_to_the_victim() {
         assert!(has(shot, "output.damage", "0"));
         assert!(has(shot, "output.hit_direction.blocked", "true"));
         assert!(has(shot, "output.hit_direction.damage", "100"));
+        assert!(has(shot, "output.damage_stickers.count", count));
+        let stickers: Vec<_> = spans
+            .iter()
+            .filter(|span| span.name == "battles.damage_stickers" && child_of(span, shot))
+            .collect();
+        assert_eq!(stickers.len(), 2);
+        for sticker in stickers {
+            assert!(has(sticker, "input.entity_id", "22"));
+            assert!(has(sticker, "input.damage_stickers.count", count));
+            assert!(
+                spans
+                    .iter()
+                    .any(|delivery| delivery.name == "test.damage_sticker_delivery"
+                        && child_of(delivery, sticker))
+            );
+        }
         assert_eq!(
             spans
                 .iter()
                 .filter(|delivery| delivery.name == "test.hit_direction_delivery"
-                    && delivery.parent_span_id == shot.span_context.span_id()
-                    && delivery.span_context.trace_id() == shot.span_context.trace_id())
+                    && child_of(delivery, shot))
                 .count(),
             1,
         );

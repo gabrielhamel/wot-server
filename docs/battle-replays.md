@@ -404,16 +404,21 @@ playback is needed to verify audio and visuals.
 [`Vehicle.set_damageStickers`](references/wot-src/sources/res/scripts/client/Vehicle.py#L668)
 adds and removes marks as the `Vehicle.damageStickers` array changes.
 [`setDamageSticker`](references/wot-src/sources/res/scripts/common/helpers_common.py#L277)
-uses the shell's configured penetration sticker as the low byte of the
-segment and the prefab effect index as the high byte of the hit parameters.
-Training uses that encoding for hits that remove health and whose legacy
-effect defines a penetration mark. The client applies the prefab or legacy
-appearance from its effect tables. New arena viewers receive the current
+uses the shell's configured `targetStickers.armorPierced` or
+`targetStickers.armorResisted` sticker as the low byte of the segment and
+the prefab effect index as the high byte of the hit parameters. Battles
+uses the penetration sticker for a penetration that removes HP. It uses the
+resisted sticker for ricochets, armor blocks and screen stops. Both use the
+hit part and segment from the armor solver and retain the impact group in
+the hit parameters. The [client sticker renderer](references/wot-src/sources/res/scripts/client/VehicleStickers.py)
+selects the prefab decal or the legacy sticker. New arena viewers receive the current
 array as part of entry. The server keeps the 15 most recent distinct marks
 per vehicle, because a one-byte count plus 16 bytes per point fits the
 property's Variable8 wire framing. This is a server limit. The client's
 renderer limit remains unmeasured.
-The hit segment still crosses an approximate hull volume.
+The blocked-impact regression verifies the serialized property for both
+viewers and its trace. The EU replay confirms the blocked hit effects.
+Rendering the new persistent marks in a live native battle remains unverified.
 
 The November 23 Mac LAN Training Room capture on Munich at 14:04 Paris
 time used the EU executable identified above. Its SHA-256 was
