@@ -3,7 +3,7 @@ use crate::infrastructure::obstacles::{Fragment, HullHit};
 use std::f32::consts::{PI, TAU};
 
 const MAX_CONTACTS_PER_STEP: usize = 4;
-const SCENERY_BREAK_ENERGY_LOSS: f32 = 0.25;
+const HARDCODED_SCENERY_BREAK_ENERGY_LOSS: f32 = 0.30;
 const MAX_TURN_SAMPLE_RADIANS: f32 = 0.035;
 pub(super) const PRESS_REACH: f32 = 0.05;
 
@@ -122,7 +122,7 @@ impl SceneryMotion {
 
         if moving && kinetic > 0.0 {
             let energy_share = ((health - pressure) / kinetic).clamp(0.0, 1.0);
-            self.speed_scale *= (1.0 - SCENERY_BREAK_ENERGY_LOSS * energy_share).sqrt();
+            self.speed_scale *= (1.0 - HARDCODED_SCENERY_BREAK_ENERGY_LOSS * energy_share).sqrt();
         }
         true
     }
