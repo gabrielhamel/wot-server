@@ -801,9 +801,9 @@ mod tests {
     use glam::Vec3Swizzles;
 
     #[test]
-    #[ignore = "Requires WG_RESOURCE_DIR with Widepark scenery"]
+    #[ignore = "Requires WOT_RESOURCE_DIR with Widepark scenery"]
     fn widepark_replay_detects_the_next_fence_panel_during_a_pivot() {
-        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
         let geometry = Arc::new(Obstacles::load(&resources, "spaces/17_munchen", 17).unwrap());
         let mut scene = Scenery::new(geometry);
@@ -837,7 +837,7 @@ mod tests {
     #[test]
     #[ignore = "Requires freshly extracted EU Widepark railway geometry"]
     fn replay_leopard_approach_stops_at_the_flat_car_even_after_visual_destruction() {
-        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
         let geometry = Arc::new(Obstacles::load(&resources, "spaces/17_munchen", 17).unwrap());
         let mut scene = Scenery::new(geometry);
@@ -862,9 +862,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires WG_RESOURCE_DIR with freshly extracted EU Widepark WCM4 geometry"]
+    #[ignore = "Requires WOT_RESOURCE_DIR with freshly extracted EU Widepark WCM4 geometry"]
     fn widepark_lamps_and_train_use_their_native_vehicle_contact_bodies() {
-        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
         let name = "spaces/17_munchen";
         let geometry = Arc::new(Obstacles::load(&resources, name, 17).unwrap());
@@ -982,9 +982,9 @@ mod tests {
         }
     }
     #[test]
-    #[ignore = "Requires WG_RESOURCE_DIR with extracted EU Malinovka trees and terrain"]
+    #[ignore = "Requires WOT_RESOURCE_DIR with extracted EU Malinovka trees and terrain"]
     fn malinovka_tree_blocks_the_hull_until_felled_without_stopping_shells() {
-        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
         let geometry = "spaces/02_malinovka";
         let ground = terrain::Terrain::load(&resources, geometry).unwrap();
@@ -1063,9 +1063,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+    #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
     fn ensk_structure_breaks_its_numbered_dependants_once() {
-        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
         let geometry = Arc::new(Obstacles::load(&resources, "spaces/06_ensk", 6).unwrap());
         let (origin, direction, fragment) = geometry

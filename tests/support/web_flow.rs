@@ -28,10 +28,10 @@ impl Drop for WebFixture {
 }
 
 #[test]
-#[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR"]
+#[ignore = "Requires WOT_TEST_DATABASE_URL and WOT_RESOURCE_DIR"]
 fn admin_and_shop_share_one_listener_with_separate_authorization() {
-    let resources = fs::canonicalize(std::env::var_os("WG_RESOURCE_DIR").unwrap()).unwrap();
-    let database_url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
+    let resources = fs::canonicalize(std::env::var_os("WOT_RESOURCE_DIR").unwrap()).unwrap();
+    let database_url = std::env::var("WOT_TEST_DATABASE_URL").unwrap();
     let suffix = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos();
     let mut fixture = WebFixture {
         directory: std::env::temp_dir().join(format!("wot-web-{}-{suffix}", std::process::id())),

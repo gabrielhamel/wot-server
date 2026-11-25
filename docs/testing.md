@@ -29,7 +29,7 @@ inputs and output overwrite rejection. Fixtures contain no game binary bytes.
 To validate the supplied client explicitly:
 
 ```sh
-WG_GAME_FOLDER=/path/to/game cargo test -p wot-binary-map --test supplied_client -- --ignored
+WOT_GAME_FOLDER=/path/to/game cargo test -p wot-binary-map --test supplied_client -- --ignored
 ```
 
 This opt-in test checks the documented executable hash, interface sizes and
@@ -108,9 +108,9 @@ writes, restart persistence and two isolated encrypted UDP clients:
 
 ```sh
 docker compose up -d --wait
-export WG_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
+export WOT_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.1:54329/wot_server'
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
-export WG_RESOURCE_DIR='/path/to/resources'
+export WOT_RESOURCE_DIR='/path/to/resources'
 cargo test --locked -p wot-battles projectile_tests -- --ignored
 cargo test --locked -p wot-server-runtime --lib initializes_context_storage -- --ignored
 cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored
@@ -129,7 +129,7 @@ also exercise concurrent first-admin setup, case-sensitive credentials,
 changes, concurrent demotion, revocation, expiration and sign-out. The access
 lifecycle test uses a temporary PostgreSQL database.
 
-For an existing database, set `WG_TEST_DATABASE_URL` to the same connection
+For an existing database, set `WOT_TEST_DATABASE_URL` to the same connection
 URL used by the server. The test uses uniquely named temporary accounts and removes them after its network
 worker ends. Use a development database. It uses the client's basic-login JSON envelope and verifies Account/showGUI, owned tank
 cache isolation, all three resource streams, committed settings/revisions, explicit

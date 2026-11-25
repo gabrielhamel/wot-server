@@ -13,18 +13,18 @@ OTLP filters. The E2E trace capture uses the same target allowlist.
 The server exports these OpenTelemetry metrics through the configured OTLP
 collector. Each series describes one server process.
 
-| Metric | Type | Unit | Measurement |
-| --- | --- | --- | --- |
-| `wot.server.uptime` | Gauge | Seconds | Time since telemetry started. |
-| `wot.players.online` | Gauge | Players | Authenticated game sessions across the garage and battles, using the same count as in-game server stats. Pending login tickets are excluded. |
-| `wot.battles.running` | Gauge | Battles | Activated arenas with participants, from loading through the departure of the last participant, including countdown and results. |
-| `wot.battle.tick.duration` | Histogram | Seconds | Time for the worker to advance all active arenas and enqueue their outputs, including waits for output capacity. |
-| `wot.battle.tick.delay` | Histogram | Seconds | Time between the scheduled tick deadline and the worker starting arena processing. |
-| `wot.battle.tick.skipped` | Counter | Ticks | Number of subsequent deadlines the worker discarded when a tick started at least one full interval late. The interval is 100 ms. |
-| `wot.mercury.reliable_sequence.drops` | Counter | Packets | Unreliable on-channel Mercury packets discarded because their last-reliable-sequence footer differs from the receiver's last contiguous reliable sequence. |
-| `wot.db.operation.duration` | Histogram | Seconds | Elapsed time of each completed PostgreSQL operation observed by the shared adapter, including transaction boundaries. Sample counts give operation and error totals. |
-| `wot.db.pool.connections` | Gauge | Connections | SQLx pool occupancy by `state`, reported as `idle` or `non_idle`. The latter is the pool size minus idle connections and can include connections being opened or checked. |
-| `wot.db.pool.capacity` | Gauge | Connections | Configured maximum size of the shared SQLx pool. |
+| Metric                                | Type      | Unit        | Measurement                                                                                                                                                               |
+| ------------------------------------- | --------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wot.server.uptime`                   | Gauge     | Seconds     | Time since telemetry started.                                                                                                                                             |
+| `wot.players.online`                  | Gauge     | Players     | Authenticated game sessions across the garage and battles, using the same count as in-game server stats. Pending login tickets are excluded.                              |
+| `wot.battles.running`                 | Gauge     | Battles     | Activated arenas with participants, from loading through the departure of the last participant, including countdown and results.                                          |
+| `wot.battle.tick.duration`            | Histogram | Seconds     | Time for the worker to advance all active arenas and enqueue their outputs, including waits for output capacity.                                                          |
+| `wot.battle.tick.delay`               | Histogram | Seconds     | Time between the scheduled tick deadline and the worker starting arena processing.                                                                                        |
+| `wot.battle.tick.skipped`             | Counter   | Ticks       | Number of subsequent deadlines the worker discarded when a tick started at least one full interval late. The interval is 100 ms.                                          |
+| `wot.mercury.reliable_sequence.drops` | Counter   | Packets     | Unreliable on-channel Mercury packets discarded because their last-reliable-sequence footer differs from the receiver's last contiguous reliable sequence.                |
+| `wot.db.operation.duration`           | Histogram | Seconds     | Elapsed time of each completed PostgreSQL operation observed by the shared adapter, including transaction boundaries. Sample counts give operation and error totals.      |
+| `wot.db.pool.connections`             | Gauge     | Connections | SQLx pool occupancy by `state`, reported as `idle` or `non_idle`. The latter is the pool size minus idle connections and can include connections being opened or checked. |
+| `wot.db.pool.capacity`                | Gauge     | Connections | Configured maximum size of the shared SQLx pool.                                                                                                                          |
 
 The gateway refreshes both count gauges on its own loop. The battle worker
 samples duration and delay when at least one arena is active at the start of
@@ -509,14 +509,14 @@ The [Platform database tracing adapter](../src/shared-infrastructure/src/infrast
 awaits application-issued queries and explicit transaction boundaries inside
 `postgresql.query` spans. It records the context of the caller.
 
-| Attribute | Meaning |
-| --- | --- |
-| ddd.bounded_context.name | Owning context |
-| db.system.name | postgresql |
-| db.operation.name | SQL operation such as SELECT, UPDATE, BEGIN or COMMIT |
-| db.query.text | Complete SQL command with parameter placeholders |
-| error.type | Error type when execution fails |
-| OpenTelemetry status | Error when execution fails |
+| Attribute                | Meaning                                               |
+| ------------------------ | ----------------------------------------------------- |
+| ddd.bounded_context.name | Owning context                                        |
+| db.system.name           | postgresql                                            |
+| db.operation.name        | SQL operation such as SELECT, UPDATE, BEGIN or COMMIT |
+| db.query.text            | Complete SQL command with parameter placeholders      |
+| error.type               | Error type when execution fails                       |
+| OpenTelemetry status     | Error when execution fails                            |
 
 Driver-managed migration internals and implicit rollback on a dropped
 transaction are represented by the enclosing repository operation and its
@@ -595,10 +595,10 @@ headers and free-form response text.
 
 When serving the browser assets, opt in with both environment variables:
 
-| Variable | Value |
-| --- | --- |
-| `WG_WEB_TELEMETRY_ORIGIN` | Exact browser origin, such as `https://wot.example.com`. |
-| `WG_WEB_TELEMETRY_ENDPOINT` | Complete, fixed OTLP/HTTP protobuf trace endpoint inside the deployment, such as `http://alloy.telemetry.svc.cluster.local:4318/v1/traces`. |
+| Variable                     | Value                                                                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WOT_WEB_TELEMETRY_ORIGIN`   | Exact browser origin, such as `https://wot.example.com`.                                                                                    |
+| `WOT_WEB_TELEMETRY_ENDPOINT` | Complete, fixed OTLP/HTTP protobuf trace endpoint inside the deployment, such as `http://alloy.telemetry.svc.cluster.local:4318/v1/traces`. |
 
 The browser discovers the same-origin `/api/web/telemetry` endpoint before
 enabling tracing. The relay accepts protobuf POSTs from the configured

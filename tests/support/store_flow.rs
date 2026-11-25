@@ -25,11 +25,11 @@ use wot_platform::mercury::{
 use wot_player_sessions::{Gateway, GatewayConfig};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR"]
+#[ignore = "Requires WOT_TEST_DATABASE_URL and WOT_RESOURCE_DIR"]
 async fn store_purchase_updates_the_garage_and_rejects_replay() {
     telemetry_capture::exporter();
-    let database_url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
-    let resource_dir = std::env::var("WG_RESOURCE_DIR").unwrap();
+    let database_url = std::env::var("WOT_TEST_DATABASE_URL").unwrap();
+    let resource_dir = std::env::var("WOT_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&resource_dir)).unwrap();
     let repository = PostgresAccounts::new(
         wot_server_runtime::test_support::connect_database(&database_url, 4)

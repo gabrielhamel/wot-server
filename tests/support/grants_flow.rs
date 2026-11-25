@@ -16,12 +16,12 @@ use wot_player_sessions::{
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR; uses temporary accounts in that database"]
+#[ignore = "Requires WOT_TEST_DATABASE_URL and WOT_RESOURCE_DIR; uses temporary accounts in that database"]
 async fn admin_grants_reach_live_garage_and_survive_reconnect() {
     let exporter = telemetry_capture::exporter();
-    let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
+    let url = std::env::var("WOT_TEST_DATABASE_URL").unwrap();
     let resources = wot_resources::ResourceBundle::open(std::path::Path::new(
-        &std::env::var("WG_RESOURCE_DIR").unwrap(),
+        &std::env::var("WOT_RESOURCE_DIR").unwrap(),
     ))
     .unwrap();
     let repository = PostgresAccounts::new(

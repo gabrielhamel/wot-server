@@ -35,10 +35,10 @@ fn attribute(span: &SpanData, key: &str) -> Option<String> {
 }
 
 #[tokio::test]
-#[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR"]
+#[ignore = "Requires WOT_TEST_DATABASE_URL and WOT_RESOURCE_DIR"]
 async fn exports_admin_http_request_inputs() {
-    let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
-    let resource_dir = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+    let url = std::env::var("WOT_TEST_DATABASE_URL").unwrap();
+    let resource_dir = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&resource_dir)).unwrap();
     let has_attachments =
         resources.has_file("scripts/item_defs/customization/attachments/list.xml");
@@ -594,10 +594,10 @@ async fn exports_admin_http_request_inputs() {
 }
 
 #[tokio::test]
-#[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR"]
+#[ignore = "Requires WOT_TEST_DATABASE_URL and WOT_RESOURCE_DIR"]
 async fn exports_admin_http_access_lifecycle() {
-    let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
-    let directory = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+    let url = std::env::var("WOT_TEST_DATABASE_URL").unwrap();
+    let directory = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&directory)).unwrap();
     let catalog = Arc::new(GarageCatalog::load(resources.clone(), &[]).unwrap());
     let root_pool = sqlx::PgPool::connect(&url).await.unwrap();

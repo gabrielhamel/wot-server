@@ -44,7 +44,7 @@ impl Relay {
         ensure!(
             matches!(parsed.scheme(), "http" | "https")
                 && parsed.origin().ascii_serialization() == origin,
-            "WG_WEB_TELEMETRY_ORIGIN must be an HTTP origin"
+            "WOT_WEB_TELEMETRY_ORIGIN must be an HTTP origin"
         );
         ensure!(
             matches!(endpoint.scheme(), "http" | "https") && endpoint.host().is_some(),
@@ -107,13 +107,13 @@ impl Relay {
 }
 
 pub(crate) fn from_environment() -> Result<Option<Router>> {
-    let origin = match env::var("WG_WEB_TELEMETRY_ORIGIN") {
+    let origin = match env::var("WOT_WEB_TELEMETRY_ORIGIN") {
         Ok(origin) if !origin.is_empty() => origin,
         Ok(_) | Err(env::VarError::NotPresent) => return Ok(None),
-        Err(error) => return Err(error).context("Read WG_WEB_TELEMETRY_ORIGIN"),
+        Err(error) => return Err(error).context("Read WOT_WEB_TELEMETRY_ORIGIN"),
     };
     let endpoint =
-        env::var("WG_WEB_TELEMETRY_ENDPOINT").context("Read WG_WEB_TELEMETRY_ENDPOINT")?;
+        env::var("WOT_WEB_TELEMETRY_ENDPOINT").context("Read WOT_WEB_TELEMETRY_ENDPOINT")?;
     Ok(Some(router(Relay::new(origin, Url::parse(&endpoint)?)?)))
 }
 

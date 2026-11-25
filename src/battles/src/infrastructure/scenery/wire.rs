@@ -107,9 +107,9 @@ mod tests {
     use wot_platform::mercury::{net::codec::Codec, script};
 
     #[test]
-    #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+    #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
     fn native_area_properties_encode_contact_and_shell_fractures() {
-        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
         let dispatch = ScriptDispatch::new(script::load(&resources).unwrap());
         let (_, schema) = dispatch.entity_from_name("AreaDestructibles").unwrap();

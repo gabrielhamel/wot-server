@@ -20,7 +20,7 @@ const VICTIM: ParticipantId = ParticipantId(2);
 const NEARBY_VICTIM: ParticipantId = ParticipantId(3);
 
 fn projectile_battle(teams: &[u8]) -> (u32, Battle, Arc<ArenaWire>) {
-    let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+    let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
     let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
     let dispatch = Arc::new(ScriptDispatch::new(
         wot_platform::mercury::script::load(&resources).unwrap(),
@@ -182,7 +182,7 @@ impl ArenaDelivery for ImpactDelivery {
 }
 
 #[test]
-#[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
 fn blocked_impacts_publish_direction_and_vehicle_marks() {
     use crate::domain::vehicle::Aim;
 
@@ -351,7 +351,7 @@ fn blocked_impacts_publish_direction_and_vehicle_marks() {
 }
 
 #[test]
-#[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
 fn ricochet_continues_to_a_second_plate_within_ten_calibers() {
     for (first_part, second_part, second_target, second_entity, distance, penetrates) in [
         (2, 1, VICTIM, 22, 0.75, true),
@@ -569,7 +569,7 @@ fn mount_test_plate(
 }
 
 #[test]
-#[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
 fn ground_explosion_damages_and_stuns_vehicles_only_for_artillery() {
     let (id, mut battle, wire) = projectile_battle(&[1, 2]);
     let shooter = SHOOTER;

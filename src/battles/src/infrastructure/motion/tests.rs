@@ -20,9 +20,9 @@ fn child_of(span: &SpanData, parent: &SpanData) -> bool {
 }
 
 #[test]
-#[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
 fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_command() {
-    let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+    let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
     let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
     let dispatch = Arc::new(ScriptDispatch::new(script::load(&resources).unwrap()));
     let mut runtime = BattleRuntime::load(dispatch, &resources, true).unwrap();
@@ -651,9 +651,9 @@ fn a_pileup_against_a_wreck_does_not_compress_or_stop_unrelated_tanks() {
 }
 
 #[test]
-#[ignore = "Requires WG_RESOURCE_DIR with the extracted EU Serene Coast collision and terrain"]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU Serene Coast collision and terrain"]
 fn extracted_serene_coast_bridge_keeps_its_deck_separate_from_the_terrain() {
-    let directory = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+    let directory = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
     let resources = ResourceBundle::open(std::path::Path::new(&directory)).unwrap();
     let geometry = "spaces/47_canada_a";
     let terrain = terrain::Terrain::load(&resources, geometry).unwrap();

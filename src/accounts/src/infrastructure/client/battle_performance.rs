@@ -340,9 +340,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+    #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
     fn reads_equipped_battle_performance_from_the_client_bundle() {
-        let resource_dir = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let resource_dir = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(Path::new(&resource_dir)).unwrap();
         let catalog = GarageCatalog::load(resources, &[]).unwrap();
         let performance = |key| {
