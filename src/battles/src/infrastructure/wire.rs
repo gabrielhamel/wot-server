@@ -711,9 +711,9 @@ mod tests {
     use wot_platform::mercury::script;
 
     #[test]
-    #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+    #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
     fn vehicle_creation_carries_locked_outfit_in_public_info() {
-        let path = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
         let dispatch = Arc::new(ScriptDispatch::new(script::load(&resources).unwrap()));
         let wire = ArenaWire::bind(dispatch.clone(), &resources).unwrap();

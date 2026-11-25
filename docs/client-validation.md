@@ -23,13 +23,13 @@ backed up before modification to:
 The manifest records original/configured SHA-256 hashes and the resolved game path.
 All five official EU entries were preserved. An additional entry has:
 
-| Property | Value |
-| --- | --- |
-| Name | `WG Server Local` |
-| Short name | `WGSERVER` |
-| URL / token URL | `127.0.0.1:20016` |
-| Public key | `loginapp_wg_server.pubkey` |
-| Periphery ID | `250` |
+| Property        | Value                        |
+| --------------- | ---------------------------- |
+| Name            | `WOT Server Local`           |
+| Short name      | `WOTSERVER`                  |
+| URL / token URL | `127.0.0.1:20016`            |
+| Public key      | `loginapp_wot_server.pubkey` |
+| Periphery ID    | `250`                        |
 
 ID 205 belongs to EU5 in this installation, so the earlier prototype's 205 example
 would collide. The separate public key lives in the game's `res/` directory.

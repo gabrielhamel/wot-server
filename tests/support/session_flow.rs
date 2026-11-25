@@ -36,11 +36,11 @@ pub fn assert_kicked(peer: &mut Peer, script: &ScriptDispatch) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR"]
+#[ignore = "Requires WOT_TEST_DATABASE_URL and WOT_RESOURCE_DIR"]
 async fn replacement_waits_for_account_write_and_loads_its_revision() {
     let spans = telemetry_capture::exporter();
-    let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
-    let directory = std::env::var("WG_RESOURCE_DIR").unwrap();
+    let url = std::env::var("WOT_TEST_DATABASE_URL").unwrap();
+    let directory = std::env::var("WOT_RESOURCE_DIR").unwrap();
     let resources = wot_resources::ResourceBundle::open(Path::new(&directory)).unwrap();
     let repository = PostgresAccounts::new(
         wot_server_runtime::test_support::connect_database(&url, 6)

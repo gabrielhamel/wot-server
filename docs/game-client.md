@@ -89,10 +89,10 @@ cargo run --locked -p wot-extract -- "$WOT_GAME_DIR" --output artifacts/client-r
 ```
 
 Ensure `artifacts/` exists and output directories are new where required by those
-tools. The historical ignored mapper test uses `WG_GAME_FOLDER` instead:
+tools. The historical ignored mapper test uses `WOT_GAME_FOLDER` instead:
 
 ```sh
-WG_GAME_FOLDER="$WOT_GAME_DIR" cargo test -p wot-binary-map --test supplied_client -- --ignored
+WOT_GAME_FOLDER="$WOT_GAME_DIR" cargo test -p wot-binary-map --test supplied_client -- --ignored
 ```
 
 That test pins a historical executable hash and structural counts; a newer

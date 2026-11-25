@@ -79,7 +79,7 @@ fn account_version(script: &ScriptDispatch) -> (&str, &str) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR; uses temporary accounts in that database"]
+#[ignore = "Requires WOT_TEST_DATABASE_URL and WOT_RESOURCE_DIR; uses temporary accounts in that database"]
 async fn postgres_to_encrypted_garage_with_isolated_clients() {
     exercise_garage(false, false).await;
     exercise_garage(true, true).await;
@@ -87,9 +87,9 @@ async fn postgres_to_encrypted_garage_with_isolated_clients() {
 
 async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     telemetry_capture::exporter();
-    let url = std::env::var("WG_TEST_DATABASE_URL").expect("WG_TEST_DATABASE_URL");
+    let url = std::env::var("WOT_TEST_DATABASE_URL").expect("WOT_TEST_DATABASE_URL");
     let resources = wot_resources::ResourceBundle::open(std::path::Path::new(
-        &std::env::var("WG_RESOURCE_DIR").expect("WG_RESOURCE_DIR"),
+        &std::env::var("WOT_RESOURCE_DIR").expect("WOT_RESOURCE_DIR"),
     ))
     .unwrap();
     let repository = PostgresAccounts::new(
@@ -1012,9 +1012,9 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
 }
 
 #[tokio::test]
-#[ignore = "Requires WG_TEST_DATABASE_URL; closes an isolated pool to verify database error telemetry"]
+#[ignore = "Requires WOT_TEST_DATABASE_URL; closes an isolated pool to verify database error telemetry"]
 async fn database_failure_records_sql_error_status_and_metrics() {
     telemetry_capture::exporter();
-    telemetry_capture::assert_database_failure(&std::env::var("WG_TEST_DATABASE_URL").unwrap())
+    telemetry_capture::assert_database_failure(&std::env::var("WOT_TEST_DATABASE_URL").unwrap())
         .await;
 }

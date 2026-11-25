@@ -385,9 +385,9 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    #[ignore = "Requires WG_RESOURCE_DIR with extracted AMX 30 B contact bounds"]
+    #[ignore = "Requires WOT_RESOURCE_DIR with extracted AMX 30 B contact bounds"]
     fn amx_30_b_contact_footprint_includes_the_rear_overhang() {
-        let root = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let root = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(Path::new(&root)).unwrap();
         let catalog = super::super::GarageCatalog::load(resources, &[]).unwrap();
         let vehicle = catalog.vehicle("france:F72_AMX_30").unwrap();
@@ -402,9 +402,9 @@ mod tests {
         assert!(rear.y < 0.05 && (1.5..2.0).contains(&front.y));
     }
     #[test]
-    #[ignore = "Requires WG_RESOURCE_DIR with the extracted EU client bundle"]
+    #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
     fn training_loadout_applies_mobility_equipment_fuel_and_driver_perks() {
-        let root = std::env::var_os("WG_RESOURCE_DIR").unwrap();
+        let root = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(Path::new(&root)).unwrap();
         let catalog = super::super::GarageCatalog::load(resources, &[]).unwrap();
         let (key, inventory_id) = ("germany:G54_E-50", 1);

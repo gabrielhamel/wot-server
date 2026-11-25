@@ -25,15 +25,15 @@ use wot_player_administration::contract::{DashboardConfig, router};
 use wot_player_sessions::{Gateway, GatewayConfig};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "Requires WG_TEST_DATABASE_URL and WG_RESOURCE_DIR with Training terrain"]
+#[ignore = "Requires WOT_TEST_DATABASE_URL and WOT_RESOURCE_DIR with Training terrain"]
 async fn dashboard_launches_player_and_stationary_dummies() {
     let exporter = telemetry_capture::exporter();
     let resources =
-        wot_resources::ResourceBundle::open(Path::new(&std::env::var("WG_RESOURCE_DIR").unwrap()))
+        wot_resources::ResourceBundle::open(Path::new(&std::env::var("WOT_RESOURCE_DIR").unwrap()))
             .unwrap();
     let repository = PostgresAccounts::new(
         wot_server_runtime::test_support::connect_database(
-            &std::env::var("WG_TEST_DATABASE_URL").unwrap(),
+            &std::env::var("WOT_TEST_DATABASE_URL").unwrap(),
             8,
         )
         .await

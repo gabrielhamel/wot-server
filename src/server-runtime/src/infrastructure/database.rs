@@ -72,9 +72,9 @@ mod tests {
     use wot_social::contract::ContactChange;
 
     #[tokio::test]
-    #[ignore = "Requires WG_TEST_DATABASE_URL with permission to create a test database"]
+    #[ignore = "Requires WOT_TEST_DATABASE_URL with permission to create a test database"]
     async fn initializes_context_storage() {
-        let url = std::env::var("WG_TEST_DATABASE_URL").unwrap();
+        let url = std::env::var("WOT_TEST_DATABASE_URL").unwrap();
         let pool = PgPool::connect(&url).await.unwrap();
         let name = format!(
             "context_storage_{}",
