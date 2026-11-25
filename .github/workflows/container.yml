@@ -9,6 +9,10 @@ on:
         description: Game version from the caller's latest-eu-server-resources artifact.
         required: true
         type: string
+    outputs:
+      published-image:
+        description: Fully qualified release image tag pushed by this run.
+        value: ${{ jobs.publish.outputs.published-image }}
 
 permissions:
   contents: read
@@ -22,6 +26,8 @@ jobs:
       cancel-in-progress: false
     runs-on: [self-hosted, linux, x64, wot-server-image]
     timeout-minutes: 180
+    outputs:
+      published-image: ${{ steps.push.outputs.published-image }}
     defaults:
       run:
         shell: bash
@@ -220,6 +226,7 @@ jobs:
 
       - name: Publish to GitHub Container Registry
         if: steps.registry.outputs.exists != 'true'
+        id: push
         env:
           GHCR_TOKEN: ${{ github.token }}
           IMAGE: ${{ steps.image.outputs.commit }}
@@ -238,6 +245,7 @@ jobs:
             docker push "$alias"
             printf -- '- `%s`\n' "$alias" >> "$GITHUB_STEP_SUMMARY"
           done
+          echo "published-image=$TAG_IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Remove local image tags and smoke-test resources
         if: always() && steps.build.outcome != '' && steps.build.outcome != 'skipped'

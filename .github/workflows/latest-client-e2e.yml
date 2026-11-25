@@ -46,27 +46,36 @@ jobs:
     with:
       game-version: ${{ needs.e2e.outputs.game-version }}
 
-  notify-failure:
+  notify-discord:
     needs: [e2e, publish]
-    if: always() && (needs.e2e.result == 'failure' || needs.publish.result == 'failure')
+    if: >-
+      always() && (needs.e2e.result == 'failure' || needs.publish.result == 'failure' ||
+      (needs.publish.result == 'success' && needs.publish.outputs.published-image != ''))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Send Discord failure alert
+      - name: Send Discord notification
         shell: bash
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           E2E_RESULT: ${{ needs.e2e.result }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
+          PUBLISHED_IMAGE: ${{ needs.publish.outputs.published-image }}
         run: |
           if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
-            echo "::error::Set the DISCORD_WEBHOOK_URL Actions secret to enable failure alerts."
+            echo "::error::Set the DISCORD_WEBHOOK_URL Actions secret to enable Discord notifications."
             exit 1
           fi
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          jq -n --arg run "$run_url" --arg e2e "$E2E_RESULT" --arg publish "$PUBLISH_RESULT" '{
-            content: ("Latest client E2E failed (E2E: " + $e2e + ", publish: " + $publish + ").\n" + $run),
+          if [[ "$PUBLISH_RESULT" == success && -n "$PUBLISHED_IMAGE" ]]; then
+            message=$(printf 'Latest client E2E published `%s`.\n%s' "$PUBLISHED_IMAGE" "$run_url")
+          else
+            message=$(printf 'Latest client E2E failed (E2E: %s, publish: %s).\n%s' \
+              "$E2E_RESULT" "$PUBLISH_RESULT" "$run_url")
+          fi
+          jq -n --arg message "$message" '{
+            content: $message,
             allowed_mentions: {parse: []}
           }' | curl --fail --silent --show-error --output /dev/null --max-time 30 \
             --header 'Content-Type: application/json' --data-binary @- "${DISCORD_WEBHOOK_URL}?wait=true"
