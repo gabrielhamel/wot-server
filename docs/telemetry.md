@@ -106,9 +106,11 @@ Dashboard battle launches keep the browser parent through authentication,
 the selected dummy vehicle, loadout counts, lowest configured perk efficiency
 and requested HP. The projection records the final HP and loaded rounds.
 Dummy options record the stock HP, shell type count and ammunition capacity.
-Arena preparation and the subsequent native client entry share the launch
-trace. The launch response records the allocated battle ID and the count of
-client handoffs queued.
+The browser, HTTP handler and gateway record the count of requested battle
+parameter overrides. Arena preparation records the effective loading,
+countdown and results durations and shares the launch trace with native
+client entry. The launch response records the allocated battle ID and count
+of client handoffs queued.
 
 Managed player creation traces the input lengths and validation outcome
 through `admin.players.create` and `accounts.registration.validate`. An accepted

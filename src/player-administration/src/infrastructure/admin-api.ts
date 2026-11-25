@@ -369,6 +369,7 @@ export function startBattle(body: AdminBattleSetup) {
       "input.round_length.seconds": body.duration_seconds,
       "input.players.count": body.players.length,
       "input.dummies.count": body.dummies.length,
+      "input.battle.parameters.count": Object.keys(body.parameters ?? {}).length,
     },
     async (parent, span) => {
       const result = await adminRequest<{ battle_id: number; players_handed_off: number }>(

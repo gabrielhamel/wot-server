@@ -74,33 +74,56 @@ fn surface(distance: f32, material: u32, plate: ArmorPlate, angle: f32) -> Surfa
 fn ap_normalizes_and_uses_both_caliber_rules() {
     let mut shot = shot(ShellKind::ArmorPiercing, 85.0);
     let angled = surface(30.0, 1, plate(50.0, 1.0), 60.0);
-    let hit = shot.resolve_surfaces(&[angled]).unwrap();
+    let hit = shot
+        .resolve_surfaces(&[angled], &BattleParameters::default())
+        .unwrap();
     assert_eq!(hit.outcome, ArmorOutcome::Blocked);
     assert!(hit.effective_mm < 100.0 && hit.effective_mm > 85.0);
 
     shot.ballistics.caliber_mm = 120.0;
     assert_eq!(
-        shot.resolve_surfaces(&[angled]).unwrap().outcome,
+        shot.resolve_surfaces(&[angled], &BattleParameters::default())
+            .unwrap()
+            .outcome,
         ArmorOutcome::Penetrated
     );
     let steep = surface(30.0, 1, plate(30.0, 1.0), 75.0);
     shot.ballistics.caliber_mm = 90.0;
-    let bounce = shot.resolve_surfaces(&[steep]).unwrap();
+    let bounce = shot
+        .resolve_surfaces(&[steep], &BattleParameters::default())
+        .unwrap();
     assert_eq!(bounce.outcome, ArmorOutcome::Ricochet);
     let reflected = bounce.reflected.unwrap();
     assert!(reflected.dot(steep.normal) > 0.0);
-    let onward = shot.ricochet_from(bounce).unwrap();
+    let onward = shot
+        .ricochet_from(bounce, &BattleParameters::default())
+        .unwrap();
     assert!(onward.ricocheted);
     assert_eq!(onward.penetration_at(0.0), 85.0 * 0.75);
-    assert!((onward.max_distance + CONTACT_CLEARANCE_METRES - 0.9).abs() < 1e-6);
+    assert!(
+        (onward.max_distance + BattleParameters::default().projectile_contact_clearance_metres
+            - 0.9)
+            .abs()
+            < 1e-6
+    );
     shot.max_distance = bounce.distance + 0.3;
-    let onward = shot.ricochet_from(bounce).unwrap();
-    assert!((onward.max_distance + CONTACT_CLEARANCE_METRES - 0.3).abs() < 1e-5);
+    let onward = shot
+        .ricochet_from(bounce, &BattleParameters::default())
+        .unwrap();
+    assert!(
+        (onward.max_distance + BattleParameters::default().projectile_contact_clearance_metres
+            - 0.3)
+            .abs()
+            < 1e-5
+    );
     shot.max_distance = bounce.distance;
-    assert!(shot.ricochet_from(bounce).is_none());
+    assert!(
+        shot.ricochet_from(bounce, &BattleParameters::default())
+            .is_none()
+    );
     assert!(
         onward
-            .resolve_surfaces(&[steep])
+            .resolve_surfaces(&[steep], &BattleParameters::default())
             .unwrap()
             .reflected
             .is_none()
@@ -108,7 +131,9 @@ fn ap_normalizes_and_uses_both_caliber_rules() {
     shot.ballistics.caliber_mm = 100.0;
     shot.ballistics.penetration_mm = [45.0; 2];
     assert_eq!(
-        shot.resolve_surfaces(&[steep]).unwrap().outcome,
+        shot.resolve_surfaces(&[steep], &BattleParameters::default())
+            .unwrap()
+            .outcome,
         ArmorOutcome::Blocked,
         "overmatch bypasses ricochet while penetration still depends on effective armor"
     );
@@ -126,11 +151,15 @@ fn heat_uses_remaining_penetration_and_loses_power_across_the_gap() {
     let close = surface(30.2, 2, plate(90.0, 1.0), 0.0);
     let far = surface(31.2, 2, plate(90.0, 1.0), 0.0);
     assert_eq!(
-        shot.resolve_surfaces(&[screen, close]).unwrap().outcome,
+        shot.resolve_surfaces(&[screen, close], &BattleParameters::default())
+            .unwrap()
+            .outcome,
         ArmorOutcome::Penetrated
     );
     assert_eq!(
-        shot.resolve_surfaces(&[screen, far]).unwrap().outcome,
+        shot.resolve_surfaces(&[screen, far], &BattleParameters::default())
+            .unwrap()
+            .outcome,
         ArmorOutcome::Blocked
     );
 }
@@ -150,24 +179,32 @@ fn modern_he_spalls_at_main_armor_and_respects_screen_loss() {
     });
     let screen = surface(30.0, 1, plate(20.0, 0.0), 0.0);
     let hull = surface(30.3, 2, plate(60.0, 1.0), 0.0);
-    let direct = shot.resolve_surfaces(&[hull]).unwrap();
+    let direct = shot
+        .resolve_surfaces(&[hull], &BattleParameters::default())
+        .unwrap();
     assert_eq!(
         (direct.outcome, direct.damage),
         (ArmorOutcome::Penetrated, 100)
     );
-    let screened = shot.resolve_surfaces(&[screen, hull]).unwrap();
+    let screened = shot
+        .resolve_surfaces(&[screen, hull], &BattleParameters::default())
+        .unwrap();
     assert_eq!(screened.outcome, ArmorOutcome::Spall);
     assert!((1..50).contains(&screened.damage));
     assert_eq!(screened.material, 2);
     assert_eq!(screened.remaining_mm, 40.0);
 
     let thick_screen = surface(30.0, 1, plate(110.0, 0.0), 0.0);
-    let stopped = shot.resolve_surfaces(&[thick_screen, hull]).unwrap();
+    let stopped = shot
+        .resolve_surfaces(&[thick_screen, hull], &BattleParameters::default())
+        .unwrap();
     assert_eq!(
         (stopped.outcome, stopped.damage),
         (ArmorOutcome::ScreenBlocked, 0)
     );
-    let no_hull = shot.resolve_surfaces(&[screen]).unwrap();
+    let no_hull = shot
+        .resolve_surfaces(&[screen], &BattleParameters::default())
+        .unwrap();
     assert_eq!(
         (no_hull.outcome, no_hull.damage),
         (ArmorOutcome::ScreenPenetrated, 0)
@@ -198,6 +235,7 @@ fn a_ray_can_strike_an_off_center_part_or_pass_through_empty_space() {
         None,
     ];
     let tank = Tank::new(
+        BattleParameters::default(),
         Vec3::ZERO,
         Vec3::ZERO,
         100,
@@ -236,7 +274,9 @@ fn a_ray_can_strike_an_off_center_part_or_pass_through_empty_space() {
     let mut shot = shot(ShellKind::ArmorPiercing, 100.0);
     let path = shot.armor_path(&tank, shot.max_distance).unwrap();
     assert_eq!(path.first_distance(), 25.0);
-    let hit = shot.resolve_armor(42, path).unwrap();
+    let hit = shot
+        .resolve_armor(42, path, &BattleParameters::default())
+        .unwrap();
     assert_eq!(hit.distance, 25.0);
     assert_eq!(hit.segment.part, 2);
     assert_eq!(hit.segment.start[0], 191);
@@ -260,12 +300,16 @@ fn penetrating_shell_traces_devices_before_the_next_hull_surface() {
         explosion_chance: 0.0,
     });
     let exit = surface(30.5, 3, plate(50.0, 1.0), 0.0);
-    let hit = shot.resolve_surfaces(&[entry, engine, exit]).unwrap();
+    let hit = shot
+        .resolve_surfaces(&[entry, engine, exit], &BattleParameters::default())
+        .unwrap();
     assert_eq!(hit.outcome, ArmorOutcome::Penetrated);
     assert_eq!(hit.devices[0].unwrap().device, Device::Engine);
     assert_eq!(hit.devices[0].unwrap().damage, 50);
     let beyond = surface(29.8, 3, plate(50.0, 1.0), 0.0);
-    let blocked = shot.resolve_surfaces(&[beyond, entry, engine]).unwrap();
+    let blocked = shot
+        .resolve_surfaces(&[beyond, entry, engine], &BattleParameters::default())
+        .unwrap();
     assert!(blocked.devices.iter().all(Option::is_none));
 }
 
@@ -274,15 +318,21 @@ fn layered_and_secondary_impacts_keep_distance_loss_and_remaining_penetration() 
     let mut shot = shot(ShellKind::ArmorPiercing, 100.0);
     shot.ballistics.penetration_mm = [100.0, 55.0];
     let screen = surface(150.0, 1, plate(25.0, 0.0), 0.0);
-    let hit = shot.resolve_surfaces(&[screen]).unwrap();
+    let hit = shot
+        .resolve_surfaces(&[screen], &BattleParameters::default())
+        .unwrap();
     assert_eq!(hit.outcome, ArmorOutcome::ScreenPenetrated);
     assert_eq!(hit.remaining_mm, 65.0);
-    let next = shot.through_screen(hit).unwrap();
+    let next = shot
+        .through_screen(hit, &BattleParameters::default())
+        .unwrap();
     assert!((next.penetration_at(100.0) - 55.0).abs() < 0.002);
     assert!(next.max_distance < shot.max_distance);
     let armor = surface(100.0, 2, plate(60.0, 1.0), 0.0);
     assert_eq!(
-        next.resolve_surfaces(&[armor]).unwrap().outcome,
+        next.resolve_surfaces(&[armor], &BattleParameters::default())
+            .unwrap()
+            .outcome,
         ArmorOutcome::Blocked
     );
 }

@@ -147,6 +147,10 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let (status, options) = request("GET", "/battles", &cookie, Json::Null);
         assert_eq!(status, 200, "{options}");
         assert_eq!(options["players"][0]["id"], account);
+        let parameters = options["parameters"].as_array().unwrap();
+        let countdown = parameters.iter().find(|p| p["key"] == "countdown_seconds").unwrap();
+        assert_eq!(countdown["default"], 10.0);
+        assert_eq!(countdown["integer"], true);
         let vehicles = options["players"][0]["vehicles"].as_array().unwrap();
         let unavailable = |id| vehicles.iter().find(|vehicle| vehicle["id"] == id).unwrap()["unavailable_reason"].clone();
         assert_eq!(unavailable(1), Json::Null);
@@ -203,6 +207,18 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         battle["dummies"][1]["loadout"]["ammunition"] = json!([[shell, 0]]);
         battle["dummies"][1]["loadout"]["crew_perks"] = json!(perks);
         battle["dummies"][1]["loadout"]["crew_perk_efficiency"] = json!(efficiency);
+        for parameters in [
+            json!({"unknown_setting": 1}),
+            json!({"countdown_seconds": 1.5}),
+            json!({"max_flight_segments": 10000}),
+        ] {
+            let mut invalid = battle.clone();
+            invalid["parameters"] = parameters;
+            let (status, rejection) = request("POST", "/battles", &cookie, invalid);
+            assert_eq!(status, 400);
+            assert!(rejection["message"].as_str().unwrap().contains("battle parameter"));
+        }
+        battle["parameters"] = json!({"countdown_seconds": 2});
         let mut unready = battle.clone();
         unready["players"][0]["inventory_id"] = json!(2);
         let (status, rejected) = request("POST", "/battles", &cookie, unready);
@@ -256,6 +272,13 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             .map(|entity| (entity.entity_id, entity.position)).collect::<Vec<_>>();
         assert_eq!(dummies.len(), 2);
         peer.command(&script, "setClientReady", vec![]);
+        peer.until(&script, |p| p.methods.iter().any(|(name, args)| {
+            if name != "updateArena" || args[0].as_i64() != Some(3) { return false; }
+            let Value::String(wot_platform::mercury::script::StringValue::Raw(data)) = &args[1] else { return false; };
+            matches!(wot_platform::client_formats::pickle::from_reader(flate2::read::ZlibDecoder::new(data.as_slice())),
+                Ok(super::Pickle::Tuple(fields)) if fields.first() == Some(&super::Pickle::I64(2))
+                    && fields.get(2) == Some(&super::Pickle::I64(2)))
+        }));
         peer.until(&script, |p| p.methods.iter().any(|(name, args)| {
             if name != "updateArena" || args[0].as_i64() != Some(3) { return false; }
             let Value::String(wot_platform::mercury::script::StringValue::Raw(data)) = &args[1] else { return false; };
@@ -320,6 +343,12 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         SpanId::from_hex("2a70f170c9056666").unwrap()
     );
     assert_eq!(get(launch, "input.dummies.count").as_deref(), Some("2"));
+    for span in [launch, handler] {
+        assert_eq!(
+            get(span, "input.battle.parameters.count").as_deref(),
+            Some("1")
+        );
+    }
     for name in [
         "accounts.dummy_vehicle",
         "battles.prepare",
@@ -415,6 +444,14 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         .iter()
         .find(|s| s.name == "battles.prepare" && s.parent_span_id == launch.span_context.span_id())
         .unwrap();
+    assert_eq!(
+        get(preparation, "input.battle.countdown.seconds").as_deref(),
+        Some("2")
+    );
+    assert_eq!(
+        get(preparation, "input.battle.load_timeout.seconds").as_deref(),
+        Some("60")
+    );
     assert!(spans.iter().any(
         |s| s.name == "battles.enter" && s.parent_span_id == preparation.span_context.span_id()
     ));
@@ -436,7 +473,12 @@ async fn dashboard_launches_player_and_stationary_dummies() {
                 && s.span_context.span_id() == crew_rejection.parent_span_id
                 && get(s, "output.outcome").as_deref() == Some("crew_incomplete"))
     );
-    for expected in ["invalid_dummy", "player_unavailable", "crew_incomplete"] {
+    for expected in [
+        "invalid_dummy",
+        "invalid_parameters",
+        "player_unavailable",
+        "crew_incomplete",
+    ] {
         assert!(
             spans.iter().any(|s| s.name == "admin.start_battle"
                 && get(s, "output.outcome").as_deref() == Some(expected)),

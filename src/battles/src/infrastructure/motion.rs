@@ -1,7 +1,7 @@
 use super::obstacles::{Breakage, Scenery};
 use super::scenery::BreakageCause;
 use super::*;
-use crate::domain::world::{CONTACT_SKIN, Hull, vehicle_contact};
+use crate::domain::world::{Hull, vehicle_contact};
 use glam::Vec3Swizzles;
 use tracing::Span;
 
@@ -506,7 +506,8 @@ fn constrain(
             break;
         };
         let hit = hit.contact;
-        let fraction = (hit.fraction - CONTACT_SKIN / remaining.length()).max(0.0);
+        let fraction =
+            (hit.fraction - hull.parameters.contact_skin_metres / remaining.length()).max(0.0);
         hull.position.x += remaining.x * fraction;
         hull.position.z += remaining.y * fraction;
         remaining *= 1.0 - fraction;

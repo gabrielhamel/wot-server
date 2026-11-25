@@ -1,8 +1,5 @@
-use super::vehicle::Shot;
+use super::{parameters::BattleParameters, vehicle::Shot};
 use glam::Vec3;
-
-const STEP_SECONDS: f32 = 0.125;
-const MAX_SEGMENTS: usize = 320;
 
 pub(crate) struct FlightSegment {
     pub shot: Shot,
@@ -19,20 +16,24 @@ impl FlightSegment {
 }
 
 impl Shot {
-    pub fn flight_segments(self) -> impl Iterator<Item = FlightSegment> {
+    pub fn flight_segments(
+        self,
+        parameters: &BattleParameters,
+    ) -> impl Iterator<Item = FlightSegment> + use<> {
         let mut origin = self.origin;
         let mut velocity = self.direction * self.ballistics.speed;
         let acceleration = -Vec3::Y * self.ballistics.gravity;
         let mut travelled = 0.0;
         let mut elapsed = 0.0;
-        (0..MAX_SEGMENTS).map_while(move |_| {
+        let step_seconds = parameters.flight_step_seconds;
+        (0..parameters.max_flight_segments).map_while(move |_| {
             let remaining = self.max_distance - travelled;
             if remaining <= 0.0 {
                 return None;
             }
             let speed = velocity.length().max(1.0);
             let step = if self.ballistics.gravity > 0.0 {
-                STEP_SECONDS
+                step_seconds
             } else {
                 remaining / speed
             };

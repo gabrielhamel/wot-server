@@ -24,14 +24,16 @@ impl Battle {
             let Some(source) = participant.pending_condition.clone() else {
                 continue;
             };
-            let (repairs, burn) = participant.tank.condition.tick(now);
+            let (repairs, burn) = participant.tank.condition.tick(now, &self.parameters);
             if !participant.tank.condition.active() {
                 participant.pending_condition = None;
             }
             if repairs > 0 || burn {
                 let (previous, health) = if burn {
-                    let damage = (participant.tank.max_health as u16 / 100).max(1);
-                    let result = participant.tank.hit(damage);
+                    let damage = (f32::from(participant.tank.max_health)
+                        * self.parameters.fire_damage_percent
+                        / 100.0) as u16;
+                    let result = participant.tank.hit(damage.max(1));
                     if result.1 <= 0 {
                         participant.pending_condition = None;
                     }

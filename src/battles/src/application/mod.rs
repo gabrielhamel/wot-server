@@ -35,6 +35,7 @@ pub struct BattleEntityIds {
 pub struct BattleLaunch {
     pub arena_type: i32,
     pub duration: Duration,
+    pub parameters: crate::domain::parameters::BattleParameters,
     pub mode: BattleMode,
     pub participants: Vec<BattleParticipant>,
 }

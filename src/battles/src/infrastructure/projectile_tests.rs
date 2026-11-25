@@ -30,6 +30,7 @@ fn projectile_battle(teams: &[u8]) -> (u32, Battle, Arc<ArenaWire>) {
     let prepared = runtime
         .prepare(
             BattleLaunch {
+                parameters: Default::default(),
                 arena_type: (1 << 16) | 5,
                 duration: Duration::from_secs(60),
                 mode: BattleMode::Training,

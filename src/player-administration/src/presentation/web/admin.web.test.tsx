@@ -1140,6 +1140,26 @@ it("launches a Training battle with selected players and a customized stationary
         ],
         observer_available: true,
         dummy_vehicles: [{ id: 81, key: "ussr:R04_T-34", name: "T-34", tier: 5 }],
+        parameters: [
+          {
+            key: "countdown_seconds",
+            label: "Countdown (seconds)",
+            group: "Round timing",
+            default: 10,
+            min: 0,
+            max: 60,
+            integer: true,
+          },
+          {
+            key: "gravity_mps2",
+            label: "Gravity (m/s²)",
+            group: "Vehicle movement",
+            default: 9.81,
+            min: 0,
+            max: 30,
+            integer: false,
+          },
+        ],
       });
     }),
     http.get(`${origin}/battles/vehicles/81`, ({ request }) => {
@@ -1184,6 +1204,9 @@ it("launches a Training battle with selected players and a customized stationary
     );
     const duration = screen.getByRole("spinbutton", { name: "Battle duration (minutes)" });
     expect(duration).toHaveValue(15);
+    const parameters = screen.getByRole("button", { name: "Battle parameters" });
+    expect(parameters).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("spinbutton", { name: "Countdown (seconds)" })).toBeNull();
     expect(duration).toHaveAttribute("min", "5");
     expect(duration).toHaveAttribute("max", "30");
     const playerPicker = screen.getByRole("combobox", { name: "Add connected player" });
@@ -1264,6 +1287,19 @@ it("launches a Training battle with selected players and a customized stationary
     }
     await user.clear(duration);
     await user.type(duration, "10");
+    await user.click(parameters);
+    const countdown = screen.getByRole("spinbutton", { name: "Countdown (seconds)" });
+    expect(countdown).toHaveValue(10);
+    await user.clear(countdown);
+    await user.type(countdown, "61");
+    expect(start).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Reset parameters to defaults" }));
+    expect(countdown).toHaveValue(10);
+    expect(start).toBeEnabled();
+    await user.clear(countdown);
+    await user.type(countdown, "2");
+    await user.click(parameters);
+    expect(parameters).toHaveAttribute("aria-expanded", "false");
     await user.click(start);
     expect(await screen.findByText("A selected player is no longer available.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Refresh players" }));
@@ -1279,6 +1315,7 @@ it("launches a Training battle with selected players and a customized stationary
     expect(posts[1]?.body).toEqual({
       arena_type: 5,
       duration_seconds: 600,
+      parameters: { countdown_seconds: 2 },
       players: [
         { account_id: 123, team: 1, inventory_id: 209 },
         { account_id: 124, team: 1, inventory_id: 210 },
@@ -1323,6 +1360,7 @@ it("launches a Training battle with selected players and a customized stationary
     expect(parent?.attributes).toMatchObject({
       "input.arena_type_id": 5,
       "input.round_length.seconds": 600,
+      "input.battle.parameters.count": 1,
       "input.players.count": 2,
       "input.dummies.count": 1,
       "output.battle.id": 7,

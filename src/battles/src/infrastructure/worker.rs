@@ -370,6 +370,7 @@ mod tests {
         worker.reserve_start().unwrap().start(PreparedBattle {
             id: 1,
             battle: Battle {
+                parameters: Default::default(),
                 map: ArenaMap {
                     name: "Test Map".into(),
                     geometry: String::new(),
@@ -383,7 +384,7 @@ mod tests {
                 players: Default::default(),
                 started_at: now,
                 last_snapshot_tick: None,
-                round: Round::new(now, Duration::from_secs(300)),
+                round: Round::new(now, Duration::from_secs(300), &Default::default()),
                 launch: None,
                 shot_sequence: 0,
                 projectiles: Vec::new(),
@@ -402,6 +403,7 @@ mod tests {
             .prepare(
                 BattlePreparationId::TrainingRoom(2),
                 BattleLaunch {
+                    parameters: Default::default(),
                     arena_type: 2,
                     duration: Duration::from_secs(300),
                     mode: BattleMode::Training,

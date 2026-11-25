@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 use wot_accounts::contract::{BattleVehicleChoice, BattleVehicleUnavailable, DummyLoadout};
+use wot_battles::contract::BattleParameterDefinition;
 
 #[derive(Clone)]
 pub struct AdminBattles(mpsc::Sender<BattleRequest>);
@@ -25,6 +27,7 @@ pub struct BattleOptions {
     pub maps: Vec<BattleChoice<i32>>,
     pub players: Vec<AvailablePlayer>,
     pub observer_available: bool,
+    pub parameters: &'static [BattleParameterDefinition],
 }
 
 #[derive(Serialize)]
@@ -48,6 +51,8 @@ pub struct AdminBattleSetup {
     pub duration_seconds: i32,
     pub players: Vec<AdminBattlePlayer>,
     pub dummies: Vec<AdminBattleDummy>,
+    #[serde(default)]
+    pub parameters: BTreeMap<String, f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +76,8 @@ pub enum AdminBattleError {
         "Select a map, a duration from 5 to 30 minutes, and vehicles on both teams. Include at least one connected player and no more than 30 entrants."
     )]
     InvalidSetup,
+    #[error("A battle parameter is unknown or outside its supported range.")]
+    InvalidParameters,
     #[error(
         "A selected player or vehicle is no longer available. Refresh the player list and try again."
     )]
@@ -89,6 +96,7 @@ impl AdminBattleError {
     pub fn outcome(self) -> &'static str {
         match self {
             Self::InvalidSetup => "invalid_setup",
+            Self::InvalidParameters => "invalid_parameters",
             Self::PlayerUnavailable => "player_unavailable",
             Self::VehicleUnavailable(reason) => reason.outcome(),
             Self::InvalidDummy => "invalid_dummy",

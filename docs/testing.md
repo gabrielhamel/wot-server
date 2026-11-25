@@ -92,8 +92,9 @@ The admin battle E2E case drives an authenticated dashboard launch through
 PostgreSQL, the gateway and an encrypted Mercury peer. It checks stationary
 dummy replication, equipped and overridden HP, perk scaling at partial
 efficiency, and ammunition projected into the arena loadout. It also checks
-countdown readiness, the garage return and the exported HTTP-to-arena trace,
-including rejected loadouts.
+the overridden countdown in a decoded native period update, the garage
+return, and the exported HTTP-to-arena trace, including rejected loadouts and
+battle parameter overrides.
 
 The database-dependent tests are opt-in when running Cargo locally.
 

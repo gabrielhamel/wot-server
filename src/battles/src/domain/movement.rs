@@ -1,3 +1,4 @@
+use super::parameters::BattleParameters;
 use glam::{Vec2, Vec3};
 use wot_shared_kernel::VehiclePerformance;
 
@@ -8,15 +9,6 @@ const RIGHT: u8 = 8;
 const HALF_SPEED: u8 = 16;
 const QUARTER_SPEED: u8 = 32;
 const BRAKE: u8 = 64;
-
-pub(super) const GRAVITY: f32 = 9.81;
-const COAST_DECELERATION: f32 = 14.0;
-const BRAKE_DECELERATION: f32 = 24.0;
-const TURN_RESPONSE_SECONDS: f32 = 0.2;
-const TRACK_LOCK_MIN_SPEED_MPS: f32 = 2.0;
-const TRACK_LOCK_DECELERATION: f32 = 6.0;
-const TRACK_LOCK_RESPONSE_SECONDS: f32 = 0.1;
-const DOWNHILL_SPEED_LIMIT_RATIO: f32 = 1.5;
 
 #[derive(Clone, Copy)]
 pub(crate) struct GroundContact {
@@ -63,10 +55,10 @@ impl Drive {
         &mut self,
         performance: &VehiclePerformance,
         ground: GroundContact,
-        position: &mut Vec3,
-        yaw: &mut f32,
+        (position, yaw): (&mut Vec3, &mut f32),
         seconds: f32,
         [min, max]: [Vec2; 2],
+        parameters: &BattleParameters,
     ) {
         let mobility = &performance.mobility;
         let resistance = ground.average(mobility.terrain_resistance);
@@ -76,23 +68,23 @@ impl Drive {
         let track_lock = mobility.track_lock
             && braking
             && steering != 0.0
-            && self.speed.abs() >= TRACK_LOCK_MIN_SPEED_MPS;
+            && self.speed.abs() >= parameters.track_lock_min_speed_mps;
         let speed_limit = if throttle < 0.0 {
             performance.reverse_speed
         } else {
             performance.forward_speed
         };
         let cruise = if self.flags & QUARTER_SPEED != 0 {
-            0.25
+            parameters.quarter_speed_ratio
         } else if self.flags & HALF_SPEED != 0 {
-            0.5
+            parameters.half_speed_ratio
         } else {
             1.0
         };
         self.target_speed = if braking {
             0.0
         } else if !mobility.turns_in_place && throttle == 0.0 && steering != 0.0 {
-            2.0_f32.min(speed_limit)
+            parameters.wheel_turn_creep_mps.min(speed_limit)
         } else {
             throttle * speed_limit * cruise
         };
@@ -102,34 +94,39 @@ impl Drive {
         let reversing = self.speed * self.target_speed < 0.0;
         if braking || self.target_speed == 0.0 || reversing {
             let deceleration = if track_lock {
-                TRACK_LOCK_DECELERATION
+                parameters.track_lock_deceleration_mps2
             } else if braking {
-                BRAKE_DECELERATION
+                parameters.brake_deceleration_mps2
             } else {
-                COAST_DECELERATION
+                parameters.coast_deceleration_mps2
             };
             self.speed = approach(self.speed, 0.0, deceleration * seconds);
         } else {
-            let traction = 1.13 * mobility.power_per_kg / self.speed.abs().max(1.0);
-            let rolling_drag = GRAVITY * ground.average(mobility.rolling_friction);
+            let traction =
+                parameters.traction_multiplier * mobility.power_per_kg / self.speed.abs().max(1.0);
+            let rolling_drag = parameters.gravity_mps2 * ground.average(mobility.rolling_friction);
             let grade = ground.pitch * self.target_speed.signum();
-            let slope = GRAVITY * grade.sin();
+            let slope = parameters.gravity_mps2 * grade.sin();
             let target = self.target_speed.abs();
             let drive_force = if mobility.max_climb_angle.is_some_and(|limit| grade < -limit) {
                 0.0
             } else {
-                traction.min(6.0 / resistance)
+                traction.min(parameters.traction_acceleration_mps2 / resistance)
             };
             let speed = if self.speed.abs() < target {
                 (self.speed.abs() + (drive_force - rolling_drag + slope) * seconds)
                     .clamp(0.0, target)
             } else if cruise == 1.0 && slope > rolling_drag {
                 (self.speed.abs() + (slope - rolling_drag) * seconds)
-                    .min(target * DOWNHILL_SPEED_LIMIT_RATIO)
+                    .min(target * parameters.downhill_speed_limit_ratio)
             } else if self.speed.abs() == target {
                 (target + (drive_force - rolling_drag + slope).min(0.0) * seconds).max(0.0)
             } else {
-                approach(self.speed.abs(), target, COAST_DECELERATION * seconds)
+                approach(
+                    self.speed.abs(),
+                    target,
+                    parameters.coast_deceleration_mps2 * seconds,
+                )
             };
             self.speed = speed * self.target_speed.signum();
         }
@@ -145,8 +142,8 @@ impl Drive {
             };
             let moving = if track_lock {
                 1.0
-            } else if self.speed.abs() > 0.5 {
-                0.85
+            } else if self.speed.abs() > parameters.moving_turn_min_speed_mps {
+                parameters.moving_turn_multiplier
             } else {
                 1.0
             };
@@ -166,14 +163,14 @@ impl Drive {
             self.curvature = approach(
                 self.curvature,
                 steering * max_curvature,
-                max_curvature * seconds / TURN_RESPONSE_SECONDS,
+                max_curvature * seconds / parameters.turn_response_seconds,
             );
             (self.speed * self.curvature).clamp(-traverse, traverse)
         };
         let response_seconds = if track_lock {
-            TRACK_LOCK_RESPONSE_SECONDS
+            parameters.track_lock_response_seconds
         } else {
-            TURN_RESPONSE_SECONDS
+            parameters.turn_response_seconds
         };
         self.yaw_rate = approach(
             self.yaw_rate,
@@ -186,7 +183,8 @@ impl Drive {
         let movement_heading = if track_lock {
             let previous = self.movement_heading.unwrap_or(*yaw);
             let delta = super::vehicle::angle(heading - previous);
-            let heading = previous + delta * (2.0 * seconds).clamp(0.0, 1.0);
+            let heading = previous
+                + delta * (parameters.track_lock_heading_response * seconds).clamp(0.0, 1.0);
             self.movement_heading = Some(heading);
             heading
         } else {

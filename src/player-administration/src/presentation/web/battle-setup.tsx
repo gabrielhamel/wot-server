@@ -20,6 +20,7 @@ import type {
 } from "../../application/admin-contracts";
 import { getBattleOptions, startBattle } from "../../infrastructure/admin-api";
 import { errorMessage } from "../../../../shared-infrastructure/src/infrastructure/web/http";
+import { BattleParameterEditor } from "./battle-parameters";
 import { ChoiceSelect } from "./battle-select";
 import { DummyConfiguration } from "./dummy-configuration";
 
@@ -97,6 +98,7 @@ export function BattleSetup() {
   const [options, setOptions] = useState<BattleOptions>();
   const [map, setMap] = useState<number | "">("");
   const [duration, setDuration] = useState("15");
+  const [parameterDrafts, setParameterDrafts] = useState<Record<string, string>>({});
   const [players, setPlayers] = useState<Player[]>([]);
   const [playerSearch, setPlayerSearch] = useState("");
   const [dummies, setDummies] = useState<Dummy[]>([]);
@@ -143,12 +145,24 @@ export function BattleSetup() {
     );
   }
 
+  const parameterFields = (options?.parameters ?? []).map((definition) => {
+    const value = parameterDrafts[definition.key] ?? String(definition.default);
+    const number = Number(value);
+    const invalid =
+      value === "" ||
+      !Number.isFinite(number) ||
+      number < definition.min ||
+      number > definition.max ||
+      (definition.integer && !Number.isInteger(number));
+    return { ...definition, value, invalid };
+  });
   const minutes = Number(duration);
   const validDuration =
     Number.isInteger(minutes) && minutes >= MIN_DURATION_MINUTES && minutes <= MAX_DURATION_MINUTES;
   const canLaunch =
     map !== "" &&
     validDuration &&
+    !parameterFields.some(({ invalid }) => invalid) &&
     !saving &&
     !loading &&
     options !== undefined &&
@@ -160,9 +174,15 @@ export function BattleSetup() {
     setError("");
     setReceipt(undefined);
     try {
+      const parameters = Object.fromEntries(
+        parameterFields
+          .filter((field) => Number(field.value) !== field.default)
+          .map(({ key, value }) => [key, Number(value)]),
+      );
       const started = await startBattle({
         arena_type: map,
         duration_seconds: minutes * 60,
+        parameters,
         players: players.map(({ vehicle, ...player }) => ({
           ...player,
           inventory_id: vehicle === OBSERVER ? null : Number(vehicle),
@@ -227,6 +247,15 @@ export function BattleSetup() {
                 onChange={(event) => setDuration(event.target.value)}
               />
             </Stack>
+            {parameterFields.length > 0 && (
+              <BattleParameterEditor
+                fields={parameterFields}
+                onChange={(key, value) =>
+                  setParameterDrafts((drafts) => ({ ...drafts, [key]: value }))
+                }
+                onReset={() => setParameterDrafts({})}
+              />
+            )}
             <Stack spacing={2}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography component="h3" variant="h6">

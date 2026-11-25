@@ -8,7 +8,8 @@ use crate::{
 };
 use tokio::sync::oneshot;
 use wot_battles::contract::{
-    BattleLaunch, BattleMode, BattleParticipant, BattlePreparationId, PreparedBattle,
+    BattleLaunch, BattleMode, BattleParameters, BattleParticipant, BattlePreparationId,
+    PreparedBattle,
 };
 
 const MAX_ENTRANTS: usize = 30;
@@ -57,6 +58,7 @@ impl Gateway {
                     "input.round_length.seconds" = setup.duration_seconds,
                     "input.players.count" = setup.players.len(),
                     "input.dummies.count" = setup.dummies.len(),
+                    "input.battle.parameters.count" = setup.parameters.len(),
                     "output.battle.id" = tracing::field::Empty,
                     "output.players.handoff_count" = tracing::field::Empty,
                     "output.outcome" = tracing::field::Empty,
@@ -150,6 +152,7 @@ impl Gateway {
             maps,
             players,
             observer_available: self.catalog.training_observer_descriptor().is_some(),
+            parameters: BattleParameters::definitions(),
         }
     }
 
@@ -158,6 +161,8 @@ impl Gateway {
         setup: AdminBattleSetup,
     ) -> Result<(u32, Vec<SelectedPlayer>), AdminBattleError> {
         use AdminBattleError::*;
+        let parameters =
+            BattleParameters::from_overrides(&setup.parameters).map_err(|_| InvalidParameters)?;
         if !self
             .battle_worker
             .maps()
@@ -215,6 +220,7 @@ impl Gateway {
                         u64::try_from(setup.duration_seconds).map_err(|_| InvalidSetup)?,
                     ),
                     mode: BattleMode::Training,
+                    parameters,
                     participants,
                 },
                 ids,

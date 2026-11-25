@@ -11,6 +11,7 @@ fastrand = "2"
 flate2.workspace = true
 glam.workspace = true
 png.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

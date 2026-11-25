@@ -1,12 +1,10 @@
 use super::{
-    devices::{DeviceStrike, MAX_DEVICE_HITS},
+    devices::{DEVICE_STRIKE_CAPACITY, DeviceStrike},
+    parameters::BattleParameters,
     vehicle::{Shot, Tank},
 };
 use glam::Vec3;
 use wot_shared_kernel::{ArmorPlate, ShellKind, shell_value_at_distance};
-
-const CONTACT_CLEARANCE_METRES: f32 = 0.002;
-const RICOCHET_RANGE_CALIBERS: f32 = 10.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ArmorOutcome {
@@ -46,7 +44,7 @@ pub(crate) struct ArmorHit {
     pub outcome: ArmorOutcome,
     pub damage: u16,
     reflected: Option<Vec3>,
-    pub devices: [Option<DeviceStrike>; MAX_DEVICE_HITS],
+    pub devices: [Option<DeviceStrike>; DEVICE_STRIKE_CAPACITY],
     pub thickness_mm: f32,
     effective_mm: f32,
     remaining_mm: f32,
@@ -82,8 +80,13 @@ impl Shot {
         output.penetration.remaining_mm = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.outcome = tracing::field::Empty,
     ))]
-    pub fn resolve_armor(&self, target_id: u32, path: ArmorPath) -> Option<ArmorHit> {
-        let hit = self.resolve_surfaces(&path.0);
+    pub fn resolve_armor(
+        &self,
+        target_id: u32,
+        path: ArmorPath,
+        parameters: &BattleParameters,
+    ) -> Option<ArmorHit> {
+        let hit = self.resolve_surfaces(&path.0, parameters);
         if let Some(hit) = hit {
             let span = tracing::Span::current();
             span.record("output.part.index", hit.segment.part);
@@ -113,11 +116,18 @@ impl Shot {
         penetration
     }
 
-    pub fn continue_from(self, distance: f32, direction: Vec3) -> Option<Self> {
-        let advance = distance + CONTACT_CLEARANCE_METRES;
+    pub fn continue_from(
+        self,
+        distance: f32,
+        direction: Vec3,
+        parameters: &BattleParameters,
+    ) -> Option<Self> {
+        let advance = distance + parameters.projectile_contact_clearance_metres;
         let max_distance = self.max_distance - advance;
         (max_distance > 0.0).then_some(Self {
-            origin: self.origin + self.direction * distance + direction * CONTACT_CLEARANCE_METRES,
+            origin: self.origin
+                + self.direction * distance
+                + direction * parameters.projectile_contact_clearance_metres,
             travelled: self.travelled + advance,
             max_distance,
             direction,
@@ -125,11 +135,11 @@ impl Shot {
         })
     }
 
-    pub fn through_screen(self, hit: ArmorHit) -> Option<Self> {
+    pub fn through_screen(self, hit: ArmorHit, parameters: &BattleParameters) -> Option<Self> {
         if hit.outcome != ArmorOutcome::ScreenPenetrated || hit.remaining_mm <= 0.0 {
             return None;
         }
-        let mut next = self.continue_from(hit.distance, self.direction)?;
+        let mut next = self.continue_from(hit.distance, self.direction, parameters)?;
         let unspent = shell_value_at_distance(self.ballistics.penetration_mm, next.travelled)
             * self.penetration_roll;
         next.penetration_loss = (unspent - hit.remaining_mm).max(0.0);
@@ -137,13 +147,14 @@ impl Shot {
         Some(next)
     }
 
-    pub fn ricochet_from(self, hit: ArmorHit) -> Option<Self> {
-        let mut shot = self.continue_from(hit.distance, hit.reflected?)?;
-        let reflected_range = self.ballistics.caliber_mm * (RICOCHET_RANGE_CALIBERS / 1000.0)
-            - CONTACT_CLEARANCE_METRES;
+    pub fn ricochet_from(self, hit: ArmorHit, parameters: &BattleParameters) -> Option<Self> {
+        let mut shot = self.continue_from(hit.distance, hit.reflected?, parameters)?;
+        let reflected_range = self.ballistics.caliber_mm
+            * (parameters.ricochet_range_calibers / 1000.0)
+            - parameters.projectile_contact_clearance_metres;
         shot.max_distance = shot.max_distance.min(reflected_range);
         let retention = if matches!(self.ballistics.kind, ShellKind::ArmorPiercing) {
-            0.75
+            parameters.ap_ricochet_penetration_retention
         } else {
             1.0
         };
@@ -219,14 +230,18 @@ impl Shot {
         ) * self.damage_roll
     }
 
-    fn resolve_surfaces(&self, surfaces: &[Surface]) -> Option<ArmorHit> {
+    fn resolve_surfaces(
+        &self,
+        surfaces: &[Surface],
+        parameters: &BattleParameters,
+    ) -> Option<ArmorHit> {
         let shell = self.ballistics;
         let first = surfaces.first()?;
         let mut penetration = self.penetration_at(first.distance);
         let mut last_hit = None;
         let mut jet_exit: Option<f32> = None;
         let mut seen = Vec::new();
-        let mut devices = [None; MAX_DEVICE_HITS];
+        let mut devices = [None; DEVICE_STRIKE_CAPACITY];
         for (index, &surface) in surfaces.iter().enumerate() {
             let Surface {
                 distance,
@@ -268,7 +283,9 @@ impl Shot {
                 && plate.ricochets
                 && thickness > 0.0
                 && cosine <= shell.ricochet_cos
-                && (!ap || !plate.caliber_ricochet || ratio <= 3.0)
+                && (!ap
+                    || !plate.caliber_ricochet
+                    || ratio <= parameters.ap_ricochet_overmatch_ratio)
             {
                 hit.outcome = ArmorOutcome::Ricochet;
                 if !self.ricocheted && shell.trace_ricochet {
@@ -280,8 +297,12 @@ impl Shot {
                 return Some(hit);
             }
             let mut normalization = if ap { shell.normalization } else { 0.0 };
-            if ap && plate.caliber_normalization && thickness > 0.0 && ratio > 2.0 {
-                normalization *= 0.7 * ratio;
+            if ap
+                && plate.caliber_normalization
+                && thickness > 0.0
+                && ratio > parameters.ap_normalization_overmatch_ratio
+            {
+                normalization *= parameters.ap_normalization_caliber_factor * ratio;
             }
             let angle = (cosine.acos() - normalization).max(0.0);
             let effective = thickness / angle.cos().max(0.00001);
@@ -289,7 +310,8 @@ impl Shot {
             if plate.damage_factor > 0.0 {
                 if penetration >= effective && !matches!(shell.kind, ShellKind::Other) {
                     hit.outcome = ArmorOutcome::Penetrated;
-                    let internal_range = shell.caliber_mm * 0.01;
+                    let internal_range =
+                        shell.caliber_mm * (parameters.internal_projectile_range_calibers / 1000.0);
                     let mut internal_penetration = penetration - effective;
                     for internal in &surfaces[index + 1..] {
                         if internal.distance - distance > internal_range
@@ -298,7 +320,12 @@ impl Shot {
                         {
                             break;
                         }
-                        self.record_device(*internal, false, &mut hit.devices);
+                        self.record_device(
+                            *internal,
+                            false,
+                            &mut hit.devices,
+                            parameters.max_device_hits,
+                        );
                         internal_penetration -= internal.plate.thickness_mm;
                     }
                     hit.remaining_mm = penetration - effective;
@@ -340,7 +367,12 @@ impl Shot {
                         {
                             break;
                         }
-                        self.record_device(*internal, true, &mut hit.devices);
+                        self.record_device(
+                            *internal,
+                            true,
+                            &mut hit.devices,
+                            parameters.max_device_hits,
+                        );
                         if !he.piercing_spalls && internal.plate.thickness_mm > 0.0 {
                             break;
                         }
@@ -352,7 +384,7 @@ impl Shot {
                 ShellKind::HighExplosive {
                     shield_penetration: true,
                     ..
-                } => 3.0,
+                } => parameters.he_screen_penetration_loss_factor,
                 ShellKind::HighExplosive {
                     shield_penetration: false,
                     ..
@@ -366,7 +398,7 @@ impl Shot {
                 hit.outcome = ArmorOutcome::ScreenBlocked;
                 return Some(hit);
             }
-            self.record_device(surface, false, &mut devices);
+            self.record_device(surface, false, &mut devices, parameters.max_device_hits);
             hit.devices = devices;
             penetration = (penetration - effective * loss_factor).max(0.0);
             hit.remaining_mm = penetration;
@@ -385,7 +417,8 @@ impl Shot {
         &self,
         hit: Surface,
         explosion: bool,
-        devices: &mut [Option<DeviceStrike>; MAX_DEVICE_HITS],
+        devices: &mut [Option<DeviceStrike>],
+        limit: usize,
     ) {
         let Some(device) = hit.plate.device else {
             return;
@@ -418,7 +451,7 @@ impl Shot {
             1.0,
         );
         if damage > 0
-            && let Some(slot) = devices.iter_mut().find(|slot| slot.is_none())
+            && let Some(slot) = devices.iter_mut().take(limit).find(|slot| slot.is_none())
         {
             *slot = Some(DeviceStrike {
                 device: device.device,
@@ -433,7 +466,7 @@ fn rolled_damage(nominal: f32, roll: f32, factor: f32) -> u16 {
     (nominal * roll * factor).round() as u16
 }
 
-pub(crate) fn roll(magnitude: f32, uniform: bool) -> f32 {
+pub(crate) fn roll(magnitude: f32, uniform: bool, parameters: &BattleParameters) -> f32 {
     if magnitude == 0.0 {
         return 1.0;
     }
@@ -442,9 +475,11 @@ pub(crate) fn roll(magnitude: f32, uniform: bool) -> f32 {
         2.0 * unit() - 1.0
     } else {
         // Approximate the client armor inspector's truncated normal distribution.
-        (0..4)
+        (0..parameters.normal_roll_max_samples)
             .map(|_| {
-                (-2.0 * (1.0 - unit()).ln()).sqrt() * (std::f32::consts::TAU * unit()).cos() * 0.33
+                (-2.0 * (1.0 - unit()).ln()).sqrt()
+                    * (std::f32::consts::TAU * unit()).cos()
+                    * parameters.normal_roll_standard_deviation
             })
             .find(|sample| sample.abs() <= 1.0)
             .unwrap_or(0.0)

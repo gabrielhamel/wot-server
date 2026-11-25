@@ -175,6 +175,21 @@ illustrate the calculation.
   archive also describes a first-shot comparison that credits an already
   loaded gun at the start of the time window.
 
+### Per-battle simulation parameters
+
+Battles owns the defaults and ranges in
+[parameters.rs](../src/battles/src/domain/parameters.rs). The admin dashboard
+can override round timing, gravity and drive response, hull contacts and
+rollover, ballistic integration, armor and device damage, fire and tracer
+visibility. The validated values travel with the battle launch and are shared
+by simulation and replication for that arena. The existing values are the
+defaults used by native Training Rooms.
+
+The native movement bitmask identifies commands. Shell ballistics and equipped
+vehicle performance come from the resource bundle. The tracer rule for hidden
+shooters is available to the simulator, while current Training replication
+treats shooters as known.
+
 ### Training movement coverage
 
 Accounts resolves equipped engine and module mass, chassis and terrain

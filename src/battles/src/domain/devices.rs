@@ -1,3 +1,4 @@
+use super::parameters::BattleParameters;
 use std::{
     collections::BTreeMap,
     time::{Duration, Instant},
@@ -11,7 +12,7 @@ pub(crate) struct DeviceStrike {
     pub damage: u16,
 }
 
-pub(crate) const MAX_DEVICE_HITS: usize = 12;
+pub(crate) const DEVICE_STRIKE_CAPACITY: usize = 32;
 
 struct DeviceState {
     health: u16,
@@ -41,6 +42,7 @@ impl Condition {
         profiles: &BTreeMap<Device, DeviceHealth>,
         armed: bool,
         now: Instant,
+        parameters: &BattleParameters,
     ) -> Criticals {
         let mut result = Criticals::default();
         for strike in strikes.iter().flatten() {
@@ -80,8 +82,11 @@ impl Condition {
             }
             let starts_fire = (strike.device == Device::Fuel && state.health == 0)
                 || (strike.device == Device::Engine && fastrand::f32() < state.profile.fire_chance);
-            if starts_fire && self.fire.is_none() {
-                self.fire = Some((now + Duration::from_secs(1), 5));
+            if starts_fire && parameters.fire_ticks > 0 && self.fire.is_none() {
+                self.fire = Some((
+                    now + Duration::from_secs_f32(parameters.fire_tick_seconds),
+                    parameters.fire_ticks,
+                ));
                 result.fire_started = true;
             }
         }
@@ -100,7 +105,7 @@ impl Condition {
             .any(|device| self.disabled(device))
     }
 
-    pub fn tick(&mut self, now: Instant) -> (u8, bool) {
+    pub fn tick(&mut self, now: Instant, parameters: &BattleParameters) -> (u8, bool) {
         let mut repairs = 0;
         for state in self.devices.values_mut() {
             if state.repair_at.is_some_and(|end| end <= now) {
@@ -114,7 +119,10 @@ impl Condition {
             && let Some((next, ticks)) = self.fire.take()
             && ticks > 1
         {
-            self.fire = Some((next + Duration::from_secs(1), ticks - 1));
+            self.fire = Some((
+                next + Duration::from_secs_f32(parameters.fire_tick_seconds),
+                ticks - 1,
+            ));
         }
         (repairs, burn)
     }
@@ -135,6 +143,7 @@ mod tests {
     #[test]
     fn destroyed_track_repairs_and_loaded_rack_detonates() {
         let now = Instant::now();
+        let parameters = BattleParameters::default();
         let profile = DeviceHealth {
             maximum: 10,
             repaired: 5,
@@ -150,27 +159,51 @@ mod tests {
         };
         let mut condition = Condition::default();
         let profiles = BTreeMap::new();
-        let critical = condition.apply(&[strike(Device::TrackLeft)], &profiles, true, now);
+        let critical = condition.apply(
+            &[strike(Device::TrackLeft)],
+            &profiles,
+            true,
+            now,
+            &parameters,
+        );
         assert_eq!(critical.destroyed, 1);
         assert!(condition.immobilized());
-        assert_eq!(condition.tick(now + Duration::from_secs(1)), (1, false));
+        assert_eq!(
+            condition.tick(now + Duration::from_secs(1), &parameters),
+            (1, false)
+        );
         assert!(!condition.immobilized());
         assert!(
             !condition
-                .apply(&[strike(Device::AmmoRack)], &profiles, false, now)
+                .apply(
+                    &[strike(Device::AmmoRack)],
+                    &profiles,
+                    false,
+                    now,
+                    &parameters
+                )
                 .detonated
         );
         let mut armed = Condition::default();
         assert!(
             armed
-                .apply(&[strike(Device::AmmoRack)], &profiles, true, now)
+                .apply(
+                    &[strike(Device::AmmoRack)],
+                    &profiles,
+                    true,
+                    now,
+                    &parameters
+                )
                 .detonated
         );
         assert!(
             armed
-                .apply(&[strike(Device::Fuel)], &profiles, true, now)
+                .apply(&[strike(Device::Fuel)], &profiles, true, now, &parameters)
                 .fire_started
         );
-        assert_eq!(armed.tick(now + Duration::from_secs(1)), (1, true));
+        assert_eq!(
+            armed.tick(now + Duration::from_secs(1), &parameters),
+            (1, true)
+        );
     }
 }

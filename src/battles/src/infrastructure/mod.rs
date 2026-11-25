@@ -5,7 +5,8 @@ use super::{
         AvatarCommand, BattleEntityIds, BattleLaunch, BattleMode, ParticipantId, VehicleLoadout,
     },
     domain::{
-        round::{LOAD_TIMEOUT, Round, RoundPhase},
+        parameters::BattleParameters,
+        round::{Round, RoundPhase},
         vehicle::Tank,
     },
 };
@@ -67,6 +68,7 @@ const TECHNICAL: u8 = 5;
 pub const TICK: Duration = Duration::from_millis(100);
 
 struct Entrant {
+    parameters: BattleParameters,
     account_id: i64,
     name: String,
     team: u8,
@@ -85,6 +87,7 @@ struct Entrant {
 impl Entrant {
     fn tank(&self) -> Tank {
         Tank::new(
+            self.parameters,
             self.position,
             self.direction,
             self.vehicle.health,
@@ -99,6 +102,7 @@ impl Entrant {
 
     fn sample() -> Self {
         Self {
+            parameters: BattleParameters::default(),
             account_id: 1,
             name: "Arena Player".into(),
             team: 1,
@@ -124,6 +128,7 @@ impl Entrant {
 }
 
 struct Battle {
+    parameters: BattleParameters,
     map: ArenaMap,
     ground: Arc<terrain::Terrain>,
     obstacles: obstacles::Scenery,
@@ -379,6 +384,9 @@ impl BattleRuntime {
     #[tracing::instrument(name = "battles.prepare", skip_all, fields(
         ddd.bounded_context.name = "battles", input.arena_type_id = launch.arena_type,
         input.round_length.seconds = launch.duration.as_secs(), input.players.count = launch.participants.len(),
+        input.battle.load_timeout.seconds = launch.parameters.load_timeout_seconds,
+        input.battle.countdown.seconds = launch.parameters.countdown_seconds,
+        input.battle.results.seconds = launch.parameters.results_seconds,
         input.outfits.count = launch.participants.iter().filter(|participant| !participant.vehicle.outfit.is_empty()).count(),
         output.battle.id = tracing::field::Empty, output.players.count = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
@@ -456,6 +464,7 @@ impl BattleRuntime {
             entrants.push((
                 player.id,
                 Entrant {
+                    parameters: launch.parameters,
                     account_id: player.account_id,
                     name: player.name,
                     team: player.team,
@@ -519,6 +528,7 @@ impl BattleRuntime {
         Ok(Some(PreparedBattle {
             id: battle_id,
             battle: Battle {
+                parameters: launch.parameters,
                 map: map.clone(),
                 ground,
                 obstacles: obstacles::Scenery::new(obstacles),
@@ -527,7 +537,7 @@ impl BattleRuntime {
                 players,
                 started_at: now,
                 last_snapshot_tick: None,
-                round: Round::new(now, launch.duration),
+                round: Round::new(now, launch.duration, &launch.parameters),
                 launch: Some(tracing::Span::current()),
                 shot_sequence: 0,
                 projectiles: Vec::new(),
@@ -554,7 +564,7 @@ impl BattleSimulation {
         let PreparedBattle { id, mut battle } = prepared;
         let now = Instant::now();
         battle.started_at = now;
-        battle.round.deadline = now + LOAD_TIMEOUT;
+        battle.round.deadline = now + battle.round.load_timeout;
         for (&client, player) in &battle.players {
             if player.entry.is_some() {
                 self.engagements.insert(client, id);
@@ -780,7 +790,9 @@ impl BattleSimulation {
             for (&client, player) in &battle.players {
                 if player.entered {
                     recipients.push(client);
-                } else if player.entry.is_some() && now >= battle.started_at + LOAD_TIMEOUT {
+                } else if player.entry.is_some()
+                    && now >= battle.started_at + battle.round.load_timeout
+                {
                     delivery.disconnect(client);
                 }
             }

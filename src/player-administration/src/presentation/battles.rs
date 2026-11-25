@@ -26,7 +26,9 @@ fn service(state: &AdminState) -> Result<&AdminBattles, ApiError> {
 
 fn battle_error(error: AdminBattleError) -> ApiError {
     let status = match error {
-        AdminBattleError::InvalidSetup | AdminBattleError::InvalidDummy => StatusCode::BAD_REQUEST,
+        AdminBattleError::InvalidSetup
+        | AdminBattleError::InvalidParameters
+        | AdminBattleError::InvalidDummy => StatusCode::BAD_REQUEST,
         AdminBattleError::PlayerUnavailable | AdminBattleError::VehicleUnavailable(_) => {
             StatusCode::CONFLICT
         }
@@ -109,7 +111,7 @@ fn loadout_error(error: impl std::fmt::Display) -> ApiError {
 #[tracing::instrument(name = "admin.start_battle", skip_all, fields(
     ddd.bounded_context.name = "player_administration", input.arena_type_id = tracing::field::Empty,
     input.round_length.seconds = tracing::field::Empty, input.players.count = tracing::field::Empty,
-    input.dummies.count = tracing::field::Empty, output.battle.id = tracing::field::Empty,
+    input.dummies.count = tracing::field::Empty, input.battle.parameters.count = tracing::field::Empty, output.battle.id = tracing::field::Empty,
     output.players.handoff_count = tracing::field::Empty,
     output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
 ), err)]
@@ -126,6 +128,7 @@ pub(super) async fn start(
     span.record("input.round_length.seconds", setup.duration_seconds);
     span.record("input.players.count", setup.players.len());
     span.record("input.dummies.count", setup.dummies.len());
+    span.record("input.battle.parameters.count", setup.parameters.len());
     let requested = setup.players.len();
     let receipt = service(&state)?.start(setup).await.map_err(battle_error)?;
     span.record("output.battle.id", receipt.battle_id);

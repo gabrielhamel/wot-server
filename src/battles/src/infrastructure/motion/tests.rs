@@ -71,6 +71,7 @@ fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_comman
     let prepared = runtime
         .prepare(
             BattleLaunch {
+                parameters: Default::default(),
                 arena_type: arena,
                 duration: Duration::from_secs(60),
                 mode: BattleMode::Training,
@@ -323,6 +324,7 @@ fn vehicle_motion(id: u64, distance: f32, travel: f32, inverse_mass: f32) -> Veh
         parent: None,
         changed: false,
         hull: Hull {
+            parameters: Default::default(),
             position: Vec3::Z * distance,
             yaw: 0.0,
             half_size: Vec2::new(1.0, 2.0),
@@ -403,6 +405,7 @@ fn steering_into_a_parallel_wall_can_fracture_it_without_translation() {
         Vec3::new(1.14, 8.0, 0.0),
     ];
     let hull = Hull {
+        parameters: Default::default(),
         position: Vec3::ZERO,
         yaw: 0.0,
         half_size: Vec2::new(1.0, 2.5),
@@ -443,6 +446,7 @@ fn engine_pressure_breaks_from_rest_and_light_vehicles_lose_more_speed() {
         Vec3::new(0.0, 5.0, 2.03),
     ];
     let hull = Hull {
+        parameters: Default::default(),
         position: Vec3::ZERO,
         yaw: 0.0,
         half_size: Vec2::new(1.0, 2.0),
@@ -489,6 +493,7 @@ fn tks_20_entry_speed_affects_how_many_widepark_strength_panels_it_breaks() {
         })
         .collect();
     let start = Hull {
+        parameters: Default::default(),
         position: Vec3::ZERO,
         yaw: 0.0,
         half_size: Vec2::new(0.9, 1.5),
@@ -552,6 +557,7 @@ fn scenery_fracture_is_local_and_removes_only_the_hit_fragment() {
         2.0
     );
     let hull = Hull {
+        parameters: Default::default(),
         position: Vec3::ZERO,
         yaw: 0.0,
         half_size: Vec2::ONE,
@@ -593,6 +599,7 @@ fn ramps_can_be_climbed_and_bridge_support_respects_the_underpass() {
             .collect(),
     );
     let mut hull = Hull {
+        parameters: Default::default(),
         position: Vec3::new(-0.2, 0.0, 0.0),
         yaw: std::f32::consts::FRAC_PI_2,
         half_size: Vec2::new(1.0, 1.5),
@@ -658,6 +665,7 @@ fn extracted_serene_coast_bridge_keeps_its_deck_separate_from_the_terrain() {
     let deck_y = -5.47;
     assert!(deck_y - floor > 1.0);
     let hull = Hull {
+        parameters: Default::default(),
         position: Vec3::new(point.x, deck_y, point.y),
         yaw: 0.0,
         half_size: Vec2::new(1.0, 2.0),

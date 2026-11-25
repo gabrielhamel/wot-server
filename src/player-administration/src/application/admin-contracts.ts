@@ -102,11 +102,22 @@ export type AdminSession =
 
 export type BattleChoice = { id: number; name: string; unavailable_reason?: string | null };
 
+export type BattleParameterDefinition = {
+  key: string;
+  label: string;
+  group: string;
+  default: number;
+  min: number;
+  max: number;
+  integer: boolean;
+};
+
 export type BattleOptions = {
   maps: BattleChoice[];
   players: (BattleChoice & { vehicles: BattleChoice[] })[];
   observer_available: boolean;
   dummy_vehicles: CatalogVehicle[];
+  parameters: BattleParameterDefinition[];
 };
 
 export type DummyLoadoutOptions = {
@@ -135,4 +146,5 @@ export type AdminBattleSetup = {
   duration_seconds: number;
   players: { account_id: number; team: number; inventory_id: number | null }[];
   dummies: { team: number; loadout: DummyLoadout }[];
+  parameters?: Record<string, number>;
 };

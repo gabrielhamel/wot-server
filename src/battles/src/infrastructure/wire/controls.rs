@@ -301,7 +301,7 @@ impl ArenaWire {
             GunRay {
                 origin: Vec3::ZERO,
                 direction: Vec3::Z,
-                speed: GunRay::FALLBACK_SPEED_MPS,
+                speed: crate::contract::BattleParameters::default().fallback_gun_ray_speed_mps,
             },
             0.005,
         )?;
@@ -387,7 +387,7 @@ impl ArenaWire {
                     },
                     ArmorOutcome::Penetrated,
                     ShellEffects::default(),
-                    GunRay::FALLBACK_SPEED_MPS,
+                    crate::contract::BattleParameters::default().fallback_gun_ray_speed_mps,
                 )
                 .args(),
             ),
@@ -803,7 +803,7 @@ mod impact_tests {
             },
             ArmorOutcome::Penetrated,
             effects,
-            GunRay::FALLBACK_SPEED_MPS,
+            crate::contract::BattleParameters::default().fallback_gun_ray_speed_mps,
         )
     }
 
