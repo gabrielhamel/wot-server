@@ -333,8 +333,16 @@ fn package_paths(game_dir: &Path, packages_dir: &Path) -> Result<Vec<PathBuf>> {
         }
         Err(error) => return Err(error).with_context(|| format!("Read {}", paths_file.display())),
     };
-    let order = roxmltree::Document::parse(&order)
-        .with_context(|| format!("Parse {}", paths_file.display()))?;
+    listed_packages(&order, packages_dir, installed)
+        .with_context(|| format!("Parse {}", paths_file.display()))
+}
+
+fn listed_packages(
+    order: &str,
+    packages_dir: &Path,
+    mut installed: BTreeSet<PathBuf>,
+) -> Result<Vec<PathBuf>, roxmltree::Error> {
+    let order = roxmltree::Document::parse(order)?;
     let mut packages = Vec::new();
     for node in order
         .descendants()
@@ -348,7 +356,6 @@ fn package_paths(game_dir: &Path, packages_dir: &Path) -> Result<Vec<PathBuf>> {
             packages.push(path);
         }
     }
-    packages.extend(installed);
     Ok(packages)
 }
 
@@ -367,4 +374,28 @@ pub fn game_version(game_dir: &Path) -> Result<Option<String>> {
         .map(str::trim)
         .filter(|version| !version.is_empty())
         .map(str::to_owned))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn package_manifest_excludes_stale_installed_packages_and_preserves_order() {
+        let directory = Path::new("res/packages");
+        let installed = ["a.pkg", "b.pkg", "previous_event.pkg"]
+            .map(|name| directory.join(name))
+            .into();
+        let order = r#"<root><Paths><Packages>
+            <Package type="sd,hd">./res/packages/b.pkg</Package>
+            <Package type="hd">./res/packages/missing.pkg</Package>
+            <Package type="sd,hd">./res/packages/a.pkg</Package>
+            <Package type="sd,hd">./res/packages/b.pkg</Package>
+        </Packages></Paths></root>"#;
+
+        assert_eq!(
+            listed_packages(order, directory, installed).unwrap(),
+            [directory.join("b.pkg"), directory.join("a.pkg")]
+        );
+    }
 }

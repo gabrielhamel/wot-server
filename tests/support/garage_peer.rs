@@ -427,6 +427,14 @@ impl Peer {
                                 self.entered_arena = Some((arena, map));
                                 continue;
                             }
+                            assert_eq!(
+                                creation.entity_components_count,
+                                dispatch
+                                    .entity_from_name("Account")
+                                    .unwrap()
+                                    .1
+                                    .static_components_count
+                            );
                             let (version_property, required_version) =
                                 super::account_version(dispatch);
                             assert_eq!(
