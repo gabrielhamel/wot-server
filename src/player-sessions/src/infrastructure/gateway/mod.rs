@@ -580,7 +580,7 @@ impl Gateway {
         }
     }
 
-    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.account.version_property = tracing::field::Empty, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty, output.training_room.description_enabled = tracing::field::Empty, output.equipment_upgrades.enabled = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
+    #[tracing::instrument(name = "player_sessions.enable", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.client.address = %client, output.account.version_property = tracing::field::Empty, output.account.static_components_count = tracing::field::Empty, output.store.host = tracing::field::Empty, output.training_room.visible = tracing::field::Empty, output.training_room.description_enabled = tracing::field::Empty, output.equipment_upgrades.enabled = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     fn enable(&mut self, client: ClientKey) -> Result<()> {
         let Some(session) = self.sessions.get_mut(&client) else {
             return Ok(());
@@ -632,6 +632,10 @@ impl Gateway {
         tracing::Span::current().record(
             "output.account.version_property",
             self.account_bootstrap.version_property(),
+        );
+        tracing::Span::current().record(
+            "output.account.static_components_count",
+            self.account_bootstrap.static_components_count,
         );
         tracing::Span::current().record(
             "output.training_room.visible",

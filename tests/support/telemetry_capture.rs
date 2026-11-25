@@ -429,7 +429,7 @@ pub fn assert_player_spans(account: i64, login: &str, display_name: &str) {
     );
 }
 
-pub fn assert_garage_bootstrap(visible: bool, version_property: &str) {
+pub fn assert_garage_bootstrap(visible: bool, version_property: &str, components_count: u8) {
     let spans = exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key, expected: &str| {
         span.attributes.iter().any(|attribute| {
@@ -443,6 +443,11 @@ pub fn assert_garage_bootstrap(visible: bool, version_property: &str) {
                     bootstrap,
                     "output.account.version_property",
                     version_property,
+                )
+                && has(
+                    bootstrap,
+                    "output.account.static_components_count",
+                    &components_count.to_string(),
                 )
                 && has(
                     bootstrap,
@@ -462,7 +467,7 @@ pub fn assert_garage_bootstrap(visible: bool, version_property: &str) {
                         && has(response, "output.delivery", "sent")
                 })
         }),
-        "Missing Account version property or Training Room settings on a delivered garage bootstrap trace"
+        "Missing Account creation attributes on a delivered garage bootstrap trace"
     );
 }
 

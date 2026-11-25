@@ -99,9 +99,11 @@ The extractor copies selected definition files as complete files and preserves
 their resource paths. It omits executables, packages, artwork, map assets and
 audio. Both bundles and game files should stay outside Git.
 
-Package files take precedence over loose files. The extractor uses package
-order from `paths.xml` where present and considers remaining installed packages
-in filename order. Mod overlays are outside the extraction scope. Resource
+Package files take precedence over loose files. When `paths.xml` is present,
+the extractor considers only installed packages listed there, in their
+declared order. This keeps packages left on disk by previous client builds
+out of the server bundle. When there is no `paths.xml`, the extractor considers
+installed packages in filename order. Mod overlays are outside the extraction scope. Resource
 requirements come from the current [garage catalog](../src/accounts/src/infrastructure/client)
 and [script ABI loader](../src/shared-infrastructure/src/mercury/script/load.rs).
 Regenerate the bundle when changing the game build or updating to a server

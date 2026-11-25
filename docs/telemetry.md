@@ -93,7 +93,8 @@ of automatic port retries after TCP collisions. A fixed port collision fails
 startup.
 
 When the client enables entities, `player_sessions.enable` records the
-Training Room visibility and Description field availability sent in the queued Account creation. Its
+Account version field name, static component count, Training Room visibility
+and Description field availability for the queued Account creation. Its
 `mercury.response` child records delivery of `showGUI`.
 
 The shared web listener composes the admin and Store APIs. Page shells and

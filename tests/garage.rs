@@ -300,6 +300,11 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     let has_camouflage = resources.has_file("scripts/item_defs/customization/camouflages/list.xml");
     let script = ScriptDispatch::new(wot_platform::mercury::script::load(&resources).unwrap());
     let account_version_property = account_version(&script).0.to_owned();
+    let account_components_count = script
+        .entity_from_name("Account")
+        .unwrap()
+        .1
+        .static_components_count;
     let private_key = encrypted_login
         .then(|| Arc::new(rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).unwrap()));
     let public_key = private_key
@@ -677,6 +682,7 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
         telemetry_capture::assert_garage_bootstrap(
             training_room_visible,
             &account_version_property,
+            account_components_count,
         );
         training_room_flow::assert_traces(a.id, b.id, training_room_available);
         if let Some(fixture) = training_fixture {

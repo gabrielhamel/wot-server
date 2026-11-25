@@ -67,6 +67,7 @@ pub(super) struct AccountBootstrap {
     version_property: Arc<str>,
     required_version: String,
     settings_type: Ty,
+    pub(super) static_components_count: u8,
 }
 
 impl AccountBootstrap {
@@ -120,6 +121,7 @@ impl AccountBootstrap {
             version_property: property.name.clone(),
             required_version,
             settings_type,
+            static_components_count: account.static_components_count,
         })
     }
 
