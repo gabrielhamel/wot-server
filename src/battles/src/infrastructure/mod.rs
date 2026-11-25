@@ -68,6 +68,7 @@ const TECHNICAL: u8 = 5;
 pub const TICK: Duration = Duration::from_millis(100);
 
 struct Entrant {
+    season: wot_shared_kernel::ArenaSeason,
     parameters: BattleParameters,
     account_id: i64,
     name: String,
@@ -102,6 +103,7 @@ impl Entrant {
 
     fn sample() -> Self {
         Self {
+            season: Default::default(),
             parameters: BattleParameters::default(),
             account_id: 1,
             name: "Arena Player".into(),
@@ -112,7 +114,7 @@ impl Entrant {
             customization_display_type: 2,
             vehicle: VehicleLoadout {
                 descriptor: vec![1],
-                outfit: Vec::new(),
+                outfits: Default::default(),
                 health: 100,
                 crew_size: 3,
                 ammunition: vec![(10, 5)],
@@ -387,7 +389,7 @@ impl BattleRuntime {
         input.battle.load_timeout.seconds = launch.parameters.load_timeout_seconds,
         input.battle.countdown.seconds = launch.parameters.countdown_seconds,
         input.battle.results.seconds = launch.parameters.results_seconds,
-        input.outfits.count = launch.participants.iter().filter(|participant| !participant.vehicle.outfit.is_empty()).count(),
+        input.outfits.count = tracing::field::Empty,
         output.battle.id = tracing::field::Empty, output.players.count = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
     ), err)]
@@ -444,6 +446,20 @@ impl BattleRuntime {
                 obstacles
             }
         };
+        span.record(
+            "input.outfits.count",
+            launch
+                .participants
+                .iter()
+                .filter(|participant| {
+                    !participant
+                        .vehicle
+                        .outfits
+                        .for_season(map.season)
+                        .is_empty()
+                })
+                .count(),
+        );
         let mut entrants = Vec::with_capacity(launch.participants.len());
         let mut counts = [0usize; 2];
         for (player, ids) in launch.participants.into_iter().zip(entity_ids) {
@@ -464,6 +480,7 @@ impl BattleRuntime {
             entrants.push((
                 player.id,
                 Entrant {
+                    season: map.season,
                     parameters: launch.parameters,
                     account_id: player.account_id,
                     name: player.name,

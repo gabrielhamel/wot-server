@@ -14,10 +14,11 @@ import {
 } from "@mui/material";
 import { Fragment, useEffect, useId, useState } from "react";
 import type {
+  BattleModuleKind,
   CustomBattleLoadout,
   CustomBattleLoadoutOptions,
 } from "../../application/admin-contracts";
-import { getBattleLoadout } from "../../infrastructure/admin-api";
+import { getBattleLoadout, getOwnedBattleLoadout } from "../../infrastructure/admin-api";
 import { errorMessage } from "../../../../shared-infrastructure/src/infrastructure/web/http";
 import { ChoiceSelect } from "./battle-select";
 
@@ -37,28 +38,47 @@ function validInteger(value: string, min: number, max: number) {
   return value !== "" && Number.isInteger(number) && number >= min && number <= max;
 }
 
+const moduleFields: [BattleModuleKind, string][] = [
+  ["Chassis", "Suspension"],
+  ["Turret", "Turret"],
+  ["Gun", "Gun"],
+  ["Engine", "Engine"],
+  ["FuelTank", "Fuel tank"],
+  ["Radio", "Radio"],
+];
+
 export function BattleLoadoutConfiguration({
   name,
+  catalogVehicle,
+  ownedVehicle,
   initial,
   onClose,
   onSave,
 }: {
   name: string;
-  initial: CustomBattleLoadout;
+  catalogVehicle?: number;
+  ownedVehicle?: { account: number; inventory: number };
+  initial?: CustomBattleLoadout;
   onClose: () => void;
   onSave: (value: CustomBattleLoadout) => void;
 }) {
   const [loadout, setLoadout] = useState(initial);
-  const [hitPoints, setHitPoints] = useState(initial.hit_points?.toString() ?? "");
+  const [hitPoints, setHitPoints] = useState(initial?.hit_points?.toString());
   const [ammoEdits, setAmmoEdits] = useState<Record<number, string>>({});
   const [crewEdits, setCrewEdits] = useState<Record<number, number>>({});
   const crewLabelId = useId();
   const [options, setOptions] = useState<CustomBattleLoadoutOptions>();
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const account = ownedVehicle?.account;
+  const inventory = ownedVehicle?.inventory;
   useEffect(() => {
     const controller = new AbortController();
-    getBattleLoadout(initial.vehicle, controller.signal).then(
+    const request =
+      account !== undefined && inventory !== undefined
+        ? getOwnedBattleLoadout(account, inventory, controller.signal)
+        : getBattleLoadout(catalogVehicle ?? 0, controller.signal);
+    request.then(
       (result) => {
         if (!controller.signal.aborted) setOptions(result);
       },
@@ -68,33 +88,103 @@ export function BattleLoadoutConfiguration({
       },
     );
     return () => controller.abort();
-  }, [attempt, initial.vehicle]);
+  }, [attempt, account, catalogVehicle, inventory]);
 
-  const initialAmmo = new Map(initial.ammunition);
-  const ammunition = (options?.ammunition ?? []).map(({ id, name, default_count }) => ({
+  const current = options?.current;
+  const vehicle = catalogVehicle ?? current?.vehicle;
+  const baseModules = { ...options?.stock_modules, ...current?.modules };
+  const modules = { ...baseModules, ...loadout?.modules };
+  const weapons = options?.weapons ?? [];
+  const weapon = weapons.find(
+    ({ turret, gun }) => turret === modules.Turret && gun === modules.Gun,
+  );
+  const gunIds = new Set(
+    weapons.filter(({ turret }) => turret === modules.Turret).map(({ gun }) => gun),
+  );
+  const turretIds = new Set(weapons.map(({ turret }) => turret));
+  const suspension = options?.modules.Chassis?.find(({ id }) => id === modules.Chassis);
+  const weight = moduleFields.reduce(
+    (mass, [kind]) =>
+      Math.fround(
+        mass + (options?.modules[kind]?.find(({ id }) => id === modules[kind])?.weight ?? 0),
+      ),
+    options?.hull_weight ?? 0,
+  );
+  const validWeight =
+    !Object.keys(loadout?.modules ?? {}).length ||
+    suspension?.max_weight == null ||
+    weight <= suspension.max_weight;
+  const capacity = weapon?.ammunition_capacity ?? options?.ammunition_capacity ?? 0;
+  const shells = weapon?.ammunition ?? options?.ammunition ?? [];
+  const currentAmmo = loadout?.ammunition ?? current?.ammunition;
+  const compatibleAmmo =
+    currentAmmo?.every(([id]) => shells.some((shell) => shell.id === id)) &&
+    currentAmmo.reduce((sum, [, count]) => sum + count, 0) <= capacity;
+  const startingAmmo = new Map(compatibleAmmo ? currentAmmo : undefined);
+  const ammunition = shells.map(({ id, name, default_count }) => ({
     id,
     name,
-    value: ammoEdits[id] ?? String(initial.ammunition ? (initialAmmo.get(id) ?? 0) : default_count),
+    value: ammoEdits[id] ?? String(compatibleAmmo ? (startingAmmo.get(id) ?? 0) : default_count),
   }));
   const crew = (options?.crew ?? []).map((seat, slot) => ({
     ...seat,
-    efficiency: crewEdits[slot] ?? initial.crew_perk_efficiency?.[slot] ?? 100,
+    selected: loadout?.crew_perks?.[slot] ?? current?.crew_perks?.[slot] ?? [],
+    efficiency:
+      crewEdits[slot] ??
+      loadout?.crew_perk_efficiency?.[slot] ??
+      current?.crew_perk_efficiency?.[slot] ??
+      100,
   }));
-  const capacity = options?.ammunition_capacity ?? 0;
+  const equipment = loadout?.equipment ?? current?.equipment ?? [];
+  const consumables = loadout?.consumables ?? current?.consumables ?? [];
+  const baseHitPoints =
+    modules.Turret === baseModules.Turret && !loadout?.equipment
+      ? (options?.equipped_hit_points ?? weapon?.hit_points ?? options?.stock_hit_points)
+      : (weapon?.hit_points ?? options?.stock_hit_points);
   const rounds = ammunition.reduce((sum, { value }) => sum + Number(value), 0);
-  const validHealth = hitPoints === "" || validInteger(hitPoints, 1, maxHitPoints);
+  const validHealth = !hitPoints || validInteger(hitPoints, 1, maxHitPoints);
   const validAmmo = ammunition.every(({ value }) => validInteger(value, 0, capacity));
 
+  function changeModule(kind: BattleModuleKind, value: number | "") {
+    if (vehicle === undefined || value === "") return;
+    const next = { ...loadout?.modules, [kind]: value };
+    if (kind === "Turret") {
+      const choices = weapons.filter(({ turret }) => turret === value);
+      if (!choices.some(({ gun }) => gun === modules.Gun)) {
+        const compatible = choices.find(({ gun }) => gun === baseModules.Gun) ?? choices[0];
+        if (compatible) next.Gun = compatible.gun;
+      }
+    }
+    for (const [key] of moduleFields) {
+      if (next[key] === baseModules[key]) delete next[key];
+    }
+    const weaponChanged = kind === "Gun" || kind === "Turret";
+    if (weaponChanged) setAmmoEdits({});
+    setLoadout({
+      ...loadout,
+      vehicle,
+      modules: next,
+      ammunition: weaponChanged ? undefined : loadout?.ammunition,
+    });
+  }
+
   function applyLoadout() {
+    if (vehicle === undefined) return;
+    const editedAmmo = ammoEdits && Object.keys(ammoEdits).length > 0;
     onSave({
       ...loadout,
-      hit_points: hitPoints === "" ? undefined : Number(hitPoints),
-      ammunition: Object.keys(ammoEdits).length
+      vehicle,
+      hit_points: hitPoints ? Number(hitPoints) : undefined,
+      ammunition: editedAmmo
         ? ammunition.map(({ id, value }) => [id, Number(value)])
-        : initial.ammunition,
+        : loadout?.ammunition,
       crew_perk_efficiency: Object.keys(crewEdits).length
-        ? crew.map(({ efficiency }) => efficiency)
-        : initial.crew_perk_efficiency,
+        ? crew.map(({ efficiency }, slot) =>
+            crewEdits[slot] === undefined
+              ? (loadout?.crew_perk_efficiency?.[slot] ?? null)
+              : efficiency,
+          )
+        : loadout?.crew_perk_efficiency,
     });
   }
 
@@ -124,15 +214,37 @@ export function BattleLoadoutConfiguration({
         )}
         {options && (
           <Stack spacing={2} sx={{ pt: 1 }}>
+            <Typography component="h3" variant="subtitle1">
+              Modules
+            </Typography>
+            {moduleFields.map(([kind, label]) => {
+              const choices = options.modules[kind]?.filter(({ id }) =>
+                kind === "Gun" ? gunIds.has(id) : kind === "Turret" ? turretIds.has(id) : true,
+              );
+              return choices?.length ? (
+                <ChoiceSelect
+                  key={kind}
+                  label={label}
+                  value={modules[kind] ?? ""}
+                  choices={choices}
+                  onChange={(id) => changeModule(kind, id)}
+                />
+              ) : null;
+            })}
+            {!validWeight && (
+              <Alert severity="error">
+                The selected modules exceed the suspension’s load capacity.
+              </Alert>
+            )}
             <TextField
               label="Hit points"
               type="number"
-              value={hitPoints}
-              placeholder={String(options.stock_hit_points)}
+              value={hitPoints ?? (ownedVehicle ? (baseHitPoints?.toString() ?? "") : "")}
+              placeholder={baseHitPoints?.toString()}
               error={!validHealth}
               helperText={
                 validHealth
-                  ? `Stock HP: ${options.stock_hit_points}. Leave blank to use equipped HP.`
+                  ? `Current HP: ${baseHitPoints}. Leave blank to use equipped HP.`
                   : "Enter a whole number from 1 to 32,767."
               }
               slotProps={{ htmlInput: { min: 1, max: maxHitPoints, step: 1 } }}
@@ -171,14 +283,16 @@ export function BattleLoadoutConfiguration({
                 key={slot}
                 label={`Equipment slot ${slot + 1}`}
                 placeholder="Empty"
-                value={loadout.equipment[slot] || ""}
+                value={equipment[slot] || ""}
                 choices={options.equipment.filter(
-                  ({ id }) => loadout.equipment[slot] === id || !loadout.equipment.includes(id),
+                  ({ id }) => equipment[slot] === id || !equipment.includes(id),
                 )}
                 onChange={(id) =>
+                  vehicle !== undefined &&
                   setLoadout({
                     ...loadout,
-                    equipment: replaceSlot(loadout.equipment, slot, id || 0),
+                    vehicle,
+                    equipment: replaceSlot(equipment, slot, id || 0),
                   })
                 }
               />
@@ -193,14 +307,16 @@ export function BattleLoadoutConfiguration({
                 key={slot}
                 label={`Consumable slot ${slot + 1}`}
                 placeholder="Empty"
-                value={loadout.consumables[slot] || ""}
+                value={consumables[slot] || ""}
                 choices={options.consumables.filter(
-                  ({ id }) => loadout.consumables[slot] === id || !loadout.consumables.includes(id),
+                  ({ id }) => consumables[slot] === id || !consumables.includes(id),
                 )}
                 onChange={(id) =>
+                  vehicle !== undefined &&
                   setLoadout({
                     ...loadout,
-                    consumables: replaceSlot(loadout.consumables, slot, id || 0),
+                    vehicle,
+                    consumables: replaceSlot(consumables, slot, id || 0),
                   })
                 }
               />
@@ -211,7 +327,7 @@ export function BattleLoadoutConfiguration({
             <Typography variant="body2" color="text.secondary">
               Perk effects scale with each crew member’s perk efficiency.
             </Typography>
-            {crew.map(({ name: role, perks, efficiency }, slot) => (
+            {crew.map(({ name: role, perks, efficiency, selected }, slot) => (
               <Fragment key={slot}>
                 <Stack>
                   <Stack direction="row" justifyContent="space-between" spacing={2}>
@@ -241,18 +357,16 @@ export function BattleLoadoutConfiguration({
                   options={perks}
                   getOptionLabel={({ name }) => name}
                   getOptionKey={({ id }) => id}
-                  value={perks.filter(({ id }) => loadout.crew_perks[slot]?.includes(id))}
-                  getOptionDisabled={({ id }) => {
-                    const selected = loadout.crew_perks[slot] ?? [];
-                    return selected.length >= 6 && !selected.includes(id);
-                  }}
-                  onChange={(_, selected) => {
+                  value={selected.flatMap((id) => perks.filter((perk) => perk.id === id))}
+                  getOptionDisabled={({ id }) => selected.length >= 6 && !selected.includes(id)}
+                  onChange={(_, picks) => {
+                    if (vehicle === undefined) return;
                     const crewPerks = options.crew.map((_, index) =>
                       index === slot
-                        ? selected.map(({ id }) => id)
-                        : (loadout.crew_perks[index] ?? []),
+                        ? picks.map(({ id }) => id)
+                        : (loadout?.crew_perks?.[index] ?? null),
                     );
-                    setLoadout({ ...loadout, crew_perks: crewPerks });
+                    setLoadout({ ...loadout, vehicle, crew_perks: crewPerks });
                   }}
                   renderInput={(params) => (
                     <TextField {...params} label={`${role} perks (seat ${slot + 1})`} />
@@ -267,7 +381,9 @@ export function BattleLoadoutConfiguration({
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant="contained"
-          disabled={!options || !validHealth || !validAmmo || rounds > capacity}
+          disabled={
+            !options || !weapon || !validWeight || !validHealth || !validAmmo || rounds > capacity
+          }
           onClick={applyLoadout}
         >
           Apply loadout

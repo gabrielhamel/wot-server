@@ -13,7 +13,7 @@ with live game sessions. It authenticates dashboard Store requests and delegates
 checkout to the same context. The Battles page collects map, duration, teams
 and vehicles. Player Administration requests available players and launches
 through the Player Sessions contract. The shared tank configuration form
-uses Accounts options for custom player tanks and stationary dummies.
+uses Accounts options for owned tanks, custom player tanks and stationary dummies.
 
 | Layer | Responsibilities |
 | --- | --- |

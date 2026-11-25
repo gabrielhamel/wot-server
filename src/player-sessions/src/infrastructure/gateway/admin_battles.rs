@@ -47,6 +47,24 @@ impl Gateway {
                     let _ = reply.send(self.admin_battle_options());
                 }
             }),
+            BattleRequest::OwnedLoadout(span, account_id, inventory_id, reply) => {
+                span.in_scope(|| {
+                    if !reply.is_closed() {
+                        let result =
+                            self.selected_admin_session(account_id)
+                                .and_then(|(_, session)| {
+                                    self.catalog
+                                        .owned_battle_loadout_options(
+                                            &session.account.snapshot,
+                                            inventory_id,
+                                        )
+                                        .map_err(projection_failed)?
+                                        .map_err(AdminBattleError::VehicleUnavailable)
+                                });
+                        let _ = reply.send(result);
+                    }
+                })
+            }
             BattleRequest::Launch(span, setup, reply) => span.in_scope(|| {
                 if reply.is_closed() {
                     return;
@@ -60,6 +78,11 @@ impl Gateway {
                     "input.dummies.count" = setup.dummies.len(),
                     "input.players.custom_loadout_count" =
                         setup.players.iter().filter(|p| p.loadout.is_some()).count(),
+                    "input.players.owned_override_count" = setup
+                        .players
+                        .iter()
+                        .filter(|p| p.owned_overrides.is_some())
+                        .count(),
                     "input.battle.parameters.count" = setup.parameters.len(),
                     "output.battle.id" = tracing::field::Empty,
                     "output.players.handoff_count" = tracing::field::Empty,
@@ -163,11 +186,10 @@ impl Gateway {
         setup: AdminBattleSetup,
     ) -> Result<(u32, Vec<SelectedPlayer>), AdminBattleError> {
         use AdminBattleError::*;
-        if setup
-            .players
-            .iter()
-            .any(|player| player.inventory_id.is_some() && player.loadout.is_some())
-        {
+        if setup.players.iter().any(|player| {
+            (player.inventory_id.is_some() && player.loadout.is_some())
+                || (player.inventory_id.is_none() && player.owned_overrides.is_some())
+        }) {
             return Err(InvalidPlayerLoadout);
         }
         let parameters =
@@ -239,19 +261,26 @@ impl Gateway {
         Ok((id, players))
     }
 
+    fn selected_admin_session(
+        &self,
+        account_id: i64,
+    ) -> Result<(ClientKey, &Session), AdminBattleError> {
+        self.sessions
+            .iter()
+            .find(|(_, session)| {
+                session.account.snapshot.id() == account_id
+                    && self.admin_battle_unavailable_reason(session).is_none()
+            })
+            .map(|(&client, session)| (client, session))
+            .ok_or(AdminBattleError::PlayerUnavailable)
+    }
+
     fn select_admin_battle_player(
         &self,
         player: AdminBattlePlayer,
     ) -> Result<(SelectedPlayer, BattleParticipant), AdminBattleError> {
         use AdminBattleError::PlayerUnavailable;
-        let (&client, session) = self
-            .sessions
-            .iter()
-            .find(|(_, session)| {
-                session.account.snapshot.id() == player.account_id
-                    && self.admin_battle_unavailable_reason(session).is_none()
-            })
-            .ok_or(PlayerUnavailable)?;
+        let (client, session) = self.selected_admin_session(player.account_id)?;
         let entity = session.entity.ok_or(PlayerUnavailable)?;
         let account = &session.account.snapshot;
         let (vehicle, observer) = if let Some(loadout) = &player.loadout {
@@ -264,7 +293,7 @@ impl Gateway {
         } else if let Some(id) = player.inventory_id {
             let owned = self
                 .catalog
-                .admin_battle_vehicle(account, id)
+                .admin_battle_vehicle(account, id, player.owned_overrides.as_ref())
                 .map_err(projection_failed)?
                 .map_err(AdminBattleError::VehicleUnavailable)?;
             (vehicle_loadout(owned), false)

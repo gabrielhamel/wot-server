@@ -360,6 +360,23 @@ export function getBattleLoadout(vehicle: number, signal: AbortSignal) {
   );
 }
 
+export function getOwnedBattleLoadout(account: number, inventory: number, signal: AbortSignal) {
+  return webOperation(
+    owner,
+    "web.admin.owned_battle_loadout",
+    { "user.id": account, "input.inventory_id": inventory },
+    (parent) =>
+      adminRequest<CustomBattleLoadoutOptions>(
+        parent,
+        "/battles/players/{account}/vehicles/{inventory}",
+        {
+          path: `/battles/players/${account}/vehicles/${inventory}`,
+          signal,
+        },
+      ),
+  );
+}
+
 export function startBattle(body: AdminBattleSetup) {
   return webOperation(
     owner,
@@ -370,6 +387,9 @@ export function startBattle(body: AdminBattleSetup) {
       "input.players.count": body.players.length,
       "input.dummies.count": body.dummies.length,
       "input.players.custom_loadout_count": body.players.filter(({ loadout }) => loadout).length,
+      "input.players.owned_override_count": body.players.filter(
+        ({ owned_overrides }) => owned_overrides,
+      ).length,
       "input.battle.parameters.count": Object.keys(body.parameters ?? {}).length,
     },
     async (parent, span) => {

@@ -374,6 +374,40 @@ fn insert_inscription(
     true
 }
 
+pub(super) fn battle_outfits(
+    state: &crate::CosmeticState,
+    inventory_id: i64,
+    locked_style: Option<u16>,
+) -> wot_shared_kernel::BattleOutfits {
+    let seasons = state.outfits.get(&inventory_id);
+    let common = seasons.and_then(|outfits| outfits.get(&OutfitSeason::Common));
+    let appearance = |season| {
+        if let Some(style) = locked_style {
+            return encode_style(style);
+        }
+        let mut layout = common.cloned().unwrap_or_default();
+        if let Some(seasonal) = seasons.and_then(|outfits| outfits.get(&season)) {
+            layout.camouflage.clone_from(&seasonal.camouflage);
+            layout.paints.clone_from(&seasonal.paints);
+            layout.inscriptions.clone_from(&seasonal.inscriptions);
+            layout.effect = seasonal.effect;
+            layout
+                .projection_decals
+                .clone_from(&seasonal.projection_decals);
+        }
+        if layout.is_empty() {
+            Vec::new()
+        } else {
+            encode(&layout)
+        }
+    };
+    wot_shared_kernel::BattleOutfits {
+        winter: appearance(OutfitSeason::Winter),
+        summer: appearance(OutfitSeason::Summer),
+        desert: appearance(OutfitSeason::Desert),
+    }
+}
+
 pub(super) fn encode_style(style: u16) -> Vec<u8> {
     encode(&VehicleOutfit {
         style: Some(style),
@@ -577,6 +611,34 @@ mod tests {
         );
         assert_eq!(decode(&encode(&outfit), None), Some(outfit));
         assert!(decode(&[4, 32, 4], None).is_none());
+    }
+
+    #[test]
+    fn battle_outfit_combines_common_style_and_arena_season() {
+        let mut cosmetics = crate::CosmeticState::default();
+        let common = VehicleOutfit {
+            style: Some(111),
+            ..Default::default()
+        };
+        let summer = VehicleOutfit {
+            paints: [(PaintRegion::Hull, Paint { id: 18, units: 1 })].into(),
+            ..Default::default()
+        };
+        cosmetics.outfits.insert(
+            3,
+            [
+                (OutfitSeason::Common, common.clone()),
+                (OutfitSeason::Summer, summer.clone()),
+            ]
+            .into(),
+        );
+        let outfits = battle_outfits(&cosmetics, 3, None);
+        let selected = decode(&outfits.summer, None).unwrap();
+        assert_eq!(selected.style, common.style);
+        assert_eq!(selected.paints, summer.paints);
+        assert_eq!(decode(&outfits.winter, None).unwrap(), common);
+        let locked = battle_outfits(&cosmetics, 3, Some(986));
+        assert_eq!(locked.summer, encode_style(986));
     }
 
     #[test]

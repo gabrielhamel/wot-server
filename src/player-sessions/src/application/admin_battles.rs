@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
-use wot_accounts::contract::{BattleVehicleChoice, BattleVehicleUnavailable, CustomBattleLoadout};
+use wot_accounts::contract::{
+    BattleVehicleChoice, BattleVehicleUnavailable, CustomBattleLoadout, CustomBattleLoadoutOptions,
+};
 use wot_battles::contract::BattleParameterDefinition;
 
 #[derive(Clone)]
@@ -9,6 +11,12 @@ pub struct AdminBattles(mpsc::Sender<BattleRequest>);
 
 pub(crate) enum BattleRequest {
     Options(tracing::Span, oneshot::Sender<BattleOptions>),
+    OwnedLoadout(
+        tracing::Span,
+        i64,
+        i64,
+        oneshot::Sender<Result<CustomBattleLoadoutOptions, AdminBattleError>>,
+    ),
     Launch(
         tracing::Span,
         AdminBattleSetup,
@@ -62,6 +70,7 @@ pub struct AdminBattlePlayer {
     pub team: u8,
     pub inventory_id: Option<i64>,
     pub loadout: Option<CustomBattleLoadout>,
+    pub owned_overrides: Option<CustomBattleLoadout>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,7 +92,9 @@ pub enum AdminBattleError {
         "A selected player or vehicle is no longer available. Refresh the player list and try again."
     )]
     PlayerUnavailable,
-    #[error("Select either an owned vehicle or a compatible custom loadout for each player.")]
+    #[error(
+        "Select an owned vehicle with compatible edits, a custom tank, or Observer for each player."
+    )]
     InvalidPlayerLoadout,
     #[error("{0}. Refresh the player list and try again.")]
     VehicleUnavailable(BattleVehicleUnavailable),
@@ -122,6 +133,23 @@ impl AdminBattles {
             .try_send(BattleRequest::Options(tracing::Span::current(), reply))
             .map_err(|_| AdminBattleError::Unavailable)?;
         response.await.map_err(|_| AdminBattleError::Unavailable)
+    }
+
+    pub async fn owned_loadout(
+        &self,
+        account_id: i64,
+        inventory_id: i64,
+    ) -> Result<CustomBattleLoadoutOptions, AdminBattleError> {
+        let (reply, response) = oneshot::channel();
+        self.0
+            .try_send(BattleRequest::OwnedLoadout(
+                tracing::Span::current(),
+                account_id,
+                inventory_id,
+                reply,
+            ))
+            .map_err(|_| AdminBattleError::Unavailable)?;
+        response.await.map_err(|_| AdminBattleError::Unavailable)?
     }
 
     pub async fn start(

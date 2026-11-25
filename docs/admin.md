@@ -134,9 +134,14 @@ invalid. **Reset parameters to defaults** clears all overrides. Edits apply to
 the battle started from this setup. Training launched from the native room
 uses server defaults.
 
-A player's seat starts with their owned vehicles. Select **Choose custom
-tank** to pick a vehicle from the shared battle catalog, including tanks the
-player does not own. Use **Customize tank** to open the same loadout form used
+A player's seat starts with their owned vehicles. Select **Customize tank**
+to open the selected vehicle's equipped modules, equipment, consumables,
+crew perks, perk efficiency, hit points and ammunition. Edits apply to one
+battle. The arena uses the player's saved style and cosmetics for the map
+season and their other garage settings.
+
+Select **Choose custom tank** to pick a vehicle from the shared battle catalog,
+including tanks the player does not own. Use **Customize tank** to open the same loadout form used
 by dummies. The player controls the configured tank for this battle and
 returns to their existing garage afterward. **Show owned tanks** restores
 the previous owned vehicle or Observer selection and keeps the custom draft
@@ -144,7 +149,7 @@ available for this setup.
 
 Use **Add dummy** to fill either team with stationary targets. Each dummy starts
 with stock modules, default ammunition and 100% perk efficiency in every crew
-seat. Open **Customize Dummy** to select equipment, consumables and fully
+seat. Custom player tanks start with the same defaults. Open **Customize Dummy** to select equipment, consumables and fully
 trained perks, then use each seat’s slider to set perk efficiency from 0% to
 100%. The simulator scales supported perk effects by that percentage. A crew
 member at 50% contributes half the effective training for their selected perks.
@@ -152,8 +157,11 @@ member at 50% contributes half the effective training for their selected perks.
 
 Set **Hit points** from 1 to 32,767 to override both starting and maximum
 HP. Leave it blank to use equipped HP, including any gain from Improved
-Hardening. The first compatible shell type fills the rack by default. Set the
-number of rounds for each shell type up to the stock gun's total capacity.
+Hardening. The turret determines compatible guns and base HP. The suspension
+limits the total installed module weight. The first compatible shell type fills
+a custom tank's rack by default. The selected turret and gun determine ammunition
+types and capacity. An owned loadout keeps its ammunition when the new weapon
+can carry it and uses the new weapon's default when it cannot.
 Set all counts to zero to test a dummy with an empty ammo rack. Dummies remain
 in place when pushed, take hits, and have no player controls to fire or activate
 a consumable.
@@ -219,7 +227,8 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | `POST /api/admin/players/{id}/role` | Accepts `{ "role": "admin" }` or `{ "role": "player" }` and returns `204 No Content`. Self-role changes return `403 Forbidden`. |
 | `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks, an `attachments` map from item ID to total owned copies, and a `depot` map from grantable crew book, Bounty Equipment and Experimental Equipment IDs to depot counts. The `styles_2d`, `styles_3d`, `crew_skins` and `special_recruits` maps track owned copies. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
 | `GET /api/admin/battles` | Returns `maps`, connected `players` and their owned `vehicles`, with `unavailable_reason` for disabled choices, plus `observer_available`, the shared custom vehicle catalog in `dummy_vehicles` and `parameters` with each tunable field’s key, default, bounds and units in its label. |
-| `GET /api/admin/battles/vehicles/{vehicle}` | Returns equipment and consumable slot counts, compatible items, perks by crew seat, `stock_hit_points`, `ammunition_capacity` and compatible `ammunition` entries with default round counts for the catalog vehicle. |
+| `GET /api/admin/battles/vehicles/{vehicle}` | Returns equipment and consumable slot counts, compatible items, perks by crew seat, `stock_hit_points`, `ammunition_capacity` and compatible `ammunition` entries with default round counts, and the stock modules, module choices and turret/gun combinations for the catalog vehicle. |
+| `GET /api/admin/battles/players/{account}/vehicles/{inventory}` | Returns the same loadout options, the connected player's equipped loadout in `current`, and `equipped_hit_points`. |
 | `POST /api/admin/battles` | Accepts `arena_type`, `duration_seconds`, `players`, `dummies` and optional `parameters`. Returns `battle_id` and `players_handed_off` after queuing activation, `400` for an invalid setup, `409` for an unavailable player or owned vehicle, or `503` when the queue is busy. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |
 | `GET /api/admin/crew-books`, `GET /api/admin/improved-equipment`, `GET /api/admin/bounty-equipment`, `GET /api/admin/experimental-equipment` | `200 OK` with grantable depot items containing `id` and `name`. |
@@ -267,22 +276,27 @@ defaults. Unknown keys and values outside the advertised bounds return HTTP
 400. Fields marked `integer` accept whole numbers.
 
 Each player entry contains `account_id` and `team` (1 or 2). Supply an
-`inventory_id` from that player's available vehicles for an owned tank.
-Supply a catalog `loadout` with an omitted or null `inventory_id` for a
+`inventory_id` from that player's available vehicles for an owned tank. An
+optional `owned_overrides` uses the shared loadout format for that inventory
+entry and must name its catalog vehicle. Omitted edits use the live garage
+snapshot. Supply a catalog `loadout` with an omitted or null `inventory_id` for a
 custom tank. With both fields omitted or null, the seat is an Observer when
 `observer_available` is true.
 
 Each dummy entry contains `team` and a `loadout`. Both custom player tanks
 and dummies use the same loadout format with a catalog `vehicle` ID.
-Optional `equipment` and
+Optional `modules` maps module positions to IDs. Omitted positions use stock
+on a custom tank and the installed module on an owned tank. Optional
+`equipment` and
 `consumables` arrays contain item IDs in slot order with `0` for an empty
 slot. Optional `crew_perks` contains one array of perk IDs per crew seat.
 Optional `crew_perk_efficiency` contains whole percentages in crew seat order.
-Omitted seats default to 100. Optional `hit_points` overrides the equipped
+Omitted or null seats use the underlying crew values, including 100%
+efficiency for an unedited custom seat. Optional `hit_points` overrides the equipped
 vehicle's starting and maximum HP. Optional `ammunition` contains pairs of
 shell ID and round count. Omitted shell types in a custom layout carry zero
-rounds. Omit the entire field to fill the stock gun's rack with the first
-compatible shell type.
+rounds. Omit the entire field to keep an owned tank's compatible ammunition
+or to fill a custom tank's rack with the first compatible shell type.
 
 ### Grants
 

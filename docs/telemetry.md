@@ -108,7 +108,10 @@ counts, lowest configured perk efficiency and requested HP. The projection
 records the final HP and loaded rounds. The shared options lookup records
 stock HP, shell type count and ammunition capacity. Custom player projections
 carry the selected account ID. The dashboard launch spans record the number
-of player seats with custom loadouts.
+of player seats with custom loadouts and owned tanks with overrides. A
+separate authenticated lookup traces the selected account and inventory ID
+when prefilling an owned loadout. Accounts records the number of supplied
+module edits and the result of the temporary projection.
 The browser, HTTP handler and gateway record the count of requested battle
 parameter overrides. Arena preparation records the effective loading,
 countdown and results durations and shares the launch trace with native

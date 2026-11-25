@@ -251,7 +251,10 @@ impl ArenaWire {
                 ),
                 (
                     "outfit",
-                    bytes(field(public_info, "outfit")?, &player.vehicle.outfit),
+                    bytes(
+                        field(public_info, "outfit")?,
+                        player.vehicle.outfits.for_season(player.season),
+                    ),
                 ),
                 ("team", WireValue::UInt8(player.team)),
                 (
@@ -716,7 +719,7 @@ mod tests {
         let wire = ArenaWire::bind(dispatch.clone(), &resources).unwrap();
         let mut player = Entrant::sample();
         // CustomizationOutfit with the First Warrior style marker.
-        player.vehicle.outfit = vec![4, 16, 0xda, 7];
+        player.vehicle.outfits.summer = vec![4, 16, 0xda, 7];
         let vehicle = wire.vehicle(&player).unwrap();
         let schema = dispatch.entity_from_id(vehicle.type_id).unwrap();
         let mut properties = &vehicle.properties[1..];
@@ -728,7 +731,7 @@ mod tests {
         };
         assert_eq!(
             info["outfit"],
-            WireValue::String(StringValue::Raw(player.vehicle.outfit))
+            WireValue::String(StringValue::Raw(player.vehicle.outfits.summer))
         );
     }
 }

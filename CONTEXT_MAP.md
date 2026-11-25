@@ -14,7 +14,8 @@ The [web workspace](src/server-runtime/src/infrastructure/web/package.json) bund
 ![wot-server context map](docs/context-maps/generated/wot-server.svg)
 
 [Shared Kernel](src/shared-kernel/README.md) supplies the account ID model to
-Player Administration, Player Sessions, and Social.
+Player Administration, Player Sessions, and Social. Accounts and Battles
+share the equipped vehicle performance and seasonal outfit types.
 [Platform](src/shared-infrastructure/README.md) supplies shared codecs to Accounts and
 Player Sessions, shared Mercury transport to Player Sessions and Battles, bounded HTTP serving to the shared web listener, and
 tracing adapters to runtime infrastructure and server composition. The admin and Store browser views use Platform's TypeScript HTTP transport, telemetry and theme. Both support boundaries are independent of their consumers.

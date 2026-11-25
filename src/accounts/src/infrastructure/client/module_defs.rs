@@ -27,6 +27,7 @@ const METRIC_HORSEPOWER_TO_WATTS: f32 = 735.5;
 pub(super) struct VehicleModules {
     pub rules: ModuleRules,
     pub ammunition: BTreeMap<(i32, i32), AmmunitionRules>,
+    pub(super) module_name_keys: BTreeMap<i32, String>,
     pub(super) shell_name_keys: BTreeMap<i32, String>,
     exterior_slots: BTreeMap<(i32, i32), VehicleCosmeticSlots>,
     chassis_exteriors: BTreeMap<i32, ChassisExterior>,
@@ -306,6 +307,7 @@ impl VehicleModules {
             .filter(|position| position.is_finite());
         let mut gun_performance = BTreeMap::new();
         let mut training_health = BTreeMap::new();
+        let mut module_name_keys = BTreeMap::new();
         let mut shell_name_keys = BTreeMap::new();
         let shells = item_defs::read_xml(fs, &format!("{dir}/components/shells.xml"))?;
         for (kind, section) in [
@@ -329,6 +331,12 @@ impl VehicleModules {
                     .and_then(|xml| xml.get_child_element(name));
                 let local = local.as_element();
                 let base = shared.or(local).context("Missing module definition")?;
+                if let Some(key) = local
+                    .and_then(|l| l.get_child_string("userString"))
+                    .or_else(|| base.get_child_string("userString"))
+                {
+                    module_name_keys.insert(id, key.to_owned());
+                }
                 let number = |key| {
                     local
                         .and_then(|l| l.get_child_float(key))
@@ -433,6 +441,12 @@ impl VehicleModules {
                             .and_then(|xml| xml.get_child_element(name));
                         let gun_base =
                             gun_shared.or(gun_local).context("Missing gun definition")?;
+                        if let Some(key) = gun_local
+                            .and_then(|l| l.get_child_string("userString"))
+                            .or_else(|| gun_base.get_child_string("userString"))
+                        {
+                            module_name_keys.insert(gun, key.to_owned());
+                        }
                         if let Some((mesh, offset)) =
                             armor.mesh(fs, gun_local, gun_base)?.zip(gun_position)
                         {
@@ -673,6 +687,7 @@ impl VehicleModules {
         Ok(Self {
             rules,
             ammunition,
+            module_name_keys,
             shell_name_keys,
             exterior_slots,
             chassis_exteriors,

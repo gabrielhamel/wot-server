@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
 };
 use serde::Serialize;
-use wot_accounts::contract::CustomBattleLoadoutOptions;
+use wot_accounts::contract::{BattleVehicleUnavailable, CustomBattleLoadoutOptions};
 use wot_player_sessions::contract::{
     AdminBattleError, AdminBattleSetup, AdminBattles, BattleLaunchReceipt, BattleOptions,
 };
@@ -29,7 +29,10 @@ fn battle_error(error: AdminBattleError) -> ApiError {
         AdminBattleError::InvalidSetup
         | AdminBattleError::InvalidParameters
         | AdminBattleError::InvalidPlayerLoadout
-        | AdminBattleError::InvalidDummy => StatusCode::BAD_REQUEST,
+        | AdminBattleError::InvalidDummy
+        | AdminBattleError::VehicleUnavailable(BattleVehicleUnavailable::InvalidLoadout) => {
+            StatusCode::BAD_REQUEST
+        }
         AdminBattleError::PlayerUnavailable | AdminBattleError::VehicleUnavailable(_) => {
             StatusCode::CONFLICT
         }
@@ -98,6 +101,22 @@ pub(super) async fn loadout(
     Ok(Json(options))
 }
 
+#[tracing::instrument(name = "admin.owned_battle_loadout", skip_all, fields(
+    ddd.bounded_context.name = "player_administration", user.id = account, input.inventory_id = inventory,
+    output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
+), err)]
+pub(super) async fn owned_loadout(
+    State(state): State<AdminState>,
+    Path((account, inventory)): Path<(i64, i64)>,
+) -> Result<Json<CustomBattleLoadoutOptions>, ApiError> {
+    let options = service(&state)?
+        .owned_loadout(account, inventory)
+        .await
+        .map_err(battle_error)?;
+    tracing::Span::current().record("output.outcome", "loaded");
+    Ok(Json(options))
+}
+
 fn loadout_error(error: impl std::fmt::Display) -> ApiError {
     let span = tracing::Span::current();
     span.record("output.outcome", "loadout_failed");
@@ -112,7 +131,7 @@ fn loadout_error(error: impl std::fmt::Display) -> ApiError {
 #[tracing::instrument(name = "admin.start_battle", skip_all, fields(
     ddd.bounded_context.name = "player_administration", input.arena_type_id = tracing::field::Empty,
     input.round_length.seconds = tracing::field::Empty, input.players.count = tracing::field::Empty,
-    input.dummies.count = tracing::field::Empty, input.players.custom_loadout_count = tracing::field::Empty, input.battle.parameters.count = tracing::field::Empty, output.battle.id = tracing::field::Empty,
+    input.dummies.count = tracing::field::Empty, input.players.custom_loadout_count = tracing::field::Empty, input.players.owned_override_count = tracing::field::Empty, input.battle.parameters.count = tracing::field::Empty, output.battle.id = tracing::field::Empty,
     output.players.handoff_count = tracing::field::Empty,
     output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
 ), err)]
@@ -135,6 +154,14 @@ pub(super) async fn start(
             .players
             .iter()
             .filter(|player| player.loadout.is_some())
+            .count(),
+    );
+    span.record(
+        "input.players.owned_override_count",
+        setup
+            .players
+            .iter()
+            .filter(|p| p.owned_overrides.is_some())
             .count(),
     );
     span.record("input.battle.parameters.count", setup.parameters.len());

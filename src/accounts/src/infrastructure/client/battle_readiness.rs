@@ -1,7 +1,7 @@
 use super::GarageCatalog;
 use crate::{
     AccountSnapshot, OwnedVehicle,
-    contract::{BattleVehicle, BattleVehicleChoice, BattleVehicleUnavailable},
+    contract::{BattleVehicle, BattleVehicleChoice, BattleVehicleUnavailable, CustomBattleLoadout},
 };
 use std::collections::BTreeSet;
 
@@ -33,12 +33,14 @@ impl GarageCatalog {
 
     #[tracing::instrument(name = "accounts.admin_battle_vehicle", skip_all, fields(
         ddd.bounded_context.name = "accounts", user.id = account.id, input.inventory_id = inventory_id,
+        input.loadout.edited = edits.is_some(),
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
     ), err)]
     pub(crate) fn admin_battle_vehicle(
         &self,
         account: &AccountSnapshot,
         inventory_id: i64,
+        edits: Option<&CustomBattleLoadout>,
     ) -> anyhow::Result<Result<BattleVehicle, BattleVehicleUnavailable>> {
         let span = tracing::Span::current();
         let readiness = account
@@ -50,14 +52,25 @@ impl GarageCatalog {
                 self.check_battle_vehicle(owned, occupied_crew_seats(account).as_ref())
             });
         let result = match readiness {
-            Ok(()) => match self.battle_vehicle(account, inventory_id) {
-                Ok(vehicle) => vehicle.ok_or(BattleVehicleUnavailable::Unavailable),
-                Err(error) => {
-                    span.record("output.outcome", "projection_failed");
-                    span.record("otel.status_code", "ERROR");
-                    return Err(error);
+            Ok(()) => {
+                let projected = if let Some(edits) = edits {
+                    self.battle_vehicle_with_edits(account, inventory_id, edits, false)
+                } else {
+                    self.battle_vehicle(account, inventory_id)
+                };
+                match projected {
+                    Ok(vehicle) => vehicle.ok_or(if edits.is_some() {
+                        BattleVehicleUnavailable::InvalidLoadout
+                    } else {
+                        BattleVehicleUnavailable::Unavailable
+                    }),
+                    Err(error) => {
+                        span.record("output.outcome", "projection_failed");
+                        span.record("otel.status_code", "ERROR");
+                        return Err(error);
+                    }
                 }
-            },
+            }
             Err(reason) => Err(reason),
         };
         span.record(

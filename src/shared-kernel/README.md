@@ -4,15 +4,18 @@ The `wot-shared-kernel` library publishes the shared Rust domain types.
 
 Shared Kernel owns the account identifier rule used by Player Administration,
 Player Sessions and Social. Accounts owns the lifecycle of player accounts
-and assigns their identifiers. Shared Kernel also defines the equipped vehicle performance that Accounts projects, Player Sessions passes on launch, and Battles simulates.
+and assigns their identifiers. Shared Kernel also defines the equipped vehicle
+performance and seasonal outfits that Accounts projects and Player Sessions
+passes to Battles at launch.
 
 | Layer | Responsibility |
 | --- | --- |
-| `domain/` | Defines `AccountId` and validates it independently of transport or storage. Defines the equipped vehicle movement, traverse and loading parameters. |
+| `domain/` | Defines `AccountId` and validates it independently of transport or storage. Defines the equipped vehicle performance and encoded outfits by arena season. |
 
 | Term | Meaning |
 | --- | --- |
 | Account ID | Positive signed 64-bit identifier for one local player account. |
+| Battle outfits | Encoded appearances for an equipped vehicle for winter, summer and desert arenas. |
 | Vehicle performance | Base speed limits in metres per second, traverse rates in radians per second, gun arcs in radians and reload times in seconds for the equipped vehicle. |
 
 Only add a concept when several contexts agree on its meaning and invariants.

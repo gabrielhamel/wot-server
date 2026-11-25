@@ -10,6 +10,7 @@ use opentelemetry::trace::SpanId;
 use serde_json::{Value as Json, json};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     path::Path,
     sync::{
         Arc,
@@ -17,7 +18,8 @@ use std::{
     },
 };
 use wot_accounts::test_support::{
-    self as accounts, Accounts, GarageCatalog, PostgresAccounts, PostgresPlayers,
+    self as accounts, Accounts, CosmeticState, GarageCatalog, OutfitSeason, PostgresAccounts,
+    PostgresPlayers, VehicleAmmunition, VehicleOutfit,
 };
 use wot_player_administration::contract::{DashboardConfig, router};
 use wot_player_sessions::{Gateway, GatewayConfig};
@@ -43,12 +45,17 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     );
     let login_name = format!("{prefix}@example.test");
     let tank = "ussr:R04_T-34".to_owned();
+    let styled_tank = "ussr:R19_IS-3";
     let account = player_fixture::insert_player(
         &repository,
         &login_name,
         "Battle Commander",
         "password",
-        &[tank.clone(), "france:F01_RenaultFT".into()],
+        &[
+            tank.clone(),
+            "france:F01_RenaultFT".into(),
+            styled_tank.into(),
+        ],
     )
     .await
     .unwrap();
@@ -65,6 +72,39 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         .unwrap();
     let catalog =
         Arc::new(GarageCatalog::load(resources.clone(), std::slice::from_ref(&tank)).unwrap());
+    let garage = accounts::garage_queries(catalog.clone());
+    let styled_type = catalog.vehicle_catalog_entry(styled_tank).unwrap().id;
+    let styled_catalog = serde_json::to_value(
+        garage
+            .custom_battle_loadout_options(styled_type)
+            .unwrap()
+            .unwrap(),
+    )
+    .unwrap();
+    let styled_shell = styled_catalog["ammunition"][0]["id"].as_i64().unwrap() as i32;
+    let styled_ammo = VehicleAmmunition {
+        loaded: vec![(styled_shell, 7)],
+    };
+    let mut cosmetics = CosmeticState::default();
+    cosmetics.outfits.insert(
+        3,
+        BTreeMap::from([(
+            OutfitSeason::Common,
+            VehicleOutfit {
+                style: Some(111),
+                ..Default::default()
+            },
+        )]),
+    );
+    sqlx::query("UPDATE accounts.accounts SET progression = jsonb_set(progression, '{cosmetics}', $2) WHERE id = $1")
+        .bind(account)
+        .bind(sqlx::types::Json(&cosmetics))
+        .execute(&repository.connection_pool()).await.unwrap();
+    sqlx::query("UPDATE accounts.owned_vehicles SET ammunition = $2 WHERE account_id = $1 AND inventory_id = 3")
+        .bind(account)
+        .bind(sqlx::types::Json(&styled_ammo))
+        .execute(&repository.connection_pool()).await.unwrap();
+
     let access =
         accounts::player_access(PostgresPlayers::new(&repository, catalog.clone()).unwrap());
     let secret = URL_SAFE_NO_PAD.encode(Sha256::digest(&prefix));
@@ -97,7 +137,6 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     .unwrap();
     let metrics = telemetry_capture::GatewayMetrics::attach(&mut gateway);
     let (login, _) = gateway.addresses().unwrap();
-    let garage = accounts::garage_queries(catalog);
     let api = TowerToHyperService::new(router(
         access,
         accounts::game_accounts(Accounts::new(repository.clone())),
@@ -204,8 +243,13 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             invalid["dummies"][1]["loadout"][field] = value;
             assert_eq!(request("POST", "/battles", &cookie, invalid).0, 400, "{field}");
         }
+        let (dummy_modules, dummy_shell, _) = alternative_gun(&garage, &loadout, dummy);
+        let mut wrong_module = battle.clone();
+        wrong_module["dummies"][1]["loadout"]["modules"] = json!({"Engine": loadout["stock_modules"]["Gun"]});
+        assert_eq!(request("POST", "/battles", &cookie, wrong_module).0, 400);
+        battle["dummies"][1]["loadout"]["modules"] = dummy_modules;
         battle["dummies"][1]["loadout"]["hit_points"] = json!(71);
-        battle["dummies"][1]["loadout"]["ammunition"] = json!([[shell, 0]]);
+        battle["dummies"][1]["loadout"]["ammunition"] = json!([[dummy_shell, 0]]);
         battle["dummies"][1]["loadout"]["crew_perks"] = json!(perks);
         battle["dummies"][1]["loadout"]["crew_perk_efficiency"] = json!(efficiency);
         for parameters in [
@@ -231,9 +275,9 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let (status, custom_options) =
             request("GET", &format!("/battles/vehicles/{custom_tank}"), &cookie, Json::Null);
         assert_eq!(status, 200, "{custom_options}");
-        let custom_shell = custom_options["ammunition"][0]["id"].as_i64().unwrap();
+        let (custom_modules, custom_shell, _) = alternative_gun(&garage, &custom_options, custom_tank);
         let custom_loadout = json!({
-            "vehicle": custom_tank, "hit_points": 987, "ammunition": [[custom_shell, 5]],
+            "vehicle": custom_tank, "modules": custom_modules, "hit_points": 987, "ammunition": [[custom_shell, 5]],
         });
         let mut ambiguous = battle.clone();
         ambiguous["players"][0]["loadout"] = custom_loadout.clone();
@@ -251,7 +295,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(status, 200, "{launched}");
         assert_eq!(launched["players_handed_off"], 1);
         let battle_id = launched["battle_id"].as_u64().unwrap();
-        assert_eq!(request("POST", "/battles", &cookie, battle).0, 409);
+        assert_eq!(request("POST", "/battles", &cookie, battle.clone()).0, 409);
         let (status, busy) = request("GET", "/battles", &cookie, Json::Null);
         assert_eq!(status, 200);
         assert_eq!(busy["players"][0]["unavailable_reason"], "In battle");
@@ -343,6 +387,57 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(status, 200);
         assert!(back_in_garage["players"][0]["unavailable_reason"].is_null());
         assert_eq!(back_in_garage["players"][0]["vehicles"], options["players"][0]["vehicles"]);
+        let owned_path = format!("/battles/players/{account}/vehicles/3");
+        assert_eq!(request("GET", &owned_path, "", Json::Null).0, 401);
+        let (status, owned) = request("GET", &owned_path, &cookie, Json::Null);
+        assert_eq!(status, 200, "{owned}");
+        assert_eq!(owned["current"]["vehicle"], styled_type);
+        assert_eq!(owned["current"]["modules"], owned["stock_modules"]);
+        assert_eq!(owned["current"]["ammunition"], json!([[styled_shell, 7]]));
+        assert!(owned["equipped_hit_points"].as_i64().unwrap() > 0);
+        let (styled_modules, _, styled_descriptor) = alternative_gun(&garage, &owned, i64::from(styled_type));
+        battle["players"][0] = json!({
+            "account_id": account, "team": 1, "inventory_id": 3,
+            "owned_overrides": {"vehicle": styled_type, "modules": styled_modules, "hit_points": 811},
+        });
+        let mut invalid = battle.clone();
+        invalid["players"][0]["owned_overrides"]["vehicle"] = json!(custom_tank);
+        assert_eq!(request("POST", "/battles", &cookie, invalid).0, 400);
+        let (status, owned_battle) = request("POST", "/battles", &cookie, battle);
+        assert_eq!(status, 200, "{owned_battle}");
+        peer.until(&script, |p| p.resets == 3);
+        peer.enable_entities();
+        peer.until(&script, |p| p.arena_roster.is_some());
+        let styled_vehicle = peer.cell.as_ref().unwrap().vehicle_id;
+        let vehicle = peer.arena_entities.iter().find(|entity| entity.entity_id == styled_vehicle).unwrap();
+        let mut properties = vehicle.properties.as_slice();
+        let count = u8::read(&mut properties, &()).unwrap();
+        let mut public = None;
+        for _ in 0..count {
+            let id = u8::read(&mut properties, &()).unwrap();
+            let property = &schema.properties[usize::from(id)];
+            let value = Value::read(&mut properties, &property.ty).unwrap();
+            if &*property.name == "publicInfo" {
+                public = Some(value);
+            }
+        }
+        let Value::Dict(public) = public.unwrap() else { panic!("expected Vehicle public info") };
+        use wot_platform::mercury::script::StringValue::Raw;
+        assert_eq!(public["compDescr"], Value::String(Raw(styled_descriptor)));
+        let Value::String(wot_platform::mercury::script::StringValue::String(outfit)) = &public["outfit"] else {
+            panic!("expected the saved style descriptor");
+        };
+        assert_eq!(outfit.as_bytes(), &[4, 16, 111]);
+        assert_eq!(public["maxHealth"].as_i64(), Some(811));
+        peer.command(&script, "leaveArena", vec![]);
+        peer.until(&script, |p| p.resets == 4);
+        peer.enable_entities();
+        peer.until(&script, |p| p.created && p.shown);
+        peer.clear_resource(617);
+        equipment_flow::full_cache(&mut peer, &script);
+        let (status, unchanged) = request("GET", &owned_path, &cookie, Json::Null);
+        assert_eq!(status, 200, "{unchanged}");
+        assert_eq!(unchanged["current"], owned["current"]);
         peer.command(&script, "doCmdIntArr", vec![
             Value::Int16(683),
             Value::Int16(105),
@@ -358,6 +453,23 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     drop(stop);
     gateway.await.unwrap().unwrap();
 
+    let saved = Accounts::new(repository.clone())
+        .snapshot(account)
+        .await
+        .unwrap();
+    assert_eq!(saved.progression.cosmetics, cosmetics);
+    assert!(!saved.progression.installed.contains_key(&3));
+    assert_eq!(
+        saved
+            .vehicles
+            .iter()
+            .find(|vehicle| vehicle.inventory_id == 3)
+            .unwrap()
+            .ammunition
+            .as_ref(),
+        Some(&styled_ammo)
+    );
+
     let spans = exporter.get_finished_spans().unwrap();
     let get = |span: &opentelemetry_sdk::trace::SpanData, field: &str| {
         span.attributes
@@ -370,8 +482,41 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         .find(|s| {
             s.name == "player_sessions.start_admin_battle"
                 && get(s, "output.outcome").as_deref() == Some("launched")
+                && get(s, "input.players.custom_loadout_count").as_deref() == Some("1")
         })
         .unwrap();
+    let owned_launch = spans
+        .iter()
+        .find(|span| {
+            span.name == "player_sessions.start_admin_battle"
+                && get(span, "input.players.owned_override_count").as_deref() == Some("1")
+                && get(span, "output.outcome").as_deref() == Some("launched")
+        })
+        .unwrap();
+    let readiness = spans
+        .iter()
+        .find(|span| {
+            span.name == "accounts.admin_battle_vehicle"
+                && span.parent_span_id == owned_launch.span_context.span_id()
+                && get(span, "input.loadout.edited").as_deref() == Some("true")
+        })
+        .unwrap();
+    assert!(spans.iter().any(|span| {
+        span.name == "accounts.edit_battle_loadout"
+            && span.parent_span_id == readiness.span_context.span_id()
+            && get(span, "output.vehicle.hit_points").as_deref() == Some("811")
+            && get(span, "output.outcome").as_deref() == Some("prepared")
+    }));
+    let prefill = spans
+        .iter()
+        .find(|span| span.name == "accounts.owned_battle_loadout_options")
+        .unwrap();
+    let prefill_handler = spans
+        .iter()
+        .find(|span| span.span_context.span_id() == prefill.parent_span_id)
+        .unwrap();
+    assert_eq!(prefill_handler.name, "admin.owned_battle_loadout");
+    assert_eq!(get(prefill, "input.inventory_id").as_deref(), Some("3"));
     let handler = spans
         .iter()
         .find(|s| s.span_context.span_id() == launch.parent_span_id)
@@ -452,11 +597,18 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         Some("0")
     );
     let forward_speed = |dummy: &opentelemetry_sdk::trace::SpanData| {
+        let edits = spans
+            .iter()
+            .find(|span| {
+                span.name == "accounts.edit_battle_loadout"
+                    && span.parent_span_id == dummy.span_context.span_id()
+            })
+            .unwrap();
         let vehicle = spans
             .iter()
             .find(|s| {
                 s.name == "accounts.battle_vehicle"
-                    && s.parent_span_id == dummy.span_context.span_id()
+                    && s.parent_span_id == edits.span_context.span_id()
             })
             .unwrap();
         let mobility = spans
@@ -560,4 +712,37 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         .execute(&repository.connection_pool())
         .await
         .unwrap();
+}
+
+fn alternative_gun(
+    garage: &wot_accounts::contract::GarageQueries,
+    options: &Json,
+    vehicle: i64,
+) -> (Json, i64, Vec<u8>) {
+    let stock_gun = &options["stock_modules"]["Gun"];
+    let stock_turret = &options["stock_modules"]["Turret"];
+    for weapon in options["weapons"].as_array().unwrap() {
+        if &weapon["gun"] == stock_gun {
+            continue;
+        }
+        for suspension in options["modules"]["Chassis"].as_array().unwrap() {
+            let mut modules = json!({ "Gun": weapon["gun"] });
+            if &weapon["turret"] != stock_turret {
+                modules["Turret"] = weapon["turret"].clone();
+            }
+            if suspension["id"] != options["stock_modules"]["Chassis"] {
+                modules["Chassis"] = suspension["id"].clone();
+            }
+            let loadout =
+                serde_json::from_value(json!({"vehicle": vehicle, "modules": modules})).unwrap();
+            if let Some(projected) = garage.custom_battle_vehicle(&loadout, None).unwrap() {
+                return (
+                    modules,
+                    weapon["ammunition"][0]["id"].as_i64().unwrap(),
+                    projected.descriptor,
+                );
+            }
+        }
+    }
+    panic!("fixture has no compatible alternative gun");
 }

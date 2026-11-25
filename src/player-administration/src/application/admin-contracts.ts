@@ -120,6 +120,10 @@ export type BattleOptions = {
   parameters: BattleParameterDefinition[];
 };
 
+export type BattleModuleKind = "Chassis" | "Turret" | "Gun" | "Engine" | "FuelTank" | "Radio";
+export type BattleModules = Partial<Record<BattleModuleKind, number>>;
+export type BattleShell = BattleChoice & { default_count: number };
+
 export type CustomBattleLoadoutOptions = {
   equipment_slots: number;
   consumable_slots: number;
@@ -128,17 +132,32 @@ export type CustomBattleLoadoutOptions = {
   crew: { name: string; perks: BattleChoice[] }[];
   stock_hit_points: number;
   ammunition_capacity: number;
-  ammunition: (BattleChoice & { default_count: number })[];
+  ammunition: BattleShell[];
+  stock_modules: BattleModules;
+  modules: Partial<
+    Record<BattleModuleKind, (BattleChoice & { weight: number; max_weight: number | null })[]>
+  >;
+  hull_weight: number;
+  weapons: {
+    turret: number;
+    gun: number;
+    hit_points: number;
+    ammunition_capacity: number;
+    ammunition: BattleShell[];
+  }[];
+  current?: CustomBattleLoadout | null;
+  equipped_hit_points?: number | null;
 };
 
 export type CustomBattleLoadout = {
   vehicle: number;
-  equipment: number[];
-  consumables: number[];
-  crew_perks: number[][];
-  crew_perk_efficiency?: number[];
+  equipment?: number[] | null;
+  consumables?: number[] | null;
+  crew_perks?: (number[] | null)[];
+  crew_perk_efficiency?: (number | null)[];
   hit_points?: number;
   ammunition?: [shell: number, rounds: number][];
+  modules?: BattleModules;
 };
 
 export type AdminBattleSetup = {
@@ -149,6 +168,7 @@ export type AdminBattleSetup = {
     team: number;
     inventory_id: number | null;
     loadout?: CustomBattleLoadout;
+    owned_overrides?: CustomBattleLoadout;
   }[];
   dummies: { team: number; loadout: CustomBattleLoadout }[];
   parameters?: Record<string, number>;

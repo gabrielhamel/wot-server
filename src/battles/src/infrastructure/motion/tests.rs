@@ -33,7 +33,7 @@ fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_comman
     map.spawns[1] = start + forward * 5.001;
     let vehicle = || VehicleLoadout {
         descriptor: vec![1],
-        outfit: Vec::new(),
+        outfits: Default::default(),
         health: 100,
         crew_size: 3,
         ammunition: Vec::new(),

@@ -372,6 +372,7 @@ mod tests {
             battle: Battle {
                 parameters: Default::default(),
                 map: ArenaMap {
+                    season: Default::default(),
                     name: "Test Map".into(),
                     geometry: String::new(),
                     spawns: [Vec2::ZERO; 2],

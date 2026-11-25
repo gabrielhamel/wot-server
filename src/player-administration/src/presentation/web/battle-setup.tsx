@@ -39,9 +39,10 @@ type Player = {
   vehicle: number | "";
   vehicleSource: "owned" | "custom";
   customLoadout: CustomBattleLoadout;
+  ownedEdits: Record<number, CustomBattleLoadout>;
 };
 type Dummy = { key: number; team: number; loadout: CustomBattleLoadout };
-type ConfigureTarget = { kind: "player" | "dummy"; id: number };
+type ConfigureTarget = { kind: "owned" | "custom" | "dummy"; id: number };
 
 function RosterCard({
   title,
@@ -215,11 +216,15 @@ export function BattleSetup() {
           .map(({ key, value }) => [key, Number(value)]),
       );
       const roster: AdminBattleSetup["players"] = players.map(
-        ({ account_id, team, vehicle, vehicleSource, customLoadout }) => ({
+        ({ account_id, team, vehicle, vehicleSource, customLoadout, ownedEdits }) => ({
           account_id,
           team,
           inventory_id: vehicleSource === "custom" || vehicle === OBSERVER ? null : Number(vehicle),
           loadout: vehicleSource === "custom" ? customLoadout : undefined,
+          owned_overrides:
+            vehicleSource === "owned" && vehicle !== "" && vehicle !== OBSERVER
+              ? ownedEdits[vehicle]
+              : undefined,
         }),
       );
       const started = await startBattle({
@@ -242,10 +247,23 @@ export function BattleSetup() {
   const selectedDummyIndex =
     configuring?.kind === "dummy" ? dummies.findIndex(({ key }) => key === configuring.id) : -1;
   const selectedPlayer =
-    configuring?.kind === "player"
+    configuring && configuring.kind !== "dummy"
       ? players.find(({ account_id }) => account_id === configuring.id)
       : undefined;
-  const selectedLoadout = selectedPlayer?.customLoadout ?? dummies[selectedDummyIndex]?.loadout;
+  const ownedVehicle =
+    configuring?.kind === "owned" &&
+    selectedPlayer &&
+    selectedPlayer.vehicle !== "" &&
+    selectedPlayer.vehicle !== OBSERVER
+      ? { account: selectedPlayer.account_id, inventory: selectedPlayer.vehicle }
+      : undefined;
+  const catalogLoadout =
+    configuring?.kind === "custom"
+      ? selectedPlayer?.customLoadout
+      : dummies[selectedDummyIndex]?.loadout;
+  const selectedLoadout = ownedVehicle
+    ? selectedPlayer?.ownedEdits[ownedVehicle.inventory]
+    : catalogLoadout;
   const selectedName = selectedPlayer
     ? (options?.players.find(({ id }) => id === selectedPlayer.account_id)?.name ?? "Player tank")
     : `Dummy ${selectedDummyIndex + 1}`;
@@ -341,6 +359,7 @@ export function BattleSetup() {
                         team: 1,
                         vehicleSource: "owned",
                         customLoadout: emptyLoadout(),
+                        ownedEdits: {},
                         vehicle:
                           player.vehicles.find((vehicle) => !vehicle.unavailable_reason)?.id ?? "",
                       },
@@ -357,6 +376,11 @@ export function BattleSetup() {
                   (available ? null : "This player is no longer available.");
                 const vehicles = available?.vehicles ?? [];
                 const selectingCustom = player.vehicleSource === "custom";
+                const editableVehicle = selectingCustom
+                  ? options.dummy_vehicles.some(({ id }) => id === player.customLoadout.vehicle)
+                  : vehicles.some(
+                      ({ id, unavailable_reason }) => id === player.vehicle && !unavailable_reason,
+                    );
                 const choices = options.observer_available
                   ? [...vehicles, { id: OBSERVER, name: "Observer" }]
                   : vehicles;
@@ -420,16 +444,19 @@ export function BattleSetup() {
                       >
                         {selectingCustom ? "Show owned tanks" : "Choose custom tank"}
                       </Button>
-                      {selectingCustom && (
-                        <Button
-                          variant="outlined"
-                          aria-label={`Customize tank for ${name}`}
-                          disabled={Boolean(playerUnavailable) || !player.customLoadout.vehicle}
-                          onClick={() => setConfiguring({ kind: "player", id: player.account_id })}
-                        >
-                          Customize tank
-                        </Button>
-                      )}
+                      <Button
+                        variant="outlined"
+                        aria-label={`Customize tank for ${name}`}
+                        disabled={Boolean(playerUnavailable) || !editableVehicle}
+                        onClick={() =>
+                          setConfiguring({
+                            kind: selectingCustom ? "custom" : "owned",
+                            id: player.account_id,
+                          })
+                        }
+                      >
+                        Customize tank
+                      </Button>
                     </Stack>
                   </RosterCard>
                 );
@@ -496,14 +523,20 @@ export function BattleSetup() {
           </Stack>
         </Box>
       )}
-      {configuring && selectedLoadout && (
+      {configuring && (ownedVehicle || catalogLoadout) && (
         <BattleLoadoutConfiguration
           key={`${configuring.kind}-${configuring.id}`}
           name={selectedName}
+          catalogVehicle={catalogLoadout?.vehicle}
+          ownedVehicle={ownedVehicle}
           initial={selectedLoadout}
           onClose={() => setConfiguring(undefined)}
           onSave={(loadout) => {
-            if (configuring.kind === "player") {
+            if (ownedVehicle && selectedPlayer) {
+              updatePlayer(configuring.id, {
+                ownedEdits: { ...selectedPlayer.ownedEdits, [ownedVehicle.inventory]: loadout },
+              });
+            } else if (configuring.kind === "custom") {
               updatePlayer(configuring.id, { customLoadout: loadout });
             } else {
               updateDummy(configuring.id, { loadout });

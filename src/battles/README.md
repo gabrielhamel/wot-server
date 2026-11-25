@@ -59,7 +59,8 @@ Player Sessions resets the connection for garage entry. The Battle ID is
 allocated independently of the Training Room ID. At the end of a round,
 Battles publishes the outcome and continues pose and chassis replication while
 vehicles coast to a stop before the scheduled garage return. Each Avatar receives
-its player’s customization display preference at entry.
+its player’s customization display preference at entry. Battles selects each
+vehicle’s encoded garage outfit using the arena definition’s camouflage season.
 
 The server advances hull speed and yaw every 100 ms. It reads engine power,
 vehicle mass, chassis resistance and supported garage modifiers from the

@@ -54,7 +54,7 @@ pub struct BattleParticipant {
 
 pub struct VehicleLoadout {
     pub descriptor: Vec<u8>,
-    pub outfit: Vec<u8>,
+    pub outfits: wot_shared_kernel::BattleOutfits,
     pub health: i16,
     pub crew_size: usize,
     pub performance: Option<wot_shared_kernel::VehiclePerformance>,

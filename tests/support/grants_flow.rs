@@ -421,10 +421,10 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
             .expect("Granted vehicle can enter a Training Battle");
         assert!(battle_vehicle.health > 0);
         let decoded = wot_accounts::test_support::decode_outfits(
-            &[15], [battle_vehicle.outfit.as_slice()].into_iter(), None,
+            &[15], [battle_vehicle.outfits.summer.as_slice()].into_iter(), None,
         ).unwrap();
         assert_eq!(decoded[&wot_accounts::test_support::OutfitSeason::Common].style, Some(986));
-        let outfit_row = wot_platform::pickle!({15: (Pickle::Bytes(battle_vehicle.outfit))});
+        let outfit_row = wot_platform::pickle!({15: (Pickle::Bytes(battle_vehicle.outfits.summer))});
         let after = wot_accounts::test_support::account_snapshot(&after);
         if peer.responses.contains(&(301, -5)) {
             purchase(&mut peer, 302);
