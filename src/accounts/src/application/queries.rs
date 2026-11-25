@@ -106,18 +106,19 @@ impl GarageQueries {
         self.0.battle_vehicle(&account.0, inventory_id)
     }
 
-    pub fn dummy_vehicle(
+    pub fn custom_battle_vehicle(
         &self,
-        loadout: &crate::contract::DummyLoadout,
+        loadout: &crate::contract::CustomBattleLoadout,
+        account_id: Option<i64>,
     ) -> anyhow::Result<Option<BattleVehicle>> {
-        self.0.dummy_vehicle(loadout)
+        self.0.custom_battle_vehicle(loadout, account_id)
     }
 
-    pub fn dummy_loadout_options(
+    pub fn custom_battle_loadout_options(
         &self,
         vehicle: i32,
-    ) -> anyhow::Result<Option<crate::contract::DummyLoadoutOptions>> {
-        self.0.dummy_loadout_options(vehicle)
+    ) -> anyhow::Result<Option<crate::contract::CustomBattleLoadoutOptions>> {
+        self.0.custom_battle_loadout_options(vehicle)
     }
 
     pub fn battle_vehicle_choices(&self, account: &AccountView) -> Vec<BattleVehicleChoice> {

@@ -48,9 +48,9 @@ formats.
 | Equipment components | Balance used for paid demounting of level 2 and 3 Experimental equipment. The client calls it `equipCoin`. |
 | Ammunition proposal | Validated next snapshot and purchase receipt, committed against its source revision. |
 | Garage projection | Compressed Python cache derived from a snapshot and client definitions. |
-| Battle vehicle | An owned loadout projected for battle with the encoded descriptor, locked outfit, health, crew size, loaded ammunition, and performance from the equipped modules and supported mobility modifiers, including shell ballistics, explosive and stun definitions, part armor meshes and device health. |
+| Battle vehicle | An owned or custom loadout projected for battle with the encoded descriptor, locked outfit, health, crew size, loaded ammunition, and performance from the equipped modules and supported mobility modifiers, including shell ballistics, explosive and stun definitions, part armor meshes and device health. |
 | Admin battle readiness | An owned catalog vehicle must be eligible for battle and have an active crew member in every seat. Legacy garages use their initial crew flag until a roster is persisted. |
-| Dummy loadout | An in-memory catalog tank for one battle with stock modules, optional compatible equipment and consumables, per-seat perks and perk efficiency, an HP override, and configurable ammunition. |
+| Custom battle loadout | An in-memory catalog tank for one player or dummy in a single battle with stock modules, optional compatible equipment and consumables, per-seat perks and perk efficiency, an HP override, and configurable ammunition. |
 | Training vehicle descriptor | Compact descriptor for the Training Room roster. A player vehicle uses its owned loadout. The observer uses the stock descriptor from the resource bundle. |
 | Research | An account-wide tank or module unlock bought with vehicle XP and free XP. |
 | Vehicle purchase | An atomic debit and permanent ownership grant, with optional crew, ammunition and consumables. |
@@ -96,7 +96,7 @@ creation hashes the password with Argon2id and commits the identity and starter
 garage in one PostgreSQL transaction. Bootstrap authorizes first-admin creation
 only in an empty database. The role transaction rechecks the actor, prevents
 self-role changes, and revokes sessions on demotion.
-Player Administration reads garage projections, dummy configuration options and grant catalogs, including styles, crew skins and
+Player Administration reads garage projections, custom battle loadout options and grant catalogs, including styles, crew skins and
 special recruits. Player Sessions uses the same revision-checked progression transaction for
 player grants, garage purchases and
 [Store checkout](../../docs/store.md).

@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
 };
 use serde::Serialize;
-use wot_accounts::contract::DummyLoadoutOptions;
+use wot_accounts::contract::CustomBattleLoadoutOptions;
 use wot_player_sessions::contract::{
     AdminBattleError, AdminBattleSetup, AdminBattles, BattleLaunchReceipt, BattleOptions,
 };
@@ -28,6 +28,7 @@ fn battle_error(error: AdminBattleError) -> ApiError {
     let status = match error {
         AdminBattleError::InvalidSetup
         | AdminBattleError::InvalidParameters
+        | AdminBattleError::InvalidPlayerLoadout
         | AdminBattleError::InvalidDummy => StatusCode::BAD_REQUEST,
         AdminBattleError::PlayerUnavailable | AdminBattleError::VehicleUnavailable(_) => {
             StatusCode::CONFLICT
@@ -68,14 +69,14 @@ pub(super) async fn options(State(state): State<AdminState>) -> Result<Json<Opti
     }))
 }
 
-#[tracing::instrument(name = "admin.dummy_loadout", skip_all, fields(
+#[tracing::instrument(name = "admin.battle_loadout", skip_all, fields(
     ddd.bounded_context.name = "player_administration", input.vehicle_type = vehicle,
     output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
 ), err)]
 pub(super) async fn loadout(
     State(state): State<AdminState>,
     Path(vehicle): Path<i32>,
-) -> Result<Json<DummyLoadoutOptions>, ApiError> {
+) -> Result<Json<CustomBattleLoadoutOptions>, ApiError> {
     let span = tracing::Span::current();
     let permit = state
         .battle_loadout_slots
@@ -84,7 +85,7 @@ pub(super) async fn loadout(
     let options =
         tokio::task::spawn_blocking(wot_platform::observability::in_current_span(move || {
             let _permit = permit;
-            state.catalog.dummy_loadout_options(vehicle)
+            state.catalog.custom_battle_loadout_options(vehicle)
         }))
         .await
         .map_err(loadout_error)?
@@ -101,17 +102,17 @@ fn loadout_error(error: impl std::fmt::Display) -> ApiError {
     let span = tracing::Span::current();
     span.record("output.outcome", "loadout_failed");
     span.record("otel.status_code", "ERROR");
-    tracing::error!(%error, "Could not load dummy vehicle options");
+    tracing::error!(%error, "Could not load battle vehicle options");
     ApiError::new(
         StatusCode::INTERNAL_SERVER_ERROR,
-        "Could not load dummy vehicle options.",
+        "Could not load battle vehicle options.",
     )
 }
 
 #[tracing::instrument(name = "admin.start_battle", skip_all, fields(
     ddd.bounded_context.name = "player_administration", input.arena_type_id = tracing::field::Empty,
     input.round_length.seconds = tracing::field::Empty, input.players.count = tracing::field::Empty,
-    input.dummies.count = tracing::field::Empty, input.battle.parameters.count = tracing::field::Empty, output.battle.id = tracing::field::Empty,
+    input.dummies.count = tracing::field::Empty, input.players.custom_loadout_count = tracing::field::Empty, input.battle.parameters.count = tracing::field::Empty, output.battle.id = tracing::field::Empty,
     output.players.handoff_count = tracing::field::Empty,
     output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
 ), err)]
@@ -128,6 +129,14 @@ pub(super) async fn start(
     span.record("input.round_length.seconds", setup.duration_seconds);
     span.record("input.players.count", setup.players.len());
     span.record("input.dummies.count", setup.dummies.len());
+    span.record(
+        "input.players.custom_loadout_count",
+        setup
+            .players
+            .iter()
+            .filter(|player| player.loadout.is_some())
+            .count(),
+    );
     span.record("input.battle.parameters.count", setup.parameters.len());
     let requested = setup.players.len();
     let receipt = service(&state)?.start(setup).await.map_err(battle_error)?;

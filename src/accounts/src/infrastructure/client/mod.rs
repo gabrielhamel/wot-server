@@ -3,8 +3,8 @@ mod battle_armor;
 mod battle_mobility;
 mod battle_performance;
 mod battle_readiness;
-pub(super) mod dummy_loadout;
-pub use dummy_loadout::{DummyLoadout, DummyLoadoutOptions};
+pub(super) mod custom_battle_loadout;
+pub use custom_battle_loadout::{CustomBattleLoadout, CustomBattleLoadoutOptions};
 mod cosmetic_catalog;
 mod cosmetic_inventory;
 mod outfit;
@@ -265,7 +265,7 @@ impl GarageCatalog {
         let (equipment, equipment_grants) = equipment::load(&fs, &prices)?;
         let directives = directives::load(&fs, &prices)?;
         let (consumables, consumable_names) = consumables::load(&fs, &prices)?;
-        let perk_names = dummy_loadout::perk_names(&fs);
+        let perk_names = custom_battle_loadout::perk_names(&fs);
         let battle_mobility = battle_mobility::BattleMobility::load(&fs)?;
         let supply_slots = supply_slots::SupplySlots::load(&fs)?;
         // The client reserves tree IDs starting at 10000 for vehicle skill trees.

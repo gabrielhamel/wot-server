@@ -11,7 +11,7 @@ import type {
   AdminSession,
   AdminBattleSetup,
   BattleOptions,
-  DummyLoadoutOptions,
+  CustomBattleLoadoutOptions,
   CatalogVehicle,
   Cosmetic,
   DepotItem,
@@ -347,13 +347,13 @@ export function getBattleOptions(signal: AbortSignal) {
   });
 }
 
-export function getDummyLoadout(vehicle: number, signal: AbortSignal) {
+export function getBattleLoadout(vehicle: number, signal: AbortSignal) {
   return webOperation(
     owner,
-    "web.admin.dummy_loadout",
+    "web.admin.battle_loadout",
     { "input.vehicle_type": vehicle },
     (parent) =>
-      adminRequest<DummyLoadoutOptions>(parent, "/battles/vehicles/{vehicle}", {
+      adminRequest<CustomBattleLoadoutOptions>(parent, "/battles/vehicles/{vehicle}", {
         path: `/battles/vehicles/${vehicle}`,
         signal,
       }),
@@ -369,6 +369,7 @@ export function startBattle(body: AdminBattleSetup) {
       "input.round_length.seconds": body.duration_seconds,
       "input.players.count": body.players.length,
       "input.dummies.count": body.dummies.length,
+      "input.players.custom_loadout_count": body.players.filter(({ loadout }) => loadout).length,
       "input.battle.parameters.count": Object.keys(body.parameters ?? {}).length,
     },
     async (parent, span) => {

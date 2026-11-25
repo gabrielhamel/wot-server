@@ -58,6 +58,8 @@ impl Gateway {
                     "input.round_length.seconds" = setup.duration_seconds,
                     "input.players.count" = setup.players.len(),
                     "input.dummies.count" = setup.dummies.len(),
+                    "input.players.custom_loadout_count" =
+                        setup.players.iter().filter(|p| p.loadout.is_some()).count(),
                     "input.battle.parameters.count" = setup.parameters.len(),
                     "output.battle.id" = tracing::field::Empty,
                     "output.players.handoff_count" = tracing::field::Empty,
@@ -161,6 +163,13 @@ impl Gateway {
         setup: AdminBattleSetup,
     ) -> Result<(u32, Vec<SelectedPlayer>), AdminBattleError> {
         use AdminBattleError::*;
+        if setup
+            .players
+            .iter()
+            .any(|player| player.inventory_id.is_some() && player.loadout.is_some())
+        {
+            return Err(InvalidPlayerLoadout);
+        }
         let parameters =
             BattleParameters::from_overrides(&setup.parameters).map_err(|_| InvalidParameters)?;
         if !self
@@ -190,7 +199,7 @@ impl Gateway {
         for (index, dummy) in setup.dummies.into_iter().enumerate() {
             let vehicle = self
                 .catalog
-                .dummy_vehicle(&dummy.loadout)
+                .custom_battle_vehicle(&dummy.loadout, None)
                 .map_err(projection_failed)?
                 .ok_or(InvalidDummy)?;
             let entities = self.reserve_battle_entity_ids();
@@ -245,16 +254,26 @@ impl Gateway {
             .ok_or(PlayerUnavailable)?;
         let entity = session.entity.ok_or(PlayerUnavailable)?;
         let account = &session.account.snapshot;
-        let vehicle = match player.inventory_id {
-            Some(id) => Some(vehicle_loadout(
-                self.catalog
-                    .admin_battle_vehicle(account, id)
-                    .map_err(projection_failed)?
-                    .map_err(AdminBattleError::VehicleUnavailable)?,
-            )),
-            None => self.observer_battle_loadout(),
-        }
-        .ok_or(PlayerUnavailable)?;
+        let (vehicle, observer) = if let Some(loadout) = &player.loadout {
+            let custom = self
+                .catalog
+                .custom_battle_vehicle(loadout, Some(account.id()))
+                .map_err(projection_failed)?
+                .ok_or(AdminBattleError::InvalidPlayerLoadout)?;
+            (vehicle_loadout(custom), false)
+        } else if let Some(id) = player.inventory_id {
+            let owned = self
+                .catalog
+                .admin_battle_vehicle(account, id)
+                .map_err(projection_failed)?
+                .map_err(AdminBattleError::VehicleUnavailable)?;
+            (vehicle_loadout(owned), false)
+        } else {
+            (
+                self.observer_battle_loadout().ok_or(PlayerUnavailable)?,
+                true,
+            )
+        };
         Ok((
             SelectedPlayer {
                 client,
@@ -268,7 +287,7 @@ impl Gateway {
                 name: account.display_name().to_owned(),
                 team: player.team,
                 is_host: false,
-                observer: player.inventory_id.is_none(),
+                observer,
                 stationary_dummy: false,
                 customization_display_type: account.customization_display_type(),
                 vehicle,
@@ -375,11 +394,9 @@ fn valid_roster(setup: &AdminBattleSetup) -> bool {
             .all(|player| valid_team(player.team) && accounts.insert(player.account_id))
         && setup.dummies.iter().all(|dummy| valid_team(dummy.team))
         && [1, 2].into_iter().all(|team| {
-            setup
-                .players
-                .iter()
-                .any(|player| player.team == team && player.inventory_id.is_some())
-                || setup.dummies.iter().any(|dummy| dummy.team == team)
+            setup.players.iter().any(|player| {
+                player.team == team && (player.inventory_id.is_some() || player.loadout.is_some())
+            }) || setup.dummies.iter().any(|dummy| dummy.team == team)
         })
 }
 

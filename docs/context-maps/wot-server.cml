@@ -60,7 +60,7 @@ ContextMap Server {
     implementationTechnology = "Battles Rust library contract for localized map options, battle parameter defaults and validation, and active arena count queries, separate bounded in-process queues for arena preparation and live simulation, checked activation with an assigned roster and gateway-assigned arena entity IDs, equipped loadouts with outfits, shell ballistics and armor geometry, stationary dummy participants, viewer customization preferences, typed Avatar and vehicle commands sent on a bounded in-process queue to the arena tick worker, and queued participant updates and garage returns delivered through BaseApp"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "Accounts Rust library PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections for vehicles, cosmetics, crew items, recruit groups with country options, and equipment, and vehicle-specific dummy equipment, consumables, crew seats and perks, stock hit points and ammunition options"
+    implementationTechnology = "Accounts Rust library PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections for vehicles, cosmetics, crew items, recruit groups with country options, and equipment, and vehicle-specific equipment, consumables, crew seats and perks, stock hit points and ammunition options for custom player and dummy loadouts"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
     implementationTechnology = "Player Sessions Rust library contracts for bounded PlayerGrants and StoreRequests coordinate dashboard requests with garage writes. AdminBattles lists connected players, vehicle readiness, Training maps and battle parameter definitions, and launches a validated roster with per-arena overrides. The embedded Store web entry point accepts the dashboard transport."
@@ -72,7 +72,7 @@ ContextMap Server {
     implementationTechnology = "Social Rust library contract for contacts/search and durable private message APIs adapted to native XMPP, game-issued chat admission, history and legacy BW/BW_CHAT2 RPCs"
   }
   Accounts [U,OHS,PL] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Accounts Rust library contract for authentication, opaque account view, garage and equipped vehicle projections with catalog-defined locked outfits, loadout-adjusted mobility, gun performance and equipped armor geometry for battle, plus owned vehicle readiness checks, ephemeral dummy vehicle projections with configurable crew perk efficiency, hit points and ammunition, and revision-checked commands. Sessions orders commands and delivers committed results."
+    implementationTechnology = "Accounts Rust library contract for authentication, opaque account view, garage and equipped vehicle projections with catalog-defined locked outfits, loadout-adjusted mobility, gun performance and equipped armor geometry for battle, plus owned vehicle readiness checks, ephemeral catalog vehicle projections for connected players and dummies with configurable crew perk efficiency, hit points and ammunition, and revision-checked commands. Sessions orders commands and delivers committed results."
   }
 }
 BoundedContext GameClient {

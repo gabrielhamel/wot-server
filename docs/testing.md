@@ -91,7 +91,9 @@ the Actions tab and has read-only repository permissions.
 The admin battle E2E case drives an authenticated dashboard launch through
 PostgreSQL, the gateway and an encrypted Mercury peer. It checks stationary
 dummy replication, equipped and overridden HP, perk scaling at partial
-efficiency, and ammunition projected into the arena loadout. It also checks
+efficiency, and ammunition projected into the arena loadout. The player
+enters in a catalog tank they do not own, drives and fires it, then returns
+to their existing garage. It also checks
 the overridden countdown in a decoded native period update, the garage
 return, and the exported HTTP-to-arena trace, including rejected loadouts and
 battle parameter overrides.

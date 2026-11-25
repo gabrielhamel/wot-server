@@ -21,7 +21,7 @@ const ROLES: [&str; 6] = [
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DummyLoadout {
+pub struct CustomBattleLoadout {
     pub vehicle: i32,
     #[serde(default)]
     pub equipment: Vec<i32>,
@@ -36,7 +36,7 @@ pub struct DummyLoadout {
 }
 
 #[derive(Serialize)]
-pub struct DummyLoadoutOptions {
+pub struct CustomBattleLoadoutOptions {
     equipment_slots: usize,
     consumable_slots: usize,
     equipment: Vec<LoadoutItem>,
@@ -70,7 +70,7 @@ fn eligible_perk(id: u8, role: u8) -> bool {
     perk_role(id).is_some_and(|required| required.is_none_or(|required| required == role))
 }
 
-fn default_dummy_ammunition(rules: &AmmunitionRules) -> impl Iterator<Item = (i32, u32)> {
+fn default_custom_ammunition(rules: &AmmunitionRules) -> impl Iterator<Item = (i32, u32)> {
     rules.defaults.iter().enumerate().map(|(index, &(id, _))| {
         let count = if index == 0 { rules.capacity } else { 0 };
         (id, count)
@@ -78,7 +78,7 @@ fn default_dummy_ammunition(rules: &AmmunitionRules) -> impl Iterator<Item = (i3
 }
 
 impl GarageCatalog {
-    #[tracing::instrument(name = "accounts.dummy_loadout_options", skip_all, fields(
+    #[tracing::instrument(name = "accounts.custom_battle_loadout_options", skip_all, fields(
         ddd.bounded_context.name = "accounts", input.vehicle_type = vehicle,
         output.equipment.count = tracing::field::Empty, output.consumables.count = tracing::field::Empty,
         output.crew.count = tracing::field::Empty,
@@ -86,10 +86,10 @@ impl GarageCatalog {
         output.ammunition.capacity = tracing::field::Empty,
         output.vehicle.hit_points = tracing::field::Empty,
     ), err)]
-    pub(crate) fn dummy_loadout_options(
+    pub(crate) fn custom_battle_loadout_options(
         &self,
         vehicle: i32,
-    ) -> Result<Option<DummyLoadoutOptions>> {
+    ) -> Result<Option<CustomBattleLoadoutOptions>> {
         let Some(offer) = self.offers.get(&vehicle).filter(|offer| offer.grantable()) else {
             return Ok(None);
         };
@@ -111,7 +111,7 @@ impl GarageCatalog {
             &format!("text/lc_messages/{nation}_vehicles.mo"),
         )
         .unwrap_or_default();
-        let ammunition: Vec<_> = default_dummy_ammunition(rules)
+        let ammunition: Vec<_> = default_custom_ammunition(rules)
             .enumerate()
             .map(|(index, (id, default_count))| LoadoutShell {
                 id,
@@ -179,7 +179,7 @@ impl GarageCatalog {
         span.record("output.ammunition.types", ammunition.len());
         span.record("output.ammunition.capacity", rules.capacity);
         span.record("output.vehicle.hit_points", stock_hit_points);
-        Ok(Some(DummyLoadoutOptions {
+        Ok(Some(CustomBattleLoadoutOptions {
             stock_hit_points,
             ammunition_capacity: rules.capacity,
             ammunition,
@@ -191,8 +191,8 @@ impl GarageCatalog {
         }))
     }
 
-    #[tracing::instrument(name = "accounts.dummy_vehicle", skip_all, fields(
-        ddd.bounded_context.name = "accounts", input.vehicle_type = loadout.vehicle,
+    #[tracing::instrument(name = "accounts.custom_battle_vehicle", skip_all, fields(
+        ddd.bounded_context.name = "accounts", input.vehicle_type = loadout.vehicle, user.id = account_id,
         input.equipment.count = loadout.equipment.len(), input.consumables.count = loadout.consumables.len(),
         input.crew.count = loadout.crew_perks.len(),
         input.crew.perk_efficiency_min = loadout.crew_perk_efficiency.iter().min().copied(),
@@ -203,9 +203,13 @@ impl GarageCatalog {
         output.outcome = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
     ), err)]
-    pub(crate) fn dummy_vehicle(&self, loadout: &DummyLoadout) -> Result<Option<BattleVehicle>> {
+    pub(crate) fn custom_battle_vehicle(
+        &self,
+        loadout: &CustomBattleLoadout,
+        account_id: Option<i64>,
+    ) -> Result<Option<BattleVehicle>> {
         let span = tracing::Span::current();
-        let result = self.build_dummy_vehicle(loadout);
+        let result = self.build_custom_battle_vehicle(loadout);
         span.record(
             "output.outcome",
             match &result {
@@ -231,7 +235,10 @@ impl GarageCatalog {
         result
     }
 
-    fn build_dummy_vehicle(&self, loadout: &DummyLoadout) -> Result<Option<BattleVehicle>> {
+    fn build_custom_battle_vehicle(
+        &self,
+        loadout: &CustomBattleLoadout,
+    ) -> Result<Option<BattleVehicle>> {
         let Some(offer) = self
             .offers
             .get(&loadout.vehicle)
@@ -283,7 +290,7 @@ impl GarageCatalog {
             }
             layout.collect()
         } else {
-            default_dummy_ammunition(rules).collect()
+            default_custom_ammunition(rules).collect()
         };
         let definition = self.crew_vehicle(loadout.vehicle)?;
         let mut crew = CrewRoster::default();

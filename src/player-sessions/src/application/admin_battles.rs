@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
-use wot_accounts::contract::{BattleVehicleChoice, BattleVehicleUnavailable, DummyLoadout};
+use wot_accounts::contract::{BattleVehicleChoice, BattleVehicleUnavailable, CustomBattleLoadout};
 use wot_battles::contract::BattleParameterDefinition;
 
 #[derive(Clone)]
@@ -61,13 +61,14 @@ pub struct AdminBattlePlayer {
     pub account_id: i64,
     pub team: u8,
     pub inventory_id: Option<i64>,
+    pub loadout: Option<CustomBattleLoadout>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdminBattleDummy {
     pub team: u8,
-    pub loadout: DummyLoadout,
+    pub loadout: CustomBattleLoadout,
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
@@ -82,6 +83,8 @@ pub enum AdminBattleError {
         "A selected player or vehicle is no longer available. Refresh the player list and try again."
     )]
     PlayerUnavailable,
+    #[error("Select either an owned vehicle or a compatible custom loadout for each player.")]
+    InvalidPlayerLoadout,
     #[error("{0}. Refresh the player list and try again.")]
     VehicleUnavailable(BattleVehicleUnavailable),
     #[error("A dummy has an unavailable vehicle or incompatible loadout.")]
@@ -98,6 +101,7 @@ impl AdminBattleError {
             Self::InvalidSetup => "invalid_setup",
             Self::InvalidParameters => "invalid_parameters",
             Self::PlayerUnavailable => "player_unavailable",
+            Self::InvalidPlayerLoadout => "invalid_player_loadout",
             Self::VehicleUnavailable(reason) => reason.outcome(),
             Self::InvalidDummy => "invalid_dummy",
             Self::Unavailable => "unavailable",

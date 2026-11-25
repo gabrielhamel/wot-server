@@ -13,8 +13,11 @@ import {
   Typography,
 } from "@mui/material";
 import { Fragment, useEffect, useId, useState } from "react";
-import type { DummyLoadout, DummyLoadoutOptions } from "../../application/admin-contracts";
-import { getDummyLoadout } from "../../infrastructure/admin-api";
+import type {
+  CustomBattleLoadout,
+  CustomBattleLoadoutOptions,
+} from "../../application/admin-contracts";
+import { getBattleLoadout } from "../../infrastructure/admin-api";
 import { errorMessage } from "../../../../shared-infrastructure/src/infrastructure/web/http";
 import { ChoiceSelect } from "./battle-select";
 
@@ -34,34 +37,34 @@ function validInteger(value: string, min: number, max: number) {
   return value !== "" && Number.isInteger(number) && number >= min && number <= max;
 }
 
-export function DummyConfiguration({
+export function BattleLoadoutConfiguration({
   name,
   initial,
   onClose,
   onSave,
 }: {
   name: string;
-  initial: DummyLoadout;
+  initial: CustomBattleLoadout;
   onClose: () => void;
-  onSave: (value: DummyLoadout) => void;
+  onSave: (value: CustomBattleLoadout) => void;
 }) {
   const [loadout, setLoadout] = useState(initial);
   const [hitPoints, setHitPoints] = useState(initial.hit_points?.toString() ?? "");
   const [ammoEdits, setAmmoEdits] = useState<Record<number, string>>({});
   const [crewEdits, setCrewEdits] = useState<Record<number, number>>({});
   const crewLabelId = useId();
-  const [options, setOptions] = useState<DummyLoadoutOptions>();
+  const [options, setOptions] = useState<CustomBattleLoadoutOptions>();
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    getDummyLoadout(initial.vehicle, controller.signal).then(
+    getBattleLoadout(initial.vehicle, controller.signal).then(
       (result) => {
         if (!controller.signal.aborted) setOptions(result);
       },
       (failure) => {
         if (!controller.signal.aborted)
-          setError(errorMessage(failure, "Could not load dummy customization."));
+          setError(errorMessage(failure, "Could not load battle vehicle customization."));
       },
     );
     return () => controller.abort();
@@ -96,8 +99,8 @@ export function DummyConfiguration({
   }
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="dummy-loadout-title">
-      <DialogTitle id="dummy-loadout-title">Customize {name}</DialogTitle>
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="battle-loadout-title">
+      <DialogTitle id="battle-loadout-title">Customize {name}</DialogTitle>
       <DialogContent>
         {error && (
           <Alert
@@ -116,7 +119,9 @@ export function DummyConfiguration({
             {error}
           </Alert>
         )}
-        {!options && !error && <CircularProgress size={24} aria-label="Loading dummy loadout" />}
+        {!options && !error && (
+          <CircularProgress size={24} aria-label="Loading battle vehicle loadout" />
+        )}
         {options && (
           <Stack spacing={2} sx={{ pt: 1 }}>
             <TextField

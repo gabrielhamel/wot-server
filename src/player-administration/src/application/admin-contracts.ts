@@ -120,7 +120,7 @@ export type BattleOptions = {
   parameters: BattleParameterDefinition[];
 };
 
-export type DummyLoadoutOptions = {
+export type CustomBattleLoadoutOptions = {
   equipment_slots: number;
   consumable_slots: number;
   equipment: BattleChoice[];
@@ -131,7 +131,7 @@ export type DummyLoadoutOptions = {
   ammunition: (BattleChoice & { default_count: number })[];
 };
 
-export type DummyLoadout = {
+export type CustomBattleLoadout = {
   vehicle: number;
   equipment: number[];
   consumables: number[];
@@ -144,7 +144,12 @@ export type DummyLoadout = {
 export type AdminBattleSetup = {
   arena_type: number;
   duration_seconds: number;
-  players: { account_id: number; team: number; inventory_id: number | null }[];
-  dummies: { team: number; loadout: DummyLoadout }[];
+  players: {
+    account_id: number;
+    team: number;
+    inventory_id: number | null;
+    loadout?: CustomBattleLoadout;
+  }[];
+  dummies: { team: number; loadout: CustomBattleLoadout }[];
   parameters?: Record<string, number>;
 };

@@ -103,9 +103,12 @@ Admin and Store API requests keep their own request spans.
 
 Dashboard battle launches keep the browser parent through authentication,
 `admin.start_battle`, the gateway request and the arena worker. Accounts records
-the selected dummy vehicle, loadout counts, lowest configured perk efficiency
-and requested HP. The projection records the final HP and loaded rounds.
-Dummy options record the stock HP, shell type count and ammunition capacity.
+the catalog vehicle for each custom player or dummy seat, its loadout
+counts, lowest configured perk efficiency and requested HP. The projection
+records the final HP and loaded rounds. The shared options lookup records
+stock HP, shell type count and ammunition capacity. Custom player projections
+carry the selected account ID. The dashboard launch spans record the number
+of player seats with custom loadouts.
 The browser, HTTP handler and gateway record the count of requested battle
 parameter overrides. Arena preparation records the effective loading,
 countdown and results durations and shares the launch trace with native

@@ -134,6 +134,14 @@ invalid. **Reset parameters to defaults** clears all overrides. Edits apply to
 the battle started from this setup. Training launched from the native room
 uses server defaults.
 
+A player's seat starts with their owned vehicles. Select **Choose custom
+tank** to pick a vehicle from the shared battle catalog, including tanks the
+player does not own. Use **Customize tank** to open the same loadout form used
+by dummies. The player controls the configured tank for this battle and
+returns to their existing garage afterward. **Show owned tanks** restores
+the previous owned vehicle or Observer selection and keeps the custom draft
+available for this setup.
+
 Use **Add dummy** to fill either team with stationary targets. Each dummy starts
 with stock modules, default ammunition and 100% perk efficiency in every crew
 seat. Open **Customize Dummy** to select equipment, consumables and fully
@@ -210,7 +218,7 @@ sending a JSON body. The browser sends the cookie on same-origin API calls.
 | `POST /api/admin/players` | `201 Created` with the new player record. The new account has the `player` role. |
 | `POST /api/admin/players/{id}/role` | Accepts `{ "role": "admin" }` or `{ "role": "player" }` and returns `204 No Content`. Self-role changes return `403 Forbidden`. |
 | `GET /api/admin/players/{id}/garage` | `200 OK` with balances, garage slot count, owned tanks, an `attachments` map from item ID to total owned copies, and a `depot` map from grantable crew book, Bounty Equipment and Experimental Equipment IDs to depot counts. The `styles_2d`, `styles_3d`, `crew_skins` and `special_recruits` maps track owned copies. Each tank also exposes its inventory ID and compatible tracker IDs mapped to owned counts. Balances are decimal strings. |
-| `GET /api/admin/battles` | Returns `maps`, connected `players` and their owned `vehicles`, with `unavailable_reason` for disabled choices, plus `observer_available`, catalog `dummy_vehicles` and `parameters` with each tunable field’s key, default, bounds and units in its label. |
+| `GET /api/admin/battles` | Returns `maps`, connected `players` and their owned `vehicles`, with `unavailable_reason` for disabled choices, plus `observer_available`, the shared custom vehicle catalog in `dummy_vehicles` and `parameters` with each tunable field’s key, default, bounds and units in its label. |
 | `GET /api/admin/battles/vehicles/{vehicle}` | Returns equipment and consumable slot counts, compatible items, perks by crew seat, `stock_hit_points`, `ammunition_capacity` and compatible `ammunition` entries with default round counts for the catalog vehicle. |
 | `POST /api/admin/battles` | Accepts `arena_type`, `duration_seconds`, `players`, `dummies` and optional `parameters`. Returns `battle_id` and `players_handed_off` after queuing activation, `400` for an invalid setup, `409` for an unavailable player or owned vehicle, or `503` when the queue is busy. |
 | `GET /api/admin/vehicles` | `200 OK` with searchable vehicle entries containing `id`, `key`, `name` and `tier`. |
@@ -258,10 +266,15 @@ overrides, for example `{"countdown_seconds": 2}`. Omitted keys use their
 defaults. Unknown keys and values outside the advertised bounds return HTTP
 400. Fields marked `integer` accept whole numbers.
 
-Each player entry contains `account_id`, `team` (1 or 2) and `inventory_id`
-from that player's available vehicles. Use `null` for an observer when
-`observer_available` is true. Each dummy entry contains `team` and a
-`loadout` with the catalog `vehicle` ID. Optional `equipment` and
+Each player entry contains `account_id` and `team` (1 or 2). Supply an
+`inventory_id` from that player's available vehicles for an owned tank.
+Supply a catalog `loadout` with an omitted or null `inventory_id` for a
+custom tank. With both fields omitted or null, the seat is an Observer when
+`observer_available` is true.
+
+Each dummy entry contains `team` and a `loadout`. Both custom player tanks
+and dummies use the same loadout format with a catalog `vehicle` ID.
+Optional `equipment` and
 `consumables` arrays contain item IDs in slot order with `0` for an empty
 slot. Optional `crew_perks` contains one array of perk IDs per crew seat.
 Optional `crew_perk_efficiency` contains whole percentages in crew seat order.

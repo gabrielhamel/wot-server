@@ -97,10 +97,11 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     .unwrap();
     let metrics = telemetry_capture::GatewayMetrics::attach(&mut gateway);
     let (login, _) = gateway.addresses().unwrap();
+    let garage = accounts::garage_queries(catalog);
     let api = TowerToHyperService::new(router(
         access,
         accounts::game_accounts(Accounts::new(repository.clone())),
-        accounts::garage_queries(catalog),
+        garage.clone(),
         gateway.player_grants(),
         None,
         DashboardConfig {
@@ -225,6 +226,27 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(status, 409);
         assert!(rejected["message"].as_str().unwrap().contains("Crew incomplete"));
 
+        let custom_tank = options["dummy_vehicles"].as_array().unwrap().iter()
+            .find(|vehicle| vehicle["key"] == "usa:A01_T1_Cunningham").unwrap()["id"].as_i64().unwrap();
+        let (status, custom_options) =
+            request("GET", &format!("/battles/vehicles/{custom_tank}"), &cookie, Json::Null);
+        assert_eq!(status, 200, "{custom_options}");
+        let custom_shell = custom_options["ammunition"][0]["id"].as_i64().unwrap();
+        let custom_loadout = json!({
+            "vehicle": custom_tank, "hit_points": 987, "ammunition": [[custom_shell, 5]],
+        });
+        let mut ambiguous = battle.clone();
+        ambiguous["players"][0]["loadout"] = custom_loadout.clone();
+        assert_eq!(request("POST", "/battles", &cookie, ambiguous).0, 400);
+        battle["players"][0]["inventory_id"] = Json::Null;
+        battle["players"][0]["loadout"] = custom_loadout.clone();
+        let mut invalid = battle.clone();
+        invalid["players"][0]["loadout"]["hit_points"] = json!(0);
+        assert_eq!(request("POST", "/battles", &cookie, invalid).0, 400);
+        let custom: wot_accounts::contract::CustomBattleLoadout =
+            serde_json::from_value(custom_loadout).unwrap();
+        let descriptor = garage.custom_battle_vehicle(&custom, None).unwrap().unwrap().descriptor;
+
         let (status, launched) = request("POST", "/battles", &cookie, battle.clone());
         assert_eq!(status, 200, "{launched}");
         assert_eq!(launched["players_handed_off"], 1);
@@ -241,7 +263,8 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(peer.entered_arena, Some((battle_id, arena)));
         let (vehicle_type, schema) = script.entity_from_name("Vehicle").unwrap();
         use wot_platform::mercury::net::codec::Codec;
-        let mut health = peer.arena_entities.iter()
+        let own = peer.cell.as_ref().unwrap().vehicle_id;
+        let mut dummy_health = peer.arena_entities.iter()
             .filter(|entity| entity.type_id == vehicle_type)
             .map(|entity| {
                 let mut properties = entity.properties.as_slice();
@@ -254,19 +277,32 @@ async fn dashboard_launches_player_and_stationary_dummies() {
                     let value = Value::read(&mut properties, &property.ty).unwrap();
                     match (&*property.name, value) {
                         ("health", value) => health = value.as_i64(),
-                        ("publicInfo", Value::Dict(info)) => max_health = info["maxHealth"].as_i64(),
+                        ("publicInfo", Value::Dict(info)) => {
+                            max_health = info["maxHealth"].as_i64();
+                            if entity.entity_id == own {
+                                assert_eq!(
+                                    info["compDescr"],
+                                    Value::String(wot_platform::mercury::script::StringValue::Raw(descriptor.clone())),
+                                );
+                            }
+                        }
                         _ => {}
                     }
                 }
                 assert_eq!(health, max_health);
-                health.unwrap()
+                (entity.entity_id, health.unwrap())
+            }).filter_map(|(id, health)| {
+                if id == own {
+                    assert_eq!(health, 987);
+                    None
+                } else {
+                    Some(health)
+                }
             }).collect::<Vec<_>>();
-        health.sort_unstable();
-        assert_eq!(health.len(), 3);
-        assert_eq!(health[0], 71);
-        assert_eq!(health[1], stock_hp);
-        assert!(health[2] > health[1], "Hardening must increase dummy HP: {health:?}");
-        let own = peer.cell.as_ref().unwrap().vehicle_id;
+        dummy_health.sort_unstable();
+        assert_eq!(dummy_health.len(), 2);
+        assert_eq!(dummy_health[0], 71);
+        assert!(dummy_health[1] > stock_hp, "Hardening must increase dummy HP: {dummy_health:?}");
         let dummies = peer.arena_entities.iter()
             .filter(|entity| entity.type_id == vehicle_type && entity.entity_id != own)
             .map(|entity| (entity.entity_id, entity.position)).collect::<Vec<_>>();
@@ -290,6 +326,13 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         for (id, position) in dummies {
             assert!(peer.positions[&id].distance(position) < 0.01);
         }
+        let own_position = peer.positions[&own];
+        peer.cell_command(&script, "vehicle_moveWith", vec![Value::UInt8(1)]);
+        peer.until(&script, |p| p.positions[&own].distance(own_position) > 0.2);
+        peer.cell_command(&script, "vehicle_shoot", vec![]);
+        peer.until(&script, |p| p.vehicle_methods.iter().any(|(entity, name, _)| {
+            *entity == own && name == "showShooting"
+        }));
         peer.command(&script, "leaveArena", vec![]);
         peer.until(&script, |p| p.resets == 2);
         peer.enable_entities();
@@ -299,6 +342,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let (status, back_in_garage) = request("GET", "/battles", &cookie, Json::Null);
         assert_eq!(status, 200);
         assert!(back_in_garage["players"][0]["unavailable_reason"].is_null());
+        assert_eq!(back_in_garage["players"][0]["vehicles"], options["players"][0]["vehicles"]);
         peer.command(&script, "doCmdIntArr", vec![
             Value::Int16(683),
             Value::Int16(105),
@@ -345,12 +389,34 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     assert_eq!(get(launch, "input.dummies.count").as_deref(), Some("2"));
     for span in [launch, handler] {
         assert_eq!(
+            get(span, "input.players.custom_loadout_count").as_deref(),
+            Some("1")
+        );
+    }
+    let player_projection = spans
+        .iter()
+        .find(|s| {
+            s.name == "accounts.custom_battle_vehicle"
+                && s.parent_span_id == launch.span_context.span_id()
+                && get(s, "user.id").as_deref() == Some(account.to_string().as_str())
+        })
+        .unwrap();
+    assert_eq!(
+        get(player_projection, "output.vehicle.hit_points").as_deref(),
+        Some("987")
+    );
+    assert_eq!(
+        get(player_projection, "output.ammunition.rounds").as_deref(),
+        Some("5")
+    );
+    for span in [launch, handler] {
+        assert_eq!(
             get(span, "input.battle.parameters.count").as_deref(),
             Some("1")
         );
     }
     for name in [
-        "accounts.dummy_vehicle",
+        "accounts.custom_battle_vehicle",
         "battles.prepare",
         "battles.activate",
     ] {
@@ -364,7 +430,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     let projected = spans
         .iter()
         .find(|s| {
-            s.name == "accounts.dummy_vehicle"
+            s.name == "accounts.custom_battle_vehicle"
                 && s.parent_span_id == launch.span_context.span_id()
                 && get(s, "input.vehicle.hit_points").as_deref() == Some("71")
         })
@@ -408,7 +474,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     let default_efficiency = spans
         .iter()
         .find(|s| {
-            s.name == "accounts.dummy_vehicle"
+            s.name == "accounts.custom_battle_vehicle"
                 && s.parent_span_id == launch.span_context.span_id()
                 && get(s, "input.vehicle.hit_points").is_none()
         })
@@ -418,7 +484,10 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     );
     let dummy_options = spans
         .iter()
-        .find(|s| s.name == "accounts.dummy_loadout_options")
+        .find(|s| {
+            s.name == "accounts.custom_battle_loadout_options"
+                && get(s, "input.vehicle_type") == get(default_efficiency, "input.vehicle_type")
+        })
         .unwrap();
     assert!(get(default_efficiency, "input.ammunition.types").is_none());
     assert_eq!(
@@ -428,7 +497,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     let rejected_ammunition = spans
         .iter()
         .find(|s| {
-            s.name == "accounts.dummy_vehicle"
+            s.name == "accounts.custom_battle_vehicle"
                 && get(s, "input.ammunition.types").is_some()
                 && get(s, "output.outcome").as_deref() == Some("invalid_loadout")
         })
@@ -476,6 +545,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     for expected in [
         "invalid_dummy",
         "invalid_parameters",
+        "invalid_player_loadout",
         "player_unavailable",
         "crew_incomplete",
     ] {

@@ -1113,7 +1113,7 @@ it("launches a Training battle with selected players and a customized stationary
   const telemetry = captureTraces();
   const posts: { trace: string | null; body: unknown }[] = [];
   let optionsTrace: string | null = null;
-  let loadoutTrace: string | null = null;
+  const loadoutTraces: (string | null)[] = [];
   let wingmateBusy = false;
   httpServer.use(
     players(),
@@ -1163,7 +1163,7 @@ it("launches a Training battle with selected players and a customized stationary
       });
     }),
     http.get(`${origin}/battles/vehicles/81`, ({ request }) => {
-      loadoutTrace = request.headers.get("traceparent");
+      loadoutTraces.push(request.headers.get("traceparent"));
       return HttpResponse.json({
         equipment_slots: 3,
         consumable_slots: 3,
@@ -1230,6 +1230,29 @@ it("launches a Training battle with selected players and a customized stationary
     await user.selectOptions(commanderVehicle, unreadyTank);
     expect(commanderVehicle).toHaveValue("209");
     expect(screen.getByRole("button", { name: "Start battle" })).toBeDisabled();
+    const chooseCustom = () =>
+      user.click(screen.getByRole("button", { name: "Choose custom tank for Commander" }));
+    await chooseCustom();
+    expect(screen.queryByLabelText("Vehicle for Commander", { exact: true })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Show owned tanks for Commander" }));
+    expect(screen.getByLabelText("Vehicle for Commander")).toHaveValue("209");
+    await chooseCustom();
+    const customize = screen.getByRole("button", { name: "Customize tank for Commander" });
+    expect(customize).toBeDisabled();
+    await user.click(screen.getByRole("combobox", { name: "Custom vehicle for Commander" }));
+    await user.click(
+      within(await screen.findByRole("listbox")).getByRole("option", { name: "T-34" }),
+    );
+    await user.click(customize);
+    const playerDialog = within(await screen.findByRole("dialog", { name: "Customize Commander" }));
+    await user.type(await playerDialog.findByRole("spinbutton", { name: "Hit points" }), "700");
+    await user.click(playerDialog.getByRole("button", { name: "Apply loadout" }));
+    await user.click(screen.getByRole("button", { name: "Show owned tanks for Commander" }));
+    expect(screen.getByLabelText("Vehicle for Commander")).toHaveValue("209");
+    await chooseCustom();
+    expect(screen.getByRole("combobox", { name: "Custom vehicle for Commander" })).toHaveValue(
+      "T-34",
+    );
     await user.click(screen.getByRole("button", { name: "Add dummy" }));
     await user.click(screen.getByRole("combobox", { name: "Vehicle for Dummy 1" }));
     await user.click(
@@ -1317,7 +1340,12 @@ it("launches a Training battle with selected players and a customized stationary
       duration_seconds: 600,
       parameters: { countdown_seconds: 2 },
       players: [
-        { account_id: 123, team: 1, inventory_id: 209 },
+        {
+          account_id: 123,
+          team: 1,
+          inventory_id: null,
+          loadout: { vehicle: 81, equipment: [], consumables: [], crew_perks: [], hit_points: 700 },
+        },
         { account_id: 124, team: 1, inventory_id: 210 },
       ],
       dummies: [
@@ -1339,12 +1367,15 @@ it("launches a Training battle with selected players and a customized stationary
       ],
     });
     telemetry.expectRequest(optionsTrace, "web.admin.battle_options", "/api/admin/battles", 200);
-    telemetry.expectRequest(
-      loadoutTrace,
-      "web.admin.dummy_loadout",
-      "/api/admin/battles/vehicles/{vehicle}",
-      200,
-    );
+    expect(loadoutTraces).toHaveLength(3);
+    for (const trace of loadoutTraces) {
+      telemetry.expectRequest(
+        trace,
+        "web.admin.battle_loadout",
+        "/api/admin/battles/vehicles/{vehicle}",
+        200,
+      );
+    }
     telemetry.expectRequest(
       posts[0]?.trace ?? null,
       "web.admin.start_battle",
@@ -1362,6 +1393,7 @@ it("launches a Training battle with selected players and a customized stationary
       "input.round_length.seconds": 600,
       "input.battle.parameters.count": 1,
       "input.players.count": 2,
+      "input.players.custom_loadout_count": 1,
       "input.dummies.count": 1,
       "output.battle.id": 7,
     });
