@@ -43,6 +43,8 @@ pub struct CustomBattleLoadoutOptions {
     consumable_slots: usize,
     equipment: Vec<LoadoutItem>,
     consumables: Vec<LoadoutItem>,
+    equipment_health_factors: BTreeMap<i32, Vec<f32>>,
+    consumable_health_factors: BTreeMap<i32, f32>,
     crew: Vec<CrewPosition>,
     stock_hit_points: i16,
     ammunition_capacity: u32,
@@ -310,6 +312,33 @@ impl GarageCatalog {
                 name: name.clone(),
             })
             .collect::<Vec<_>>();
+        let equipment_health_factors = equipment
+            .iter()
+            .map(|item| item.id)
+            .chain(
+                current
+                    .iter()
+                    .flat_map(|loadout| loadout.equipment.iter().flatten().copied()),
+            )
+            .map(|id| {
+                (
+                    id,
+                    self.battle_mobility.equipment_health_factors(id, &template),
+                )
+            })
+            .filter(|(_, factors)| factors.iter().any(|&factor| factor != 1.0))
+            .collect();
+        let consumable_health_factors = consumables
+            .iter()
+            .map(|item| item.id)
+            .chain(
+                current
+                    .iter()
+                    .flat_map(|loadout| loadout.consumables.iter().flatten().copied()),
+            )
+            .map(|id| (id, self.battle_mobility.consumable_health_factor(id)))
+            .filter(|&(_, factor)| factor != 1.0)
+            .collect();
         let crew: Vec<_> = template
             .crew_roles
             .iter()
@@ -352,6 +381,8 @@ impl GarageCatalog {
             consumable_slots: template.supply_slots.consumables,
             equipment,
             consumables,
+            equipment_health_factors,
+            consumable_health_factors,
             crew,
             stock_modules: stock.clone(),
             modules,

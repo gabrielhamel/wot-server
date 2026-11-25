@@ -177,6 +177,12 @@ illustrate the calculation.
 
 ### Per-battle simulation parameters
 
+Every adjustable mechanic and hardcoded gameplay tuning value owned by
+Battles belongs in the admin Battle parameters panel. Define validated
+defaults and ranges with the mechanic and pass the chosen values at launch.
+Protocol identifiers, mathematical constants, resource definitions and hard
+safety ceilings remain implementation details.
+
 Battles owns the defaults and ranges in
 [parameters.rs](../src/battles/src/domain/parameters.rs). The admin dashboard
 can override round timing, gravity and drive response, hull contacts and

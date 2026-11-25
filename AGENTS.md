@@ -88,6 +88,17 @@ Distinguish confirmed findings from hypotheses and unresolved questions. Record
 the supporting source, executable version, or code location when useful so that
 future work can verify and extend the findings.
 
+## Admin battle customization
+
+Expose gameplay mechanics and hardcoded simulation tuning values owned by the
+Battles bounded context in **Admin → Battles → Battle parameters**. When adding
+or changing a mechanic, define its adjustable values as validated per-battle
+settings, publish their defaults and supported ranges, and apply the selected
+values at arena launch. Native Training Rooms use the same defaults. Keep
+protocol identifiers, mathematical constants, resource definitions and hard
+safety ceilings in their owning implementation. See the
+[per-battle simulation parameters guide](docs/battle-mechanics.md#per-battle-simulation-parameters).
+
 ## Admin grants for player items
 
 For each implemented player-usable item that players cannot buy through the

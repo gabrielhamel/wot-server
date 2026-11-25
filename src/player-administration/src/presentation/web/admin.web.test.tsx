@@ -1138,7 +1138,9 @@ it("launches a Training battle with selected players and a customized stationary
     stock_hit_points: 450,
     ammunition_capacity: 77,
     ammunition: stockAmmo,
-    hull_weight: 10000,
+    hull_weight: 0,
+    equipment_health_factors: { 120: [1.12, 1.1, 1.1] },
+    consumable_health_factors: {},
     stock_modules: {
       Chassis: 601,
       Turret: 701,
@@ -1148,12 +1150,15 @@ it("launches a Training battle with selected players and a customized stationary
       Radio: 1101,
     },
     modules: {
-      Chassis: [module(601, "Stock suspension", 1000, 20000)],
-      Turret: [module(701, "Stock turret", 1000), module(702, "Upgraded turret", 1000)],
-      Gun: [module(801, "Stock gun", 1000), module(802, "Upgraded gun", 1000)],
-      Engine: [module(901, "Stock engine", 1000), module(902, "Upgraded engine", 1000)],
-      FuelTank: [module(1001, "Stock fuel tank", 1000)],
-      Radio: [module(1101, "Stock radio", 1000)],
+      Chassis: [
+        module(601, "Stock suspension", 0, 500),
+        module(602, "Upgraded suspension", 0, 600),
+      ],
+      Turret: [module(701, "Stock turret", 200), module(702, "Upgraded turret", 250)],
+      Gun: [module(801, "Stock gun", 120), module(802, "Upgraded gun", 120)],
+      Engine: [module(901, "Stock engine", 180), module(902, "Upgraded engine", 180)],
+      FuelTank: [module(1001, "Stock fuel tank", 0)],
+      Radio: [module(1101, "Stock radio", 0)],
     },
     weapons: [
       { turret: 701, gun: 801, hit_points: 450, ammunition_capacity: 77, ammunition: stockAmmo },
@@ -1301,14 +1306,36 @@ it("launches a Training battle with selected players and a customized stationary
     await user.click(customize);
     const playerDialog = within(await screen.findByRole("dialog", { name: "Customize Commander" }));
     expect(await playerDialog.findByLabelText("Gun", { exact: true })).toHaveValue("801");
+    expect(playerDialog.getByRole("spinbutton", { name: "Hit points" })).toHaveAttribute(
+      "placeholder",
+      "450",
+    );
+    expect(playerDialog.getByText("77 / 77 rounds")).toBeVisible();
+    expect(playerDialog.getByText("Module weight 500 / 500 kg")).toBeVisible();
+    const applyPlayer = playerDialog.getByRole("button", { name: "Apply loadout" });
     await user.selectOptions(
       playerDialog.getByLabelText("Turret", { exact: true }),
       "Upgraded turret",
     );
     expect(playerDialog.getByLabelText("Gun", { exact: true })).toHaveValue("802");
-    expect(playerDialog.getByRole("spinbutton", { name: "UBR-350A rounds" })).toHaveValue(45);
-    await user.type(await playerDialog.findByRole("spinbutton", { name: "Hit points" }), "700");
-    await user.click(playerDialog.getByRole("button", { name: "Apply loadout" }));
+    const upgradedAmmo = playerDialog.getByRole("spinbutton", { name: "UBR-350A rounds" });
+    expect(upgradedAmmo).toHaveValue(45);
+    expect(upgradedAmmo).toHaveAttribute("max", "45");
+    expect(playerDialog.getByText("45 / 45 rounds")).toBeVisible();
+    expect(playerDialog.getByRole("spinbutton", { name: "Hit points" })).toHaveAttribute(
+      "placeholder",
+      "500",
+    );
+    expect(playerDialog.getByRole("alert")).toHaveTextContent("Module weight 550 / 500 kg");
+    expect(applyPlayer).toBeDisabled();
+    await user.selectOptions(
+      playerDialog.getByLabelText("Suspension", { exact: true }),
+      "Upgraded suspension",
+    );
+    expect(playerDialog.getByText("Module weight 550 / 600 kg")).toBeVisible();
+    expect(applyPlayer).toBeEnabled();
+    await user.type(playerDialog.getByRole("spinbutton", { name: "Hit points" }), "700");
+    await user.click(applyPlayer);
     await user.click(screen.getByRole("button", { name: "Show owned tanks for Commander" }));
     expect(screen.getByLabelText("Vehicle for Commander")).toHaveValue("209");
     await chooseCustom();
@@ -1326,6 +1353,16 @@ it("launches a Training battle with selected players and a customized stationary
       ownedDialog.getByRole("slider", { name: "Commander perk efficiency (seat 1)" }),
     ).toHaveAttribute("aria-valuetext", "62%");
     expect(ownedDialog.getByText("Brothers in Arms")).toBeVisible();
+    await user.selectOptions(
+      ownedDialog.getByLabelText("Suspension", { exact: true }),
+      "Upgraded suspension",
+    );
+    await user.selectOptions(
+      ownedDialog.getByLabelText("Turret", { exact: true }),
+      "Upgraded turret",
+    );
+    expect(ownedDialog.getByRole("spinbutton", { name: "Hit points" })).toHaveValue(560);
+    expect(ownedDialog.getByRole("spinbutton", { name: "UBR-350A rounds" })).toHaveValue(45);
     await user.selectOptions(
       ownedDialog.getByLabelText("Engine", { exact: true }),
       "Upgraded engine",
@@ -1349,7 +1386,7 @@ it("launches a Training battle with selected players and a customized stationary
     const ap = dialog.getByRole("spinbutton", { name: "UBR-354A rounds" });
     const he = dialog.getByRole("spinbutton", { name: "UOF-354M rounds" });
     const apply = dialog.getByRole("button", { name: "Apply loadout" });
-    expect(hp).toHaveAttribute("placeholder", "450");
+    expect(hp).toHaveAttribute("placeholder", "510");
     expect(dialog.getByLabelText("Engine", { exact: true })).toHaveValue("901");
     await user.selectOptions(dialog.getByLabelText("Engine", { exact: true }), "Upgraded engine");
     expect(commander).toHaveAttribute("aria-valuetext", "100%");
@@ -1429,7 +1466,7 @@ it("launches a Training battle with selected players and a customized stationary
             equipment: [],
             consumables: [],
             crew_perks: [],
-            modules: { Turret: 702, Gun: 802 },
+            modules: { Chassis: 602, Turret: 702, Gun: 802 },
             hit_points: 700,
           },
         },
@@ -1437,7 +1474,10 @@ it("launches a Training battle with selected players and a customized stationary
           account_id: 124,
           team: 1,
           inventory_id: 210,
-          owned_overrides: { vehicle: 81, modules: { Engine: 902 } },
+          owned_overrides: {
+            vehicle: 81,
+            modules: { Chassis: 602, Turret: 702, Gun: 802, Engine: 902 },
+          },
         },
       ],
       dummies: [

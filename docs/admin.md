@@ -157,10 +157,13 @@ member at 50% contributes half the effective training for their selected perks.
 
 Set **Hit points** from 1 to 32,767 to override both starting and maximum
 HP. Leave it blank to use equipped HP, including any gain from Improved
-Hardening. The turret determines compatible guns and base HP. The suspension
-limits the total installed module weight. The first compatible shell type fills
-a custom tank's rack by default. The selected turret and gun determine ammunition
-types and capacity. An owned loadout keeps its ammunition when the new weapon
+Hardening. Changing the turret updates compatible guns and equipped HP,
+including applicable equipment and consumable bonuses. The selected turret
+and gun determine available shell types and the rack capacity. The first
+compatible shell type fills a custom tank's rack by default. The panel shows
+the combined hull and module weight against the selected suspension's limit.
+Apply stays disabled above that limit until you pick a higher-capacity
+suspension or lighter modules. The server checks the combination at launch. An owned loadout keeps its ammunition when the new weapon
 can carry it and uses the new weapon's default when it cannot.
 Set all counts to zero to test a dummy with an empty ammo rack. Dummies remain
 in place when pushed, take hits, and have no player controls to fire or activate

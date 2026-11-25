@@ -106,14 +106,16 @@ export function BattleLoadoutConfiguration({
   const weight = moduleFields.reduce(
     (mass, [kind]) =>
       Math.fround(
-        mass + (options?.modules[kind]?.find(({ id }) => id === modules[kind])?.weight ?? 0),
+        mass +
+          Math.fround(options?.modules[kind]?.find(({ id }) => id === modules[kind])?.weight ?? 0),
       ),
-    options?.hull_weight ?? 0,
+    Math.fround(options?.hull_weight ?? 0),
   );
+  const weightLimit = suspension?.max_weight;
   const validWeight =
-    !Object.keys(loadout?.modules ?? {}).length ||
-    suspension?.max_weight == null ||
-    weight <= suspension.max_weight;
+    (ownedVehicle && !Object.keys(loadout?.modules ?? {}).length) ||
+    weightLimit == null ||
+    weight <= Math.fround(weightLimit);
   const capacity = weapon?.ammunition_capacity ?? options?.ammunition_capacity ?? 0;
   const shells = weapon?.ammunition ?? options?.ammunition ?? [];
   const currentAmmo = loadout?.ammunition ?? current?.ammunition;
@@ -137,10 +139,28 @@ export function BattleLoadoutConfiguration({
   }));
   const equipment = loadout?.equipment ?? current?.equipment ?? [];
   const consumables = loadout?.consumables ?? current?.consumables ?? [];
-  const baseHitPoints =
-    modules.Turret === baseModules.Turret && !loadout?.equipment
-      ? (options?.equipped_hit_points ?? weapon?.hit_points ?? options?.stock_hit_points)
-      : (weapon?.hit_points ?? options?.stock_hit_points);
+  const baseHitPoints = weapon?.hit_points ?? options?.stock_hit_points;
+  // Match the server’s ordered f32 multiplications, then its ten-HP rounding.
+  const equipmentHealth = equipment.reduce(
+    (factor, id, slot) =>
+      Math.fround(factor * Math.fround(options?.equipment_health_factors[id]?.[slot] ?? 1)),
+    1,
+  );
+  const healthFactor = consumables.reduce(
+    (factor, id) => Math.fround(factor * Math.fround(options?.consumable_health_factors[id] ?? 1)),
+    equipmentHealth,
+  );
+  const adjustedHitPoints =
+    baseHitPoints === undefined || healthFactor === 1
+      ? baseHitPoints
+      : Math.min(
+          maxHitPoints,
+          Math.ceil(Math.fround(Math.round(Math.fround(baseHitPoints * healthFactor)) / 10)) * 10,
+        );
+  const equippedHitPoints =
+    modules.Turret === baseModules.Turret && !loadout?.equipment && !loadout?.consumables
+      ? (options?.equipped_hit_points ?? adjustedHitPoints)
+      : adjustedHitPoints;
   const rounds = ammunition.reduce((sum, { value }) => sum + Number(value), 0);
   const validHealth = !hitPoints || validInteger(hitPoints, 1, maxHitPoints);
   const validAmmo = ammunition.every(({ value }) => validInteger(value, 0, capacity));
@@ -231,20 +251,26 @@ export function BattleLoadoutConfiguration({
                 />
               ) : null;
             })}
-            {!validWeight && (
-              <Alert severity="error">
-                The selected modules exceed the suspension’s load capacity.
-              </Alert>
-            )}
+            {weightLimit != null &&
+              (validWeight ? (
+                <Typography variant="body2" color="text.secondary">
+                  Module weight {weight.toLocaleString()} / {weightLimit.toLocaleString()} kg
+                </Typography>
+              ) : (
+                <Alert severity="error">
+                  Module weight {weight.toLocaleString()} / {weightLimit.toLocaleString()} kg.
+                  Select a suspension that supports the load or choose lighter modules.
+                </Alert>
+              ))}
             <TextField
               label="Hit points"
               type="number"
-              value={hitPoints ?? (ownedVehicle ? (baseHitPoints?.toString() ?? "") : "")}
-              placeholder={baseHitPoints?.toString()}
+              value={hitPoints ?? (ownedVehicle ? (equippedHitPoints?.toString() ?? "") : "")}
+              placeholder={equippedHitPoints?.toString()}
               error={!validHealth}
               helperText={
                 validHealth
-                  ? `Current HP: ${baseHitPoints}. Leave blank to use equipped HP.`
+                  ? `Equipped HP ${equippedHitPoints}. Leave blank to use this value.`
                   : "Enter a whole number from 1 to 32,767."
               }
               slotProps={{ htmlInput: { min: 1, max: maxHitPoints, step: 1 } }}

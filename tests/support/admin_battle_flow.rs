@@ -204,6 +204,8 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(status, 200, "{loadout}");
         let hardening = loadout["equipment"].as_array().unwrap().iter()
             .find(|entry| entry["name"].as_str().unwrap().contains("Improved Hardening")).unwrap()["id"].clone();
+        let factors = &loadout["equipment_health_factors"][hardening.to_string()];
+        assert!(factors[0].as_f64().unwrap() > 1.0);
         let consumable = loadout["consumables"].as_array().unwrap().iter()
             .find(|entry| entry["name"] == "Small Repair Kit").unwrap()["id"].clone();
         let stock_hp = loadout["stock_hit_points"].as_i64().unwrap();

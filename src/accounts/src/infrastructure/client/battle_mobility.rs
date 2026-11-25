@@ -88,6 +88,38 @@ impl BattleMobility {
         })
     }
 
+    fn equipment_modifiers(&self, item: &Item, categories: &BTreeSet<String>) -> Modifiers {
+        if categories.iter().any(|category| {
+            item.categories.contains(category)
+                || (item.categories.contains("mobility")
+                    && self.mobility_categories.contains(category))
+        }) {
+            item.matching_slot
+        } else {
+            item.base
+        }
+    }
+
+    pub(super) fn equipment_health_factors(&self, id: i32, catalog: &CatalogVehicle) -> Vec<f32> {
+        let item = self.devices.get(&raw_id(id));
+        catalog
+            .supply_slots
+            .optional_device_categories
+            .iter()
+            .map(|categories| {
+                item.map_or(1.0, |item| {
+                    self.equipment_modifiers(item, categories).health
+                })
+            })
+            .collect()
+    }
+
+    pub(super) fn consumable_health_factor(&self, id: i32) -> f32 {
+        self.supplies
+            .get(&raw_id(id))
+            .map_or(1.0, |item| item.base.health)
+    }
+
     #[tracing::instrument(name = "accounts.battle_mobility", skip_all, fields(
         ddd.bounded_context.name = "accounts", input.inventory_id = inventory_id,
         input.mobility.equipment_count = vehicle.equipment.iter().filter(|&&id| id != 0).count(),
@@ -128,16 +160,7 @@ impl BattleMobility {
             equipment_mass += item.weight;
             turbocharger |= item.name.to_ascii_lowercase().contains("turbocharger");
             ventilation |= item.name.to_ascii_lowercase().contains("ventilation");
-            let matching = categories.iter().any(|category| {
-                item.categories.contains(category)
-                    || (item.categories.contains("mobility")
-                        && self.mobility_categories.contains(category))
-            });
-            modifiers.combine(if matching {
-                item.matching_slot
-            } else {
-                item.base
-            });
+            modifiers.combine(self.equipment_modifiers(item, categories));
         }
         for &id in vehicle.consumables.iter().filter(|&&id| id != 0) {
             if let Some(item) = self.supplies.get(&raw_id(id)) {

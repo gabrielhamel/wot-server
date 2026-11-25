@@ -129,6 +129,8 @@ export type CustomBattleLoadoutOptions = {
   consumable_slots: number;
   equipment: BattleChoice[];
   consumables: BattleChoice[];
+  equipment_health_factors: Record<number, number[]>;
+  consumable_health_factors: Record<number, number>;
   crew: { name: string; perks: BattleChoice[] }[];
   stock_hit_points: number;
   ammunition_capacity: number;
