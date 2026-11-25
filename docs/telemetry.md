@@ -103,9 +103,12 @@ Admin and Store API requests keep their own request spans.
 
 Dashboard battle launches keep the browser parent through authentication,
 `admin.start_battle`, the gateway request and the arena worker. Accounts records
-the selected dummy vehicle and loadout counts. Arena preparation and the
-subsequent native client entry share the launch trace. The launch response
-records the allocated battle ID and the count of client handoffs queued.
+the selected dummy vehicle, loadout counts, lowest configured perk efficiency
+and requested HP. The projection records the final HP and loaded rounds.
+Dummy options record the stock HP, shell type count and ammunition capacity.
+Arena preparation and the subsequent native client entry share the launch
+trace. The launch response records the allocated battle ID and the count of
+client handoffs queued.
 
 Managed player creation traces the input lengths and validation outcome
 through `admin.players.create` and `accounts.registration.validate`. An accepted

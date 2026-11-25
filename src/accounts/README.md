@@ -50,7 +50,7 @@ formats.
 | Garage projection | Compressed Python cache derived from a snapshot and client definitions. |
 | Battle vehicle | An owned loadout projected for battle with the encoded descriptor, locked outfit, health, crew size, loaded ammunition, and performance from the equipped modules and supported mobility modifiers, including shell ballistics, explosive and stun definitions, part armor meshes and device health. |
 | Admin battle readiness | An owned catalog vehicle must be eligible for battle and have an active crew member in every seat. Legacy garages use their initial crew flag until a roster is persisted. |
-| Dummy loadout | A catalog tank with stock modules and ammo, a full-efficiency crew, and optional compatible equipment, consumables and crew perks. Projected in memory for one battle. |
+| Dummy loadout | An in-memory catalog tank for one battle with stock modules, optional compatible equipment and consumables, per-seat perks and perk efficiency, an HP override, and configurable ammunition. |
 | Training vehicle descriptor | Compact descriptor for the Training Room roster. A player vehicle uses its owned loadout. The observer uses the stock descriptor from the resource bundle. |
 | Research | An account-wide tank or module unlock bought with vehicle XP and free XP. |
 | Vehicle purchase | An atomic debit and permanent ownership grant, with optional crew, ammunition and consumables. |

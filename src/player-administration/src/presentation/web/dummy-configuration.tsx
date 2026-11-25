@@ -7,11 +7,12 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Slider,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useId, useState } from "react";
 import type { DummyLoadout, DummyLoadoutOptions } from "../../application/admin-contracts";
 import { getDummyLoadout } from "../../infrastructure/admin-api";
 import { errorMessage } from "../../../../shared-infrastructure/src/infrastructure/web/http";
@@ -26,6 +27,13 @@ function replaceSlot(items: number[], slot: number, item: number) {
   return layout;
 }
 
+const maxHitPoints = 32_767;
+
+function validInteger(value: string, min: number, max: number) {
+  const number = Number(value);
+  return value !== "" && Number.isInteger(number) && number >= min && number <= max;
+}
+
 export function DummyConfiguration({
   name,
   initial,
@@ -38,6 +46,10 @@ export function DummyConfiguration({
   onSave: (value: DummyLoadout) => void;
 }) {
   const [loadout, setLoadout] = useState(initial);
+  const [hitPoints, setHitPoints] = useState(initial.hit_points?.toString() ?? "");
+  const [ammoEdits, setAmmoEdits] = useState<Record<number, string>>({});
+  const [crewEdits, setCrewEdits] = useState<Record<number, number>>({});
+  const crewLabelId = useId();
   const [options, setOptions] = useState<DummyLoadoutOptions>();
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -54,6 +66,34 @@ export function DummyConfiguration({
     );
     return () => controller.abort();
   }, [attempt, initial.vehicle]);
+
+  const initialAmmo = new Map(initial.ammunition);
+  const ammunition = (options?.ammunition ?? []).map(({ id, name, default_count }) => ({
+    id,
+    name,
+    value: ammoEdits[id] ?? String(initial.ammunition ? (initialAmmo.get(id) ?? 0) : default_count),
+  }));
+  const crew = (options?.crew ?? []).map((seat, slot) => ({
+    ...seat,
+    efficiency: crewEdits[slot] ?? initial.crew_perk_efficiency?.[slot] ?? 100,
+  }));
+  const capacity = options?.ammunition_capacity ?? 0;
+  const rounds = ammunition.reduce((sum, { value }) => sum + Number(value), 0);
+  const validHealth = hitPoints === "" || validInteger(hitPoints, 1, maxHitPoints);
+  const validAmmo = ammunition.every(({ value }) => validInteger(value, 0, capacity));
+
+  function applyLoadout() {
+    onSave({
+      ...loadout,
+      hit_points: hitPoints === "" ? undefined : Number(hitPoints),
+      ammunition: Object.keys(ammoEdits).length
+        ? ammunition.map(({ id, value }) => [id, Number(value)])
+        : initial.ammunition,
+      crew_perk_efficiency: Object.keys(crewEdits).length
+        ? crew.map(({ efficiency }) => efficiency)
+        : initial.crew_perk_efficiency,
+    });
+  }
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="dummy-loadout-title">
@@ -79,6 +119,43 @@ export function DummyConfiguration({
         {!options && !error && <CircularProgress size={24} aria-label="Loading dummy loadout" />}
         {options && (
           <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField
+              label="Hit points"
+              type="number"
+              value={hitPoints}
+              placeholder={String(options.stock_hit_points)}
+              error={!validHealth}
+              helperText={
+                validHealth
+                  ? `Stock HP: ${options.stock_hit_points}. Leave blank to use equipped HP.`
+                  : "Enter a whole number from 1 to 32,767."
+              }
+              slotProps={{ htmlInput: { min: 1, max: maxHitPoints, step: 1 } }}
+              onChange={(event) => setHitPoints(event.target.value)}
+            />
+            <Typography component="h3" variant="subtitle1">
+              Ammunition
+            </Typography>
+            {ammunition.map(({ id, name, value }) => {
+              const valid = validInteger(value, 0, capacity);
+              return (
+                <TextField
+                  key={id}
+                  label={`${name} rounds`}
+                  type="number"
+                  value={value}
+                  error={!valid}
+                  helperText={valid ? undefined : `Enter a whole number from 0 to ${capacity}.`}
+                  slotProps={{ htmlInput: { min: 0, max: capacity, step: 1 } }}
+                  onChange={(event) => setAmmoEdits({ ...ammoEdits, [id]: event.target.value })}
+                />
+              );
+            })}
+            {validAmmo && (
+              <Typography variant="body2" color={rounds > capacity ? "error" : "text.secondary"}>
+                {rounds} / {capacity} rounds{rounds > capacity && " · over capacity"}
+              </Typography>
+            )}
             {options.equipment_slots > 0 && (
               <Typography component="h3" variant="subtitle1">
                 Equipment
@@ -124,39 +201,70 @@ export function DummyConfiguration({
               />
             ))}
             <Typography component="h3" variant="subtitle1">
-              Crew perks · 100% crew
+              Crew
             </Typography>
-            {options.crew.map(({ name: role, perks }, slot) => (
-              <Autocomplete
-                key={slot}
-                multiple
-                options={perks}
-                getOptionLabel={({ name }) => name}
-                getOptionKey={({ id }) => id}
-                value={perks.filter(({ id }) => loadout.crew_perks[slot]?.includes(id))}
-                getOptionDisabled={({ id }) => {
-                  const selected = loadout.crew_perks[slot] ?? [];
-                  return selected.length >= 6 && !selected.includes(id);
-                }}
-                onChange={(_, selected) => {
-                  const crewPerks = options.crew.map((_, index) =>
-                    index === slot
-                      ? selected.map(({ id }) => id)
-                      : (loadout.crew_perks[index] ?? []),
-                  );
-                  setLoadout({ ...loadout, crew_perks: crewPerks });
-                }}
-                renderInput={(params) => (
-                  <TextField {...params} label={`${role} perks (seat ${slot + 1})`} />
-                )}
-              />
+            <Typography variant="body2" color="text.secondary">
+              Perk effects scale with each crew member’s perk efficiency.
+            </Typography>
+            {crew.map(({ name: role, perks, efficiency }, slot) => (
+              <Fragment key={slot}>
+                <Stack>
+                  <Stack direction="row" justifyContent="space-between" spacing={2}>
+                    <Typography id={`${crewLabelId}-${slot}`} variant="body2">
+                      {role} perk efficiency (seat {slot + 1})
+                    </Typography>
+                    <Typography variant="body2" aria-hidden="true">
+                      {efficiency}%
+                    </Typography>
+                  </Stack>
+                  <Slider
+                    aria-labelledby={`${crewLabelId}-${slot}`}
+                    getAriaValueText={(value) => `${value}%`}
+                    value={efficiency}
+                    min={0}
+                    max={100}
+                    step={1}
+                    onChange={(_, value) => {
+                      if (typeof value === "number") {
+                        setCrewEdits({ ...crewEdits, [slot]: value });
+                      }
+                    }}
+                  />
+                </Stack>
+                <Autocomplete
+                  multiple
+                  options={perks}
+                  getOptionLabel={({ name }) => name}
+                  getOptionKey={({ id }) => id}
+                  value={perks.filter(({ id }) => loadout.crew_perks[slot]?.includes(id))}
+                  getOptionDisabled={({ id }) => {
+                    const selected = loadout.crew_perks[slot] ?? [];
+                    return selected.length >= 6 && !selected.includes(id);
+                  }}
+                  onChange={(_, selected) => {
+                    const crewPerks = options.crew.map((_, index) =>
+                      index === slot
+                        ? selected.map(({ id }) => id)
+                        : (loadout.crew_perks[index] ?? []),
+                    );
+                    setLoadout({ ...loadout, crew_perks: crewPerks });
+                  }}
+                  renderInput={(params) => (
+                    <TextField {...params} label={`${role} perks (seat ${slot + 1})`} />
+                  )}
+                />
+              </Fragment>
             ))}
           </Stack>
         )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" disabled={!options} onClick={() => onSave(loadout)}>
+        <Button
+          variant="contained"
+          disabled={!options || !validHealth || !validAmmo || rounds > capacity}
+          onClick={applyLoadout}
+        >
           Apply loadout
         </Button>
       </DialogActions>

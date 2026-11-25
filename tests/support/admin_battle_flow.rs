@@ -160,7 +160,21 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(status, 200, "{loadout}");
         let hardening = loadout["equipment"].as_array().unwrap().iter()
             .find(|entry| entry["name"].as_str().unwrap().contains("Improved Hardening")).unwrap()["id"].clone();
-        let consumable = loadout["consumables"].as_array().unwrap()[0]["id"].clone();
+        let consumable = loadout["consumables"].as_array().unwrap().iter()
+            .find(|entry| entry["name"] == "Small Repair Kit").unwrap()["id"].clone();
+        let stock_hp = loadout["stock_hit_points"].as_i64().unwrap();
+        let capacity = loadout["ammunition_capacity"].as_u64().unwrap();
+        let shells = loadout["ammunition"].as_array().unwrap();
+        let shell = shells[0]["id"].as_i64().unwrap();
+        assert_eq!(shells[0]["default_count"], capacity);
+        assert!(shells[1..].iter().all(|shell| shell["default_count"] == 0));
+        assert!(!shells[0]["name"].as_str().unwrap().starts_with("Shell type"));
+        let seats = loadout["crew"].as_array().unwrap();
+        let driver = seats.iter().position(|seat| seat["name"] == "Driver").unwrap();
+        let mut perks = vec![vec![]; seats.len()];
+        perks[driver] = vec![33]; // Engineer
+        let mut efficiency = vec![100; seats.len()];
+        efficiency[driver] = 50;
         let mut battle = json!({
             "arena_type": arena, "duration_seconds": 300,
             "players": [{"account_id": account, "team": 1, "inventory_id": 1}],
@@ -174,6 +188,21 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         battle["dummies"][0]["loadout"]["equipment"] = json!([hardening]);
         battle["dummies"][0]["loadout"]["consumables"] = json!([consumable]);
         battle["dummies"][0]["loadout"]["crew_perks"] = json!([[9]]);
+        for (field, value) in [
+            ("crew_perk_efficiency", json!([101])),
+            ("hit_points", json!(0)),
+            ("ammunition", json!([[shell, capacity + 1]])),
+            ("ammunition", json!([[shell, 1], [shell, 1]])),
+            ("ammunition", json!([[0, 1]])),
+        ] {
+            let mut invalid = battle.clone();
+            invalid["dummies"][1]["loadout"][field] = value;
+            assert_eq!(request("POST", "/battles", &cookie, invalid).0, 400, "{field}");
+        }
+        battle["dummies"][1]["loadout"]["hit_points"] = json!(71);
+        battle["dummies"][1]["loadout"]["ammunition"] = json!([[shell, 0]]);
+        battle["dummies"][1]["loadout"]["crew_perks"] = json!(perks);
+        battle["dummies"][1]["loadout"]["crew_perk_efficiency"] = json!(efficiency);
         let mut unready = battle.clone();
         unready["players"][0]["inventory_id"] = json!(2);
         let (status, rejected) = request("POST", "/battles", &cookie, unready);
@@ -201,16 +230,25 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             .map(|entity| {
                 let mut properties = entity.properties.as_slice();
                 let count = u8::read(&mut properties, &()).unwrap();
-                (0..count).find_map(|_| {
+                let mut health = None;
+                let mut max_health = None;
+                for _ in 0..count {
                     let id = u8::read(&mut properties, &()).unwrap();
                     let property = &schema.properties[usize::from(id)];
                     let value = Value::read(&mut properties, &property.ty).unwrap();
-                    (&*property.name == "health").then(|| value.as_i64().unwrap())
-                }).unwrap()
+                    match (&*property.name, value) {
+                        ("health", value) => health = value.as_i64(),
+                        ("publicInfo", Value::Dict(info)) => max_health = info["maxHealth"].as_i64(),
+                        _ => {}
+                    }
+                }
+                assert_eq!(health, max_health);
+                health.unwrap()
             }).collect::<Vec<_>>();
         health.sort_unstable();
         assert_eq!(health.len(), 3);
-        assert_eq!(health[0], health[1]);
+        assert_eq!(health[0], 71);
+        assert_eq!(health[1], stock_hp);
         assert!(health[2] > health[1], "Hardening must increase dummy HP: {health:?}");
         let own = peer.cell.as_ref().unwrap().vehicle_id;
         let dummies = peer.arena_entities.iter()
@@ -294,6 +332,85 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             "{name}"
         );
     }
+    let projected = spans
+        .iter()
+        .find(|s| {
+            s.name == "accounts.dummy_vehicle"
+                && s.parent_span_id == launch.span_context.span_id()
+                && get(s, "input.vehicle.hit_points").as_deref() == Some("71")
+        })
+        .unwrap();
+    assert_eq!(
+        get(projected, "input.crew.perk_efficiency_min").as_deref(),
+        Some("50")
+    );
+    assert_eq!(
+        get(projected, "input.ammunition.types").as_deref(),
+        Some("1")
+    );
+    assert_eq!(
+        get(projected, "output.vehicle.hit_points").as_deref(),
+        Some("71")
+    );
+    assert_eq!(
+        get(projected, "output.ammunition.rounds").as_deref(),
+        Some("0")
+    );
+    let forward_speed = |dummy: &opentelemetry_sdk::trace::SpanData| {
+        let vehicle = spans
+            .iter()
+            .find(|s| {
+                s.name == "accounts.battle_vehicle"
+                    && s.parent_span_id == dummy.span_context.span_id()
+            })
+            .unwrap();
+        let mobility = spans
+            .iter()
+            .find(|s| {
+                s.name == "accounts.battle_mobility"
+                    && s.parent_span_id == vehicle.span_context.span_id()
+            })
+            .unwrap();
+        get(mobility, "output.mobility.forward_speed_mps")
+            .unwrap()
+            .parse::<f64>()
+            .unwrap()
+    };
+    let default_efficiency = spans
+        .iter()
+        .find(|s| {
+            s.name == "accounts.dummy_vehicle"
+                && s.parent_span_id == launch.span_context.span_id()
+                && get(s, "input.vehicle.hit_points").is_none()
+        })
+        .unwrap();
+    assert!(
+        (forward_speed(projected) - forward_speed(default_efficiency) - 0.5 / 3.6).abs() < 1e-4
+    );
+    let dummy_options = spans
+        .iter()
+        .find(|s| s.name == "accounts.dummy_loadout_options")
+        .unwrap();
+    assert!(get(default_efficiency, "input.ammunition.types").is_none());
+    assert_eq!(
+        get(default_efficiency, "output.ammunition.rounds").unwrap(),
+        get(dummy_options, "output.ammunition.capacity").unwrap(),
+    );
+    let rejected_ammunition = spans
+        .iter()
+        .find(|s| {
+            s.name == "accounts.dummy_vehicle"
+                && get(s, "input.ammunition.types").is_some()
+                && get(s, "output.outcome").as_deref() == Some("invalid_loadout")
+        })
+        .unwrap();
+    assert!(
+        spans
+            .iter()
+            .any(|s| s.name == "player_sessions.start_admin_battle"
+                && s.span_context.span_id() == rejected_ammunition.parent_span_id
+                && get(s, "output.outcome").as_deref() == Some("invalid_dummy"))
+    );
     let preparation = spans
         .iter()
         .find(|s| s.name == "battles.prepare" && s.parent_span_id == launch.span_context.span_id())

@@ -1149,7 +1149,16 @@ it("launches a Training battle with selected players and a customized stationary
         consumable_slots: 3,
         equipment: [{ id: 120, name: "Improved Hardening" }],
         consumables: [{ id: 121, name: "Small Repair Kit" }],
-        crew: [{ name: "Commander", perks: [{ id: 9, name: "Brothers in Arms" }] }],
+        crew: [
+          { name: "Commander", perks: [{ id: 9, name: "Brothers in Arms" }] },
+          { name: "Driver", perks: [] },
+        ],
+        stock_hit_points: 450,
+        ammunition_capacity: 77,
+        ammunition: [
+          { id: 401, name: "UBR-354A", default_count: 77 },
+          { id: 402, name: "UOF-354M", default_count: 0 },
+        ],
       });
     }),
     http.post(`${origin}/battles`, async ({ request }) => {
@@ -1173,7 +1182,10 @@ it("launches a Training battle with selected players and a customized stationary
       await screen.findByLabelText("Map and battle type"),
       "Prokhorovka · Standard Battle",
     );
-    await user.selectOptions(screen.getByLabelText("Battle duration"), "10 minutes");
+    const duration = screen.getByRole("spinbutton", { name: "Battle duration (minutes)" });
+    expect(duration).toHaveValue(15);
+    expect(duration).toHaveAttribute("min", "5");
+    expect(duration).toHaveAttribute("max", "30");
     const playerPicker = screen.getByRole("combobox", { name: "Add connected player" });
     await user.type(playerPicker, "Scout");
     expect(await screen.findByRole("option", { name: "Scout · In battle" })).toHaveAttribute(
@@ -1207,10 +1219,52 @@ it("launches a Training battle with selected players and a customized stationary
       "Improved Hardening",
     );
     await user.selectOptions(dialog.getByLabelText("Consumable slot 1"), "Small Repair Kit");
+    const hp = dialog.getByRole("spinbutton", { name: "Hit points" });
+    const commander = dialog.getByRole("slider", { name: "Commander perk efficiency (seat 1)" });
+    const driver = dialog.getByRole("slider", { name: "Driver perk efficiency (seat 2)" });
+    const ap = dialog.getByRole("spinbutton", { name: "UBR-354A rounds" });
+    const he = dialog.getByRole("spinbutton", { name: "UOF-354M rounds" });
+    const apply = dialog.getByRole("button", { name: "Apply loadout" });
+    expect(hp).toHaveAttribute("placeholder", "450");
+    expect(commander).toHaveAttribute("aria-valuetext", "100%");
+    expect(driver).toHaveAttribute("aria-valuetext", "100%");
+    expect(ap).toHaveValue(77);
+    expect(he).toHaveValue(0);
+    await user.type(hp, "650");
+    commander.focus();
+    await user.keyboard("{Home}{ArrowRight}");
+    expect(commander).toHaveAttribute("aria-valuetext", "1%");
+    await user.keyboard("{Home}");
+    expect(commander).toHaveAttribute("aria-valuetext", "0%");
+    expect(driver).toHaveAttribute("aria-valuetext", "100%");
+    await user.clear(he);
+    await user.type(he, "1");
+    expect(dialog.getByText("78 / 77 rounds · over capacity")).toBeVisible();
+    expect(apply).toBeDisabled();
+    await user.clear(ap);
+    await user.type(ap, "25");
+    await user.clear(he);
+    await user.type(he, "0");
     await user.click(dialog.getByRole("combobox", { name: "Commander perks (seat 1)" }));
     await user.click(await screen.findByRole("option", { name: "Brothers in Arms" }));
-    await user.click(dialog.getByRole("button", { name: "Apply loadout" }));
-    await user.click(screen.getByRole("button", { name: "Start battle" }));
+    await user.click(apply);
+    await user.click(screen.getByRole("button", { name: "Customize Dummy 1" }));
+    const saved = within(await screen.findByRole("dialog", { name: "Customize Dummy 1" }));
+    expect(await saved.findByRole("spinbutton", { name: "Hit points" })).toHaveValue(650);
+    expect(
+      saved.getByRole("slider", { name: "Commander perk efficiency (seat 1)" }),
+    ).toHaveAttribute("aria-valuetext", "0%");
+    expect(saved.getByRole("spinbutton", { name: "UBR-354A rounds" })).toHaveValue(25);
+    await user.click(saved.getByRole("button", { name: "Cancel" }));
+    const start = screen.getByRole("button", { name: "Start battle" });
+    for (const value of ["4", "31", "15.5"]) {
+      await user.clear(duration);
+      await user.type(duration, value);
+      expect(start).toBeDisabled();
+    }
+    await user.clear(duration);
+    await user.type(duration, "10");
+    await user.click(start);
     expect(await screen.findByText("A selected player is no longer available.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Refresh players" }));
     expect(await screen.findByText("In battle", { exact: true })).toBeVisible();
@@ -1232,7 +1286,18 @@ it("launches a Training battle with selected players and a customized stationary
       dummies: [
         {
           team: 2,
-          loadout: { vehicle: 81, equipment: [120], consumables: [121], crew_perks: [[9]] },
+          loadout: {
+            vehicle: 81,
+            equipment: [120],
+            consumables: [121],
+            crew_perks: [[9], []],
+            crew_perk_efficiency: [0, 100],
+            hit_points: 650,
+            ammunition: [
+              [401, 25],
+              [402, 0],
+            ],
+          },
         },
       ],
     });

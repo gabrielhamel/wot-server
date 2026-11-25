@@ -115,6 +115,9 @@ export type DummyLoadoutOptions = {
   equipment: BattleChoice[];
   consumables: BattleChoice[];
   crew: { name: string; perks: BattleChoice[] }[];
+  stock_hit_points: number;
+  ammunition_capacity: number;
+  ammunition: (BattleChoice & { default_count: number })[];
 };
 
 export type DummyLoadout = {
@@ -122,6 +125,9 @@ export type DummyLoadout = {
   equipment: number[];
   consumables: number[];
   crew_perks: number[][];
+  crew_perk_efficiency?: number[];
+  hit_points?: number;
+  ammunition?: [shell: number, rounds: number][];
 };
 
 export type AdminBattleSetup = {

@@ -27,6 +27,7 @@ const METRIC_HORSEPOWER_TO_WATTS: f32 = 735.5;
 pub(super) struct VehicleModules {
     pub rules: ModuleRules,
     pub ammunition: BTreeMap<(i32, i32), AmmunitionRules>,
+    pub(super) shell_name_keys: BTreeMap<i32, String>,
     exterior_slots: BTreeMap<(i32, i32), VehicleCosmeticSlots>,
     chassis_exteriors: BTreeMap<i32, ChassisExterior>,
     speed_limits: Option<[f32; 2]>,
@@ -305,6 +306,7 @@ impl VehicleModules {
             .filter(|position| position.is_finite());
         let mut gun_performance = BTreeMap::new();
         let mut training_health = BTreeMap::new();
+        let mut shell_name_keys = BTreeMap::new();
         let shells = item_defs::read_xml(fs, &format!("{dir}/components/shells.xml"))?;
         for (kind, section) in [
             (2, "chassis"),
@@ -562,6 +564,11 @@ impl VehicleModules {
                                 id: u16::try_from(shell_id)?,
                             }
                             .to_int() as i32;
+                            if let Some(key) = shell.get_child_string("userString") {
+                                shell_name_keys
+                                    .entry(shell_id)
+                                    .or_insert_with(|| key.to_owned());
+                            }
                             let portion = shot
                                 .as_element()
                                 .and_then(|s| s.get_child_float("defaultPortion"))
@@ -666,6 +673,7 @@ impl VehicleModules {
         Ok(Self {
             rules,
             ammunition,
+            shell_name_keys,
             exterior_slots,
             chassis_exteriors,
             training_health,

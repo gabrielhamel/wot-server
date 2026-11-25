@@ -90,8 +90,10 @@ the Actions tab and has read-only repository permissions.
 
 The admin battle E2E case drives an authenticated dashboard launch through
 PostgreSQL, the gateway and an encrypted Mercury peer. It checks stationary
-dummy replication, a customized dummy's extra HP, countdown readiness, the
-garage return and the exported HTTP-to-arena trace, including rejected setups.
+dummy replication, equipped and overridden HP, perk scaling at partial
+efficiency, and ammunition projected into the arena loadout. It also checks
+countdown readiness, the garage return and the exported HTTP-to-arena trace,
+including rejected loadouts.
 
 The database-dependent tests are opt-in when running Cargo locally.
 

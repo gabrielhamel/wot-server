@@ -1,7 +1,8 @@
 use super::{GarageCatalog, localization};
 use crate::{
-    AccountSnapshot, CrewRoster, CrewSeat, MAX_CONSUMABLE_SLOTS, MAX_EQUIPMENT_SLOTS,
-    MAX_MAJOR_PERKS, OwnedVehicle, VehicleConsumables, contract::BattleVehicle, perk_role,
+    AccountSnapshot, AmmunitionRules, CrewRoster, CrewSeat, MAX_CONSUMABLE_SLOTS,
+    MAX_EFFICIENCY_XP, MAX_EQUIPMENT_SLOTS, MAX_MAJOR_PERKS, ModuleKind, OwnedVehicle,
+    VehicleAmmunition, VehicleConsumables, contract::BattleVehicle, perk_role,
 };
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,10 @@ pub struct DummyLoadout {
     pub consumables: Vec<i32>,
     #[serde(default)]
     pub crew_perks: Vec<Vec<u8>>,
+    #[serde(default)]
+    pub crew_perk_efficiency: Vec<u8>,
+    pub hit_points: Option<i16>,
+    pub ammunition: Option<Vec<(i32, u16)>>,
 }
 
 #[derive(Serialize)]
@@ -37,12 +42,22 @@ pub struct DummyLoadoutOptions {
     equipment: Vec<LoadoutItem>,
     consumables: Vec<LoadoutItem>,
     crew: Vec<CrewPosition>,
+    stock_hit_points: i16,
+    ammunition_capacity: u32,
+    ammunition: Vec<LoadoutShell>,
 }
 
 #[derive(Serialize)]
 struct LoadoutItem {
     id: i32,
     name: String,
+}
+
+#[derive(Serialize)]
+struct LoadoutShell {
+    id: i32,
+    name: String,
+    default_count: u32,
 }
 
 #[derive(Serialize)]
@@ -55,11 +70,21 @@ fn eligible_perk(id: u8, role: u8) -> bool {
     perk_role(id).is_some_and(|required| required.is_none_or(|required| required == role))
 }
 
+fn default_dummy_ammunition(rules: &AmmunitionRules) -> impl Iterator<Item = (i32, u32)> {
+    rules.defaults.iter().enumerate().map(|(index, &(id, _))| {
+        let count = if index == 0 { rules.capacity } else { 0 };
+        (id, count)
+    })
+}
+
 impl GarageCatalog {
     #[tracing::instrument(name = "accounts.dummy_loadout_options", skip_all, fields(
         ddd.bounded_context.name = "accounts", input.vehicle_type = vehicle,
         output.equipment.count = tracing::field::Empty, output.consumables.count = tracing::field::Empty,
         output.crew.count = tracing::field::Empty,
+        output.ammunition.types = tracing::field::Empty,
+        output.ammunition.capacity = tracing::field::Empty,
+        output.vehicle.hit_points = tracing::field::Empty,
     ), err)]
     pub(crate) fn dummy_loadout_options(
         &self,
@@ -69,6 +94,38 @@ impl GarageCatalog {
             return Ok(None);
         };
         let template = self.vehicle(&offer.key)?;
+        let stock = &template.modules.rules.stock;
+        let stock_hit_points = *stock
+            .get(&ModuleKind::Turret)
+            .and_then(|turret| template.modules.training_health.get(turret))
+            .context("Missing stock vehicle health")?;
+        let rules = template
+            .ammunition_rules(stock)
+            .context("Missing stock gun ammunition rules")?;
+        let (nation, _) = offer
+            .key
+            .split_once(':')
+            .context("Missing vehicle nation")?;
+        let names = localization::localized_names(
+            &self.filesystem,
+            &format!("text/lc_messages/{nation}_vehicles.mo"),
+        )
+        .unwrap_or_default();
+        let ammunition: Vec<_> = default_dummy_ammunition(rules)
+            .enumerate()
+            .map(|(index, (id, default_count))| LoadoutShell {
+                id,
+                default_count,
+                name: template
+                    .modules
+                    .shell_name_keys
+                    .get(&id)
+                    .and_then(|key| key.split_once(':'))
+                    .and_then(|(_, key)| names.get(key))
+                    .cloned()
+                    .unwrap_or_else(|| format!("Shell type {}", index + 1)),
+            })
+            .collect();
         let equipment = self
             .equipment_grants
             .names
@@ -119,7 +176,13 @@ impl GarageCatalog {
         span.record("output.equipment.count", equipment.len());
         span.record("output.consumables.count", consumables.len());
         span.record("output.crew.count", crew.len());
+        span.record("output.ammunition.types", ammunition.len());
+        span.record("output.ammunition.capacity", rules.capacity);
+        span.record("output.vehicle.hit_points", stock_hit_points);
         Ok(Some(DummyLoadoutOptions {
+            stock_hit_points,
+            ammunition_capacity: rules.capacity,
+            ammunition,
             equipment_slots: template.equipment.slots,
             consumable_slots: template.supply_slots.consumables,
             equipment,
@@ -131,7 +194,13 @@ impl GarageCatalog {
     #[tracing::instrument(name = "accounts.dummy_vehicle", skip_all, fields(
         ddd.bounded_context.name = "accounts", input.vehicle_type = loadout.vehicle,
         input.equipment.count = loadout.equipment.len(), input.consumables.count = loadout.consumables.len(),
-        input.crew.count = loadout.crew_perks.len(), output.outcome = tracing::field::Empty,
+        input.crew.count = loadout.crew_perks.len(),
+        input.crew.perk_efficiency_min = loadout.crew_perk_efficiency.iter().min().copied(),
+        input.vehicle.hit_points = loadout.hit_points,
+        input.ammunition.types = loadout.ammunition.as_ref().map(Vec::len),
+        output.vehicle.hit_points = tracing::field::Empty,
+        output.ammunition.rounds = tracing::field::Empty,
+        output.outcome = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
     ), err)]
     pub(crate) fn dummy_vehicle(&self, loadout: &DummyLoadout) -> Result<Option<BattleVehicle>> {
@@ -145,6 +214,17 @@ impl GarageCatalog {
                 Err(_) => "projection_failed",
             },
         );
+        if let Ok(Some(vehicle)) = &result {
+            span.record("output.vehicle.hit_points", vehicle.health);
+            span.record(
+                "output.ammunition.rounds",
+                vehicle
+                    .ammunition
+                    .iter()
+                    .map(|&(_, count)| u64::from(count))
+                    .sum::<u64>(),
+            );
+        }
         if result.is_err() {
             span.record("otel.status_code", "ERROR");
         }
@@ -171,6 +251,12 @@ impl GarageCatalog {
         if loadout.equipment.len() > template.equipment.slots
             || loadout.consumables.len() > template.supply_slots.consumables
             || loadout.crew_perks.len() > template.crew_roles.len()
+            || loadout.crew_perk_efficiency.len() > template.crew_roles.len()
+            || loadout
+                .crew_perk_efficiency
+                .iter()
+                .any(|&percent| percent > 100)
+            || loadout.hit_points.is_some_and(|hp| hp < 1)
         {
             return Ok(None);
         }
@@ -187,6 +273,18 @@ impl GarageCatalog {
         {
             return Ok(None);
         }
+        let rules = template
+            .ammunition_rules(&template.modules.rules.stock)
+            .context("Missing stock gun ammunition rules")?;
+        let loaded = if let Some(shells) = &loadout.ammunition {
+            let layout = shells.iter().map(|&(id, count)| (id, u32::from(count)));
+            if rules.validate_layout(layout.clone()).is_err() {
+                return Ok(None);
+            }
+            layout.collect()
+        } else {
+            default_dummy_ammunition(rules).collect()
+        };
         let definition = self.crew_vehicle(loadout.vehicle)?;
         let mut crew = CrewRoster::default();
         for (slot, roles) in definition.roles.iter().enumerate() {
@@ -203,6 +301,12 @@ impl GarageCatalog {
                 vehicle: VEHICLE,
                 slot,
             });
+            let efficiency = loadout
+                .crew_perk_efficiency
+                .get(slot)
+                .copied()
+                .unwrap_or(100);
+            member.training.efficiency_xp = u32::from(efficiency) * (MAX_EFFICIENCY_XP / 100);
             member.training.perks = perks.to_vec();
             member.training.last_perk_level = if perks.is_empty() { 0 } else { 100 };
             crew.insert(member)?;
@@ -216,7 +320,7 @@ impl GarageCatalog {
             vehicles: vec![OwnedVehicle {
                 inventory_id: VEHICLE,
                 catalog_key: offer.key.clone(),
-                ammunition: None,
+                ammunition: Some(VehicleAmmunition { loaded }),
                 has_crew: true,
             }],
             depot_shells: Default::default(),
@@ -231,7 +335,11 @@ impl GarageCatalog {
                 ..Default::default()
             },
         );
-        self.battle_vehicle(&snapshot, VEHICLE)
+        let mut vehicle = self.battle_vehicle(&snapshot, VEHICLE)?;
+        if let (Some(vehicle), Some(hit_points)) = (&mut vehicle, loadout.hit_points) {
+            vehicle.health = hit_points;
+        }
+        Ok(vehicle)
     }
 }
 

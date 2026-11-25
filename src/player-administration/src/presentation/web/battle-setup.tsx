@@ -28,10 +28,8 @@ const TEAM_OPTIONS = [
   { id: 1, name: "Team 1" },
   { id: 2, name: "Team 2" },
 ];
-const ROUND_LENGTHS = Array.from({ length: 26 }, (_, index) => ({
-  id: (index + 5) * 60,
-  name: `${index + 5} minutes`,
-}));
+const MIN_DURATION_MINUTES = 5;
+const MAX_DURATION_MINUTES = 30;
 
 const OBSERVER = 0;
 type Player = Omit<AdminBattleSetup["players"][number], "inventory_id"> & {
@@ -98,7 +96,7 @@ function isReady(options: BattleOptions, map: number | "", players: Player[], du
 export function BattleSetup() {
   const [options, setOptions] = useState<BattleOptions>();
   const [map, setMap] = useState<number | "">("");
-  const [duration, setDuration] = useState(900);
+  const [duration, setDuration] = useState("15");
   const [players, setPlayers] = useState<Player[]>([]);
   const [playerSearch, setPlayerSearch] = useState("");
   const [dummies, setDummies] = useState<Dummy[]>([]);
@@ -145,15 +143,26 @@ export function BattleSetup() {
     );
   }
 
+  const minutes = Number(duration);
+  const validDuration =
+    Number.isInteger(minutes) && minutes >= MIN_DURATION_MINUTES && minutes <= MAX_DURATION_MINUTES;
+  const canLaunch =
+    map !== "" &&
+    validDuration &&
+    !saving &&
+    !loading &&
+    options !== undefined &&
+    isReady(options, map, players, dummies);
+
   async function launch() {
-    if (map === "" || saving || !options || !isReady(options, map, players, dummies)) return;
+    if (!canLaunch) return;
     setSaving(true);
     setError("");
     setReceipt(undefined);
     try {
       const started = await startBattle({
         arena_type: map,
-        duration_seconds: duration,
+        duration_seconds: minutes * 60,
         players: players.map(({ vehicle, ...player }) => ({
           ...player,
           inventory_id: vehicle === OBSERVER ? null : Number(vehicle),
@@ -205,13 +214,17 @@ export function BattleSetup() {
                 placeholder="Select a map"
                 onChange={setMap}
               />
-              <ChoiceSelect
-                label="Battle duration"
+              <TextField
+                fullWidth
+                label="Battle duration (minutes)"
+                type="number"
                 value={duration}
-                choices={ROUND_LENGTHS}
-                onChange={(value) => {
-                  if (value !== "") setDuration(value);
+                error={!validDuration}
+                helperText={validDuration ? undefined : "Enter a whole number from 5 to 30."}
+                slotProps={{
+                  htmlInput: { min: MIN_DURATION_MINUTES, max: MAX_DURATION_MINUTES, step: 1 },
                 }}
+                onChange={(event) => setDuration(event.target.value)}
               />
             </Stack>
             <Stack spacing={2}>
@@ -366,11 +379,7 @@ export function BattleSetup() {
                 Include a connected player and at least one vehicle on each team. Up to{" "}
                 {MAX_ENTRANTS} entrants.
               </Typography>
-              <Button
-                variant="contained"
-                disabled={saving || loading || !isReady(options, map, players, dummies)}
-                onClick={() => void launch()}
-              >
+              <Button variant="contained" disabled={!canLaunch} onClick={() => void launch()}>
                 {saving ? "Starting battle…" : "Start battle"}
               </Button>
             </Stack>
