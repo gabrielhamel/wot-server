@@ -13,6 +13,8 @@ jobs:
   e2e:
     runs-on: [self-hosted, linux, x64, wot-server-image]
     timeout-minutes: 180
+    outputs:
+      game-version: ${{ steps.extract.outputs.game-version }}
     env:
       GAME_DIR: /cache/wot/eu-sd-en
       DOCKER_BUILDKIT: '1'
@@ -21,6 +23,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/extract-game-resources
+        id: extract
       - name: Upload the extracted EU resource bundle
         uses: actions/upload-artifact@v4
         with:
@@ -32,3 +35,38 @@ jobs:
       - uses: ./.github/actions/run-e2e
         with:
           resources: resources
+
+  publish:
+    needs: e2e
+    if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
+    uses: ./.github/workflows/container.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      game-version: ${{ needs.e2e.outputs.game-version }}
+
+  notify-failure:
+    needs: [e2e, publish]
+    if: always() && (needs.e2e.result == 'failure' || needs.publish.result == 'failure')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Send Discord failure alert
+        shell: bash
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+        run: |
+          if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
+            echo "::error::Set the DISCORD_WEBHOOK_URL Actions secret to enable failure alerts."
+            exit 1
+          fi
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          jq -n --arg run "$run_url" --arg e2e "$E2E_RESULT" --arg publish "$PUBLISH_RESULT" '{
+            content: ("Latest client E2E failed (E2E: " + $e2e + ", publish: " + $publish + ").\n" + $run),
+            allowed_mentions: {parse: []}
+          }' | curl --fail --silent --show-error --output /dev/null --max-time 30 \
+            --header 'Content-Type: application/json' --data-binary @- "${DISCORD_WEBHOOK_URL}?wait=true"

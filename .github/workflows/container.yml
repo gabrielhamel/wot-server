@@ -3,6 +3,12 @@ name: Publish server image
 on:
   push:
     tags: ['**']
+  workflow_call:
+    inputs:
+      game-version:
+        description: Game version from the caller's latest-eu-server-resources artifact.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,7 +16,10 @@ permissions:
 
 jobs:
   publish:
-    if: "github.ref_type == 'tag' && github.event.created && !github.event.deleted"
+    if: "github.event_name != 'push' || (github.ref_type == 'tag' && github.event.created && !github.event.deleted)"
+    concurrency:
+      group: publish-server-image
+      cancel-in-progress: false
     runs-on: [self-hosted, linux, x64, wot-server-image]
     timeout-minutes: 180
     defaults:
@@ -20,20 +29,44 @@ jobs:
       GAME_DIR: /cache/wot/eu-sd-en
       DOCKER_BUILDKIT: '1'
     steps:
+      - name: Select server release
+        id: release
+        run: |
+          release_ref="$GITHUB_SHA"
+          release_tag="$GITHUB_REF_NAME"
+          if [[ "$GITHUB_EVENT_NAME" != push ]]; then
+            release_ref=$(git ls-remote --tags --refs --sort=-version:refname \
+              "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" | awk '
+                $2 ~ /^refs\/tags\/[0-9]+(\.[0-9]+){1,2}$/ && !found { print $2; found = 1 }
+              ')
+            if [[ -z "$release_ref" ]]; then
+              echo "::error::No numeric server release tag found."
+              exit 1
+            fi
+            release_tag="${release_ref#refs/tags/}"
+          fi
+          echo "ref=$release_ref" >> "$GITHUB_OUTPUT"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
         with:
+          ref: ${{ steps.release.outputs.ref }}
           persist-credentials: false
 
       - uses: ./.github/actions/extract-game-resources
+        if: github.event_name == 'push'
+        id: extract
 
       - name: Compute image tags
         id: image
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          BUNDLE_VERSION: ${{ inputs.game-version || steps.extract.outputs.game-version }}
         run: |
-          if ! bundle_version=$(jq -er '
-            .game_version | strings
-            | select(test("^(v\\.)?[0-9]+(\\.[0-9]+){3}([[:blank:]]+#[0-9]+)?\\z"))
-          ' resources/manifest.json); then
-            echo "::error::Missing or invalid game version in resources/manifest.json"
+          if ! bundle_version=$(jq -ner --arg version "$BUNDLE_VERSION" '
+            $version | select(test("^(v\\.)?[0-9]+(\\.[0-9]+){3}([[:blank:]]+#[0-9]+)?\\z"))
+          '); then
+            echo "::error::Missing or invalid game version from the resource manifest"
             exit 1
           fi
           game_version=$(jq -nr --arg version "$bundle_version" '
@@ -43,33 +76,69 @@ jobs:
           revision=$(git rev-parse HEAD)
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           commit_image="$image:${game_version}-${revision}"
+          ref_tag=$(printf '%s' "$RELEASE_TAG" | LC_ALL=C tr -c 'a-zA-Z0-9_.-' '-')
+          prefix="${game_version}-"
+          if [[ "$ref_tag" != "$RELEASE_TAG" || "$ref_tag" =~ ^[0-9a-f]{40}$ ]] ||
+            (( ${#prefix} + ${#ref_tag} > 128 )); then
+            ref_hash=$(printf '%s' "$RELEASE_TAG" | sha256sum | cut -c1-16)
+            ref_tag="${ref_tag:0:$((128 - ${#prefix} - 17))}-$ref_hash"
+          fi
           {
             echo "revision=$revision"
             echo "commit=$commit_image"
             echo "game_version=$game_version"
             echo "bundle_version=$bundle_version"
-            if [[ "$GITHUB_REF_TYPE" == tag ]]; then
-              ref_tag=$(printf '%s' "$GITHUB_REF_NAME" | LC_ALL=C tr -c 'a-zA-Z0-9_.-' '-')
-              prefix="${game_version}-"
-              if [[ "$ref_tag" != "$GITHUB_REF_NAME" || "$ref_tag" =~ ^[0-9a-f]{40}$ ]] ||
-                (( ${#prefix} + ${#ref_tag} > 128 )); then
-                ref_hash=$(printf '%s' "$GITHUB_REF_NAME" | sha256sum | cut -c1-16)
-                ref_tag="${ref_tag:0:$((128 - ${#prefix} - 17))}-$ref_hash"
-              fi
-              echo "tag=$image:$prefix$ref_tag"
-              echo "latest=$image:latest"
-            fi
+            echo "tag=$image:$prefix$ref_tag"
+            echo "latest=$image:latest"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Check whether the release image already exists
+        if: github.event_name != 'push'
+        id: registry
+        env:
+          TAG_IMAGE: ${{ steps.image.outputs.tag }}
+        run: |
+          image="${TAG_IMAGE#ghcr.io/}"
+          package="${image%:*}"
+          tag="${image##*:}"
+          token=$(curl --fail --silent --show-error --max-time 30 --get https://ghcr.io/token \
+            --data-urlencode 'service=ghcr.io' --data-urlencode "scope=repository:$package:pull" |
+            jq -er '.token | strings | select(length > 0)')
+          response=$(mktemp)
+          trap 'rm -f "$response"' EXIT
+          status=$(curl --silent --show-error --max-time 30 --output "$response" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $token" \
+            --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+            "https://ghcr.io/v2/$package/manifests/$tag")
+          if [[ "$status" == 200 ]]; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+            printf 'Image `%s` already exists.\n' "$TAG_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$status" == 404 ]] && jq -e 'any(.errors[]; .code == "MANIFEST_UNKNOWN")' "$response" >/dev/null; then
+            printf 'Image %s is missing.\n' "$TAG_IMAGE"
+          else
+            printf '::error::GHCR image lookup failed for %s (HTTP %s).\n' "$TAG_IMAGE" "$status"
+            exit 1
+          fi
+
+      - name: Download the tested resource bundle
+        if: github.event_name != 'push' && steps.registry.outputs.exists != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: latest-eu-server-resources
+          path: resources/
+
       - name: Build and check the server image
+        if: steps.registry.outputs.exists != 'true'
+        id: build
         env:
           IMAGE: ${{ steps.image.outputs.commit }}
           REVISION: ${{ steps.image.outputs.revision }}
           GAME_VERSION: ${{ steps.image.outputs.game_version }}
           BUNDLE_VERSION: ${{ steps.image.outputs.bundle_version }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           docker build --provenance=false --tag "$IMAGE" \
-            --build-arg WOT_SERVER_VERSION="$GITHUB_REF_NAME" \
+            --build-arg WOT_SERVER_VERSION="$RELEASE_TAG" \
             --build-arg WOT_GAME_VERSION="$GAME_VERSION" \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --label "org.opencontainers.image.revision=$REVISION" \
@@ -94,6 +163,7 @@ jobs:
           fi
 
       - name: Check startup and copy packaged resources
+        if: steps.registry.outputs.exists != 'true'
         id: startup
         env:
           IMAGE: ${{ steps.image.outputs.commit }}
@@ -138,15 +208,18 @@ jobs:
           fi
           docker stop "$smoke-server"
           resource_dir=$(mktemp -d "$RUNNER_TEMP/wot-release-resources.XXXXXX")
+          echo "resource-dir=$resource_dir" >> "$GITHUB_OUTPUT"
           docker cp "$smoke-server:/opt/wot-server/resources" "$resource_dir"
           echo "resources=$resource_dir/resources" >> "$GITHUB_OUTPUT"
 
       - name: Run E2E tests against packaged resources
+        if: steps.registry.outputs.exists != 'true'
         uses: ./.github/actions/run-e2e
         with:
           resources: ${{ steps.startup.outputs.resources }}
 
       - name: Publish to GitHub Container Registry
+        if: steps.registry.outputs.exists != 'true'
         env:
           GHCR_TOKEN: ${{ github.token }}
           IMAGE: ${{ steps.image.outputs.commit }}
@@ -159,23 +232,24 @@ jobs:
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "$IMAGE"
           printf -- '- `%s`\n' "$IMAGE" >> "$GITHUB_STEP_SUMMARY"
-          for alias in "$TAG_IMAGE" "$LATEST_IMAGE"; do
-            if [[ -n "$alias" ]]; then
-              docker tag "$IMAGE" "$alias"
-              docker push "$alias"
-              printf -- '- `%s`\n' "$alias" >> "$GITHUB_STEP_SUMMARY"
-            fi
+          # Push the release tag last so it marks a completed publication.
+          for alias in "$LATEST_IMAGE" "$TAG_IMAGE"; do
+            docker tag "$IMAGE" "$alias"
+            docker push "$alias"
+            printf -- '- `%s`\n' "$alias" >> "$GITHUB_STEP_SUMMARY"
           done
 
-      - name: Remove local image tags
-        if: always() && steps.image.outputs.commit != ''
+      - name: Remove local image tags and smoke-test resources
+        if: always() && steps.build.outcome != '' && steps.build.outcome != 'skipped'
         env:
           IMAGE: ${{ steps.image.outputs.commit }}
           TAG_IMAGE: ${{ steps.image.outputs.tag }}
           LATEST_IMAGE: ${{ steps.image.outputs.latest }}
+          RESOURCE_DIR: ${{ steps.startup.outputs.resource-dir }}
         run: |
           for image in "$TAG_IMAGE" "$LATEST_IMAGE" "$IMAGE"; do
-            if [[ -n "$image" ]]; then
-              docker image rm "$image" || true
-            fi
+            docker image rm "$image" || true
           done
+          if [[ -n "$RESOURCE_DIR" ]]; then
+            rm -rf -- "$RESOURCE_DIR"
+          fi

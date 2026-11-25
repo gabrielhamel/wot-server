@@ -86,7 +86,10 @@ daily at 08:00 Europe/Paris. It updates the cached EU production client on
 the dedicated runner, uploads a fresh resource bundle for pull-request CI, and runs E2E against
 the latest default-branch server code and a fresh PostgreSQL database.
 The run summary records the extracted version. The workflow can also run from
-the Actions tab and has read-only repository permissions.
+the Actions tab. A successful run on the default branch checks for a matching
+[release image](container.md) and publishes it if missing. The publish job has
+package write access. E2E or publishing failures send a Discord alert with the
+run link via the repository's `DISCORD_WEBHOOK_URL` Actions secret.
 
 The admin battle E2E case drives an authenticated dashboard launch through
 PostgreSQL, the gateway and an encrypted Mercury peer. It checks stationary
