@@ -3,14 +3,13 @@ use super::{
     armor::roll,
     ballistics::elevation,
     devices::{Condition, Criticals, DeviceStrike},
-    movement::{Drive, GRAVITY, GroundContact, approach},
-    world::{HULL_HEIGHT, Hull, VehicleBody, WorldMotion},
+    movement::{Drive, GroundContact, approach},
+    parameters::BattleParameters,
+    world::{Hull, VehicleBody, WorldMotion},
 };
 use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 use std::time::Instant;
 use wot_shared_kernel::{ShellBallistics, ShellEffects, VehiclePerformance};
-
-const TERRAIN_CONTACT_TOLERANCE_METRES: f32 = 0.35;
 
 pub(crate) struct Tank {
     pub position: Vec3,
@@ -28,6 +27,7 @@ pub(crate) struct Tank {
     gun_pitch: f32,
     stun_traverse: Option<f32>,
     pub(crate) condition: Condition,
+    pub(crate) parameters: BattleParameters,
 }
 
 pub(crate) enum Aim {
@@ -67,6 +67,7 @@ pub(crate) struct GunRay {
 
 impl Tank {
     pub fn new(
+        parameters: BattleParameters,
         position: Vec3,
         direction: Vec3,
         health: i16,
@@ -92,6 +93,7 @@ impl Tank {
             gun_pitch: 0.0,
             stun_traverse: None,
             condition: Condition::default(),
+            parameters,
         };
         tank.advance_gun(0.0);
         tank
@@ -119,14 +121,16 @@ impl Tank {
             None
         } else {
             self.vertical_speed.or_else(|| {
-                (self.position.y - ground_position.y > TERRAIN_CONTACT_TOLERANCE_METRES)
+                (self.position.y - ground_position.y
+                    > self.parameters.terrain_contact_tolerance_metres)
                     .then(|| -self.drive.speed * self.hull_tilt.y.sin())
             })
         };
         if let Some(speed) = vertical_speed {
-            let next_height = self.position.y + (speed - 0.5 * GRAVITY * seconds) * seconds;
+            let next_height =
+                self.position.y + (speed - 0.5 * self.parameters.gravity_mps2 * seconds) * seconds;
             if next_height > ground_position.y {
-                self.vertical_speed = Some(speed - GRAVITY * seconds);
+                self.vertical_speed = Some(speed - self.parameters.gravity_mps2 * seconds);
                 self.position.y = next_height;
                 direction.x = self.hull_tilt.x;
                 direction.y = self.hull_tilt.y;
@@ -144,25 +148,30 @@ impl Tank {
         let [min, max] = mobility
             .and_then(|profile| profile.collision_bounds)
             .unwrap_or_else(|| {
-                let size = mobility.map_or(Vec2::new(1.25, 2.5), |profile| {
-                    Vec2::new(profile.track_half_width, profile.track_half_length)
-                });
+                let size = mobility.map_or(
+                    Vec2::new(
+                        self.parameters.fallback_hull_half_width_metres,
+                        self.parameters.fallback_hull_half_length_metres,
+                    ),
+                    |profile| Vec2::new(profile.track_half_width, profile.track_half_length),
+                );
                 [
                     Vec3::new(-size.x, 0.0, -size.y),
-                    Vec3::new(size.x, HULL_HEIGHT, size.y),
+                    Vec3::new(size.x, self.parameters.hull_height_metres, size.y),
                 ]
             });
         let half_size = (max - min) * 0.5;
         let center = (max + min) * 0.5;
         let mut position = self.position;
         if self.world.is_tipped() {
-            position.y -= (half_size.x - 0.35).max(0.0);
+            position.y -= (half_size.x - self.parameters.tipped_hull_clearance_metres).max(0.0);
         }
         Hull {
             position,
             yaw: self.yaw,
             half_size: half_size.xz(),
             offset: center.xz(),
+            parameters: (&self.parameters).into(),
             body: Some(VehicleBody {
                 origin: self.position,
                 tilt: self.hull_tilt,
@@ -178,7 +187,9 @@ impl Tank {
         } else {
             self.performance
                 .as_ref()
-                .map_or(1.0 / 30_000.0, |p| 1.0 / p.mobility.mass_kg.max(1.0))
+                .map_or(1.0 / self.parameters.fallback_mass_kg, |p| {
+                    1.0 / p.mobility.mass_kg.max(1.0)
+                })
         }
     }
 
@@ -191,11 +202,14 @@ impl Tank {
         if !powered || self.vertical_speed.is_some() || self.is_tipped() {
             return 0.0;
         }
-        let power = self.performance.as_ref().map_or(300_000.0, |profile| {
-            profile.mobility.mass_kg * profile.mobility.power_per_kg
-        });
-        let press_force = 1.13 * power / 2.0;
-        press_force * 0.0002 * seconds
+        let power = self
+            .performance
+            .as_ref()
+            .map_or(self.parameters.fallback_engine_power_watts, |profile| {
+                profile.mobility.mass_kg * profile.mobility.power_per_kg
+            });
+        let press_force = self.parameters.traction_multiplier * power / 2.0;
+        press_force * self.parameters.scenery_push_force_scale * seconds
     }
 
     pub fn scenery_push_direction(&self) -> Vec2 {
@@ -216,8 +230,13 @@ impl Tank {
         if self.vertical_speed.is_some() {
             return (Vec2::ZERO, false);
         }
-        let grip = ground.average([0.58, 0.50, 0.42]);
-        self.world.advance(self.yaw, tilt, grip, seconds)
+        let grip = ground.average([
+            self.parameters.hard_surface_grip,
+            self.parameters.medium_surface_grip,
+            self.parameters.soft_surface_grip,
+        ]);
+        self.world
+            .advance(self.yaw, tilt, grip, seconds, &self.parameters)
     }
 
     pub fn world_contact(&mut self, normal: Vec2) {
@@ -228,7 +247,7 @@ impl Tank {
     }
 
     pub fn world_impulse(&mut self, impulse: Vec2) {
-        self.world.push(impulse);
+        self.world.push(impulse, &self.parameters);
     }
 
     pub fn hold_world_position(&mut self) {
@@ -251,13 +270,20 @@ impl Tank {
             return direction;
         }
         let right = Vec2::new(self.yaw.cos(), -self.yaw.sin());
-        let side_speed = impulse.dot(right) - 0.28 * self.drive.speed * self.drive.yaw_rate;
-        direction.x = self
-            .world
-            .attitude(direction.x, side_speed, stationary, seconds);
+        let side_speed = impulse.dot(right)
+            - self.parameters.tip_turning_factor * self.drive.speed * self.drive.yaw_rate;
+        direction.x = self.world.attitude(
+            direction.x,
+            side_speed,
+            stationary,
+            seconds,
+            &self.parameters,
+        );
         if self.world.is_tipped() {
             self.drive.stop();
-            self.position.y += (self.collision_hull().half_size.x - 0.35).max(0.0);
+            self.position.y += (self.collision_hull().half_size.x
+                - self.parameters.tipped_hull_clearance_metres)
+                .max(0.0);
         }
         self.set_hull_tilt(direction);
         direction
@@ -340,10 +366,10 @@ impl Tank {
             self.drive.step(
                 performance,
                 ground,
-                &mut self.position,
-                &mut self.yaw,
+                (&mut self.position, &mut self.yaw),
                 seconds,
                 bounds,
+                &self.parameters,
             );
         }
         let span = tracing::Span::current();
@@ -495,8 +521,13 @@ impl Tank {
             penetration_roll: roll(
                 ballistics.penetration_randomization,
                 ballistics.uniform_penetration,
+                &self.parameters,
             ),
-            damage_roll: roll(ballistics.damage_randomization, ballistics.uniform_damage),
+            damage_roll: roll(
+                ballistics.damage_randomization,
+                ballistics.uniform_damage,
+                &self.parameters,
+            ),
         })
     }
 
@@ -513,7 +544,9 @@ impl Tank {
                     .shell_ballistics
                     .get(&self.ammunition.settings()[0])
             })
-            .map_or(GunRay::FALLBACK_SPEED_MPS, |shell| shell.speed);
+            .map_or(self.parameters.fallback_gun_ray_speed_mps, |shell| {
+                shell.speed
+            });
         GunRay {
             speed,
             origin: self.position + hull * (pivot + turret * shot_position),
@@ -566,8 +599,13 @@ impl Tank {
             return Criticals::default();
         };
         let armed = self.ammunition.rounds.iter().any(|&(_, count)| count > 0);
-        self.condition
-            .apply(strikes, &performance.device_health, armed, now)
+        self.condition.apply(
+            strikes,
+            &performance.device_health,
+            armed,
+            now,
+            &self.parameters,
+        )
     }
 
     pub fn hit(&mut self, damage: u16) -> (i16, i16) {
@@ -598,7 +636,7 @@ impl Tank {
     }
 
     fn gun_mount(&self) -> (Vec3, Vec3) {
-        let default_pivot = Vec3::Y * 1.35;
+        let default_pivot = Vec3::Y * self.parameters.fallback_turret_height_metres;
         self.performance
             .as_ref()
             .map_or((default_pivot, Vec3::ZERO), |profile| {
@@ -608,10 +646,6 @@ impl Tank {
                 )
             })
     }
-}
-
-impl GunRay {
-    pub const FALLBACK_SPEED_MPS: f32 = 450.0;
 }
 
 pub(super) fn angle(radians: f32) -> f32 {
@@ -648,6 +682,7 @@ mod tests {
 
     fn tank(ammo: Vec<(i32, u16)>) -> Tank {
         Tank::new(
+            BattleParameters::default(),
             Vec3::ZERO,
             Vec3::ZERO,
             100,
@@ -742,7 +777,7 @@ mod tests {
             damage_limited_range: f32::INFINITY,
             device_damage: [0.0; 2],
             explosive: None,
-            speed: GunRay::FALLBACK_SPEED_MPS,
+            speed: BattleParameters::default().fallback_gun_ray_speed_mps,
             gravity: 0.0,
             normalization: 5.0_f32.to_radians(),
             ricochet_cos: 70.0_f32.to_radians().cos(),
@@ -939,6 +974,20 @@ mod tests {
         }
         assert_eq!(tank.position.y, 0.0);
         assert_eq!(tank.hull_tilt, ground_direction.xy());
+    }
+
+    #[test]
+    fn tanks_use_the_gravity_of_their_own_battle() {
+        let mut standard = tank(vec![]);
+        let mut low_gravity = tank(vec![]);
+        low_gravity.parameters =
+            BattleParameters::from_overrides(&[("gravity_mps2".to_owned(), 2.0)].into()).unwrap();
+        for tank in [&mut standard, &mut low_gravity] {
+            tank.position.y = 10.0;
+            tank.follow_terrain(Vec3::ZERO, Vec3::ZERO, 1.0);
+        }
+        assert!((standard.position.y - 5.095).abs() < 1e-4);
+        assert!((low_gravity.position.y - 9.0).abs() < 1e-4);
     }
 
     #[test]

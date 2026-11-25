@@ -51,13 +51,16 @@ share the server process. The gateway assigns native scenery controller IDs
 from the same sequence as other arena entities before activation. Each queued
 operation retains its originating span.
 The simulation starts the arena clock and increments its active count on
-activation.
+activation. The launch carries the arena's [battle parameters](src/domain/parameters.rs).
+The Battles contract publishes defaults and bounds so Player Sessions can
+validate dashboard overrides before enqueueing preparation.
 Once a participant leaves,
 Player Sessions resets the connection for garage entry. The Battle ID is
 allocated independently of the Training Room ID. At the end of a round,
 Battles publishes the outcome and continues pose and chassis replication while
 vehicles coast to a stop before the scheduled garage return. Each Avatar receives
-its player’s customization display preference at entry.
+its player’s customization display preference at entry. Battles selects each
+vehicle’s encoded garage outfit using the arena definition’s camouflage season.
 
 The server advances hull speed and yaw every 100 ms. It reads engine power,
 vehicle mass, chassis resistance and supported garage modifiers from the
@@ -85,6 +88,7 @@ viewers. See the [replay and resource evidence](../../docs/battle-replays.md#per
 | Participant | A connected player assigned to a team with a combat or observer vehicle. |
 | Participant ID | Gateway-local admission generation used to route battle inputs and deliveries to one specific session. A new login gets a new ID. |
 | Round | The progression through loading, countdown, active battle and results. |
+| Battle parameters | The validated round timing and simulation settings carried at launch and used for one arena. |
 | Loadout | The equipped vehicle descriptor, health, crew size, ammunition, locked outfit and base performance at launch. |
 | Armor plate | A projectile collision surface with a material that specifies thickness, damage factor and applicable angle rules. |
 | Damage sticker | A persistent penetration mark replicated on the struck vehicle when the shell defines one. |

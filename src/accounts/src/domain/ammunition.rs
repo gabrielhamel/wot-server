@@ -1,6 +1,6 @@
 use super::Balances;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub type ShellId = i32;
 pub type ShellStock = BTreeMap<ShellId, u32>;
@@ -57,6 +57,23 @@ pub struct AmmunitionRules {
 }
 
 impl AmmunitionRules {
+    pub(crate) fn validate_layout(
+        &self,
+        requested: impl IntoIterator<Item = (ShellId, u32)>,
+    ) -> Result<(), AmmoError> {
+        let mut types = BTreeSet::new();
+        let mut remaining = self.capacity;
+        for (id, count) in requested {
+            if !self.defaults.iter().any(|&(allowed, _)| allowed == id) || !types.insert(id) {
+                return Err(AmmoError::InvalidLayout);
+            }
+            remaining = remaining
+                .checked_sub(count)
+                .ok_or(AmmoError::InvalidLayout)?;
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(name = "accounts.ammunition.apply", skip_all, fields(ddd.bounded_context.name = "accounts", input.requested.count = requested.len(), input.depot.count = depot.len()), err)]
     pub(crate) fn apply(
         &self,
@@ -65,18 +82,8 @@ impl AmmunitionRules {
         depot: &mut ShellStock,
         balances: &mut Balances,
     ) -> Result<(VehicleAmmunition, Vec<ShellPurchase>), AmmoError> {
-        let mut desired = BTreeMap::new();
-        let mut remaining = self.capacity;
-        for shell in requested {
-            if !self.defaults.iter().any(|&(id, _)| id == shell.id)
-                || desired.insert(shell.id, shell).is_some()
-            {
-                return Err(AmmoError::InvalidLayout);
-            }
-            remaining = remaining
-                .checked_sub(shell.count)
-                .ok_or(AmmoError::InvalidLayout)?;
-        }
+        self.validate_layout(requested.iter().map(|shell| (shell.id, shell.count)))?;
+        let desired: BTreeMap<_, _> = requested.iter().map(|shell| (shell.id, shell)).collect();
 
         let mut purchases = Vec::new();
         // Retain the submitted shell order, followed by any omitted compatible types.

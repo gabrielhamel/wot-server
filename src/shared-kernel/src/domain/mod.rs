@@ -1,3 +1,4 @@
+pub(super) mod battle_outfits;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AccountId(i64);
 

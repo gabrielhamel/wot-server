@@ -2700,24 +2700,29 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         && has(span, "input.ammunition.setting", "1")
         && has(span, "input.ammunition.shell", "-1")
         && has(span, "output.outcome", "shell_unavailable")));
-    let movement = traces
-        .iter()
-        .find(|s| s.name == "battles.replication" && has(s, "input.replication.kind", "position"))
-        .expect("movement replication");
-    assert!(has(movement, "output.delivered.count", "2"));
-    assert!(has(movement, "ddd.bounded_context.name", "battles"));
-    assert!(movement.attributes.iter().any(|attribute| {
-        attribute.key.as_str() == "input.arena.tick"
-            && matches!(attribute.value, opentelemetry::Value::I64(tick) if tick > 0)
-    }));
-    assert!(traces.iter().any(|s| s.name == "battles.control"
-        && child_of(movement, s)
-        && has(s, "input.drive.flags", "1")));
-    assert!(traces.iter().any(|s| s.name == "battles.control"
-        && has(s, "input.drive.flags", "10")
-        && traces.iter().any(|replication| child_of(replication, s)
-            && has(replication, "input.replication.kind", "position")
-            && has(replication, "output.delivered.count", "2"))));
+    // The shared exporter also receives movement from the single-player Admin battle.
+    for flags in ["1", "10"] {
+        assert!(
+            traces.iter().any(|movement| {
+                movement.name == "battles.replication"
+                    && has(movement, "input.replication.kind", "position")
+                    && has(movement, "ddd.bounded_context.name", "battles")
+                    && has(movement, "output.recipients.count", "2")
+                    && has(movement, "output.delivered.count", "2")
+                    && movement.attributes.iter().any(|attribute| {
+                        attribute.key.as_str() == "input.arena.tick"
+                            && matches!(attribute.value, opentelemetry::Value::I64(tick) if tick > 0)
+                    })
+                    && traces.iter().any(|control| {
+                        control.name == "battles.control"
+                            && has(control, "rpc.method", "vehicle_moveWith")
+                            && has(control, "input.drive.flags", flags)
+                            && child_of(movement, control)
+                    })
+            }),
+            "missing movement replication from drive flags {flags} to both Training clients"
+        );
+    }
     for outcome in ["reloading", "invalid_flags", "entity_unavailable"] {
         assert!(
             traces

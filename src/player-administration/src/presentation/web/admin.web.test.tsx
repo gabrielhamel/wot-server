@@ -1113,8 +1113,64 @@ it("launches a Training battle with selected players and a customized stationary
   const telemetry = captureTraces();
   const posts: { trace: string | null; body: unknown }[] = [];
   let optionsTrace: string | null = null;
-  let loadoutTrace: string | null = null;
+  const loadoutTraces: (string | null)[] = [];
   let wingmateBusy = false;
+  let ownedTrace: string | null = null;
+  const stockAmmo = [
+    { id: 401, name: "UBR-354A", default_count: 77 },
+    { id: 402, name: "UOF-354M", default_count: 0 },
+  ];
+  const module = (id: number, name: string, weight: number, max_weight: number | null = null) => ({
+    id,
+    name,
+    weight,
+    max_weight,
+  });
+  const loadoutOptions = {
+    equipment_slots: 3,
+    consumable_slots: 3,
+    equipment: [{ id: 120, name: "Improved Hardening" }],
+    consumables: [{ id: 121, name: "Small Repair Kit" }],
+    crew: [
+      { name: "Commander", perks: [{ id: 9, name: "Brothers in Arms" }] },
+      { name: "Driver", perks: [] },
+    ],
+    stock_hit_points: 450,
+    ammunition_capacity: 77,
+    ammunition: stockAmmo,
+    hull_weight: 0,
+    equipment_health_factors: { 120: [1.12, 1.1, 1.1] },
+    consumable_health_factors: {},
+    stock_modules: {
+      Chassis: 601,
+      Turret: 701,
+      Gun: 801,
+      Engine: 901,
+      FuelTank: 1001,
+      Radio: 1101,
+    },
+    modules: {
+      Chassis: [
+        module(601, "Stock suspension", 0, 500),
+        module(602, "Upgraded suspension", 0, 600),
+      ],
+      Turret: [module(701, "Stock turret", 200), module(702, "Upgraded turret", 250)],
+      Gun: [module(801, "Stock gun", 120), module(802, "Upgraded gun", 120)],
+      Engine: [module(901, "Stock engine", 180), module(902, "Upgraded engine", 180)],
+      FuelTank: [module(1001, "Stock fuel tank", 0)],
+      Radio: [module(1101, "Stock radio", 0)],
+    },
+    weapons: [
+      { turret: 701, gun: 801, hit_points: 450, ammunition_capacity: 77, ammunition: stockAmmo },
+      {
+        turret: 702,
+        gun: 802,
+        hit_points: 500,
+        ammunition_capacity: 45,
+        ammunition: [{ id: 403, name: "UBR-350A", default_count: 45 }],
+      },
+    ],
+  };
   httpServer.use(
     players(),
     http.get(`${origin}/battles`, ({ request }) => {
@@ -1140,16 +1196,49 @@ it("launches a Training battle with selected players and a customized stationary
         ],
         observer_available: true,
         dummy_vehicles: [{ id: 81, key: "ussr:R04_T-34", name: "T-34", tier: 5 }],
+        parameters: [
+          {
+            key: "countdown_seconds",
+            label: "Countdown (seconds)",
+            group: "Round timing",
+            default: 10,
+            min: 0,
+            max: 60,
+            integer: true,
+          },
+          {
+            key: "gravity_mps2",
+            label: "Gravity (m/s²)",
+            group: "Vehicle movement",
+            default: 9.81,
+            min: 0,
+            max: 30,
+            integer: false,
+          },
+        ],
       });
     }),
     http.get(`${origin}/battles/vehicles/81`, ({ request }) => {
-      loadoutTrace = request.headers.get("traceparent");
+      loadoutTraces.push(request.headers.get("traceparent"));
+      return HttpResponse.json(loadoutOptions);
+    }),
+    http.get(`${origin}/battles/players/124/vehicles/210`, ({ request }) => {
+      ownedTrace = request.headers.get("traceparent");
       return HttpResponse.json({
-        equipment_slots: 3,
-        consumable_slots: 3,
-        equipment: [{ id: 120, name: "Improved Hardening" }],
-        consumables: [{ id: 121, name: "Small Repair Kit" }],
-        crew: [{ name: "Commander", perks: [{ id: 9, name: "Brothers in Arms" }] }],
+        ...loadoutOptions,
+        equipped_hit_points: 510,
+        current: {
+          vehicle: 81,
+          modules: loadoutOptions.stock_modules,
+          equipment: [120],
+          consumables: [121],
+          crew_perks: [[9], []],
+          crew_perk_efficiency: [62, 100],
+          ammunition: [
+            [401, 8],
+            [402, 6],
+          ],
+        },
       });
     }),
     http.post(`${origin}/battles`, async ({ request }) => {
@@ -1173,7 +1262,13 @@ it("launches a Training battle with selected players and a customized stationary
       await screen.findByLabelText("Map and battle type"),
       "Prokhorovka · Standard Battle",
     );
-    await user.selectOptions(screen.getByLabelText("Battle duration"), "10 minutes");
+    const duration = screen.getByRole("spinbutton", { name: "Battle duration (minutes)" });
+    expect(duration).toHaveValue(15);
+    const parameters = screen.getByRole("button", { name: "Battle parameters" });
+    expect(parameters).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("spinbutton", { name: "Countdown (seconds)" })).toBeNull();
+    expect(duration).toHaveAttribute("min", "5");
+    expect(duration).toHaveAttribute("max", "30");
     const playerPicker = screen.getByRole("combobox", { name: "Add connected player" });
     await user.type(playerPicker, "Scout");
     expect(await screen.findByRole("option", { name: "Scout · In battle" })).toHaveAttribute(
@@ -1195,6 +1290,84 @@ it("launches a Training battle with selected players and a customized stationary
     await user.selectOptions(commanderVehicle, unreadyTank);
     expect(commanderVehicle).toHaveValue("209");
     expect(screen.getByRole("button", { name: "Start battle" })).toBeDisabled();
+    const chooseCustom = () =>
+      user.click(screen.getByRole("button", { name: "Choose custom tank for Commander" }));
+    await chooseCustom();
+    expect(screen.queryByLabelText("Vehicle for Commander", { exact: true })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Show owned tanks for Commander" }));
+    expect(screen.getByLabelText("Vehicle for Commander")).toHaveValue("209");
+    await chooseCustom();
+    const customize = screen.getByRole("button", { name: "Customize tank for Commander" });
+    expect(customize).toBeDisabled();
+    await user.click(screen.getByRole("combobox", { name: "Custom vehicle for Commander" }));
+    await user.click(
+      within(await screen.findByRole("listbox")).getByRole("option", { name: "T-34" }),
+    );
+    await user.click(customize);
+    const playerDialog = within(await screen.findByRole("dialog", { name: "Customize Commander" }));
+    expect(await playerDialog.findByLabelText("Gun", { exact: true })).toHaveValue("801");
+    expect(playerDialog.getByRole("spinbutton", { name: "Hit points" })).toHaveAttribute(
+      "placeholder",
+      "450",
+    );
+    expect(playerDialog.getByText("77 / 77 rounds")).toBeVisible();
+    expect(playerDialog.getByText("Module weight 500 / 500 kg")).toBeVisible();
+    const applyPlayer = playerDialog.getByRole("button", { name: "Apply loadout" });
+    await user.selectOptions(
+      playerDialog.getByLabelText("Turret", { exact: true }),
+      "Upgraded turret",
+    );
+    expect(playerDialog.getByLabelText("Gun", { exact: true })).toHaveValue("802");
+    const upgradedAmmo = playerDialog.getByRole("spinbutton", { name: "UBR-350A rounds" });
+    expect(upgradedAmmo).toHaveValue(45);
+    expect(upgradedAmmo).toHaveAttribute("max", "45");
+    expect(playerDialog.getByText("45 / 45 rounds")).toBeVisible();
+    expect(playerDialog.getByRole("spinbutton", { name: "Hit points" })).toHaveAttribute(
+      "placeholder",
+      "500",
+    );
+    expect(playerDialog.getByRole("alert")).toHaveTextContent("Module weight 550 / 500 kg");
+    expect(applyPlayer).toBeDisabled();
+    await user.selectOptions(
+      playerDialog.getByLabelText("Suspension", { exact: true }),
+      "Upgraded suspension",
+    );
+    expect(playerDialog.getByText("Module weight 550 / 600 kg")).toBeVisible();
+    expect(applyPlayer).toBeEnabled();
+    await user.type(playerDialog.getByRole("spinbutton", { name: "Hit points" }), "700");
+    await user.click(applyPlayer);
+    await user.click(screen.getByRole("button", { name: "Show owned tanks for Commander" }));
+    expect(screen.getByLabelText("Vehicle for Commander")).toHaveValue("209");
+    await chooseCustom();
+    expect(screen.getByRole("combobox", { name: "Custom vehicle for Commander" })).toHaveValue(
+      "T-34",
+    );
+    await user.click(screen.getByRole("button", { name: "Customize tank for Wingmate" }));
+    const ownedDialog = within(await screen.findByRole("dialog", { name: "Customize Wingmate" }));
+    expect(await ownedDialog.findByLabelText("Gun", { exact: true })).toHaveValue("801");
+    expect(ownedDialog.getByRole("spinbutton", { name: "Hit points" })).toHaveValue(510);
+    expect(ownedDialog.getByRole("spinbutton", { name: "UBR-354A rounds" })).toHaveValue(8);
+    expect(ownedDialog.getByLabelText("Equipment slot 1")).toHaveValue("120");
+    expect(ownedDialog.getByLabelText("Consumable slot 1")).toHaveValue("121");
+    expect(
+      ownedDialog.getByRole("slider", { name: "Commander perk efficiency (seat 1)" }),
+    ).toHaveAttribute("aria-valuetext", "62%");
+    expect(ownedDialog.getByText("Brothers in Arms")).toBeVisible();
+    await user.selectOptions(
+      ownedDialog.getByLabelText("Suspension", { exact: true }),
+      "Upgraded suspension",
+    );
+    await user.selectOptions(
+      ownedDialog.getByLabelText("Turret", { exact: true }),
+      "Upgraded turret",
+    );
+    expect(ownedDialog.getByRole("spinbutton", { name: "Hit points" })).toHaveValue(560);
+    expect(ownedDialog.getByRole("spinbutton", { name: "UBR-350A rounds" })).toHaveValue(45);
+    await user.selectOptions(
+      ownedDialog.getByLabelText("Engine", { exact: true }),
+      "Upgraded engine",
+    );
+    await user.click(ownedDialog.getByRole("button", { name: "Apply loadout" }));
     await user.click(screen.getByRole("button", { name: "Add dummy" }));
     await user.click(screen.getByRole("combobox", { name: "Vehicle for Dummy 1" }));
     await user.click(
@@ -1207,10 +1380,67 @@ it("launches a Training battle with selected players and a customized stationary
       "Improved Hardening",
     );
     await user.selectOptions(dialog.getByLabelText("Consumable slot 1"), "Small Repair Kit");
+    const hp = dialog.getByRole("spinbutton", { name: "Hit points" });
+    const commander = dialog.getByRole("slider", { name: "Commander perk efficiency (seat 1)" });
+    const driver = dialog.getByRole("slider", { name: "Driver perk efficiency (seat 2)" });
+    const ap = dialog.getByRole("spinbutton", { name: "UBR-354A rounds" });
+    const he = dialog.getByRole("spinbutton", { name: "UOF-354M rounds" });
+    const apply = dialog.getByRole("button", { name: "Apply loadout" });
+    expect(hp).toHaveAttribute("placeholder", "510");
+    expect(dialog.getByLabelText("Engine", { exact: true })).toHaveValue("901");
+    await user.selectOptions(dialog.getByLabelText("Engine", { exact: true }), "Upgraded engine");
+    expect(commander).toHaveAttribute("aria-valuetext", "100%");
+    expect(driver).toHaveAttribute("aria-valuetext", "100%");
+    expect(ap).toHaveValue(77);
+    expect(he).toHaveValue(0);
+    await user.type(hp, "650");
+    commander.focus();
+    await user.keyboard("{Home}{ArrowRight}");
+    expect(commander).toHaveAttribute("aria-valuetext", "1%");
+    await user.keyboard("{Home}");
+    expect(commander).toHaveAttribute("aria-valuetext", "0%");
+    expect(driver).toHaveAttribute("aria-valuetext", "100%");
+    await user.clear(he);
+    await user.type(he, "1");
+    expect(dialog.getByText("78 / 77 rounds · over capacity")).toBeVisible();
+    expect(apply).toBeDisabled();
+    await user.clear(ap);
+    await user.type(ap, "25");
+    await user.clear(he);
+    await user.type(he, "0");
     await user.click(dialog.getByRole("combobox", { name: "Commander perks (seat 1)" }));
     await user.click(await screen.findByRole("option", { name: "Brothers in Arms" }));
-    await user.click(dialog.getByRole("button", { name: "Apply loadout" }));
-    await user.click(screen.getByRole("button", { name: "Start battle" }));
+    await user.click(apply);
+    await user.click(screen.getByRole("button", { name: "Customize Dummy 1" }));
+    const saved = within(await screen.findByRole("dialog", { name: "Customize Dummy 1" }));
+    expect(await saved.findByRole("spinbutton", { name: "Hit points" })).toHaveValue(650);
+    expect(
+      saved.getByRole("slider", { name: "Commander perk efficiency (seat 1)" }),
+    ).toHaveAttribute("aria-valuetext", "0%");
+    expect(saved.getByRole("spinbutton", { name: "UBR-354A rounds" })).toHaveValue(25);
+    await user.click(saved.getByRole("button", { name: "Cancel" }));
+    const start = screen.getByRole("button", { name: "Start battle" });
+    for (const value of ["4", "31", "15.5"]) {
+      await user.clear(duration);
+      await user.type(duration, value);
+      expect(start).toBeDisabled();
+    }
+    await user.clear(duration);
+    await user.type(duration, "10");
+    await user.click(parameters);
+    const countdown = screen.getByRole("spinbutton", { name: "Countdown (seconds)" });
+    expect(countdown).toHaveValue(10);
+    await user.clear(countdown);
+    await user.type(countdown, "61");
+    expect(start).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Reset parameters to defaults" }));
+    expect(countdown).toHaveValue(10);
+    expect(start).toBeEnabled();
+    await user.clear(countdown);
+    await user.type(countdown, "2");
+    await user.click(parameters);
+    expect(parameters).toHaveAttribute("aria-expanded", "false");
+    await user.click(start);
     expect(await screen.findByText("A selected player is no longer available.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Refresh players" }));
     expect(await screen.findByText("In battle", { exact: true })).toBeVisible();
@@ -1225,24 +1455,66 @@ it("launches a Training battle with selected players and a customized stationary
     expect(posts[1]?.body).toEqual({
       arena_type: 5,
       duration_seconds: 600,
+      parameters: { countdown_seconds: 2 },
       players: [
-        { account_id: 123, team: 1, inventory_id: 209 },
-        { account_id: 124, team: 1, inventory_id: 210 },
+        {
+          account_id: 123,
+          team: 1,
+          inventory_id: null,
+          loadout: {
+            vehicle: 81,
+            equipment: [],
+            consumables: [],
+            crew_perks: [],
+            modules: { Chassis: 602, Turret: 702, Gun: 802 },
+            hit_points: 700,
+          },
+        },
+        {
+          account_id: 124,
+          team: 1,
+          inventory_id: 210,
+          owned_overrides: {
+            vehicle: 81,
+            modules: { Chassis: 602, Turret: 702, Gun: 802, Engine: 902 },
+          },
+        },
       ],
       dummies: [
         {
           team: 2,
-          loadout: { vehicle: 81, equipment: [120], consumables: [121], crew_perks: [[9]] },
+          loadout: {
+            vehicle: 81,
+            equipment: [120],
+            consumables: [121],
+            crew_perks: [[9], null],
+            crew_perk_efficiency: [0, null],
+            modules: { Engine: 902 },
+            hit_points: 650,
+            ammunition: [
+              [401, 25],
+              [402, 0],
+            ],
+          },
         },
       ],
     });
     telemetry.expectRequest(optionsTrace, "web.admin.battle_options", "/api/admin/battles", 200);
+    expect(loadoutTraces).toHaveLength(3);
     telemetry.expectRequest(
-      loadoutTrace,
-      "web.admin.dummy_loadout",
-      "/api/admin/battles/vehicles/{vehicle}",
+      ownedTrace,
+      "web.admin.owned_battle_loadout",
+      "/api/admin/battles/players/{account}/vehicles/{inventory}",
       200,
     );
+    for (const trace of loadoutTraces) {
+      telemetry.expectRequest(
+        trace,
+        "web.admin.battle_loadout",
+        "/api/admin/battles/vehicles/{vehicle}",
+        200,
+      );
+    }
     telemetry.expectRequest(
       posts[0]?.trace ?? null,
       "web.admin.start_battle",
@@ -1258,7 +1530,10 @@ it("launches a Training battle with selected players and a customized stationary
     expect(parent?.attributes).toMatchObject({
       "input.arena_type_id": 5,
       "input.round_length.seconds": 600,
+      "input.battle.parameters.count": 1,
       "input.players.count": 2,
+      "input.players.custom_loadout_count": 1,
+      "input.players.owned_override_count": 1,
       "input.dummies.count": 1,
       "output.battle.id": 7,
     });

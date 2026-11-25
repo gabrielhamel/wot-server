@@ -402,6 +402,7 @@ impl Gateway {
         self.battle_worker.prepare(
             BattlePreparationId::TrainingRoom(room_id),
             BattleLaunch {
+                parameters: Default::default(),
                 arena_type: roster.arena_type,
                 duration: roster.duration,
                 mode: BattleMode::Training,

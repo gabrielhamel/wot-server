@@ -239,7 +239,7 @@ impl Battle {
         team: u8,
         ignore: Option<ParticipantId>,
     ) -> Option<PlannedContact> {
-        shot.flight_segments().find_map(|segment| {
+        shot.flight_segments(&self.parameters).find_map(|segment| {
             let (distance, contact) =
                 self.projectile_contact(&segment.shot, segment.distance, team, ignore)?;
             let partial = segment.seconds * (distance / segment.distance);
@@ -295,7 +295,7 @@ impl Battle {
                     .then(a.cmp(b))
             });
         let vehicle = target.and_then(|(participant, id, path)| {
-            let hit = shot.resolve_armor(id, path)?;
+            let hit = shot.resolve_armor(id, path, &self.parameters)?;
             Some((
                 hit.distance,
                 Contact::Vehicle {
@@ -393,7 +393,8 @@ impl Battle {
                         )
                         && shot.penetration_at(distance) > loss
                         && obstacles_pierced < MAX_OBSTACLES_PIERCED
-                        && let Some(mut onward) = shot.continue_from(distance, shot.direction)
+                        && let Some(mut onward) =
+                            shot.continue_from(distance, shot.direction, &self.parameters)
                     {
                         onward.penetration_loss += loss;
                         continuation = Some((onward, None));
@@ -428,7 +429,7 @@ impl Battle {
                     .get_mut(&participant)
                     .filter(|p| p.tank.health > 0)
                 {
-                    if let Some(onward) = shot.ricochet_from(**hit) {
+                    if let Some(onward) = shot.ricochet_from(**hit, &self.parameters) {
                         continuation = Some((onward, None));
                         span.record("output.projectile.ricocheted", true);
                         span.record(
@@ -436,7 +437,7 @@ impl Battle {
                             onward.max_distance,
                         );
                     } else if screens_pierced < MAX_SCENE_SCREENS
-                        && let Some(onward) = shot.through_screen(**hit)
+                        && let Some(onward) = shot.through_screen(**hit, &self.parameters)
                     {
                         continuation = Some((onward, Some(participant)));
                         screens_pierced += 1;
@@ -777,6 +778,12 @@ impl Participant {
         let view = TracerView::Direct {
             direction: self.tank.gun_ray().direction,
         };
-        tracer::visible(shot.origin, self.tank.position, true, view)
+        tracer::visible(
+            shot.origin,
+            self.tank.position,
+            true,
+            view,
+            &self.tank.parameters,
+        )
     }
 }

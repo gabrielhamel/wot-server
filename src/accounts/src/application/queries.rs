@@ -9,8 +9,8 @@ use wot_platform::client_formats::pickle::Value;
 /// The equipped vehicle data needed to enter a battle.
 pub struct BattleVehicle {
     pub descriptor: Vec<u8>,
-    /// Encoded outfit for a catalog-defined locked style.
-    pub outfit: Vec<u8>,
+    /// Encoded garage appearance for each arena season.
+    pub outfits: wot_shared_kernel::BattleOutfits,
     pub health: i16,
     pub crew_size: usize,
     pub performance: wot_shared_kernel::VehiclePerformance,
@@ -21,6 +21,8 @@ pub struct BattleVehicle {
 pub enum BattleVehicleUnavailable {
     #[error("Crew incomplete")]
     CrewIncomplete,
+    #[error("The owned vehicle loadout is incompatible")]
+    InvalidLoadout,
     #[error("Vehicle unavailable for battle")]
     Unavailable,
 }
@@ -30,6 +32,7 @@ impl BattleVehicleUnavailable {
         match self {
             Self::CrewIncomplete => "crew_incomplete",
             Self::Unavailable => "vehicle_unavailable",
+            Self::InvalidLoadout => "invalid_loadout",
         }
     }
 }
@@ -106,18 +109,29 @@ impl GarageQueries {
         self.0.battle_vehicle(&account.0, inventory_id)
     }
 
-    pub fn dummy_vehicle(
+    pub fn custom_battle_vehicle(
         &self,
-        loadout: &crate::contract::DummyLoadout,
+        loadout: &crate::contract::CustomBattleLoadout,
+        account_id: Option<i64>,
     ) -> anyhow::Result<Option<BattleVehicle>> {
-        self.0.dummy_vehicle(loadout)
+        self.0.custom_battle_vehicle(loadout, account_id)
     }
 
-    pub fn dummy_loadout_options(
+    pub fn custom_battle_loadout_options(
         &self,
         vehicle: i32,
-    ) -> anyhow::Result<Option<crate::contract::DummyLoadoutOptions>> {
-        self.0.dummy_loadout_options(vehicle)
+    ) -> anyhow::Result<Option<crate::contract::CustomBattleLoadoutOptions>> {
+        self.0.custom_battle_loadout_options(vehicle)
+    }
+
+    pub fn owned_battle_loadout_options(
+        &self,
+        account: &AccountView,
+        inventory_id: i64,
+    ) -> anyhow::Result<Result<crate::contract::CustomBattleLoadoutOptions, BattleVehicleUnavailable>>
+    {
+        self.0
+            .owned_battle_loadout_options(&account.0, inventory_id)
     }
 
     pub fn battle_vehicle_choices(&self, account: &AccountView) -> Vec<BattleVehicleChoice> {
@@ -128,8 +142,9 @@ impl GarageQueries {
         &self,
         account: &AccountView,
         inventory_id: i64,
+        edits: Option<&crate::contract::CustomBattleLoadout>,
     ) -> anyhow::Result<Result<BattleVehicle, BattleVehicleUnavailable>> {
-        self.0.admin_battle_vehicle(&account.0, inventory_id)
+        self.0.admin_battle_vehicle(&account.0, inventory_id, edits)
     }
 
     pub fn outfit_change<'a>(

@@ -19,8 +19,9 @@ The room remains discoverable during the round. Player Sessions handles the
 arena handoff and restores the same membership on garage return. It maps the
 current admission generation to the live Mercury client for battle delivery and
 for returns scheduled by Battles. The dashboard uses the same handoff from
-synchronized garages and can include stationary dummy vehicles projected by
-Accounts. Pending launches recheck the current session, entity and account
+synchronized garages. Accounts projects temporary catalog tanks for connected
+players and stationary dummies and applies battle-only edits to owned tanks.
+Pending launches recheck the current session, entity and account
 revision before transferring players.
 
 | Layer | Responsibilities |

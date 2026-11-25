@@ -103,9 +103,20 @@ Admin and Store API requests keep their own request spans.
 
 Dashboard battle launches keep the browser parent through authentication,
 `admin.start_battle`, the gateway request and the arena worker. Accounts records
-the selected dummy vehicle and loadout counts. Arena preparation and the
-subsequent native client entry share the launch trace. The launch response
-records the allocated battle ID and the count of client handoffs queued.
+the catalog vehicle for each custom player or dummy seat, its loadout
+counts, lowest configured perk efficiency and requested HP. The projection
+records the final HP and loaded rounds. The shared options lookup records
+stock HP, shell type count and ammunition capacity. Custom player projections
+carry the selected account ID. The dashboard launch spans record the number
+of player seats with custom loadouts and owned tanks with overrides. A
+separate authenticated lookup traces the selected account and inventory ID
+when prefilling an owned loadout. Accounts records the number of supplied
+module edits and the result of the temporary projection.
+The browser, HTTP handler and gateway record the count of requested battle
+parameter overrides. Arena preparation records the effective loading,
+countdown and results durations and shares the launch trace with native
+client entry. The launch response records the allocated battle ID and count
+of client handoffs queued.
 
 Managed player creation traces the input lengths and validation outcome
 through `admin.players.create` and `accounts.registration.validate`. An accepted

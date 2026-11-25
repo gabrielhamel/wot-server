@@ -102,31 +102,76 @@ export type AdminSession =
 
 export type BattleChoice = { id: number; name: string; unavailable_reason?: string | null };
 
+export type BattleParameterDefinition = {
+  key: string;
+  label: string;
+  group: string;
+  default: number;
+  min: number;
+  max: number;
+  integer: boolean;
+};
+
 export type BattleOptions = {
   maps: BattleChoice[];
   players: (BattleChoice & { vehicles: BattleChoice[] })[];
   observer_available: boolean;
   dummy_vehicles: CatalogVehicle[];
+  parameters: BattleParameterDefinition[];
 };
 
-export type DummyLoadoutOptions = {
+export type BattleModuleKind = "Chassis" | "Turret" | "Gun" | "Engine" | "FuelTank" | "Radio";
+export type BattleModules = Partial<Record<BattleModuleKind, number>>;
+export type BattleShell = BattleChoice & { default_count: number };
+
+export type CustomBattleLoadoutOptions = {
   equipment_slots: number;
   consumable_slots: number;
   equipment: BattleChoice[];
   consumables: BattleChoice[];
+  equipment_health_factors: Record<number, number[]>;
+  consumable_health_factors: Record<number, number>;
   crew: { name: string; perks: BattleChoice[] }[];
+  stock_hit_points: number;
+  ammunition_capacity: number;
+  ammunition: BattleShell[];
+  stock_modules: BattleModules;
+  modules: Partial<
+    Record<BattleModuleKind, (BattleChoice & { weight: number; max_weight: number | null })[]>
+  >;
+  hull_weight: number;
+  weapons: {
+    turret: number;
+    gun: number;
+    hit_points: number;
+    ammunition_capacity: number;
+    ammunition: BattleShell[];
+  }[];
+  current?: CustomBattleLoadout | null;
+  equipped_hit_points?: number | null;
 };
 
-export type DummyLoadout = {
+export type CustomBattleLoadout = {
   vehicle: number;
-  equipment: number[];
-  consumables: number[];
-  crew_perks: number[][];
+  equipment?: number[] | null;
+  consumables?: number[] | null;
+  crew_perks?: (number[] | null)[];
+  crew_perk_efficiency?: (number | null)[];
+  hit_points?: number;
+  ammunition?: [shell: number, rounds: number][];
+  modules?: BattleModules;
 };
 
 export type AdminBattleSetup = {
   arena_type: number;
   duration_seconds: number;
-  players: { account_id: number; team: number; inventory_id: number | null }[];
-  dummies: { team: number; loadout: DummyLoadout }[];
+  players: {
+    account_id: number;
+    team: number;
+    inventory_id: number | null;
+    loadout?: CustomBattleLoadout;
+    owned_overrides?: CustomBattleLoadout;
+  }[];
+  dummies: { team: number; loadout: CustomBattleLoadout }[];
+  parameters?: Record<string, number>;
 };

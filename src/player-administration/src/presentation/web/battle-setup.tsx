@@ -16,28 +16,33 @@ import type {
   AdminBattleSetup,
   BattleOptions,
   CatalogVehicle,
-  DummyLoadout,
+  CustomBattleLoadout,
 } from "../../application/admin-contracts";
 import { getBattleOptions, startBattle } from "../../infrastructure/admin-api";
 import { errorMessage } from "../../../../shared-infrastructure/src/infrastructure/web/http";
+import { BattleParameterEditor } from "./battle-parameters";
 import { ChoiceSelect } from "./battle-select";
-import { DummyConfiguration } from "./dummy-configuration";
+import { BattleLoadoutConfiguration } from "./battle-loadout-configuration";
 
 const MAX_ENTRANTS = 30;
 const TEAM_OPTIONS = [
   { id: 1, name: "Team 1" },
   { id: 2, name: "Team 2" },
 ];
-const ROUND_LENGTHS = Array.from({ length: 26 }, (_, index) => ({
-  id: (index + 5) * 60,
-  name: `${index + 5} minutes`,
-}));
+const MIN_DURATION_MINUTES = 5;
+const MAX_DURATION_MINUTES = 30;
 
 const OBSERVER = 0;
-type Player = Omit<AdminBattleSetup["players"][number], "inventory_id"> & {
+type Player = {
+  account_id: number;
+  team: number;
   vehicle: number | "";
+  vehicleSource: "owned" | "custom";
+  customLoadout: CustomBattleLoadout;
+  ownedEdits: Record<number, CustomBattleLoadout>;
 };
-type Dummy = { key: number; team: number; loadout: DummyLoadout };
+type Dummy = { key: number; team: number; loadout: CustomBattleLoadout };
+type ConfigureTarget = { kind: "owned" | "custom" | "dummy"; id: number };
 
 function RosterCard({
   title,
@@ -65,31 +70,61 @@ function RosterCard({
   );
 }
 
-function emptyLoadout(vehicle = 0): DummyLoadout {
+function CatalogVehiclePicker({
+  label,
+  vehicles,
+  vehicle,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  vehicles: CatalogVehicle[];
+  vehicle: number;
+  disabled?: boolean;
+  onChange: (id: number | undefined) => void;
+}) {
+  return (
+    <Autocomplete<CatalogVehicle>
+      fullWidth
+      disabled={disabled}
+      value={vehicles.find(({ id }) => id === vehicle) ?? null}
+      options={vehicles}
+      getOptionLabel={({ name }) => name}
+      getOptionKey={({ id }) => id}
+      isOptionEqualToValue={(option, value) => option.id === value.id}
+      onChange={(_, value) => onChange(value?.id)}
+      renderInput={(params) => <TextField {...params} margin="none" label={label} />}
+    />
+  );
+}
+
+function emptyLoadout(vehicle = 0): CustomBattleLoadout {
   return { vehicle, equipment: [], consumables: [], crew_perks: [] };
 }
 
 function isReady(options: BattleOptions, map: number | "", players: Player[], dummies: Dummy[]) {
+  const hasCatalogVehicle = ({ vehicle }: CustomBattleLoadout) =>
+    options.dummy_vehicles.some(({ id }) => id === vehicle);
   return (
     options.maps.some(({ id }) => id === map) &&
     players.length > 0 &&
-    players.every((player) =>
-      options.players.some(
-        ({ id, vehicles, unavailable_reason }) =>
-          id === player.account_id &&
-          !unavailable_reason &&
-          (player.vehicle === OBSERVER
-            ? options.observer_available
-            : vehicles.some(
-                ({ id, unavailable_reason }) => id === player.vehicle && !unavailable_reason,
-              )),
-      ),
-    ) &&
-    dummies.every(({ loadout }) => loadout.vehicle !== 0) &&
+    players.every((player) => {
+      const available = options.players.find(({ id }) => id === player.account_id);
+      if (!available || available.unavailable_reason) return false;
+      if (player.vehicleSource === "custom") return hasCatalogVehicle(player.customLoadout);
+      if (player.vehicle === OBSERVER) return options.observer_available;
+      return available.vehicles.some(
+        ({ id, unavailable_reason }) => id === player.vehicle && !unavailable_reason,
+      );
+    }) &&
+    dummies.every(({ loadout }) => hasCatalogVehicle(loadout)) &&
     [1, 2].every(
       (team) =>
         players.some(
-          (player) => player.team === team && player.vehicle !== OBSERVER && player.vehicle !== "",
+          (player) =>
+            player.team === team &&
+            (player.vehicleSource === "custom" ||
+              (player.vehicle !== OBSERVER && player.vehicle !== "")),
         ) || dummies.some((dummy) => dummy.team === team),
     )
   );
@@ -98,11 +133,12 @@ function isReady(options: BattleOptions, map: number | "", players: Player[], du
 export function BattleSetup() {
   const [options, setOptions] = useState<BattleOptions>();
   const [map, setMap] = useState<number | "">("");
-  const [duration, setDuration] = useState(900);
+  const [duration, setDuration] = useState("15");
+  const [parameterDrafts, setParameterDrafts] = useState<Record<string, string>>({});
   const [players, setPlayers] = useState<Player[]>([]);
   const [playerSearch, setPlayerSearch] = useState("");
   const [dummies, setDummies] = useState<Dummy[]>([]);
-  const [configuring, setConfiguring] = useState<number>();
+  const [configuring, setConfiguring] = useState<ConfigureTarget>();
   const [attempt, setAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -145,19 +181,57 @@ export function BattleSetup() {
     );
   }
 
+  const parameterFields = (options?.parameters ?? []).map((definition) => {
+    const value = parameterDrafts[definition.key] ?? String(definition.default);
+    const number = Number(value);
+    const invalid =
+      value === "" ||
+      !Number.isFinite(number) ||
+      number < definition.min ||
+      number > definition.max ||
+      (definition.integer && !Number.isInteger(number));
+    return { ...definition, value, invalid };
+  });
+  const minutes = Number(duration);
+  const validDuration =
+    Number.isInteger(minutes) && minutes >= MIN_DURATION_MINUTES && minutes <= MAX_DURATION_MINUTES;
+  const canLaunch =
+    map !== "" &&
+    validDuration &&
+    !parameterFields.some(({ invalid }) => invalid) &&
+    !saving &&
+    !loading &&
+    options !== undefined &&
+    isReady(options, map, players, dummies);
+
   async function launch() {
-    if (map === "" || saving || !options || !isReady(options, map, players, dummies)) return;
+    if (!canLaunch) return;
     setSaving(true);
     setError("");
     setReceipt(undefined);
     try {
+      const parameters = Object.fromEntries(
+        parameterFields
+          .filter((field) => Number(field.value) !== field.default)
+          .map(({ key, value }) => [key, Number(value)]),
+      );
+      const roster: AdminBattleSetup["players"] = players.map(
+        ({ account_id, team, vehicle, vehicleSource, customLoadout, ownedEdits }) => ({
+          account_id,
+          team,
+          inventory_id: vehicleSource === "custom" || vehicle === OBSERVER ? null : Number(vehicle),
+          loadout: vehicleSource === "custom" ? customLoadout : undefined,
+          owned_overrides:
+            vehicleSource === "owned" && vehicle !== "" && vehicle !== OBSERVER
+              ? ownedEdits[vehicle]
+              : undefined,
+        }),
+      );
       const started = await startBattle({
         arena_type: map,
-        duration_seconds: duration,
-        players: players.map(({ vehicle, ...player }) => ({
-          ...player,
-          inventory_id: vehicle === OBSERVER ? null : Number(vehicle),
-        })),
+        duration_seconds: minutes * 60,
+        parameters,
+        players: roster,
         dummies: dummies.map(({ team, loadout }) => ({ team, loadout })),
       });
       setReceipt({ joined: started.players_handed_off, requested: players.length });
@@ -170,8 +244,29 @@ export function BattleSetup() {
     }
   }
 
-  const selectedDummyIndex = dummies.findIndex(({ key }) => key === configuring);
-  const selectedDummy = dummies[selectedDummyIndex];
+  const selectedDummyIndex =
+    configuring?.kind === "dummy" ? dummies.findIndex(({ key }) => key === configuring.id) : -1;
+  const selectedPlayer =
+    configuring && configuring.kind !== "dummy"
+      ? players.find(({ account_id }) => account_id === configuring.id)
+      : undefined;
+  const ownedVehicle =
+    configuring?.kind === "owned" &&
+    selectedPlayer &&
+    selectedPlayer.vehicle !== "" &&
+    selectedPlayer.vehicle !== OBSERVER
+      ? { account: selectedPlayer.account_id, inventory: selectedPlayer.vehicle }
+      : undefined;
+  const catalogLoadout =
+    configuring?.kind === "custom"
+      ? selectedPlayer?.customLoadout
+      : dummies[selectedDummyIndex]?.loadout;
+  const selectedLoadout = ownedVehicle
+    ? selectedPlayer?.ownedEdits[ownedVehicle.inventory]
+    : catalogLoadout;
+  const selectedName = selectedPlayer
+    ? (options?.players.find(({ id }) => id === selectedPlayer.account_id)?.name ?? "Player tank")
+    : `Dummy ${selectedDummyIndex + 1}`;
   const full = players.length + dummies.length >= MAX_ENTRANTS;
   return (
     <Stack spacing={2}>
@@ -205,15 +300,28 @@ export function BattleSetup() {
                 placeholder="Select a map"
                 onChange={setMap}
               />
-              <ChoiceSelect
-                label="Battle duration"
+              <TextField
+                fullWidth
+                label="Battle duration (minutes)"
+                type="number"
                 value={duration}
-                choices={ROUND_LENGTHS}
-                onChange={(value) => {
-                  if (value !== "") setDuration(value);
+                error={!validDuration}
+                helperText={validDuration ? undefined : "Enter a whole number from 5 to 30."}
+                slotProps={{
+                  htmlInput: { min: MIN_DURATION_MINUTES, max: MAX_DURATION_MINUTES, step: 1 },
                 }}
+                onChange={(event) => setDuration(event.target.value)}
               />
             </Stack>
+            {parameterFields.length > 0 && (
+              <BattleParameterEditor
+                fields={parameterFields}
+                onChange={(key, value) =>
+                  setParameterDrafts((drafts) => ({ ...drafts, [key]: value }))
+                }
+                onReset={() => setParameterDrafts({})}
+              />
+            )}
             <Stack spacing={2}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography component="h3" variant="h6">
@@ -249,6 +357,9 @@ export function BattleSetup() {
                       {
                         account_id: player.id,
                         team: 1,
+                        vehicleSource: "owned",
+                        customLoadout: emptyLoadout(),
+                        ownedEdits: {},
                         vehicle:
                           player.vehicles.find((vehicle) => !vehicle.unavailable_reason)?.id ?? "",
                       },
@@ -264,6 +375,12 @@ export function BattleSetup() {
                   available?.unavailable_reason ??
                   (available ? null : "This player is no longer available.");
                 const vehicles = available?.vehicles ?? [];
+                const selectingCustom = player.vehicleSource === "custom";
+                const editableVehicle = selectingCustom
+                  ? options.dummy_vehicles.some(({ id }) => id === player.customLoadout.vehicle)
+                  : vehicles.some(
+                      ({ id, unavailable_reason }) => id === player.vehicle && !unavailable_reason,
+                    );
                 const choices = options.observer_available
                   ? [...vehicles, { id: OBSERVER, name: "Observer" }]
                   : vehicles;
@@ -283,16 +400,63 @@ export function BattleSetup() {
                           if (team !== "") updatePlayer(player.account_id, { team });
                         }}
                       />
-                      <ChoiceSelect
-                        label={`Vehicle for ${name}`}
-                        value={
-                          choices.some(({ id }) => id === player.vehicle) ? player.vehicle : ""
+                      {selectingCustom ? (
+                        <CatalogVehiclePicker
+                          label={`Custom vehicle for ${name}`}
+                          vehicle={player.customLoadout.vehicle}
+                          vehicles={options.dummy_vehicles}
+                          disabled={Boolean(playerUnavailable)}
+                          onChange={(vehicle) =>
+                            updatePlayer(player.account_id, {
+                              customLoadout: emptyLoadout(vehicle),
+                            })
+                          }
+                        />
+                      ) : (
+                        <ChoiceSelect
+                          label={`Vehicle for ${name}`}
+                          value={
+                            choices.some(({ id }) => id === player.vehicle) ? player.vehicle : ""
+                          }
+                          choices={choices}
+                          disabled={Boolean(playerUnavailable)}
+                          placeholder="Select a vehicle"
+                          onChange={(vehicle) => updatePlayer(player.account_id, { vehicle })}
+                        />
+                      )}
+                    </Stack>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+                      <Button
+                        aria-label={
+                          selectingCustom
+                            ? `Show owned tanks for ${name}`
+                            : `Choose custom tank for ${name}`
                         }
-                        choices={choices}
-                        disabled={Boolean(playerUnavailable)}
-                        placeholder="Select a vehicle"
-                        onChange={(vehicle) => updatePlayer(player.account_id, { vehicle })}
-                      />
+                        disabled={
+                          Boolean(playerUnavailable) ||
+                          (!selectingCustom && options.dummy_vehicles.length === 0)
+                        }
+                        onClick={() =>
+                          updatePlayer(player.account_id, {
+                            vehicleSource: selectingCustom ? "owned" : "custom",
+                          })
+                        }
+                      >
+                        {selectingCustom ? "Show owned tanks" : "Choose custom tank"}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        aria-label={`Customize tank for ${name}`}
+                        disabled={Boolean(playerUnavailable) || !editableVehicle}
+                        onClick={() =>
+                          setConfiguring({
+                            kind: selectingCustom ? "custom" : "owned",
+                            id: player.account_id,
+                          })
+                        }
+                      >
+                        Customize tank
+                      </Button>
                     </Stack>
                   </RosterCard>
                 );
@@ -330,31 +494,17 @@ export function BattleSetup() {
                         if (value !== "") updateDummy(key, { team: value });
                       }}
                     />
-                    <Autocomplete<CatalogVehicle>
-                      fullWidth
-                      value={
-                        options.dummy_vehicles.find(({ id }) => id === loadout.vehicle) ?? null
-                      }
-                      options={options.dummy_vehicles}
-                      getOptionLabel={({ name }) => name}
-                      getOptionKey={({ id }) => id}
-                      isOptionEqualToValue={(option, value) => option.id === value.id}
-                      onChange={(_, value) =>
-                        updateDummy(key, { loadout: emptyLoadout(value?.id) })
-                      }
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          margin="none"
-                          label={`Vehicle for Dummy ${index + 1}`}
-                        />
-                      )}
+                    <CatalogVehiclePicker
+                      label={`Vehicle for Dummy ${index + 1}`}
+                      vehicle={loadout.vehicle}
+                      vehicles={options.dummy_vehicles}
+                      onChange={(vehicle) => updateDummy(key, { loadout: emptyLoadout(vehicle) })}
                     />
                   </Stack>
                   <Button
                     variant="outlined"
                     disabled={!loadout.vehicle}
-                    onClick={() => setConfiguring(key)}
+                    onClick={() => setConfiguring({ kind: "dummy", id: key })}
                   >
                     Customize Dummy {index + 1}
                   </Button>
@@ -366,25 +516,31 @@ export function BattleSetup() {
                 Include a connected player and at least one vehicle on each team. Up to{" "}
                 {MAX_ENTRANTS} entrants.
               </Typography>
-              <Button
-                variant="contained"
-                disabled={saving || loading || !isReady(options, map, players, dummies)}
-                onClick={() => void launch()}
-              >
+              <Button variant="contained" disabled={!canLaunch} onClick={() => void launch()}>
                 {saving ? "Starting battle…" : "Start battle"}
               </Button>
             </Stack>
           </Stack>
         </Box>
       )}
-      {selectedDummy && (
-        <DummyConfiguration
-          key={selectedDummy.key}
-          name={`Dummy ${selectedDummyIndex + 1}`}
-          initial={selectedDummy.loadout}
+      {configuring && (ownedVehicle || catalogLoadout) && (
+        <BattleLoadoutConfiguration
+          key={`${configuring.kind}-${configuring.id}`}
+          name={selectedName}
+          catalogVehicle={catalogLoadout?.vehicle}
+          ownedVehicle={ownedVehicle}
+          initial={selectedLoadout}
           onClose={() => setConfiguring(undefined)}
           onSave={(loadout) => {
-            updateDummy(selectedDummy.key, { loadout });
+            if (ownedVehicle && selectedPlayer) {
+              updatePlayer(configuring.id, {
+                ownedEdits: { ...selectedPlayer.ownedEdits, [ownedVehicle.inventory]: loadout },
+              });
+            } else if (configuring.kind === "custom") {
+              updatePlayer(configuring.id, { customLoadout: loadout });
+            } else {
+              updateDummy(configuring.id, { loadout });
+            }
             setConfiguring(undefined);
           }}
         />

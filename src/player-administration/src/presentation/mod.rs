@@ -75,8 +75,17 @@ pub fn router(
         sign_in_slots: Arc::new(Semaphore::new(2)),
     };
     let protected = Router::new()
-        .route("/battles", get(battles::options).post(battles::start))
+        .route(
+            "/battles",
+            get(battles::options)
+                .post(battles::start)
+                .layer(DefaultBodyLimit::max(32 * 1024)),
+        )
         .route("/battles/vehicles/{vehicle}", get(battles::loadout))
+        .route(
+            "/battles/players/{account}/vehicles/{inventory}",
+            get(battles::owned_loadout),
+        )
         .route("/players", get(players::list).post(players::create))
         .route("/players/{id}/role", post(access::change_role))
         .route("/players/{id}/garage", get(garage::show))

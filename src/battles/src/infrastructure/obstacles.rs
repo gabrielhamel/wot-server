@@ -105,7 +105,7 @@ impl Scenery {
             &self.damage,
             |vertices, fragment| {
                 if let Some((normal, depth)) = candidate.triangle_overlap(vertices)
-                    && depth > crate::domain::world::CONTACT_SKIN
+                    && depth > candidate.parameters.contact_skin_metres
                 {
                     let before = current
                         .triangle_overlap(vertices)
@@ -815,6 +815,7 @@ mod tests {
         }
         // Position in the LAN replay at 132.91 s, after two nearby panels broke.
         let current = Hull {
+            parameters: Default::default(),
             position: Vec3::new(246.39528, 7.9981, -33.58478),
             yaw: 0.756306,
             half_size: Vec2::new(1.5504, 3.264),
@@ -842,6 +843,7 @@ mod tests {
         let mut scene = Scenery::new(geometry);
         // Replay clock 55.92 s and the preceding approach direction.
         let hull = Hull {
+            parameters: Default::default(),
             position: Vec3::new(125.017, 8.349, -35.483),
             yaw: -2.691,
             half_size: Vec2::new(1.625, 3.356),
@@ -906,6 +908,7 @@ mod tests {
                                     continue;
                                 }
                                 let body = Hull {
+                                    parameters: Default::default(),
                                     position: Vec3::new(start.x, y, start.y),
                                     yaw: forward.x.atan2(forward.y),
                                     half_size: Vec2::splat(0.4),
@@ -995,6 +998,7 @@ mod tests {
                 let foot = tree.world_to_model.inverse().transform_point3(Vec3::ZERO);
                 ground.height_at(Vec2::new(foot.x, foot.z))?;
                 let hull = Hull {
+                    parameters: Default::default(),
                     position: foot - Vec3::Z * 3.0,
                     yaw: 0.0,
                     half_size: Vec2::splat(0.6),
@@ -1161,6 +1165,7 @@ mod tests {
                 .is_none()
         );
         let hull = Hull {
+            parameters: Default::default(),
             position: Vec3::new(2.5, 0.0, 0.0),
             yaw: 0.0,
             half_size: Vec2::new(1.0, 2.0),

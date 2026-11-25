@@ -1,7 +1,30 @@
 use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 
-pub(crate) const CONTACT_SKIN: f32 = 0.025;
-pub(crate) const HULL_HEIGHT: f32 = 2.0;
+use super::parameters::BattleParameters;
+
+#[derive(Clone, Copy)]
+pub(crate) struct HullParameters {
+    pub contact_skin_metres: f32,
+    height_metres: f32,
+    wall_normal_y_limit: f32,
+}
+
+impl From<&BattleParameters> for HullParameters {
+    fn from(parameters: &BattleParameters) -> Self {
+        Self {
+            contact_skin_metres: parameters.contact_skin_metres,
+            height_metres: parameters.hull_height_metres,
+            wall_normal_y_limit: parameters.scenery_wall_normal_y_limit,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for HullParameters {
+    fn default() -> Self {
+        Self::from(&BattleParameters::default())
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct Hull {
@@ -10,6 +33,7 @@ pub(crate) struct Hull {
     pub half_size: Vec2,
     pub offset: Vec2,
     pub body: Option<VehicleBody>,
+    pub parameters: HullParameters,
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +74,7 @@ impl Hull {
         let extent = right.abs() * self.half_size.x + forward.abs() * self.half_size.y;
         (
             self.center() - Vec3::new(extent.x, 0.0, extent.y),
-            self.center() + Vec3::new(extent.x, HULL_HEIGHT, extent.y),
+            self.center() + Vec3::new(extent.x, self.parameters.height_metres, extent.y),
         )
     }
 
@@ -58,8 +82,16 @@ impl Hull {
         let body = self.body.unwrap_or(VehicleBody {
             origin: self.position,
             tilt: Vec2::ZERO,
-            center: Vec3::new(self.offset.x, HULL_HEIGHT * 0.5, self.offset.y),
-            half_size: Vec3::new(self.half_size.x, HULL_HEIGHT * 0.5, self.half_size.y),
+            center: Vec3::new(
+                self.offset.x,
+                self.parameters.height_metres * 0.5,
+                self.offset.y,
+            ),
+            half_size: Vec3::new(
+                self.half_size.x,
+                self.parameters.height_metres * 0.5,
+                self.half_size.y,
+            ),
         });
         let rotation = Quat::from_euler(EulerRot::YXZ, self.yaw, body.tilt.y, body.tilt.x);
         ContactBox {
@@ -72,7 +104,7 @@ impl Hull {
     pub fn sweep_triangle(self, vertices: [Vec3; 3], travel: Vec2) -> Option<Contact> {
         let (contact, overlap) = self.triangle_contact(vertices, travel)?;
         let blocks = if travel == Vec2::ZERO {
-            overlap > CONTACT_SKIN
+            overlap > self.parameters.contact_skin_metres
         } else {
             travel.dot(contact.normal) < -0.0001
         };
@@ -89,14 +121,18 @@ impl Hull {
     fn triangle_contact(self, vertices: [Vec3; 3], travel: Vec2) -> Option<(Contact, f32)> {
         let [right, forward] = self.axes();
         let to_local = |v: Vec3| Vec3::new(v.xz().dot(right), v.y, v.xz().dot(forward));
-        let center = self.center() + Vec3::Y * (HULL_HEIGHT * 0.5);
+        let center = self.center() + Vec3::Y * (self.parameters.height_metres * 0.5);
         let [a, b, c] = vertices.map(|v| to_local(v - center));
         let edges = [b - a, c - b, a - c];
         let face = edges[0].cross(edges[1]).normalize_or_zero();
-        if face == Vec3::ZERO || face.y.abs() > 0.65 {
+        if face == Vec3::ZERO || face.y.abs() > self.parameters.wall_normal_y_limit {
             return None;
         }
-        let half = Vec3::new(self.half_size.x, HULL_HEIGHT * 0.5, self.half_size.y);
+        let half = Vec3::new(
+            self.half_size.x,
+            self.parameters.height_metres * 0.5,
+            self.half_size.y,
+        );
         let velocity = to_local(Vec3::new(travel.x, 0.0, travel.y));
         let mut sweep = Sweep::new();
         let mut horizontal_overlap = f32::INFINITY;
@@ -257,14 +293,6 @@ impl Sweep {
     }
 }
 
-const MAX_PASSIVE_SPEED: f32 = 12.0;
-const CONTACT_DRAG: f32 = 4.0;
-const TIP_TERRAIN_ROLL: f32 = 1.0;
-const TIP_SIDE_SPEED: f32 = 5.5;
-const RIGHTING_SIDE_SPEED: f32 = 1.5;
-const SETTLE_TIME_SECONDS: f32 = 3.0;
-const RECOVERY_TIME_SECONDS: f32 = 15.0;
-
 #[derive(Default)]
 pub(crate) struct WorldMotion {
     velocity: Vec2,
@@ -281,21 +309,30 @@ impl WorldMotion {
         self.tipped.is_some()
     }
 
-    pub fn advance(&mut self, yaw: f32, tilt: Vec2, grip: f32, seconds: f32) -> (Vec2, bool) {
+    pub fn advance(
+        &mut self,
+        yaw: f32,
+        tilt: Vec2,
+        grip: f32,
+        seconds: f32,
+        parameters: &BattleParameters,
+    ) -> (Vec2, bool) {
         let (sin, cos) = yaw.sin_cos();
         let right = Vec2::new(cos, -sin);
         let forward = Vec2::new(sin, cos);
         let descent = -right * tilt.x.sin() + forward * tilt.y.sin();
-        let gravity = descent * super::movement::GRAVITY;
-        let excess = gravity.length() - grip * super::movement::GRAVITY;
+        let gravity = descent * parameters.gravity_mps2;
+        let excess = gravity.length() - grip * parameters.gravity_mps2;
         if excess > 0.0 {
             self.velocity += gravity.normalize_or_zero() * excess * seconds;
         } else {
             let speed = self.velocity.length();
-            self.velocity =
-                self.velocity.normalize_or_zero() * (speed - CONTACT_DRAG * seconds).max(0.0);
+            self.velocity = self.velocity.normalize_or_zero()
+                * (speed - parameters.contact_drag_mps2 * seconds).max(0.0);
         }
-        self.velocity = self.velocity.clamp_length_max(MAX_PASSIVE_SPEED);
+        self.velocity = self
+            .velocity
+            .clamp_length_max(parameters.max_passive_speed_mps);
         (self.velocity * seconds, excess > 0.0)
     }
 
@@ -303,8 +340,9 @@ impl WorldMotion {
         self.velocity -= normal * self.velocity.dot(normal).min(0.0);
     }
 
-    pub fn push(&mut self, impulse: Vec2) {
-        self.velocity = (self.velocity + impulse).clamp_length_max(MAX_PASSIVE_SPEED);
+    pub fn push(&mut self, impulse: Vec2, parameters: &BattleParameters) {
+        self.velocity =
+            (self.velocity + impulse).clamp_length_max(parameters.max_passive_speed_mps);
     }
 
     pub fn stop(&mut self) {
@@ -317,6 +355,7 @@ impl WorldMotion {
         side_speed: f32,
         stationary: bool,
         seconds: f32,
+        parameters: &BattleParameters,
     ) -> f32 {
         if let Some(tipped) = &mut self.tipped {
             if stationary {
@@ -324,9 +363,10 @@ impl WorldMotion {
             } else {
                 tipped.idle_seconds = 0.0;
             }
-            if support_roll.abs() < TIP_TERRAIN_ROLL * 0.5
-                && (side_speed * tipped.side >= RIGHTING_SIDE_SPEED
-                    || tipped.idle_seconds >= SETTLE_TIME_SECONDS + RECOVERY_TIME_SECONDS)
+            if support_roll.abs() < parameters.tip_terrain_roll_radians * 0.5
+                && (side_speed * tipped.side >= parameters.righting_side_speed_mps
+                    || tipped.idle_seconds
+                        >= parameters.settle_time_seconds + parameters.recovery_time_seconds)
             {
                 self.tipped = None;
                 return support_roll;
@@ -334,9 +374,10 @@ impl WorldMotion {
             return std::f32::consts::FRAC_PI_2 * tipped.side;
         }
 
-        let tilt = support_roll - side_speed / TIP_SIDE_SPEED;
-        if tilt.abs() >= TIP_TERRAIN_ROLL
-            && (support_roll.abs() > 0.3 || side_speed.abs() >= TIP_SIDE_SPEED)
+        let tilt = support_roll - side_speed / parameters.tip_side_speed_mps;
+        if tilt.abs() >= parameters.tip_terrain_roll_radians
+            && (support_roll.abs() > parameters.tip_min_support_roll_radians
+                || side_speed.abs() >= parameters.tip_side_speed_mps)
         {
             let side = tilt.signum();
             self.tipped = Some(Tipped {
@@ -356,6 +397,7 @@ mod tests {
 
     fn hull(x: f32, y: f32, yaw: f32) -> Hull {
         Hull {
+            parameters: Default::default(),
             position: Vec3::new(x, y, 0.0),
             yaw,
             half_size: Vec2::new(1.0, 2.0),
@@ -389,7 +431,15 @@ mod tests {
         assert_eq!(contact.normal, -Vec2::X);
         assert!((correction - 7.0).abs() < 1e-5);
         assert!(vehicle_contact(a, hull(1.5, 0.0, 0.0), -travel, Vec2::ZERO).is_none());
-        assert!(vehicle_contact(a, hull(6.0, HULL_HEIGHT, 0.0), travel, Vec2::ZERO).is_none());
+        assert!(
+            vehicle_contact(
+                a,
+                hull(6.0, BattleParameters::default().hull_height_metres, 0.0),
+                travel,
+                Vec2::ZERO
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -444,26 +494,38 @@ mod tests {
     #[test]
     fn slopes_slide_downhill_and_recovery_restarts_after_motion() {
         let mut motion = WorldMotion::default();
-        let (stable, sliding) = motion.advance(0.0, Vec2::new(0.1, 0.0), 0.5, 0.1);
+        let (stable, sliding) = motion.advance(
+            0.0,
+            Vec2::new(0.1, 0.0),
+            0.5,
+            0.1,
+            &BattleParameters::default(),
+        );
         assert!(!sliding);
         assert_eq!(stable, Vec2::ZERO);
-        let (slide, sliding) = motion.advance(0.0, Vec2::new(0.8, 0.0), 0.5, 0.1);
+        let (slide, sliding) = motion.advance(
+            0.0,
+            Vec2::new(0.8, 0.0),
+            0.5,
+            0.1,
+            &BattleParameters::default(),
+        );
         assert!(sliding);
         assert!(slide.x < 0.0 && slide.y == 0.0);
-        let (flat, _) = motion.advance(0.0, Vec2::ZERO, 0.5, 1.0);
+        let (flat, _) = motion.advance(0.0, Vec2::ZERO, 0.5, 1.0, &BattleParameters::default());
         assert_eq!(flat, Vec2::ZERO);
-        motion.attitude(1.05, 0.0, false, 0.1);
+        motion.attitude(1.05, 0.0, false, 0.1, &BattleParameters::default());
         assert!(motion.is_tipped());
-        motion.attitude(0.0, 0.0, true, 17.0);
-        motion.attitude(0.0, 0.0, false, 0.1);
-        motion.attitude(0.0, 0.0, true, 17.0);
+        motion.attitude(0.0, 0.0, true, 17.0, &BattleParameters::default());
+        motion.attitude(0.0, 0.0, false, 0.1, &BattleParameters::default());
+        motion.attitude(0.0, 0.0, true, 17.0, &BattleParameters::default());
         assert!(motion.is_tipped());
-        motion.attitude(0.0, 0.0, true, 1.0);
+        motion.attitude(0.0, 0.0, true, 1.0, &BattleParameters::default());
         assert!(!motion.is_tipped());
 
-        motion.attitude(0.0, 7.0, false, 0.1);
+        motion.attitude(0.0, 7.0, false, 0.1, &BattleParameters::default());
         assert!(motion.is_tipped());
-        motion.attitude(0.0, -2.0, false, 0.1);
+        motion.attitude(0.0, -2.0, false, 0.1, &BattleParameters::default());
         assert!(!motion.is_tipped());
     }
 }

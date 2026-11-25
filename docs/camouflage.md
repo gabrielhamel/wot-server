@@ -155,14 +155,19 @@ includes it in a full sync for existing vehicles and in the inventory delta
 when the vehicle is acquired or sold. The built-in style follows the vehicle.
 There is no additional depot item or independent purchase or grant.
 
-In Training, the same encoded style marker travels with the equipped vehicle
-and is sent in `Vehicle.publicInfo.outfit`. The client reads that field when
-assembling the vehicle's appearance, using the current map's season. Training currently supplies catalog-defined locked styles.
+In Training, the server sends `Vehicle.publicInfo.outfit` when creating the
+vehicle for the driver and other players. Accounts combines the saved common
+outfit with the selected season's paints, camouflage, inscriptions, effect and
+projection decals. A catalog-locked style supplies its built-in outfit. Battles
+selects the encoded appearance from the arena definition's
+`vehicleCamouflageKind`.
 
-The same Vehicle creation payload goes to the driver and to every other
-player in the arena. It contains the outfit and the compact descriptor for
-the equipped chassis, engine, fuel tank, radio, turret, gun and optional
-devices. Player-selected garage outfits still need battle replication.
+The vehicle descriptor carries the equipped chassis, engine, fuel tank, radio,
+turret, gun and optional devices. Admin battle overrides use a temporary copy
+of the garage loadout, including its saved appearance for the arena’s season.
+The extracted arena field matches the referenced client readers
+`common/ArenaType.py::__readVehicleCamouflageKind` and
+`client/vehicle_systems/camouflages.py::getOutfitComponent`.
 
 The client applies each viewer's customization display preference to other
 vehicles. First Warrior's style is classified as non-historical, so a

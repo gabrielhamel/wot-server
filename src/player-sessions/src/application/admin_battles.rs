@@ -1,12 +1,22 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
-use wot_accounts::contract::{BattleVehicleChoice, BattleVehicleUnavailable, DummyLoadout};
+use wot_accounts::contract::{
+    BattleVehicleChoice, BattleVehicleUnavailable, CustomBattleLoadout, CustomBattleLoadoutOptions,
+};
+use wot_battles::contract::BattleParameterDefinition;
 
 #[derive(Clone)]
 pub struct AdminBattles(mpsc::Sender<BattleRequest>);
 
 pub(crate) enum BattleRequest {
     Options(tracing::Span, oneshot::Sender<BattleOptions>),
+    OwnedLoadout(
+        tracing::Span,
+        i64,
+        i64,
+        oneshot::Sender<Result<CustomBattleLoadoutOptions, AdminBattleError>>,
+    ),
     Launch(
         tracing::Span,
         AdminBattleSetup,
@@ -25,6 +35,7 @@ pub struct BattleOptions {
     pub maps: Vec<BattleChoice<i32>>,
     pub players: Vec<AvailablePlayer>,
     pub observer_available: bool,
+    pub parameters: &'static [BattleParameterDefinition],
 }
 
 #[derive(Serialize)]
@@ -48,6 +59,8 @@ pub struct AdminBattleSetup {
     pub duration_seconds: i32,
     pub players: Vec<AdminBattlePlayer>,
     pub dummies: Vec<AdminBattleDummy>,
+    #[serde(default)]
+    pub parameters: BTreeMap<String, f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,13 +69,15 @@ pub struct AdminBattlePlayer {
     pub account_id: i64,
     pub team: u8,
     pub inventory_id: Option<i64>,
+    pub loadout: Option<CustomBattleLoadout>,
+    pub owned_overrides: Option<CustomBattleLoadout>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdminBattleDummy {
     pub team: u8,
-    pub loadout: DummyLoadout,
+    pub loadout: CustomBattleLoadout,
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
@@ -71,10 +86,16 @@ pub enum AdminBattleError {
         "Select a map, a duration from 5 to 30 minutes, and vehicles on both teams. Include at least one connected player and no more than 30 entrants."
     )]
     InvalidSetup,
+    #[error("A battle parameter is unknown or outside its supported range.")]
+    InvalidParameters,
     #[error(
         "A selected player or vehicle is no longer available. Refresh the player list and try again."
     )]
     PlayerUnavailable,
+    #[error(
+        "Select an owned vehicle with compatible edits, a custom tank, or Observer for each player."
+    )]
+    InvalidPlayerLoadout,
     #[error("{0}. Refresh the player list and try again.")]
     VehicleUnavailable(BattleVehicleUnavailable),
     #[error("A dummy has an unavailable vehicle or incompatible loadout.")]
@@ -89,7 +110,9 @@ impl AdminBattleError {
     pub fn outcome(self) -> &'static str {
         match self {
             Self::InvalidSetup => "invalid_setup",
+            Self::InvalidParameters => "invalid_parameters",
             Self::PlayerUnavailable => "player_unavailable",
+            Self::InvalidPlayerLoadout => "invalid_player_loadout",
             Self::VehicleUnavailable(reason) => reason.outcome(),
             Self::InvalidDummy => "invalid_dummy",
             Self::Unavailable => "unavailable",
@@ -110,6 +133,23 @@ impl AdminBattles {
             .try_send(BattleRequest::Options(tracing::Span::current(), reply))
             .map_err(|_| AdminBattleError::Unavailable)?;
         response.await.map_err(|_| AdminBattleError::Unavailable)
+    }
+
+    pub async fn owned_loadout(
+        &self,
+        account_id: i64,
+        inventory_id: i64,
+    ) -> Result<CustomBattleLoadoutOptions, AdminBattleError> {
+        let (reply, response) = oneshot::channel();
+        self.0
+            .try_send(BattleRequest::OwnedLoadout(
+                tracing::Span::current(),
+                account_id,
+                inventory_id,
+                reply,
+            ))
+            .map_err(|_| AdminBattleError::Unavailable)?;
+        response.await.map_err(|_| AdminBattleError::Unavailable)?
     }
 
     pub async fn start(

@@ -3,10 +3,12 @@ use glam::Vec2;
 use std::{collections::HashMap, io::BufReader};
 use wot_platform::client_formats::pxml;
 use wot_resources::ResourceBundle;
+use wot_shared_kernel::ArenaSeason;
 
 #[derive(Clone)]
 pub(super) struct ArenaMap {
     pub(super) geometry: String,
+    pub(super) season: ArenaSeason,
     pub(super) name: String,
     pub(super) spawns: [Vec2; 2],
     pub(super) bounds: [Vec2; 2],
@@ -37,6 +39,11 @@ impl ArenaMap {
         }
         Some(Self {
             bounds,
+            season: match definition.get_child_string("vehicleCamouflageKind") {
+                Some("winter") => ArenaSeason::Winter,
+                Some("desert") => ArenaSeason::Desert,
+                _ => ArenaSeason::Summer,
+            },
             geometry: geometry.to_owned(),
             name: String::new(),
             spawns: [spawn("team1")?, spawn("team2")?],

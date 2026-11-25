@@ -23,7 +23,7 @@ pub use super::infrastructure::client::{
     StoreCatalog, StoreCategory, StoreListing, StoreOffer, StoreOrder, StoreOrderError, StorePrice,
     VehicleCatalogEntry,
 };
-pub use super::infrastructure::client::{DummyLoadout, DummyLoadoutOptions};
+pub use super::infrastructure::client::{CustomBattleLoadout, CustomBattleLoadoutOptions};
 
 use super::AccountSnapshot;
 use std::{future::Future, pin::Pin, sync::Arc};

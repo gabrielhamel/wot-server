@@ -108,6 +108,44 @@ impl ModuleRules {
             .unwrap_or_else(|| self.stock.clone())
     }
 
+    pub(crate) fn validate_loadout(&self, loadout: &ModuleLoadout) -> Result<(), ProgressionError> {
+        if loadout.len() != self.stock.len()
+            || loadout.iter().any(|(kind, id)| {
+                !self.stock.contains_key(kind)
+                    || self
+                        .modules
+                        .get(id)
+                        .is_none_or(|module| module.kind != *kind)
+            })
+        {
+            return Err(ProgressionError::InvalidRequest);
+        }
+        let turret = loadout
+            .get(&ModuleKind::Turret)
+            .ok_or(ProgressionError::InvalidRequest)?;
+        let gun = loadout
+            .get(&ModuleKind::Gun)
+            .ok_or(ProgressionError::InvalidRequest)?;
+        if !self
+            .turret_guns
+            .get(turret)
+            .is_some_and(|guns| guns.contains(gun))
+        {
+            return Err(ProgressionError::InvalidRequest);
+        }
+        let weight = self
+            .loadout_weight(loadout)
+            .ok_or(ProgressionError::InvalidRequest)?;
+        let limit = loadout
+            .get(&ModuleKind::Chassis)
+            .and_then(|id| self.modules.get(id))
+            .and_then(|m| m.max_weight);
+        if !weight.is_finite() || limit.is_some_and(|limit| weight > limit) {
+            return Err(ProgressionError::InvalidRequest);
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(name = "accounts.modules.research", skip_all, fields(ddd.bounded_context.name = "accounts", input.index = index), err)]
     pub fn research(
         &self,
@@ -179,29 +217,7 @@ impl ModuleRules {
             }
             next.insert(ModuleKind::Gun, gun);
         }
-        let turret = next
-            .get(&ModuleKind::Turret)
-            .ok_or(ProgressionError::InvalidRequest)?;
-        let gun = next
-            .get(&ModuleKind::Gun)
-            .ok_or(ProgressionError::InvalidRequest)?;
-        if !self
-            .turret_guns
-            .get(turret)
-            .is_some_and(|guns| guns.contains(gun))
-        {
-            return Err(ProgressionError::InvalidRequest);
-        }
-        let weight = self
-            .loadout_weight(&next)
-            .ok_or(ProgressionError::InvalidRequest)?;
-        let limit = next
-            .get(&ModuleKind::Chassis)
-            .and_then(|id| self.modules.get(id))
-            .and_then(|m| m.max_weight);
-        if !weight.is_finite() || limit.is_some_and(|limit| weight > limit) {
-            return Err(ProgressionError::InvalidRequest);
-        }
+        self.validate_loadout(&next)?;
         let current = self.loadout(snapshot, inventory_id);
         let mut depot = snapshot.progression.depot.clone();
         let mut cost = 0_i64;

@@ -123,6 +123,43 @@ fn turret_and_gun_change_is_atomic_and_checks_both_unlocks() {
 }
 
 #[test]
+fn heavier_turret_requires_suspension_with_enough_capacity() {
+    let mut rules = rules();
+    // The remaining 180 kg is the hull in this compact fixture.
+    rules.hull_weight = 180.0;
+    for (id, weight) in [
+        (20, 0.0),
+        (21, 0.0),
+        (30, 200.0),
+        (31, 250.0),
+        (40, 120.0),
+        (41, 120.0),
+    ] {
+        rules.modules.get_mut(&id).unwrap().weight = weight;
+    }
+    rules.modules.get_mut(&20).unwrap().max_weight = Some(500.0);
+    rules.modules.get_mut(&21).unwrap().max_weight = Some(600.0);
+    let mut account = snapshot();
+    account.progression.unlocks.extend([21, 31, 41]);
+    assert_eq!(
+        rules.equip(&mut account, 42, 31, 41, true, &defaults()),
+        Err(ProgressionError::InvalidRequest),
+    );
+    assert!(account.progression.installed.is_empty());
+    assert_eq!(account.balances.credits, 100);
+    rules
+        .equip(&mut account, 42, 21, 0, true, &defaults())
+        .unwrap();
+    rules
+        .equip(&mut account, 42, 31, 41, true, &defaults())
+        .unwrap();
+    assert_eq!(
+        account.progression.installed[&42],
+        BTreeMap::from([(Chassis, 21), (Turret, 31), (Gun, 41)])
+    );
+}
+
+#[test]
 fn invalid_and_unaffordable_changes_leave_money_and_inventory_unchanged() {
     for (item, gun, buy) in [
         (i32::MIN, 0, true),

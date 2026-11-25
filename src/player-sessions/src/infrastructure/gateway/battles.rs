@@ -13,7 +13,7 @@ const PREPARATION_BUDGET: usize = 4;
 pub(super) fn vehicle_loadout(vehicle: BattleVehicle) -> VehicleLoadout {
     VehicleLoadout {
         descriptor: vehicle.descriptor,
-        outfit: vehicle.outfit,
+        outfits: vehicle.outfits,
         health: vehicle.health,
         crew_size: vehicle.crew_size,
         performance: Some(vehicle.performance),
@@ -27,7 +27,7 @@ impl Gateway {
             .training_observer_descriptor()
             .map(|descriptor| VehicleLoadout {
                 descriptor: descriptor.to_vec(),
-                outfit: Vec::new(),
+                outfits: Default::default(),
                 health: 1,
                 crew_size: 0,
                 ammunition: Vec::new(),

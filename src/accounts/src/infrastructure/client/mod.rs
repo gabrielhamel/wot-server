@@ -3,8 +3,8 @@ mod battle_armor;
 mod battle_mobility;
 mod battle_performance;
 mod battle_readiness;
-pub(super) mod dummy_loadout;
-pub use dummy_loadout::{DummyLoadout, DummyLoadoutOptions};
+pub(super) mod custom_battle_loadout;
+pub use custom_battle_loadout::{CustomBattleLoadout, CustomBattleLoadoutOptions};
 mod cosmetic_catalog;
 mod cosmetic_inventory;
 mod outfit;
@@ -228,9 +228,11 @@ impl GarageCatalog {
             let scaled = f32::from(health) * health_factor;
             ((scaled.round() / 10.0).ceil() * 10.0) as i16
         };
-        let outfit = projected
-            .locked_style
-            .map_or_else(Vec::new, outfit::encode_style);
+        let outfits = outfit::battle_outfits(
+            &snapshot.progression.cosmetics,
+            inventory_id,
+            projected.locked_style,
+        );
         let descriptor = projected.descr.encode();
         let ammunition = projected
             .shells
@@ -240,11 +242,14 @@ impl GarageCatalog {
         let crew_size = catalog.crew_roles.len();
         span.record("output.bytes", descriptor.len());
         span.record("output.crew.count", crew_size);
-        span.record("output.outfit.bytes", outfit.len());
+        span.record(
+            "output.outfit.bytes",
+            outfits.winter.len() + outfits.summer.len() + outfits.desert.len(),
+        );
         span.record("output.outcome", "prepared");
         Ok(Some(crate::contract::BattleVehicle {
             descriptor,
-            outfit,
+            outfits,
             health,
             crew_size,
             performance,
@@ -265,7 +270,7 @@ impl GarageCatalog {
         let (equipment, equipment_grants) = equipment::load(&fs, &prices)?;
         let directives = directives::load(&fs, &prices)?;
         let (consumables, consumable_names) = consumables::load(&fs, &prices)?;
-        let perk_names = dummy_loadout::perk_names(&fs);
+        let perk_names = custom_battle_loadout::perk_names(&fs);
         let battle_mobility = battle_mobility::BattleMobility::load(&fs)?;
         let supply_slots = supply_slots::SupplySlots::load(&fs)?;
         // The client reserves tree IDs starting at 10000 for vehicle skill trees.
