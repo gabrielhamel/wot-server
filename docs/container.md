@@ -1,9 +1,10 @@
 # Container image
 
 The [publish workflow](../.github/workflows/container.yml) builds a Linux x86-64
-image when a Git tag is created and publishes it to
-`ghcr.io/gabrielhamel/wot-server`. The Actions run summary shows the published
-image names:
+image and publishes it to `ghcr.io/gabrielhamel/wot-server`. It runs when a Git
+tag is created and after a successful default-branch
+[Latest client E2E run](../.github/workflows/latest-client-e2e.yml). The Actions
+run summary shows the published image names:
 
 - Each release publishes `<game-version>-<full-commit>` and
   `<game-version>-<git-tag>`, and updates `latest`.
@@ -17,10 +18,14 @@ The dedicated self-hosted runner installs the latest EU production SD English
 client with [wg-launcher](references/wg-launcher/README.md). Its
 installed game tree persists at `/cache/wot/eu-sd-en`, and subsequent jobs
 use the launcher's in-place update and download only the needed patches. The
-launcher requires the complete package set to install. The extractor and
-server build come from the same checkout. The full client stays on the runner.
-The workflow logs the extracted version and verifies that the final image
-contains the same manifest version before publishing.
+launcher requires the complete package set to install. The full client stays on
+the runner. For a tag-triggered run, the extractor and server build use the same
+checkout. After a successful daily E2E run, the publisher selects the highest
+numeric server release Git tag and checks GHCR for that release paired with the
+tested client version. If the tag exists, the run skips publication. Otherwise it
+builds that server release using the resource artifact from the E2E run. The
+publisher verifies that the final image contains the expected manifest version.
+Production Flux image automation follows the digest of `latest`.
 
 The extractor and server builds share BuildKit caches for the Cargo registry
 and compiled dependencies. They reuse these caches while the runner's Docker

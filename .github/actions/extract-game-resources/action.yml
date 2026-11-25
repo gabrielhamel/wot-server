@@ -1,6 +1,11 @@
 name: Extract current EU game resources
 description: Update the cached production client and extract its server resource bundle.
 
+outputs:
+  game-version:
+    description: Game version from the extracted resource manifest.
+    value: ${{ steps.extract.outputs.game-version }}
+
 runs:
   using: composite
   steps:
@@ -31,6 +36,7 @@ runs:
         wg-launcher update --path "$GAME_DIR"
 
     - name: Extract the server bundle
+      id: extract
       shell: bash
       run: |
         extractor="wot-extract-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
@@ -42,4 +48,5 @@ runs:
         [[ $(docker inspect --format '{{.State.ExitCode}}' "$container") == 0 ]]
         docker cp "$container:/tmp/resources" ./resources
         version=$(jq -er '.game_version | strings | select(length > 0)' resources/manifest.json)
+        echo "game-version=$version" >> "$GITHUB_OUTPUT"
         printf 'Extracted EU client version %s\n' "$version" >> "$GITHUB_STEP_SUMMARY"
