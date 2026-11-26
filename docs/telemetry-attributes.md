@@ -117,7 +117,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.round_length.seconds`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Requested duration in seconds on Training Room creation, dashboard battle launch and battle preparation. |
 | [`input.room.open_flag`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Wire privacy flag on Training Room creation. `0` denotes invite-only and `1` denotes open. |
 | [`input.room.id`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Training Room ID supplied by the client on join or decline, or set by the server for invitation delivery, channel membership and Training launch preparation. |
-| [`input.battle.id`](../src/battles/src/infrastructure/mod.rs) | Server-assigned battle ID on activation, arena entry, period and readiness broadcasts, vehicle controls and shots. |
+| [`input.battle.id`](../src/battles/src/infrastructure/mod.rs) | Server-assigned battle ID on activation, arena entry, period and readiness broadcasts, vehicle controls, shots, fire ticks and round cleanup, and non-track device repairs. |
 | [`input.participant.id`](../src/battles/src/infrastructure/mod.rs) | Numeric admission generation scoped to the gateway. Recorded on arena entry and participant removal, and on [decoded vehicle controls](../src/battles/src/infrastructure/controls.rs), [shots](../src/battles/src/infrastructure/projectiles.rs), and [damage sticker deliveries](../src/battles/src/infrastructure/wire/controls.rs). |
 | [`output.battle.id`](../src/battles/src/infrastructure/mod.rs) | Battle ID allocated during preparation, returned from a dashboard launch or resolved on participant removal. |
 | [`input.cluster.id`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Cluster supplied on Training Room join or decline, or configured periphery on invitation delivery. Public room-list joins use `0`. |
@@ -314,19 +314,28 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.devices.damaged`](../src/battles/src/infrastructure/projectiles.rs) | Number of device or crew strikes applied at the resolved contact. |
 | [`output.devices.destroyed`](../src/battles/src/infrastructure/projectiles.rs) | Number of devices or crew hit regions reduced to zero health at contact. |
 | [`output.tracks.left_damage_hp`](../src/battles/src/domain/armor.rs), `output.tracks.right_damage_hp` | Calculated track damage in HP by side on `battles.resolve_armor`, before capping to the current track HP. Omitted for sides without a strike. |
+| [`output.engine.damage_hp`](../src/battles/src/domain/armor.rs), `output.fuel.damage_hp` | Calculated module damage in HP before capping to current HP. Omitted for modules without a strike. |
 | [`output.tracks.hit_count`](../src/battles/src/infrastructure/projectiles.rs) | Count of track sides damaged or whose repair countdown was restarted by the contact. |
 | [`output.tracks.left`](../src/battles/src/infrastructure/projectiles.rs), `output.tracks.right` | Track state on impact. Values are `damaged`, `broken` and `repair_restarted`. |
 | [`input.track.side`](../src/battles/src/infrastructure/vehicle_damage.rs) | Side being automatically repaired, `left` or `right`. The span also records `input.entity_id` for the repaired vehicle. |
 | [`output.outcome`](../src/battles/src/infrastructure/vehicle_damage.rs), `output.recipients` | Automatic track repair result (`repaired_critical` or `repaired`) and recipient count for successful repair deliveries. |
 | [`output.crew.injured`](../src/battles/src/infrastructure/projectiles.rs) | Number of crew injured by the resolved contact. |
 | [`output.fire.started`](../src/battles/src/infrastructure/projectiles.rs) | Whether the impact started a vehicle fire. |
+| [`output.fire.origin`](../src/battles/src/infrastructure/projectiles.rs) | Ignition source on a shot that starts a fire. Either `engine` or `fuel_tank`. |
+| [`output.fire.ended`](../src/battles/src/infrastructure/vehicle_damage.rs) | Whether the damage tick ended the fire through burnout or loss of all hull HP. On a shot, whether the hit destroyed a burning vehicle. |
+| [`output.fire.recipients`](../src/battles/src/infrastructure/vehicle_damage.rs) | Number of entered clients successfully queued ignition replication. Omitted if the shot started no fire. |
+| [`output.fire.snapshot_count`](../src/battles/src/infrastructure/mod.rs) | Number of already active fires queued for the player on arena entry. |
+| [`input.fire.attacker_id`](../src/battles/src/infrastructure/vehicle_damage.rs), `input.fire.origin` | Original attacker vehicle entity ID and ignition source on fire ticks and round-end cleanup. |
+| [`input.fire.ticks_remaining`](../src/battles/src/infrastructure/vehicle_damage.rs) | Fire tick count remaining before applying this tick. Includes the current tick. |
+| [`output.damage`](../src/battles/src/infrastructure/vehicle_damage.rs), `output.recipients` | Actual hull HP lost on a fire tick and number of clients queued the full tick update. Round-end cleanup counts successful unlink enqueues in `output.recipients` and reports `round_finished` in `output.outcome`. |
 | [`output.ammo_rack.detonated`](../src/battles/src/infrastructure/projectiles.rs) | Whether the strike destroyed an ammunition rack while rounds were aboard. |
 | [`input.projectile.distance_metres`](../src/battles/src/infrastructure/explosions.rs) | Projectile distance travelled to detonation, in metres. |
 | [`input.explosion.vehicle_splash`](../src/battles/src/infrastructure/explosions.rs) | Whether the detonation can apply external artillery splash. |
 | [`output.explosion.trees`](../src/battles/src/infrastructure/explosions.rs) | Trunks broken by the detonation. |
 | [`output.explosion.targets`](../src/battles/src/infrastructure/explosions.rs) | Vehicles whose HP or stun deadline changed. |
 | [`output.explosion.stunned`](../src/battles/src/infrastructure/explosions.rs) | Number of new or extended stun deadlines. |
-| [`output.devices.repaired`](../src/battles/src/infrastructure/vehicle_damage.rs) | Non-track devices restored to their passive repair threshold this tick. Track repairs have a dedicated span. |
+| [`output.devices.repaired`](../src/battles/src/infrastructure/vehicle_damage.rs) | Number of non-track devices restored to their passive repair threshold on `battles.repair_devices`. |
+| [`output.explosion.fires_ended`](../src/battles/src/infrastructure/explosions.rs) | Number of burning vehicles destroyed by blast damage. |
 | [`output.shot.id`](../src/battles/src/infrastructure/projectiles.rs) | Arena-local sequence number assigned after firing, omitted on rejection. |
 | [`output.projectile.flight_seconds`](../src/battles/src/infrastructure/projectiles.rs) | Seconds from launch to scheduled contact. Omitted for shots with no contact. |
 | [`output.damage_stickers.count`](../src/battles/src/infrastructure/projectiles.rs) | Number of retained damage stickers on the target when the hit adds a new sticker. |

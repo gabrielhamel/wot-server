@@ -12,10 +12,10 @@ ContextMap Server {
     implementationTechnology = "Shared Rust AccountId validates participants before Social enforces its distinct-account rule"
   }
   SharedKernel [U] -> [D] Accounts {
-    implementationTechnology = "VehiclePerformance represents loadout-adjusted mobility, gun limits, shell ballistics, explosive and stun definitions, armor meshes, device health and reload rules. BattleOutfits holds the encoded garage appearance for each arena season."
+    implementationTechnology = "VehiclePerformance represents loadout-adjusted mobility, gun limits, shell ballistics, explosive and stun definitions, armor meshes with optional engine compartment anchors, device health and reload rules. BattleOutfits holds the encoded garage appearance for each arena season."
   }
   SharedKernel [U] -> [D] Battles {
-    implementationTechnology = "VehiclePerformance supplies the effective mobility profile, shell ballistics, explosive and stun definitions, armor meshes, device health and reload rules used by the simulation. ArenaSeason and BattleOutfits determine the outfit replicated to each client."
+    implementationTechnology = "VehiclePerformance supplies the effective mobility profile, shell ballistics, explosive and stun definitions, armor meshes with optional engine compartment anchors, device health and reload rules used by the simulation. ArenaSeason and BattleOutfits determine the outfit replicated to each client."
   }
   Platform [U] -> [D] Accounts {
     implementationTechnology = "Common client-format codecs and PostgreSQL span adapter"

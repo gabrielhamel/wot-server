@@ -11,7 +11,7 @@ use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use tracing_subscriber::prelude::*;
 use wot_platform::mercury::{
-    app::client::element::arena::{ArenaEntityProperties, NrlData},
+    app::client::element::arena::{ApplyNrlUnlink, ArenaEntityProperties, NrlCreateNode, NrlData},
     net::{
         codec::Codec,
         element::{Element, SimpleElement},
@@ -97,6 +97,8 @@ struct ImpactDelivery {
     tracers: Vec<(i32, bool, f32)>,
     stops: Vec<i32>,
     health_changes: Vec<u32>,
+    fire_damage: Vec<(ParticipantId, Vec<ScriptValue>)>,
+    fire_logs: Vec<(ParticipantId, avatar::BattleEvent)>,
     damage_logs: usize,
     shot_results: Vec<(ParticipantId, ShotResult)>,
     track_updates: Vec<(ParticipantId, u8, Vec<u8>)>,
@@ -130,7 +132,12 @@ impl ArenaDelivery for ImpactDelivery {
                 let _delivery = tracing::info_span!("test.hit_direction_delivery").entered();
                 self.indicators.push((recipient, update));
             }
-            AvatarUpdate::BattleEvents(_) => self.damage_logs += 1,
+            AvatarUpdate::BattleEvents(event) => {
+                self.damage_logs += 1;
+                if (event.details >> 17) & 255 == 1 {
+                    self.fire_logs.push((recipient, event));
+                }
+            }
             AvatarUpdate::ShotResults(result) => {
                 self.shot_results.push((recipient, result));
             }
@@ -156,7 +163,10 @@ impl ArenaDelivery for ImpactDelivery {
         recipient: ParticipantId,
         element: E,
     ) -> std::io::Result<()> {
-        if matches!(E::ID, NrlData::ID | ArenaEntityProperties::ID) {
+        if matches!(
+            E::ID,
+            NrlData::ID | ArenaEntityProperties::ID | NrlCreateNode::ID | ApplyNrlUnlink::ID
+        ) {
             let mut payload = Vec::new();
             element.write(&mut payload, &())?;
             let _delivery = tracing::info_span!("test.track_delivery").entered();
@@ -191,6 +201,10 @@ impl ArenaDelivery for ImpactDelivery {
         if name == "onHealthChanged" {
             let _delivery = tracing::info_span!("test.health_delivery").entered();
             self.health_changes.push(entity);
+            if args.get(3) == Some(&ScriptValue::UInt8(1)) {
+                self.fire_damage.push((recipient, args));
+            }
+            return Ok(());
         }
         if name == "showDamageFromShot" {
             let _delivery = tracing::info_span!("test.impact_delivery").entered();
@@ -567,6 +581,7 @@ fn mount_test_plate(
     tank.performance.as_mut().unwrap().armor[part] = Some(MountedArmor {
         offset: Vec3::ZERO,
         mesh: Arc::new(ArmorMesh {
+            engine_compartment: None,
             bounds: [
                 a.min(b).min(c).min(d) - padding,
                 a.max(b).max(c).max(d) + padding,
@@ -726,6 +741,7 @@ fn profile() -> VehiclePerformance {
     ];
     let [a, b, c, d] = corners;
     let armor = ArmorMesh {
+        engine_compartment: None,
         bounds: [Vec3::new(-0.5, 0.0, -1.0), Vec3::new(0.5, 2.0, 1.0)],
         triangles: [[a, b, c], [a, c, d]]
             .map(|vertices| ArmorTriangle {
@@ -812,6 +828,7 @@ fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
             track.plate.once = true;
             track.plate.device = Some(ArmorDevice {
                 device,
+                can_ignite_engine: false,
                 health: None,
                 projectile_chance: 1.0,
                 explosion_chance: 0.0,
@@ -1132,6 +1149,7 @@ fn track_only_hits_show_a_chassis_critical_even_when_the_hull_ricochets() {
             triangle.plate.ricochets = false;
             triangle.plate.device = Some(ArmorDevice {
                 device: Device::TrackLeft,
+                can_ignite_engine: false,
                 health: Some(DeviceHealth {
                     maximum: 80,
                     repaired: 40,
@@ -1145,6 +1163,7 @@ fn track_only_hits_show_a_chassis_critical_even_when_the_hull_ricochets() {
         profile.armor[0] = Some(MountedArmor {
             offset: Vec3::new(-0.25, 0.0, 0.0),
             mesh: Arc::new(ArmorMesh {
+                engine_compartment: None,
                 bounds: hull.bounds,
                 triangles: tracks,
             }),
@@ -1267,5 +1286,315 @@ fn track_only_hits_show_a_chassis_critical_even_when_the_hull_ricochets() {
                 |span| span.name == name && span.parent_span_id == shot.span_context.span_id()
             ));
         }
+    }
+}
+
+#[test]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
+fn engine_hit_replicates_fire_to_driver_attacker_and_observer() {
+    use crate::domain::vehicle::Aim;
+    use wot_shared_kernel::{ArmorDevice, Device, DeviceHealth, EngineCompartment};
+
+    let (id, mut battle, wire) = projectile_battle(&[1, 2, 2]);
+    battle.parameters.fire_ticks = 3;
+    battle.parameters.fire_damage_percent = 12.0;
+    let target = &mut battle.players.get_mut(&VICTIM).unwrap().tank;
+    target.parameters = battle.parameters;
+    target.position = Vec3::new(8.0, 0.0, 0.65);
+    let profile = target.performance.as_mut().unwrap();
+    let hull = Arc::get_mut(&mut profile.armor[1].as_mut().unwrap().mesh).unwrap();
+    for triangle in &mut hull.triangles {
+        triangle.plate.damage_factor = 0.1;
+    }
+    hull.engine_compartment = Some(EngineCompartment {
+        exhaust_z: -0.9,
+        material: 21,
+        device: ArmorDevice {
+            device: Device::Engine,
+            can_ignite_engine: true,
+            health: None,
+            projectile_chance: 1.0,
+            explosion_chance: 0.0,
+        },
+    });
+    profile.device_health.insert(
+        Device::Engine,
+        DeviceHealth {
+            maximum: 200,
+            repaired: 100,
+            repair_seconds: 10.0,
+            fire_chance: 1.0,
+        },
+    );
+    battle
+        .players
+        .get_mut(&NEARBY_VICTIM)
+        .unwrap()
+        .tank
+        .position = Vec3::new(18.0, 0.0, 10.0);
+    let shooter = &mut battle.players.get_mut(&SHOOTER).unwrap().tank;
+    shooter
+        .performance
+        .as_mut()
+        .unwrap()
+        .gun
+        .shell_ballistics
+        .insert(
+            10,
+            ShellBallistics {
+                kind: ShellKind::ArmorPiercing,
+                caliber_mm: 90.0,
+                penetration_mm: [100.0; 2],
+                far_damage: 100.0,
+                device_damage: [50.0; 2],
+                speed: 100.0,
+                penetration_randomization: 0.0,
+                damage_randomization: 0.0,
+                uniform_penetration: true,
+                uniform_damage: true,
+                damage_limited_range: f32::INFINITY,
+                explosive: None,
+                gravity: 0.0,
+                normalization: 0.0,
+                ricochet_cos: 0.0,
+                trace_ricochet: false,
+                obstacle_damage: None,
+                obstacle_penetration_loss: 0.0,
+            },
+        );
+    assert!(shooter.aim_at(Aim::HullAngles {
+        yaw: std::f32::consts::FRAC_PI_2,
+        pitch: 0.0
+    }));
+    shooter.advance_gun(2.0);
+
+    let mut delivery = ImpactDelivery::default();
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("fire-test")));
+    let (fire_type, fire_component) = wire.dispatch.entity_from_name("Fire").unwrap();
+    let nrl_type = wire
+        .dispatch
+        .component_nrl_id(fire_type)
+        .unwrap()
+        .to_le_bytes();
+    let remote_root = 4100u16.to_be_bytes();
+    let fire_node = 4101u16.to_be_bytes();
+    let info_node = 4102u16.to_be_bytes();
+    tracing::subscriber::with_default(subscriber, || {
+        let command = tracing::info_span!("test.fire_command");
+        let now = battle.started_at;
+        {
+            let _entered = command.enter();
+            assert_eq!(
+                battle.fire(&mut delivery, &wire, id, SHOOTER, now).unwrap(),
+                "launched"
+            );
+        }
+        let impact = now + Duration::from_millis(100);
+        battle.advance_projectiles(&mut delivery, &wire, id, impact);
+        let target = &battle.players[&VICTIM];
+        assert_eq!(target.tank.health, 90);
+        assert!(!target.tank.condition.disabled(Device::Engine));
+        assert!(target.tank.condition.burning());
+        assert_ne!(delivery.shot_results[0].1.hitFlags & 4, 0);
+
+        let mut created: Vec<_> = delivery
+            .track_updates
+            .iter()
+            .filter(|(_, kind, _)| *kind == NrlCreateNode::ID)
+            .collect();
+        created.sort_by_key(|record| record.0.0);
+        assert_eq!(created.len(), 3);
+        for (peer, _, bytes) in created {
+            let bytes = if *peer == VICTIM {
+                bytes.as_slice()
+            } else {
+                assert_eq!(bytes[..2], remote_root);
+                assert_eq!(&bytes[2..10], &[0, 1, 1, 22, 0, 0, 0, 0]);
+                &bytes[10..]
+            };
+            assert_eq!(bytes[..2], fire_node);
+            assert_eq!(
+                &bytes[2..4],
+                if *peer == VICTIM {
+                    &[4, 0]
+                } else {
+                    &remote_root
+                }
+            );
+            assert_eq!(bytes[4], 2);
+            assert_eq!(&bytes[5..7], &nrl_type);
+            assert_eq!(&bytes[8..], &[1, 1, 0x82, 3, 0]);
+        }
+        let details: Vec<_> = delivery
+            .track_updates
+            .iter()
+            .filter(|(_, kind, bytes)| *kind == NrlData::ID && bytes.starts_with(&info_node))
+            .collect();
+        let [(VICTIM, _, bytes)] = details.as_slice() else {
+            panic!("Expected fireInfo for the driver only");
+        };
+        let mut body = &bytes[4..];
+        let ScriptValue::Dict(info) =
+            ScriptValue::read(&mut body, &fire_component.properties[0].ty).unwrap()
+        else {
+            panic!("Expected a Fire.fireInfo dictionary");
+        };
+        assert!(body.is_empty());
+        assert_eq!(info["attackerID"], ScriptValue::Int32(12));
+        assert!(matches!(info["deviceExtraIndex"], ScriptValue::UInt8(value) if value > 0));
+        assert_eq!(info["equipmentID"], ScriptValue::UInt16(0));
+        assert_eq!(info["notificationIndex"], ScriptValue::UInt8(0));
+        assert_eq!(info["startTime"], ScriptValue::Float64(0.1));
+
+        battle.advance_damage(
+            &mut delivery,
+            &wire,
+            id,
+            impact + Duration::from_millis(499),
+        );
+        assert!(delivery.fire_damage.is_empty());
+        for (tick, expected) in [(1, 78), (2, 70), (3, 66)] {
+            battle.advance_damage(
+                &mut delivery,
+                &wire,
+                id,
+                impact + Duration::from_millis(500 * tick),
+            );
+            assert_eq!(battle.players[&VICTIM].tank.health, expected);
+            let stopped = delivery
+                .track_updates
+                .iter()
+                .filter(|(_, kind, _)| *kind == ApplyNrlUnlink::ID)
+                .count();
+            assert_eq!(stopped, if tick == 3 { 3 } else { 0 });
+        }
+        assert!(!battle.players[&VICTIM].tank.condition.burning());
+        assert!(battle.players[&VICTIM].active_fire.is_none());
+        assert_eq!(delivery.fire_damage.len(), 9);
+        for (broadcast, (previous, health)) in
+            delivery
+                .fire_damage
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .zip([(90, 78), (78, 70), (70, 66)])
+        {
+            for (_, args) in broadcast {
+                assert_eq!(
+                    args,
+                    &[
+                        ScriptValue::Int16(health),
+                        ScriptValue::Int16(previous),
+                        ScriptValue::Int32(12),
+                        ScriptValue::UInt8(1),
+                        ScriptValue::Int8(-1),
+                    ]
+                );
+            }
+        }
+        assert_eq!(delivery.fire_logs.len(), 6);
+        for (peer, event) in &delivery.fire_logs {
+            if *peer == VICTIM {
+                assert_eq!(event.eventType, 10);
+                assert_eq!(event.targetID.0, 12);
+            } else {
+                assert_eq!(*peer, SHOOTER);
+                assert_eq!(event.eventType, 7);
+                assert_eq!(event.targetID.0, 22);
+            }
+        }
+        assert_eq!(
+            delivery
+                .track_updates
+                .iter()
+                .filter(|(_, kind, bytes)| *kind == NrlData::ID && bytes.as_slice() == fire_node)
+                .count(),
+            3
+        );
+        delivery.track_updates.clear();
+        delivery.fire_damage.clear();
+        battle.players.get_mut(&VICTIM).unwrap().tank.health = 16;
+        let again = now + Duration::from_secs(2);
+        command.in_scope(|| {
+            assert_eq!(
+                battle
+                    .fire(&mut delivery, &wire, id, SHOOTER, again)
+                    .unwrap(),
+                "launched"
+            );
+        });
+        let again = again + Duration::from_millis(100);
+        battle.advance_projectiles(&mut delivery, &wire, id, again);
+        let components: Vec<_> = delivery
+            .track_updates
+            .iter()
+            .filter(|(_, id, _)| *id == NrlCreateNode::ID)
+            .collect();
+        assert_eq!(components.len(), 3);
+        assert!(
+            components
+                .iter()
+                .all(|(_, _, bytes)| bytes.starts_with(&fire_node))
+        );
+        assert_eq!(battle.players[&VICTIM].tank.health, 6);
+        assert!(battle.players[&VICTIM].active_fire.is_some());
+        battle.advance_damage(&mut delivery, &wire, id, again + Duration::from_millis(500));
+        assert_eq!(battle.players[&VICTIM].tank.health, 0);
+        assert!(battle.players[&VICTIM].active_fire.is_none());
+        assert_eq!(delivery.fire_damage.len(), 3);
+        assert_eq!(
+            delivery
+                .track_updates
+                .iter()
+                .filter(|(_, kind, _)| *kind == ApplyNrlUnlink::ID)
+                .count(),
+            3
+        );
+        battle.advance_damage(&mut delivery, &wire, id, again + Duration::from_secs(1));
+        assert_eq!(delivery.fire_damage.len(), 3);
+        battle.players.get_mut(&SHOOTER).unwrap().pending_reload = None;
+    });
+    provider.force_flush().unwrap();
+    let spans = exporter.get_finished_spans().unwrap();
+    let command = spans
+        .iter()
+        .find(|span| span.name == "test.fire_command")
+        .unwrap();
+    let shots: Vec<_> = spans
+        .iter()
+        .filter(|span| span.name == "battles.shot")
+        .collect();
+    assert_eq!(shots.len(), 2);
+    for shot in &shots {
+        assert_eq!(shot.parent_span_id, command.span_context.span_id());
+        assert!(
+            shot.attributes
+                .iter()
+                .any(|field| field.key.as_str() == "output.fire.origin"
+                    && field.value.as_str() == "engine")
+        );
+    }
+    let ticks: Vec<_> = spans
+        .iter()
+        .filter(|span| span.name == "battles.vehicle_damage_tick")
+        .collect();
+    assert_eq!(ticks.len(), 4);
+    for tick in ticks {
+        assert!(
+            shots
+                .iter()
+                .any(|shot| tick.parent_span_id == shot.span_context.span_id())
+        );
+        assert!(
+            tick.attributes
+                .iter()
+                .any(|field| field.key.as_str() == "output.recipients"
+                    && field.value == opentelemetry::Value::I64(3))
+        );
     }
 }

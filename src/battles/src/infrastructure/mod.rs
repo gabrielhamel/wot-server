@@ -171,7 +171,9 @@ struct Participant {
     pending_aim: Option<tracing::Span>,
     pending_reload: Option<tracing::Span>,
     pending_stun: Option<(Instant, tracing::Span)>,
-    pending_condition: Option<vehicle_damage::DamageSource>,
+    active_fire: Option<vehicle_damage::ActiveFire>,
+    device_repair_parent: Option<tracing::Span>,
+    fire_roots: HashSet<usize>,
     track_repair_parents: [Option<tracing::Span>; 2],
     damage_stickers: DamageStickers,
 }
@@ -556,7 +558,9 @@ impl BattleRuntime {
                         pending_aim: None,
                         pending_reload: None,
                         pending_stun: None,
-                        pending_condition: None,
+                        active_fire: None,
+                        device_repair_parent: None,
+                        fire_roots: HashSet::new(),
                         track_repair_parents: [None, None],
                         damage_stickers: DamageStickers::default(),
                     },
@@ -646,9 +650,12 @@ impl BattleSimulation {
             "output.players.count" = battle.players.len(),
             "output.avatar_control" = tracing::field::Empty,
             "output.scenery.snapshot_chunks.count" = tracing::field::Empty,
+            "output.fire.snapshot_count" = tracing::field::Empty,
             "output.outcome" = tracing::field::Empty,
             "otel.status_code" = tracing::field::Empty,
         );
+        let mut fire_roots = HashSet::new();
+        let mut fires = 0;
         let result = span.in_scope(|| -> Result<_> {
             delivery.create_avatar(client, player.avatar_id, entry.base_properties.clone())?;
             entry.publish(
@@ -662,7 +669,7 @@ impl BattleSimulation {
             if let Some(wire) = &self.wire {
                 let scenery_chunks = battle.areas.snapshot(delivery, wire, client)?;
                 span.record("output.scenery.snapshot_chunks.count", scenery_chunks);
-                for other in battle.players.values() {
+                for (&other_peer, other) in &battle.players {
                     if other.tank.health != other.tank.max_health {
                         wire.vehicle_properties(
                             delivery,
@@ -670,6 +677,21 @@ impl BattleSimulation {
                             other.vehicle.entity_id,
                             [("health", ScriptValue::Int16(other.tank.health))],
                         )?;
+                    }
+                    if let Some(fire) = &other.active_fire {
+                        let own = other_peer == client;
+                        wire.publish_fire_start(
+                            delivery,
+                            client,
+                            other.roster_row,
+                            own,
+                            fire,
+                            (!own).then_some(other.vehicle.entity_id),
+                        )?;
+                        fires += 1;
+                        if !own {
+                            fire_roots.insert(other.roster_row);
+                        }
                     }
                     if !other.damage_stickers.is_empty() {
                         wire.publish_damage_stickers(
@@ -698,6 +720,8 @@ impl BattleSimulation {
             Ok(()) => {
                 if let Some(player) = battle.players.get_mut(&client) {
                     player.entered = true;
+                    player.fire_roots = fire_roots;
+                    span.record("output.fire.snapshot_count", fires);
                     battle.full_snapshot_pending = true;
                 }
                 if battle
@@ -798,12 +822,17 @@ impl BattleSimulation {
             if let Some(wire) = &self.wire {
                 battle.advance_projectiles(delivery, wire, battle_id, now);
                 battle.expire_stuns(delivery, wire, now);
-                if battle.round.phase == RoundPhase::Battle {
+                if battle.round.phase == RoundPhase::Battle && now < battle.round.deadline {
                     battle.advance_damage(delivery, wire, battle_id, now);
                 }
             }
             if battle.round.advance(now, false) {
                 battle.publish_period(delivery, battle_id, now);
+            }
+            if battle.round.phase == RoundPhase::Finished
+                && let Some(wire) = &self.wire
+            {
+                battle.end_round_fires(delivery, wire, battle_id);
             }
             let tick = battle.ticks(now);
             if battle.last_snapshot_tick == Some(tick) {

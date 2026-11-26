@@ -618,10 +618,19 @@ impl Tank {
         )
     }
 
+    pub fn fire_tick_damage(&self, remaining_ticks: u8) -> u16 {
+        let damage = f32::from(self.max_health)
+            * self.parameters.fire_damage_percent
+            * f32::from(remaining_ticks)
+            / (100.0 * f32::from(self.parameters.fire_ticks.max(1)));
+        (damage.round() as u16).max(1)
+    }
+
     pub fn hit(&mut self, damage: u16) -> (i16, i16) {
         let previous = self.health;
         self.health = previous.saturating_sub_unsigned(damage).max(0);
         if self.health == 0 {
+            self.condition.extinguish();
             self.drive.flags = 0;
         }
         (previous, self.health)

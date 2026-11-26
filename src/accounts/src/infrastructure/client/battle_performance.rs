@@ -402,6 +402,8 @@ mod tests {
     fn reads_equipped_battle_performance_from_the_client_bundle() {
         let resource_dir = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
         let resources = ResourceBundle::open(Path::new(&resource_dir)).unwrap();
+        let has_visuals = resources
+            .has_file("vehicles/american/A01_T1_Cunningham/normal/lod0/Hull.visual_processed");
         let catalog = GarageCatalog::load(resources, &[]).unwrap();
         let performance = |key| {
             let vehicle = catalog.vehicle(key).unwrap();
@@ -414,6 +416,12 @@ mod tests {
         let t1 = performance("usa:A01_T1_Cunningham");
         assert!(t1.armor.iter().all(Option::is_some));
         let hull = &t1.armor[1].as_ref().unwrap().mesh;
+        if has_visuals {
+            let engine = hull.engine_compartment.unwrap();
+            assert!(engine.exhaust_z < -1.0);
+            assert!(engine.device.projectile_chance > 0.0);
+            assert!(t1.device_health[&Device::Engine].fire_chance > 0.0);
+        }
         assert!(
             hull.triangles
                 .iter()

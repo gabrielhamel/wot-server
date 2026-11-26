@@ -50,7 +50,7 @@ formats.
 | Equipment components | Balance used for paid demounting of level 2 and 3 Experimental equipment. The client calls it `equipCoin`. |
 | Ammunition proposal | Validated next snapshot and purchase receipt, committed against its source revision. |
 | Garage projection | Compressed Python cache derived from a snapshot and client definitions. |
-| Battle vehicle | An owned or custom loadout projected for battle with the encoded descriptor, seasonal outfits, health, crew size, loaded ammunition, and performance from the equipped modules and supported mobility modifiers, including shell ballistics, explosive and stun definitions, part armor meshes and device health. |
+| Battle vehicle | An owned or custom loadout projected for battle with the encoded descriptor, seasonal outfits, health, crew size, loaded ammunition, and performance from the equipped modules and supported mobility modifiers, including shell ballistics, explosive and stun definitions, part armor meshes, exhaust anchors for estimated engine compartments, and device health. |
 | Admin battle readiness | An owned catalog vehicle must be eligible for battle and have an active crew member in every seat. Legacy garages use their initial crew flag until a roster is persisted. |
 | Custom battle loadout | An in-memory catalog tank for one player or dummy in a single battle with stock modules by default, compatible module changes, optional equipment and consumables, per-seat perks and perk efficiency, an HP override, and configurable ammunition. |
 | Owned battle loadout | The equipped garage vehicle with optional per-battle edits. The projection retains the saved outfits, directive, and unedited loadout and crew values. |

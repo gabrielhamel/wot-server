@@ -25,6 +25,11 @@ pub fn extract(game_dir: &Path, output: &Path) -> Result<Summary> {
     let mut placements = Vec::new();
     let mut vehicle_collision = Vec::new();
     for path in client.paths() {
+        if crate::infrastructure::is_hull_visual(path) {
+            validate_resource_path(path)?;
+            files.push(path.to_owned());
+            continue;
+        }
         if obstacles::is_vehicle_collision_model(path) {
             validate_resource_path(path)?;
             vehicle_collision.push(path.to_owned());

@@ -22,7 +22,7 @@ game's rules to the current Training implementation and identifies open work.
 
 | Layer | Responsibilities |
 | --- | --- |
-| `domain/` | Round timing and phase transitions, vehicle movement and world contact, aim, ammunition and hit resolution. |
+| `domain/` | Round timing and phase transitions, vehicle movement and world contact, aim, ammunition, hit resolution and fire progression. |
 | `application/` | Participant identity, launch inputs, roster eligibility and typed Avatar and vehicle commands. |
 | `infrastructure/` | In-memory arena and participant lifecycle, bundled arena definitions, terrain and obstacle collision, and native battle payload encoders. The delivery port connects those encoders to the local Mercury adapter. |
 
@@ -92,6 +92,8 @@ viewers. See the [replay and resource evidence](../../docs/battle-replays.md#per
 | Battle parameters | The validated round timing and simulation settings carried at launch and used for one arena. |
 | Loadout | The equipped vehicle descriptor, health, crew size, ammunition, locked outfit and base performance at launch. |
 | Armor plate | A projectile collision surface with a material that specifies thickness, damage factor and applicable angle rules. |
+| Engine compartment | A module collision region from authored geometry or a volume estimated from the mounted hull’s exhaust hardpoints. |
+| Vehicle fire | Attributed damage over time after eligible engine damage or fuel tank destruction. The arena replicates ignition, HP loss and cleanup. |
 | Damage sticker | A persistent penetration mark replicated on the struck vehicle when the shell defines one. |
 | Scene impact | The first projectile contact with terrain or a placed obstacle, reported with its effect material and any native references to fragments broken on impact. |
 | Scenery controller | A native `AreaDestructibles` entity that publishes broken objects and tree falls for one map chunk. Its state belongs to one arena. |

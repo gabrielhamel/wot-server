@@ -14,7 +14,7 @@ use wot_platform::mercury::{
 };
 use wot_shared_kernel::ShellEffects;
 
-const OWN_ENTITY_NODE: u16 = 1024;
+pub(super) const OWN_ENTITY_NODE: u16 = 1024;
 const GUN_MARKER_COMPONENT_NODE: u16 = 2048;
 type Fields = BTreeMap<&'static str, WireValue>;
 
@@ -569,6 +569,29 @@ impl ArenaWire {
         )
     }
 
+    pub(in super::super) fn publish_own_health(
+        &self,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
+        vehicle: u32,
+        health: i16,
+        reason: i8,
+    ) -> Result<()> {
+        let component = self
+            .dispatch
+            .entity_from_id(self.own_vehicle_type)
+            .context("Missing OwnVehicle")?;
+        self.publish_own_properties(
+            delivery,
+            client,
+            component,
+            BTreeMap::from([(
+                "vehicleHealthInfo",
+                own_health(component, vehicle, health, reason)?,
+            )]),
+        )
+    }
+
     pub(in super::super) fn publish_own_state(
         &self,
         delivery: &mut impl ArenaDelivery,
@@ -962,20 +985,7 @@ fn own_state(
             ("clipTime", WireValue::Float32(clip_time)),
         ],
     )?;
-    let health_ty = property_type(component, "vehicleHealthInfo")?;
-    let health = dict(
-        health_ty,
-        [
-            ("id", id(health_ty, "id", vehicle_id)?),
-            ("health", WireValue::Int16(tank.health)),
-            (
-                "deathReasonID",
-                WireValue::Int8(if tank.health > 0 { -1 } else { 0 }),
-            ),
-            ("deathReasonExtID", WireValue::Int8(-1)),
-            ("isCrewActive", WireValue::UInt8(u8::from(tank.health > 0))),
-        ],
-    )?;
+    let health = own_health(component, vehicle_id, tank.health, 0)?;
     Ok(BTreeMap::from([
         ("vehicleAmmoList", WireValue::Seq(ammo)),
         ("vehicleSettings", WireValue::Seq(settings)),
@@ -983,6 +993,28 @@ fn own_state(
         ("vehicleClipReloadTime", clip_time_value),
         ("vehicleHealthInfo", health),
     ]))
+}
+
+fn own_health(
+    component: &EntityDispatch,
+    vehicle_id: u32,
+    health: i16,
+    reason: i8,
+) -> Result<WireValue> {
+    let health_ty = property_type(component, "vehicleHealthInfo")?;
+    dict(
+        health_ty,
+        [
+            ("id", id(health_ty, "id", vehicle_id)?),
+            ("health", WireValue::Int16(health)),
+            (
+                "deathReasonID",
+                WireValue::Int8(if health > 0 { -1 } else { reason }),
+            ),
+            ("deathReasonExtID", WireValue::Int8(-1)),
+            ("isCrewActive", WireValue::UInt8(u8::from(health > 0))),
+        ],
+    )
 }
 
 #[cfg(test)]

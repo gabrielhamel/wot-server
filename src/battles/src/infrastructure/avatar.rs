@@ -18,6 +18,8 @@ wot_platform::script_dict! {
     }
 }
 
+pub(super) const FIRE_ATTACK_REASON: u8 = 1;
+
 impl BattleEvent {
     pub(super) fn shot_damage(
         other_vehicle: u32,
@@ -25,19 +27,49 @@ impl BattleEvent {
         received: bool,
         shell: ShellEffects,
     ) -> Self {
+        let shell_type = shell.damage_log_type.filter(|_| received);
+        Self::damage(
+            other_vehicle,
+            damage,
+            received,
+            0,
+            shell_type,
+            shell.premium,
+        )
+    }
+
+    pub(super) fn fire_damage(other_vehicle: u32, damage: u16, received: bool) -> Self {
+        Self::damage(
+            other_vehicle,
+            damage,
+            received,
+            FIRE_ATTACK_REASON,
+            None,
+            false,
+        )
+    }
+
+    fn damage(
+        other_vehicle: u32,
+        damage: u16,
+        received: bool,
+        reason: u8,
+        shell_type: Option<u8>,
+        premium: bool,
+    ) -> Self {
         const DAMAGE: u8 = 7;
         const RECEIVED_DAMAGE: u8 = 10;
         const UNKNOWN_SHELL_TYPE: u8 = 127;
         const NO_SECONDARY_ATTACK_REASON: u64 = 16;
         const NO_EXTENDED_ATTACK_REASON: u64 = 255;
 
-        let shell_type = shell.damage_log_type.filter(|_| received);
         Self {
             eventType: if received { RECEIVED_DAMAGE } else { DAMAGE },
             targetID: EntityId(other_vehicle),
             details: (u64::from(damage) << 25)
+                | (u64::from(reason) << 17)
                 | (u64::from(shell_type.unwrap_or(UNKNOWN_SHELL_TYPE)) << 9)
-                | (u64::from(shell_type.is_some() && shell.premium) << 8)
+                | (u64::from(shell_type.is_some() && premium) << 8)
                 | NO_SECONDARY_ATTACK_REASON
                 | (NO_EXTENDED_ATTACK_REASON << 43),
             count: 1,

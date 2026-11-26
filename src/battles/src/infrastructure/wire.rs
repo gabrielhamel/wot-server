@@ -15,6 +15,7 @@ use wot_platform::mercury::{
 };
 
 mod controls;
+mod fire;
 mod roster;
 
 pub(super) use controls::{DamageStickers, ShotImpact, pack_wheel_speed, pack_wheel_steering};
@@ -39,6 +40,7 @@ pub(super) struct ArenaWire {
     damage_stickers_element: u8,
     impact_materials: ImpactMaterials,
     pub(super) track_extras: [u8; 2],
+    fire: fire::FireWire,
 }
 
 pub(super) struct ArenaEntry {
@@ -69,6 +71,7 @@ impl ArenaWire {
             dispatch: dispatch.clone(),
             impact_materials: ImpactMaterials::load(resources)?,
             track_extras: controls::track_extras(resources)?,
+            fire: fire::FireWire::bind(&dispatch, resources)?,
             avatar_type,
             vehicle_type,
             info_type: type_id("AvatarInfo")?,
@@ -384,10 +387,7 @@ fn component_tree(
         .checked_add(1)
         .context("Invalid component node")?;
     let mut data = Vec::new();
-    data.extend(entity_node.to_be_bytes());
-    data.extend(1u16.to_be_bytes());
-    data.push(1); // entity node
-    data.write_u32(entity_id)?;
+    write_entity_node(&mut data, entity_id, entity_node)?;
     data.push(0); // another create-node instruction
     write_component_node(
         &mut data,
@@ -398,6 +398,14 @@ fn component_tree(
         values,
     )?;
     Ok(NrlCreateNode(data))
+}
+
+fn write_entity_node(data: &mut Vec<u8>, entity_id: u32, node: u16) -> Result<()> {
+    data.extend(node.to_be_bytes());
+    data.extend(1u16.to_be_bytes());
+    data.push(1); // entity node
+    data.write_u32(entity_id)?;
+    Ok(())
 }
 
 fn write_component_node(

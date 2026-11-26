@@ -129,6 +129,14 @@ pub struct MountedArmor {
 pub struct ArmorMesh {
     pub bounds: [Vec3; 2],
     pub triangles: Vec<ArmorTriangle>,
+    pub engine_compartment: Option<EngineCompartment>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct EngineCompartment {
+    pub exhaust_z: f32,
+    pub device: ArmorDevice,
+    pub material: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -230,6 +238,7 @@ pub enum Device {
 #[derive(Clone, Copy, Debug)]
 pub struct ArmorDevice {
     pub device: Device,
+    pub can_ignite_engine: bool,
     pub projectile_chance: f32,
     pub explosion_chance: f32,
     pub health: Option<DeviceHealth>,

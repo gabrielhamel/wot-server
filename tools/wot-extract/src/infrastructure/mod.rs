@@ -275,10 +275,18 @@ pub fn is_terrain(path: &str) -> bool {
                 }))
 }
 
+pub(crate) fn is_hull_visual(path: &str) -> bool {
+    path.starts_with("vehicles/")
+        && path.rsplit_once("/normal/lod0/").is_some_and(|(_, file)| {
+            file.starts_with("Hull") && file.ends_with(".visual_processed") && !file.contains('/')
+        })
+}
+
 fn is_candidate(path: &str) -> bool {
     if is_terrain(path)
         || obstacles::is_placement(path)
         || obstacles::is_vehicle_collision_model(path)
+        || is_hull_visual(path)
         || ((path.starts_with("content/") || path.starts_with("objects/misc/bbox/"))
             && path.ends_with(".havok"))
         || path == "system/data/material_kinds.xml"

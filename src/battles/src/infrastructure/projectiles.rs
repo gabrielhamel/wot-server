@@ -1,12 +1,12 @@
 use super::{
     avatar::{BattleEvent, ShotResult},
     explosions::{DirectBlastHit, Explosion},
-    vehicle_damage::DamageSource,
+    vehicle_damage::ActiveFire,
     *,
 };
 use crate::domain::{
     armor::{ArmorHit, ArmorOutcome},
-    devices::TrackEvent,
+    devices::{DeviceDamage, TrackEvent},
     tracer::{self, TracerView},
     vehicle::Shot,
 };
@@ -22,6 +22,9 @@ const ARMOR_BLOCKED: u32 = 1 << 5;
 const SCREEN_PIERCED: u32 = 1 << 6;
 const SCREEN_BLOCKED: u32 = 1 << 7;
 const DEVICE_PIERCED_BY_PROJECTILE: u32 = 1 << 8;
+const ENGINE_DEVICE_INDEX: u32 = 0;
+const FUEL_DEVICE_INDEX: u32 = 2;
+const FIRE_STARTED: u32 = 1 << 2;
 const TRACK_CRITICAL: u32 = 1 << 4;
 const TRACK_DESTROYED: u32 = 1 << (12 + 4);
 const TRACK_DAMAGED_BY_PROJECTILE: u32 = 1 << 11;
@@ -76,10 +79,20 @@ struct VehicleHit {
     sticker_added: bool,
     outcome: ArmorOutcome,
     criticals: u8,
+    critical_flags: u32,
     tracks: [Option<TrackEvent>; 2],
     track_hits: u8,
     fire_started: bool,
+    fire_stopped: bool,
     detonated: bool,
+}
+
+fn device_critical_flag(index: u32, damage: Option<DeviceDamage>) -> u32 {
+    match damage {
+        Some(DeviceDamage::Critical) => 1 << index,
+        Some(DeviceDamage::Destroyed) => 1 << (12 + index),
+        Some(DeviceDamage::Hit) | None => 0,
+    }
 }
 
 impl Battle {
@@ -109,6 +122,9 @@ impl Battle {
         output.tracks.right = tracing::field::Empty,
         output.crew.injured = tracing::field::Empty,
         output.fire.started = tracing::field::Empty,
+        output.fire.origin = tracing::field::Empty,
+        output.fire.ended = tracing::field::Empty,
+        output.fire.recipients = tracing::field::Empty,
         output.ammo_rack.detonated = tracing::field::Empty,
         output.target.entity_id = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.hit_direction.radians = tracing::field::Empty,
@@ -469,29 +485,34 @@ impl Battle {
                             victim.track_repair_parents[side] = Some(span.clone());
                         }
                     }
-                    span.record("output.crew.injured", critical.crew);
-                    span.record("output.fire.started", critical.fire_started);
-                    span.record("output.ammo_rack.detonated", critical.detonated);
-                    let tracks_broken = critical
-                        .tracks
-                        .iter()
-                        .filter(|event| **event == Some(TrackEvent::Broken))
-                        .count() as u8;
-                    if critical.fire_started
-                        || (critical.destroyed > critical.crew + tracks_broken
-                            && victim.pending_condition.is_none())
+                    if victim.device_repair_parent.is_none()
+                        && victim.tank.condition.has_non_track_repair()
                     {
-                        victim.pending_condition = Some(DamageSource {
-                            attacker,
-                            span: span.clone(),
-                        });
+                        victim.device_repair_parent = Some(span.clone());
                     }
+                    span.record("output.crew.injured", critical.crew);
+                    span.record("output.ammo_rack.detonated", critical.detonated);
                     let damage = if critical.detonated {
                         u16::MAX
                     } else {
                         hit.damage
                     };
                     let (previous, health) = victim.apply_damage(damage);
+                    let fire_stopped = health == 0 && victim.active_fire.take().is_some();
+                    let ignition = critical.fire_started.filter(|_| health > 0);
+                    if let Some(origin) = ignition {
+                        victim.active_fire = Some(ActiveFire {
+                            attacker,
+                            origin,
+                            started_at: now
+                                .saturating_duration_since(self.started_at)
+                                .as_secs_f64(),
+                            span: span.clone(),
+                        });
+                        span.record("output.fire.origin", origin.name());
+                    }
+                    span.record("output.fire.started", ignition.is_some());
+                    span.record("output.fire.ended", fire_stopped);
                     let damage = previous - health;
                     let effect = ShotImpact::new(
                         attacker,
@@ -513,6 +534,21 @@ impl Battle {
                     if let Some(shell_type) = shot.effects.damage_log_type {
                         span.record("output.damage_log.shell_type", shell_type);
                     }
+                    let mut critical_flags =
+                        device_critical_flag(ENGINE_DEVICE_INDEX, critical.engine)
+                            | device_critical_flag(FUEL_DEVICE_INDEX, critical.fuel);
+                    if critical
+                        .tracks
+                        .into_iter()
+                        .flatten()
+                        .any(TrackEvent::starts_repair)
+                    {
+                        critical_flags |= TRACK_DESTROYED;
+                    } else if critical.track_hits > 0 {
+                        critical_flags |= TRACK_CRITICAL;
+                    } else if critical.engine.is_none() && critical.fuel.is_none() {
+                        critical_flags = u32::from(critical.damaged);
+                    }
                     vehicle_hit = Some(VehicleHit {
                         victim: participant,
                         entity_id: id,
@@ -523,9 +559,11 @@ impl Battle {
                         sticker_added,
                         outcome: hit.outcome,
                         criticals: critical.damaged,
+                        critical_flags,
                         tracks: critical.tracks,
                         track_hits: critical.track_hits,
-                        fire_started: critical.fire_started,
+                        fire_started: ignition.is_some(),
+                        fire_stopped,
                         detonated: critical.detonated,
                     });
                     defeated = self
@@ -575,9 +613,11 @@ impl Battle {
                     sticker_added,
                     outcome,
                     criticals,
+                    critical_flags,
                     tracks,
                     track_hits,
                     fire_started,
+                    fire_stopped,
                     detonated,
                 }) = vehicle_hit
                 else {
@@ -611,7 +651,7 @@ impl Battle {
                         };
                     }
                     if fire_started {
-                        flags |= 1 << 2;
+                        flags |= FIRE_STARTED;
                     }
                     delivery.send_avatar(
                         peer,
@@ -652,14 +692,6 @@ impl Battle {
                     );
                 if peer == victim && (damage != 0 || criticals != 0 || blocked) {
                     let indicator_damage = if blocked { shot.damage } else { damage as u16 };
-                    let critical_flags =
-                        if tracks.into_iter().flatten().any(TrackEvent::starts_repair) {
-                            TRACK_DESTROYED
-                        } else if track_hits > 0 {
-                            TRACK_CRITICAL
-                        } else {
-                            u32::from(criticals)
-                        };
                     delivery.send_avatar(
                         peer,
                         AvatarUpdate::HitDirection {
@@ -689,27 +721,29 @@ impl Battle {
                         ],
                     )?;
                 }
-                if damage == 0 {
-                    return Ok(());
+                if damage > 0 {
+                    wire.vehicle_properties(
+                        delivery,
+                        peer,
+                        id,
+                        [("health", WireValue::Int16(health))],
+                    )?;
+                    delivery.arena_vehicle_method(
+                        peer,
+                        id,
+                        "onHealthChanged",
+                        vec![
+                            WireValue::Int16(health),
+                            WireValue::Int16(previous),
+                            WireValue::Int32(attacker as i32),
+                            WireValue::UInt8(0),
+                            WireValue::Int8(-1),
+                        ],
+                    )?;
                 }
-                wire.vehicle_properties(
-                    delivery,
-                    peer,
-                    id,
-                    [("health", WireValue::Int16(health))],
-                )?;
-                delivery.arena_vehicle_method(
-                    peer,
-                    id,
-                    "onHealthChanged",
-                    vec![
-                        WireValue::Int16(health),
-                        WireValue::Int16(previous),
-                        WireValue::Int32(attacker as i32),
-                        WireValue::UInt8(0),
-                        WireValue::Int8(-1),
-                    ],
-                )?;
+                if fire_stopped && let Some(target) = self.players.get(&victim) {
+                    wire.publish_fire_stop(delivery, peer, target.roster_row)?;
+                }
                 if damage > 0 && (peer == shooter || peer == victim) {
                     let received = peer == victim;
                     delivery.send_avatar(
@@ -722,7 +756,7 @@ impl Battle {
                         )),
                     )?;
                 }
-                if peer == victim {
+                if peer == victim && damage > 0 {
                     let time = now.saturating_duration_since(self.started_at).as_secs_f32();
                     wire.publish_own_state(delivery, peer, id, &participant.tank, now, time)?;
                 }
@@ -733,6 +767,9 @@ impl Battle {
                 error!(%error, "Projectile impact delivery failed");
                 delivery.disconnect(peer);
             }
+        }
+        if let Some(hit) = vehicle_hit.filter(|hit| hit.fire_started) {
+            self.publish_fire_ignition(delivery, wire, hit.victim);
         }
         if let Some((onward, excluded)) = continuation {
             let bounced = onward.ricocheted != shot.ricocheted;

@@ -642,3 +642,43 @@ aim in hull coordinates using the equipped chassis, turret and gun offsets.
 Solving the lateral gun offset directly makes a stationary target independent
 of the current turret angle. The Training simulation uses a fallback gun mount
 when the equipped resource definitions have no usable geometry.
+
+## Vehicle fire
+
+EU playback examples show `Vehicle.onHealthChanged` in type `0x08` records.
+Each payload is 22 bytes: three little-endian `u32` fields (vehicle, method
+index and argument length), then new and previous HP (`i16`), attacker
+entity ID (`u32`), reason (`u8`) and extended reason (`i8`). In these replays
+the method index is 4, the argument length is 10, and fire uses reason 1
+with extended reason −1.
+
+| Sample | Client label | Observation | Inflated record offsets |
+| --- | --- | --- | --- |
+| [1499, Redshire](https://wotlytics.com/api/v1/replays/1499/download/) | EU `v.2.4.2.0 #1000`, exe label `2.4.2.0` | Remote vehicle `6663015` goes from 725 to 642 HP 0.50 s after the hit. Attacker `6663022` appears in both health calls. | 4923274 shot, 4923308 component creation, 4927985 fire tick |
+| [1500, Klondike](https://wotlytics.com/api/v1/replays/1500/download/) | EU `v.2.4.2.0 #1000`, exe label `2.4.2.0` | Remote vehicle `543402060` goes from 574 to 493 HP 0.50 s after the hit. Attacker `543402078` appears in both health calls. | 2983919 shot, 2983953 component creation, 2988239 fire tick |
+| [1497, Prokhorovka](https://wotlytics.com/api/v1/replays/1497/download/) | EU `v.2.4.1.1 #993`, exe label `2.4.1.0` | Vehicle `549043364` loses 88, 80, 73, 65, 57, 49, 42, 34, 26, 19, 11 and 3 HP at 0.50 s intervals. The recorder later starts a fire on another vehicle, which loses HP over 14 ticks. | 3020425 component creation, 3026574 first tick, 3091428 component removal, 3092001 last tick |
+| [1356, Prokhorovka](https://wotlytics.com/api/v1/replays/1356/download/) | EU `v.2.4.1.1 #993`, exe label `2.4.1.0` | The recorder's vehicle `539169059` takes a 42 HP fire tick after the ignition shot. The component appears in the same frame as the shot and is removed on the tick frame. | 4516922 shot, 4516980 component creation, 4521852 component removal, 4521994 fire tick |
+
+The raw SHA-256 values are
+`0d2932946f88e5b28db836a6faa9d99eb3c8f08a8e7acfe7582c9eae73c8d4d2` (1499),
+`efc5cb46ae0af757fcc48724904675f60573fbffc88f5de7e991ed5d08d8a0a0` (1500),
+`2a6c9f90618ff9be01c1ebe58234f0bd18a3a152ebd1691e0c770bc922f15096` (1497)
+and `e43d0196e97e7c1fb3e8ce00d5f7c32376c80cb51ebc9b39992f48291eaf98d8` (1356).
+The local compiled EU client for the current bundle reports
+`v.2.4.2.0 #1000` and executable SHA-256
+`0d7d61866dfe8f884a76f31a6c91308662b27e0ff09f14f08647234048c939f6`.
+On 2026-11-26, `wg-launcher inspect` listed EU production release
+`2.4.2.5524` with EN localization revision `2665505`, which also appears
+in the installed client's `loc_version.xml`.
+
+The creation samples are replay type `0x32`. They contain a four-byte length
+prefix followed by 12 bytes of component creation state. Replay type
+`0x37` carries buffered replication updates. At offset 4521852 its final two
+bytes match the created component node `0x0ce3`. The server uses the
+[Toolkit's captured component creation and unlink framing](references/wg-toolkit-rs/wg-toolkit/src/app/entity.rs)
+and resolves the `Fire` component type from each installed bundle. The
+[client script](references/wot-src/sources/res/scripts/client/Fire.py)
+uses component lifetime for the world effect and `set_fireInfo` for driver
+notifications. Replay records establish visible state and damage cadence.
+A bidirectional capture would be needed to establish client extinguisher
+commands and production wire ordering.
