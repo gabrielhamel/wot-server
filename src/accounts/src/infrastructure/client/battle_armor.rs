@@ -1,7 +1,7 @@
 use super::{battle_performance::collision_bounds, item_defs::read_xml};
 use anyhow::{Context, Result, ensure};
 use byteorder::{LE, ReadBytesExt};
-use glam::Vec3;
+use glam::{Affine3A, Vec3};
 use std::{
     collections::BTreeMap,
     io::{BufReader, Read},
@@ -10,8 +10,8 @@ use std::{
 use wot_platform::client_formats::pxml::{Element, Value};
 use wot_resources::ResourceBundle;
 use wot_shared_kernel::{
-    ArmorDevice, ArmorMesh, ArmorPlate, ArmorTriangle, Device, DeviceHealth, ExplosiveShell,
-    ShellBallistics, ShellKind, ShellStun, shell_zero_distance,
+    ArmorDevice, ArmorMesh, ArmorPlate, ArmorTriangle, Device, DeviceHealth, EngineCompartment,
+    ExplosiveShell, ShellBallistics, ShellKind, ShellStun, shell_zero_distance,
 };
 
 pub(super) struct ArmorMaterials {
@@ -159,6 +159,7 @@ impl ArmorMaterials {
                     };
                     ArmorDevice {
                         device,
+                        can_ignite_engine: name == "engine",
                         projectile_chance: number("chanceToHitByProjectile"),
                         explosion_chance: number("chanceToHitByExplosion"),
                         health: info.and_then(|info| read_device_health(None, info)),
@@ -168,7 +169,13 @@ impl ArmorMaterials {
                     *id,
                     ArmorPlate {
                         thickness_mm,
-                        damage_factor,
+                        damage_factor: if device.is_some_and(|device| {
+                            matches!(device.device, Device::Engine | Device::Fuel)
+                        }) {
+                            0.0
+                        } else {
+                            damage_factor
+                        },
                         angled: boolean("useHitAngle"),
                         ricochets: boolean("mayRicochet"),
                         caliber_ricochet: boolean("checkCaliberForRicochet"),
@@ -210,7 +217,66 @@ impl ArmorMaterials {
                 });
             }
         }
-        Ok((!triangles.is_empty()).then(|| Arc::new(ArmorMesh { bounds, triangles })))
+        let engine_compartment = if triangles.iter().any(|triangle| {
+            triangle
+                .plate
+                .device
+                .is_some_and(|device| device.can_ignite_engine)
+        }) {
+            None
+        } else {
+            self.engine_compartment(fs, local, base)
+        };
+        Ok((!triangles.is_empty()).then(|| {
+            Arc::new(ArmorMesh {
+                bounds,
+                triangles,
+                engine_compartment,
+            })
+        }))
+    }
+
+    fn engine_compartment(
+        &self,
+        fs: &ResourceBundle,
+        local: Option<&Element>,
+        base: &Element,
+    ) -> Option<EngineCompartment> {
+        let value = |key: &[&str]| {
+            local
+                .and_then(|xml| xml.get_child_value_at(key))
+                .or_else(|| base.get_child_value_at(key))
+                .and_then(Value::as_string)
+        };
+        let exhaust = value(&["exhaust", "nodes"])?;
+        let model = value(&["models", "undamaged"])?
+            .trim()
+            .strip_suffix(".model")?;
+        let visual = read_xml(fs, &format!("{model}.visual_processed")).ok()?;
+        let mut positions = Vec::new();
+        exhaust_positions(&visual, Affine3A::IDENTITY, exhaust, &mut positions, 0);
+        if positions.is_empty() {
+            return None;
+        }
+        let exhaust_z = positions.iter().sum::<f32>() / positions.len() as f32;
+        let (material, defaults) = self.materials.get("engine")?;
+        let chance = |key| {
+            defaults
+                .get_child_float(key)
+                .unwrap_or_default()
+                .clamp(0.0, 1.0)
+        };
+        Some(EngineCompartment {
+            exhaust_z,
+            device: ArmorDevice {
+                device: Device::Engine,
+                can_ignite_engine: true,
+                projectile_chance: chance("chanceToHitByProjectile"),
+                explosion_chance: chance("chanceToHitByExplosion"),
+                health: None,
+            },
+            material: *material,
+        })
     }
 
     pub(super) fn shell_ballistics(
@@ -394,6 +460,43 @@ impl ArmorMaterials {
                 .to_radians()
                 .cos(),
         })
+    }
+}
+
+fn exhaust_positions(
+    root: &Element,
+    parent: Affine3A,
+    exhaust: &str,
+    positions: &mut Vec<f32>,
+    depth: u8,
+) {
+    if depth >= 16 {
+        return;
+    }
+    for (name, value) in root.iter_children_all() {
+        if name != "node" {
+            continue;
+        }
+        let Some(node) = value.as_element() else {
+            continue;
+        };
+        let Some(transform) = node
+            .get_child_value("transform")
+            .and_then(Value::as_vector)
+            .and_then(|value| value.as_affine3())
+        else {
+            continue;
+        };
+        let absolute = parent * transform;
+        if let Some(identifier) = node.get_child_string("identifier")
+            && exhaust
+                .split_whitespace()
+                .any(|name| name == identifier.trim())
+            && absolute.translation.z.is_finite()
+        {
+            positions.push(absolute.translation.z);
+        }
+        exhaust_positions(node, absolute, exhaust, positions, depth + 1);
     }
 }
 

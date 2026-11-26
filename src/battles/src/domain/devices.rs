@@ -8,15 +8,17 @@ use wot_shared_kernel::{Device, DeviceHealth};
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct DeviceStrike {
     pub device: Device,
+    pub can_ignite_engine: bool,
     pub health: Option<DeviceHealth>,
     pub damage: u16,
     pub impact: ImpactSegment,
 }
 
 pub(crate) const TRACKS: [Device; 2] = [Device::TrackLeft, Device::TrackRight];
+pub(crate) const ENGINE_AND_FUEL: [Device; 2] = [Device::Engine, Device::Fuel];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TrackEvent {
+pub(crate) enum DeviceEvent {
     Damaged,
     Broken,
     RepairRestarted,
@@ -24,7 +26,7 @@ pub(crate) enum TrackEvent {
     Repaired,
 }
 
-impl TrackEvent {
+impl DeviceEvent {
     pub fn name(self) -> &'static str {
         match self {
             Self::Damaged => "damaged",
@@ -40,12 +42,44 @@ impl TrackEvent {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum DeviceDamage {
+    Hit,
+    Critical,
+    Destroyed,
+}
+
+impl DeviceDamage {
+    pub fn change(self) -> Option<DeviceEvent> {
+        match self {
+            Self::Hit => None,
+            Self::Critical => Some(DeviceEvent::Damaged),
+            Self::Destroyed => Some(DeviceEvent::Broken),
+        }
+    }
+}
+
 pub(crate) const DEVICE_STRIKE_CAPACITY: usize = 32;
 
 struct DeviceState {
     health: u16,
     profile: DeviceHealth,
     repair: Option<(Instant, Instant)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FireOrigin {
+    Engine,
+    Fuel,
+}
+
+impl FireOrigin {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Engine => "engine",
+            Self::Fuel => "fuel_tank",
+        }
+    }
 }
 
 #[derive(Default)]
@@ -56,14 +90,16 @@ pub(crate) struct Condition {
 
 #[derive(Default)]
 pub(crate) struct Criticals {
-    pub tracks: [Option<TrackEvent>; 2],
+    pub tracks: [Option<DeviceEvent>; 2],
     pub track_hits: u8,
     pub track_impact: Option<ImpactSegment>,
     pub damaged: u8,
     pub destroyed: u8,
     pub crew: u8,
+    pub engine: Option<DeviceDamage>,
+    pub fuel: Option<DeviceDamage>,
     pub detonated: bool,
-    pub fire_started: bool,
+    pub fire_started: Option<FireOrigin>,
 }
 
 impl Condition {
@@ -107,13 +143,25 @@ impl Condition {
                 result.track_impact.get_or_insert(strike.impact);
                 if state.health == 0 {
                     result.tracks[side] = Some(if previous == 0 {
-                        TrackEvent::RepairRestarted
+                        DeviceEvent::RepairRestarted
                     } else {
-                        TrackEvent::Broken
+                        DeviceEvent::Broken
                     });
                 } else if previous > profile.repaired && state.health <= profile.repaired {
-                    result.tracks[side] = Some(TrackEvent::Damaged);
+                    result.tracks[side] = Some(DeviceEvent::Damaged);
                 }
+            }
+            let transition = if state.health == 0 {
+                DeviceDamage::Destroyed
+            } else if previous > profile.repaired && state.health <= profile.repaired {
+                DeviceDamage::Critical
+            } else {
+                DeviceDamage::Hit
+            };
+            match strike.device {
+                Device::Engine => result.engine = Some(transition),
+                Device::Fuel => result.fuel = Some(transition),
+                _ => {}
             }
             result.damaged += 1;
             if state.health == 0 {
@@ -133,14 +181,25 @@ impl Condition {
                 }
                 result.detonated |= detonates;
             }
-            let starts_fire = (strike.device == Device::Fuel && state.health == 0)
-                || (strike.device == Device::Engine && fastrand::f32() < state.profile.fire_chance);
-            if starts_fire && parameters.fire_ticks > 0 && self.fire.is_none() {
-                self.fire = Some((
-                    now + Duration::from_secs_f32(parameters.fire_tick_seconds),
-                    parameters.fire_ticks,
-                ));
-                result.fire_started = true;
+            if parameters.fire_ticks > 0 && self.fire.is_none() {
+                let origin = match strike.device {
+                    Device::Fuel if state.health == 0 => Some(FireOrigin::Fuel),
+                    Device::Engine
+                        if strike.can_ignite_engine
+                            && strike.damage >= parameters.engine_ignition_min_damage
+                            && fastrand::f32() < state.profile.fire_chance =>
+                    {
+                        Some(FireOrigin::Engine)
+                    }
+                    _ => None,
+                };
+                if let Some(origin) = origin {
+                    self.fire = Some((
+                        now + Duration::from_secs_f32(parameters.fire_tick_seconds),
+                        parameters.fire_ticks,
+                    ));
+                    result.fire_started = Some(origin);
+                }
             }
         }
         result
@@ -156,42 +215,58 @@ impl Condition {
         self.disabled(Device::Engine) || TRACKS.into_iter().any(|track| self.disabled(track))
     }
 
-    pub fn track_repair(&self, track: Device) -> Option<(Instant, Instant)> {
-        self.devices.get(&track)?.repair
+    pub fn repair(&self, device: Device) -> Option<(Instant, Instant)> {
+        self.devices.get(&device)?.repair
     }
 
     pub fn tick(
         &mut self,
         now: Instant,
         parameters: &BattleParameters,
-    ) -> (u8, bool, [Option<TrackEvent>; 2]) {
+    ) -> (u8, Option<u8>, [Option<DeviceEvent>; 4]) {
         let mut repairs = 0;
-        let mut tracks = [None; 2];
+        let mut events = [None; 4];
         for (&device, state) in &mut self.devices {
             if state.repair.is_some_and(|(_, end)| end <= now) {
                 state.health = state.profile.repaired;
                 state.repair = None;
                 repairs += 1;
-                if let Some(side) = TRACKS.iter().position(|&track| track == device) {
-                    tracks[side] = Some(if state.health < state.profile.maximum {
-                        TrackEvent::RepairedCritical
+                if let Some(index) = TRACKS
+                    .into_iter()
+                    .chain(ENGINE_AND_FUEL)
+                    .position(|tracked| tracked == device)
+                {
+                    events[index] = Some(if state.health < state.profile.maximum {
+                        DeviceEvent::RepairedCritical
                     } else {
-                        TrackEvent::Repaired
+                        DeviceEvent::Repaired
                     });
                 }
             }
         }
-        let burn = self.fire.is_some_and(|(next, _)| next <= now);
-        if burn
+        let mut burn = None;
+        if self.fire.is_some_and(|(next, _)| next <= now)
             && let Some((next, ticks)) = self.fire.take()
-            && ticks > 1
         {
-            self.fire = Some((
-                next + Duration::from_secs_f32(parameters.fire_tick_seconds),
-                ticks - 1,
-            ));
+            burn = Some(ticks);
+            if ticks > 1 {
+                self.fire = Some((
+                    next + Duration::from_secs_f32(parameters.fire_tick_seconds),
+                    ticks - 1,
+                ));
+            }
         }
-        (repairs, burn, tracks)
+        (repairs, burn, events)
+    }
+
+    pub fn extinguish(&mut self) {
+        self.fire = None;
+    }
+
+    pub fn has_other_device_repair(&self) -> bool {
+        self.devices.iter().any(|(device, state)| {
+            !TRACKS.contains(device) && !ENGINE_AND_FUEL.contains(device) && state.repair.is_some()
+        })
     }
 
     pub fn active(&self) -> bool {
@@ -206,6 +281,93 @@ impl Condition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn engine_ignites_above_threshold_without_resetting_an_active_fire() {
+        let now = Instant::now();
+        let mut condition = Condition::default();
+        let parameters = BattleParameters::default();
+        let strike = |damage| {
+            Some(DeviceStrike {
+                device: Device::Engine,
+                can_ignite_engine: true,
+                health: Some(DeviceHealth {
+                    maximum: 100,
+                    repaired: 50,
+                    repair_seconds: 10.0,
+                    fire_chance: 1.0,
+                }),
+                damage,
+                impact: ImpactSegment {
+                    part: 1,
+                    start: [0; 3],
+                    end: [255; 3],
+                },
+            })
+        };
+        let threshold = parameters.engine_ignition_min_damage;
+        let profiles = BTreeMap::new();
+        assert_eq!(
+            condition
+                .apply(&[strike(threshold - 1)], &profiles, true, now, &parameters)
+                .fire_started,
+            None
+        );
+        assert_eq!(
+            condition
+                .apply(&[strike(threshold)], &profiles, true, now, &parameters)
+                .fire_started,
+            Some(FireOrigin::Engine)
+        );
+        assert!(!condition.disabled(Device::Engine));
+        assert_eq!(
+            condition
+                .apply(
+                    &[strike(threshold)],
+                    &profiles,
+                    true,
+                    now + Duration::from_millis(250),
+                    &parameters
+                )
+                .fire_started,
+            None
+        );
+        assert_eq!(
+            condition
+                .tick(now + Duration::from_millis(500), &parameters)
+                .1,
+            Some(parameters.fire_ticks)
+        );
+        condition.extinguish();
+        assert_eq!(
+            condition.tick(now + Duration::from_secs(1), &parameters).1,
+            None
+        );
+        let mut transmission_strike = strike(threshold).unwrap();
+        transmission_strike.can_ignite_engine = false;
+        assert_eq!(
+            condition
+                .apply(
+                    &[Some(transmission_strike)],
+                    &profiles,
+                    true,
+                    now,
+                    &parameters
+                )
+                .fire_started,
+            None
+        );
+        let disabled = BattleParameters {
+            fire_ticks: 0,
+            ..parameters
+        };
+        assert_eq!(
+            condition
+                .apply(&[strike(threshold)], &profiles, true, now, &disabled)
+                .fire_started,
+            None
+        );
+    }
 
     #[test]
     fn destroyed_track_repairs_and_loaded_rack_detonates() {
@@ -223,6 +385,7 @@ mod tests {
         let strike = |device| {
             Some(DeviceStrike {
                 device,
+                can_ignite_engine: false,
                 health: Some(profile),
                 damage: 10,
                 impact: ImpactSegment {
@@ -255,11 +418,15 @@ mod tests {
         assert_eq!(ignored.tracks, [None; 2]);
         assert_eq!(
             condition.tick(now + Duration::from_secs(1), &parameters),
-            (0, false, [None; 2])
+            (0, None, [None; 4])
         );
         assert_eq!(
             condition.tick(now + Duration::from_secs(2), &parameters),
-            (1, false, [Some(TrackEvent::RepairedCritical), None])
+            (
+                1,
+                None,
+                [Some(DeviceEvent::RepairedCritical), None, None, None]
+            )
         );
         assert!(!condition.immobilized());
         assert!(
@@ -289,10 +456,15 @@ mod tests {
             armed
                 .apply(&[strike(Device::Fuel)], &profiles, true, now, &parameters)
                 .fire_started
+                .is_some()
         );
         assert_eq!(
             armed.tick(now + Duration::from_secs(1), &parameters),
-            (1, true, [None; 2])
+            (
+                1,
+                Some(parameters.fire_ticks),
+                [None, None, None, Some(DeviceEvent::RepairedCritical)]
+            )
         );
     }
 }

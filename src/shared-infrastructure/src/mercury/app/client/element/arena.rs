@@ -219,6 +219,16 @@ arena_blob!(NrlData, 0x26);
 
 crate::__struct_simple_codec! {
     #[derive(Debug, Clone)]
+    pub struct ApplyNrlUnlink {}
+}
+
+impl SimpleElement for ApplyNrlUnlink {
+    const ID: u8 = 0x24;
+    const LEN: ElementLength = ElementLength::ZERO;
+}
+
+crate::__struct_simple_codec! {
+    #[derive(Debug, Clone)]
     pub struct ApplyNrlUpdate {}
 }
 

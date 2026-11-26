@@ -129,9 +129,15 @@ battle_parameters! {
         normal_roll_standard_deviation: f32 = 0.33, 0.0..=1.0, false, "Normal damage and penetration roll spread";
         normal_roll_max_samples: usize = 4, 1..=12, true, "Maximum normal roll samples";
         max_device_hits: usize = 12, 0..=DEVICE_STRIKE_CAPACITY, true, "Maximum device hits per contact";
-        fire_tick_seconds: f32 = 1.0, 0.1..=10.0, false, "Fire tick interval (seconds)";
-        fire_ticks: u8 = 5, 0..=30, true, "Fire damage ticks";
-        fire_damage_percent: f32 = 1.0, 0.01..=25.0, false, "Maximum HP lost per fire tick (%)";
+    }
+    "Fire" {
+        engine_compartment_width: f32 = 0.7, 0.0..=1.0, false, "Estimated engine compartment width (hull fraction)";
+        engine_compartment_height: f32 = 0.75, 0.0..=1.0, false, "Estimated engine compartment height (hull fraction)";
+        engine_compartment_length: f32 = 0.35, 0.0..=1.0, false, "Estimated engine compartment length (hull fraction)";
+        engine_ignition_min_damage: u16 = 21, 0..=u16::MAX, true, "Minimum module damage for engine ignition (HP)";
+        fire_tick_seconds: f32 = 0.5, 0.1..=10.0, false, "Fire tick interval (seconds)";
+        fire_ticks: u8 = 12, 0..=30, true, "Fire damage ticks";
+        fire_damage_percent: f32 = 4.0, 0.01..=25.0, false, "Maximum HP lost on first fire tick (%)";
     }
     "Tracks" {
         track_repair_time_scale: f32 = 1.0, 0.1..=10.0, false, "Automatic track repair time multiplier";

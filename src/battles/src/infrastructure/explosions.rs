@@ -27,6 +27,8 @@ struct BlastHit {
     health: i16,
     max_health: i16,
     stunned: Option<Instant>,
+    fire_stopped: bool,
+    roster_row: usize,
 }
 
 impl Battle {
@@ -37,6 +39,7 @@ impl Battle {
         output.explosion.trees = tracing::field::Empty,
         output.explosion.targets = tracing::field::Empty,
         output.explosion.stunned = tracing::field::Empty,
+        output.explosion.fires_ended = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
     ))]
     pub(super) fn resolve_explosion(
@@ -164,6 +167,7 @@ impl Battle {
                 continue;
             };
             let (previous, health) = target.apply_damage(damage);
+            let fire_stopped = health == 0 && target.active_fire.take().is_some();
             let stunned = (health > 0 && stun > 0.0)
                 .then(|| now + Duration::from_secs_f32(stun))
                 .filter(|end| {
@@ -186,6 +190,8 @@ impl Battle {
                     health,
                     max_health: target.tank.max_health,
                     stunned,
+                    fire_stopped,
+                    roster_row: target.roster_row,
                 });
             }
         }
@@ -194,10 +200,20 @@ impl Battle {
             "output.explosion.stunned",
             applied.iter().filter(|hit| hit.stunned.is_some()).count(),
         );
+        span.record(
+            "output.explosion.fires_ended",
+            applied.iter().filter(|hit| hit.fire_stopped).count(),
+        );
         for (&peer, _) in self.players.iter().filter(|(_, player)| player.entered) {
             for hit in &applied {
-                if let Err(error) =
-                    self.publish_blast_hit(delivery, wire, peer, center, &blast, hit)
+                if let Err(error) = self
+                    .publish_blast_hit(delivery, wire, peer, center, &blast, hit)
+                    .and_then(|()| {
+                        if hit.fire_stopped {
+                            wire.publish_fire_stop(delivery, peer, hit.roster_row)?;
+                        }
+                        Ok(())
+                    })
                 {
                     span.record("otel.status_code", "ERROR");
                     error!(%error, "Explosion delivery failed");

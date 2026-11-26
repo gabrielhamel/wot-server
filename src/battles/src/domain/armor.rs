@@ -4,7 +4,9 @@ use super::{
     vehicle::{Shot, Tank},
 };
 use glam::Vec3;
-use wot_shared_kernel::{ArmorPlate, ShellKind, shell_value_at_distance};
+use wot_shared_kernel::{
+    ArmorPlate, Device, EngineCompartment, ShellKind, shell_value_at_distance,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ArmorOutcome {
@@ -79,6 +81,8 @@ impl Shot {
         output.part.index = tracing::field::Empty, output.material.kind = tracing::field::Empty,
         output.plate.thickness_mm = tracing::field::Empty, output.plate.effective_mm = tracing::field::Empty,
         output.penetration.remaining_mm = tracing::field::Empty, output.damage = tracing::field::Empty,
+        output.engine.damage_hp = tracing::field::Empty,
+        output.fuel.damage_hp = tracing::field::Empty,
         output.tracks.left_damage_hp = tracing::field::Empty,
         output.tracks.right_damage_hp = tracing::field::Empty,
         output.outcome = tracing::field::Empty,
@@ -98,15 +102,17 @@ impl Shot {
             span.record("output.plate.effective_mm", hit.effective_mm);
             span.record("output.penetration.remaining_mm", hit.remaining_mm);
             span.record("output.damage", hit.damage);
-            for (track, attribute) in TRACKS.into_iter().zip([
-                "output.tracks.left_damage_hp",
-                "output.tracks.right_damage_hp",
-            ]) {
+            for (device, attribute) in [
+                (TRACKS[0], "output.tracks.left_damage_hp"),
+                (TRACKS[1], "output.tracks.right_damage_hp"),
+                (Device::Engine, "output.engine.damage_hp"),
+                (Device::Fuel, "output.fuel.damage_hp"),
+            ] {
                 if let Some(strike) = hit
                     .devices
                     .iter()
                     .flatten()
-                    .find(|strike| strike.device == track)
+                    .find(|strike| strike.device == device)
                 {
                     span.record(attribute, strike.damage);
                 }
@@ -197,6 +203,7 @@ impl Shot {
             if near > range || far < 0.0 {
                 continue;
             }
+            let mut first_hull = f32::INFINITY;
             for triangle in &mounted.mesh.triangles {
                 let [a, b, c] = triangle.vertices;
                 let Some(distance) = triangle_distance(a, b, c, origin, direction)
@@ -204,6 +211,9 @@ impl Shot {
                 else {
                     continue;
                 };
+                if triangle.plate.damage_factor > 0.0 {
+                    first_hull = first_hull.min(distance);
+                }
                 let normal = (b - a).cross(c - a).normalize_or_zero();
                 let segment =
                     impact_segment(index as u8, bounds, origin, direction, near, far, distance);
@@ -225,6 +235,40 @@ impl Shot {
                     track_damage_factor,
                     segment,
                 });
+            }
+            if let Some(engine) = mounted.mesh.engine_compartment
+                && let Some(compartment) = engine_bounds(bounds, engine, &target.parameters)
+                && let Some([entry, exit]) = clip_ray(compartment, origin, direction)
+            {
+                let distance = entry.max(first_hull + 0.001);
+                if distance < exit && distance <= range {
+                    surfaces.push(Surface {
+                        distance,
+                        material: engine.material,
+                        plate: ArmorPlate {
+                            thickness_mm: 0.0,
+                            damage_factor: 0.0,
+                            angled: false,
+                            ricochets: false,
+                            caliber_ricochet: false,
+                            caliber_normalization: false,
+                            once: true,
+                            device: Some(engine.device),
+                        },
+                        cosine: 1.0,
+                        normal: Vec3::ZERO,
+                        track_damage_factor: 1.0,
+                        segment: impact_segment(
+                            index as u8,
+                            bounds,
+                            origin,
+                            direction,
+                            near,
+                            far,
+                            distance,
+                        ),
+                    });
+                }
             }
         }
         surfaces.sort_unstable_by(|a, b| {
@@ -558,6 +602,7 @@ impl Shot {
         {
             *slot = Some(DeviceStrike {
                 device: device.device,
+                can_ignite_engine: device.can_ignite_engine,
                 health: device.health,
                 damage,
                 impact: hit.segment,
@@ -596,6 +641,26 @@ pub(crate) fn roll(magnitude: f32, uniform: bool, parameters: &BattleParameters)
             .unwrap_or(0.0)
     };
     1.0 + magnitude * sample
+}
+
+fn engine_bounds(
+    [min, max]: [Vec3; 2],
+    engine: EngineCompartment,
+    parameters: &BattleParameters,
+) -> Option<[Vec3; 2]> {
+    let half = (max - min)
+        * Vec3::new(
+            parameters.engine_compartment_width,
+            parameters.engine_compartment_height,
+            parameters.engine_compartment_length,
+        )
+        * 0.5;
+    if half.min_element() <= 0.0 {
+        return None;
+    }
+    let mut centre = (min + max) * 0.5;
+    centre.z = engine.exhaust_z.max(min.z + half.z).min(max.z - half.z);
+    Some([centre - half, centre + half])
 }
 
 fn clip_ray([min, max]: [Vec3; 2], origin: Vec3, direction: Vec3) -> Option<[f32; 2]> {

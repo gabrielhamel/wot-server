@@ -215,6 +215,7 @@ fn modern_he_spalls_at_main_armor_and_respects_screen_loss() {
 #[test]
 fn a_ray_can_strike_an_off_center_part_or_pass_through_empty_space() {
     let mesh = Arc::new(ArmorMesh {
+        engine_compartment: None,
         bounds: [Vec3::new(-1.0, 0.0, -0.2), Vec3::new(1.0, 2.0, 0.2)],
         triangles: vec![ArmorTriangle {
             vertices: [
@@ -296,6 +297,7 @@ fn penetrating_shell_traces_devices_before_the_next_hull_surface() {
     let mut engine = surface(30.25, 2, plate(0.0, 0.0), 0.0);
     engine.plate.device = Some(ArmorDevice {
         device: Device::Engine,
+        can_ignite_engine: true,
         health: None,
         projectile_chance: 1.0,
         explosion_chance: 0.0,
@@ -356,6 +358,7 @@ fn across_hull_tracks_require_penetration_of_both_hull_faces() {
         contact.plate.once = true;
         contact.plate.device = Some(ArmorDevice {
             device,
+            can_ignite_engine: false,
             health: None,
             projectile_chance: 1.0,
             explosion_chance: 0.0,
@@ -416,6 +419,7 @@ fn amx_30_b_shell_can_break_a_fresh_hwk_40_track_at_the_ends() {
     let mut contact = surface(30.0, 1, plate(20.0, 0.0), 0.0);
     contact.plate.device = Some(ArmorDevice {
         device: Device::TrackLeft,
+        can_ignite_engine: false,
         health: Some(DeviceHealth {
             maximum: 240,
             repaired: 180,

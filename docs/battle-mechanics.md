@@ -432,7 +432,7 @@ mobility profile to vehicle preparation and drive steps to replication.
 | Penetration | Plate angle, normalization, caliber, range and the shell's remaining penetration determine the outcome. | **Partial.** The gun ray intersects the equipped chassis, hull, turret and gun collision meshes. The solver resolves AP-family normalization and overmatch, AP-family and HEAT ricochets, screen penetration and HEAT jet loss. AP-family shells retain 75% of remaining penetration at the first ricochet. Eligible shells can continue on the reflected ray for up to ten calibers and can hit the same tank again or another nearby enemy tank. A shell can carry unused penetration past a screen-only contact, and a hull penetration traces internal devices for ten calibers or until the next hull surface. Contacts with allies or wrecks and server-only internal geometry remain open. |
 | Shell and armor damage | A penetrating hit applies rolled damage and the plate's damage factor. Some contacts produce an impact with zero vehicle HP loss. | **Partial.** The server rolls penetration and hull damage from the equipped shell definitions and caps HP loss at the target's current health. The client receives the actual part and a short component-local ray through the contact. The normal roll distribution is an approximation. |
 | Modern direct-fire HE | Armor penetration deals hull damage. An exterior detonation against main armor causes spall. Screens can stop the shell or reduce penetration before it reaches main armor. [Wargaming's HE rework][eu-he] | **Partial.** Modern shells can penetrate permitted screens and destructible fragments. A penetrated screen subtracts three times its effective thickness. A shell stopped at a screen or passing through a screen with no armor behind it causes zero HP damage. Spall and fragments use the shell damage curves and configured fragment absorption. Exact spall transfer and fragment geometry still need production evidence. Ground impacts can break trees. Ground splash affects vehicle HP only for artillery. [Wargaming HE support][eu-he-support] |
-| Module and crew damage, ramming and repair | Module and crew damage have effects independent of vehicle HP. Ramming, fire, detonation and repair have separate conditions. | **Partial.** Model materials carry device hit probabilities. The server tracks hits to modeled devices and crew, disabled tracks and engines, gun disablement, passive module recovery, fire ticks and loaded ammunition-rack explosions. Track HUD and sound updates use native vehicle state and shot feedback. Full crew and other module penalties and HUD feedback, active repair and first aid, damage from collisions and falls, and exact fire tuning remain open. |
+| Module and crew damage, ramming and repair | Module and crew damage have effects independent of vehicle HP. Ramming, fire, detonation and repair have separate conditions. | **Partial.** Model materials carry device hit probabilities. The server tracks hits to modeled devices and crew, disabled tracks and engines, gun disablement, passive module recovery, replicated engine fires and loaded ammunition-rack explosions. Track HUD and sound updates use native vehicle state and shot feedback. Engine and fuel tank state and automatic repair also update the driver’s module HUD. Full crew and other module penalties and HUD feedback, active repair and first aid, damage from collisions and falls, and exact fire tuning remain open. |
 | Zero-damage hits and ghost shells | Surface contact can occur without a loss of HP. A visual shot can also miss its intended target. | **Partial.** Armor blocks, screen stops, screen penetrations, ricochets, scene impacts and range expiry have distinct results. The struck player receives a blocked directional indicator for armor blocks, screen stops and ricochets with zero HP loss. Those contacts leave a persistent surface mark when the shell defines one. The server sends health and damage-log updates only for actual HP loss. |
 | Crew voice messages | The client chooses announcements based on battle events such as penetration, ricochet and destruction. | **Partial.** The server sends the appropriate shot results and impact effects. Native cue selection and sticker placement still need a controlled client session. |
 
@@ -511,7 +511,7 @@ draws that tracer, including artillery visuals.
 
 ### Critical damage and recovery
 
-Vehicle HP, module HP and crew state are independent. The implementation uses packaged client collision materials. It cannot trace production server-only device or crew geometry that is absent from those meshes. One projectile can
+Vehicle HP, module HP and crew state are independent. The implementation uses packaged client collision materials and an estimated engine compartment where exhaust hardpoints are available. One projectile can
 affect more than one of them along its path. The archive describes a
 module-specific chance to take damage after a hit and a separate crew chance
 for direct hits and explosions. Treat the historical probabilities and perk
@@ -526,12 +526,81 @@ Deadeye adjustment. These figures describe the archive's model.
 | Subsystem | State changes described in the article |
 | --- | --- |
 | Tracks and suspension | A broken track immobilizes a vehicle. Hit location and vehicle-specific mechanisms such as reserve tracks affect disablement and recovery. The article marks its track damage multiplier as unofficial. |
-| Engine and fuel | Engine damage can impair mobility and engine destruction can trigger fire. Destruction of the fuel tank starts a fire in the archived model. Fire deals repeated damage to the vehicle and its internals and affects concealment. Firefighting, crew perks and extinguishers affect prevention or recovery. |
+| Engine and fuel | Engine damage can impair mobility. The archive describes an ignition roll on engine destruction and automatic ignition at zero fuel tank HP. Fire deals repeated damage to the vehicle and its internals and affects concealment. Firefighting, crew perks and extinguishers affect prevention or recovery. |
 | Gun, turret, optics and radio | Damage or destruction can worsen accuracy, restrict elevation or traverse, prevent firing, or reduce view or signal range. |
 | Ammunition rack | Damage slows reloading. Destruction can detonate a loaded rack and destroy the vehicle regardless of its remaining HP. The archive gives an exception for an empty rack. |
 | Crew | Loss of a crew member impairs the corresponding role. Loss of the full crew can end participation with hull HP remaining. First aid restores eligible incapacitated crew. |
 | Passive and active repair | Crew repair can restore a destroyed module to a functional but damaged state. Repair kits can restore modules fully, with scope and cooldown depending on the consumable. Verify module HP thresholds, timer inputs and cooldowns. |
 | Ramming and falling | Vehicle collisions can impart motion and deal damage. The archive's ramming model depends on relative speed, vehicle mass, contact armor and modifiers such as Spall Liner and Controlled Impact. Falling and impact damage belong to the physics outcome as well. |
+
+#### Engine fire
+
+The archived wiki describes ignition on engine destruction. Wargaming's
+support guide describes ignition regardless of remaining engine HP. Training
+follows the support guide for engine hits and the archive for transmission hits.
+A hit on authored transmission geometry damages the shared module without
+rolling for ignition. The installed engine supplies its ignition probability. The
+server applies the threshold to the rolled module damage. The client bundle
+names the threshold `minFireStartingDamage` and loads it on the engine
+descriptor. The exact production damage operand is unverified. Fuel tank
+ignition uses the transition to zero fuel tank HP on authored geometry.
+The original attacker keeps credit throughout the fire, including if they
+leave the arena. Repeat hits during a fire leave its remaining duration and
+attacker intact. [Archived fire mechanics](https://web.archive.org/web/20250303052442/https://wiki.wargaming.net/en/Battle_Mechanics#Fire_Damage) · [Wargaming module damage guide](https://wargaming.net/support/en/products/wot/article/15762/?redirect_lang=en)
+
+When engine or fuel tank HP crosses the module's critical threshold or reaches
+zero, the driver receives the corresponding module state in
+`OwnVehicle.vehicleDamageInfoList`. Automatic recovery sends the repaired
+state and refreshes `OwnVehicle.destroyedDevicesIsRepairing`. The timer list
+also includes tracks with repairs in progress. A hit above the critical
+threshold can ignite the engine without changing its module icon.
+
+In the sampled WZ-113G FT bundle, the hull has exhaust hardpoints for an
+estimated engine compartment. The vehicle collision meshes contain no fuel
+tank triangles, so that vehicle can have an engine fire in Training and has
+no modeled fuel tank strike.
+
+The extracted client hull meshes rarely contain engine triangles. Training
+prefers authored engine geometry where present. Otherwise it estimates a
+volume inside the mounted hull's collision bounds, centered laterally and
+vertically. The average longitudinal position of the exhaust hardpoints
+anchors the volume, which is moved inward as needed to fit the bounds. A shot
+must reach that volume through actual armor and pass the engine's module
+damage roll. Re-extract the client bundle to get exhaust hardpoints. The
+estimate may differ from the production hitbox, especially on vehicles
+with exhaust routed away from the engine.
+
+**Admin → Battles → Battle parameters → Fire** exposes the settings below.
+Native Training Rooms use the same defaults.
+
+| Setting | Default | Accepted range |
+| --- | ---: | ---: |
+| Estimated engine compartment width | 0.70 of hull width | 0–1 |
+| Estimated engine compartment height | 0.75 of hull height | 0–1 |
+| Estimated engine compartment length | 0.35 of hull length | 0–1 |
+| Minimum module damage for engine ignition | 21 HP | 0–65,535 HP |
+| Fire tick interval | 0.5 s | 0.1–10 s |
+| Fire damage ticks | 12 | 0–30 |
+| Maximum HP lost on the first tick | 4% of maximum vehicle HP | 0.01–25% |
+
+A zero compartment dimension disables the estimate. Zero fire ticks disables
+ignition. Damage declines linearly with the remaining tick count and rounds
+to at least 1 HP while the target is alive. The cadence comes from production
+replays. Damage, decay and total duration are server estimates.
+
+The burning vehicle receives the `Fire` component on every entered client
+and in the arena snapshot for late arrivals. The driver also receives
+`Fire.fireInfo` with the ignited module, attacker and server time, which
+drives the fire HUD and warnings. The attacker receives the ignition flag
+and damage log entries. Damage ticks replicate health to all witnesses,
+update `OwnVehicle.vehicleHealthInfo` for the driver and use fire attack
+reason in the private attacker and victim logs. Component removal stops the
+effect after burnout, destruction or round end. See the
+[replay evidence](battle-replays.md#vehicle-fire).
+
+Secondary module and crew damage from burning, concealment penalties,
+firefighting perks, extinguishers, and the production treatment of some
+front-mounted transmissions remain open.
 
 #### Tracks and automatic repair
 

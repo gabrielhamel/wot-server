@@ -16,7 +16,7 @@ passes to Battles at launch.
 | --- | --- |
 | Account ID | Positive signed 64-bit identifier for one local player account. |
 | Battle outfits | Encoded appearances for an equipped vehicle for winter, summer and desert arenas. |
-| Vehicle performance | Base speed limits in metres per second, traverse rates in radians per second, gun arcs in radians and reload times in seconds for the equipped vehicle. |
+| Vehicle performance | Base speed limits in metres per second, traverse rates in radians per second, gun arcs in radians, reload times in seconds, armor meshes, optional engine compartment anchors and module health for the equipped vehicle. |
 
 Only add a concept when several contexts agree on its meaning and invariants.
 Review changes with all consumers. HTTP and XMPP parse their own wire forms,
