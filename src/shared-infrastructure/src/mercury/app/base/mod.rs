@@ -97,7 +97,7 @@ impl App {
     }
 
     pub fn configure_metrics(&mut self, meter: &opentelemetry::metrics::Meter) {
-        self.protocol.configure_metrics(meter);
+        self.protocol.configure_metrics(meter, "base");
     }
 
     /// The dispatch tables of the script model this app was created with.
@@ -160,18 +160,8 @@ impl App {
                 return event;
             }
 
-            // Reliable packets the clients haven't acknowledged yet, likely lost.
-            let resends = self.protocol.take_resends(RESEND_TIMEOUT, RESEND_GIVE_UP);
-            if !resends.is_empty() {
-                debug!("Resending {} unacknowledged packets", resends.len());
-            }
-            for (addr, packet) in resends {
-                if let Err(error) = self.socket.send(&packet, addr) {
-                    return Event::IoError(IoErrorEvent {
-                        error,
-                        addr: Some(addr),
-                    });
-                }
+            if let Err(error) = self.retry_reliable(RESEND_TIMEOUT, RESEND_GIVE_UP) {
+                return Event::IoError(error);
             }
 
             let timeout = deadline.map(|deadline| {
@@ -183,7 +173,14 @@ impl App {
                 return Event::IoError(IoErrorEvent { error, addr: None });
             }
 
-            let (packet, addr) = match self.socket.recv() {
+            let received = self.socket.recv_with_rejection(|addr, reason, bytes| {
+                let session = self
+                    .client_keys
+                    .get(&addr)
+                    .map(|key| key.slot.diagnostic_id());
+                self.protocol.record_rejection(session, reason, bytes);
+            });
+            let (packet, addr) = match received {
                 Ok(ret) => ret,
                 Err(error)
                     if matches!(
@@ -196,7 +193,11 @@ impl App {
                 Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
             };
 
-            let Ok(mut channel) = self.protocol.accept(packet, addr) else {
+            let session = self
+                .client_keys
+                .get(&addr)
+                .map(|key| key.slot.diagnostic_id());
+            let Ok(mut channel) = self.protocol.accept_from(packet, addr, session) else {
                 continue;
             };
 
@@ -236,6 +237,26 @@ impl App {
                 }
             }
         }
+    }
+
+    fn retry_reliable(&mut self, timeout: Duration, give_up: Duration) -> Result<(), IoErrorEvent> {
+        let resends = self.protocol.take_resends_for(timeout, give_up, |addr| {
+            self.client_keys
+                .get(&addr)
+                .map(|key| key.slot.diagnostic_id())
+        });
+        if !resends.is_empty() {
+            debug!("Resending {} unacknowledged packets", resends.len());
+        }
+        for (addr, packet) in resends {
+            let result = self.socket.send(&packet, addr);
+            self.protocol.record_retransmission(result.is_ok());
+            result.map_err(|error| IoErrorEvent {
+                error,
+                addr: Some(addr),
+            })?;
+        }
+        Ok(())
     }
 
     /// Handle an element read from the given address.
@@ -365,6 +386,7 @@ impl App {
         let span = tracing::info_span!(
             parent: None, "game.cell_command",
             "ddd.bounded_context.name" = "player_sessions",
+            mercury.session.id = client.slot.diagnostic_id(),
             "input.element_id" = element_id,
             "rpc.method" = tracing::field::Empty,
             "input.method_id" = tracing::field::Empty,
@@ -500,6 +522,7 @@ impl App {
         let span = tracing::info_span!(
             parent: None, "game.command",
             "ddd.bounded_context.name" = "player_sessions",
+            mercury.session.id = client.slot.diagnostic_id(),
             "user.id" = tracing::field::Empty,
             "rpc.method" = tracing::field::Empty,
             "input.method_id" = tracing::field::Empty,
@@ -707,9 +730,7 @@ impl App {
                 description,
             })?;
         self.protocol
-            .channel(addr, None)
-            .prepare(&mut self.bundle, true);
-        self.socket.send_bundle(&self.bundle, addr)?;
+            .send_reliable_bundle(addr, &mut self.bundle, &self.socket)?;
 
         let chunks: Vec<&[u8]> = if data.is_empty() {
             vec![&[]]
@@ -730,9 +751,7 @@ impl App {
                     data: chunk.to_vec(),
                 })?;
             self.protocol
-                .channel(addr, None)
-                .prepare(&mut self.bundle, true);
-            self.socket.send_bundle(&self.bundle, addr)?;
+                .send_reliable_bundle(addr, &mut self.bundle, &self.socket)?;
         }
 
         Ok(())
@@ -897,6 +916,7 @@ impl App {
     #[tracing::instrument(name = "mercury.arena_snapshot", skip_all, fields(
         ddd.bounded_context.name = "player_sessions",
         input.arena.tick = tick,
+        mercury.session.id = client.slot.diagnostic_id(),
         network.peer.address = %client.addr.ip(),
         network.peer.port = client.addr.port(),
         output.packet.sequence = tracing::field::Empty,
@@ -1245,6 +1265,9 @@ pub struct BaseMethodEvent {
     /// table, see [`App::decode`] to decode it further.
     pub call: MethodCall,
 }
+
+#[cfg(test)]
+mod transport_tests;
 
 #[cfg(test)]
 mod tests {

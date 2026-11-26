@@ -31,3 +31,4 @@ wot-resources.workspace = true
 
 [dev-dependencies]
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
+tracing-subscriber.workspace = true

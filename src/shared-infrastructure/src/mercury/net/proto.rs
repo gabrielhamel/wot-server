@@ -3,19 +3,19 @@
 use crate::mercury::net::limits;
 use std::cmp::Ordering;
 use std::collections::{HashMap, VecDeque};
+use std::io;
 use std::net::SocketAddr;
 use std::num::NonZero;
 use std::time::{Duration, Instant};
 
-use opentelemetry::{
-    KeyValue,
-    metrics::{Counter, Meter},
-};
+use opentelemetry::{KeyValue, metrics::Meter};
 use tracing::{debug, instrument, trace, trace_span, warn};
 
 use super::bundle::Bundle;
 use super::packet::{Packet, PacketConfig, PacketConfigError, PacketLocked};
 use super::seq::{Seq, SeqAlloc};
+use super::socket::PacketSocket;
+use super::telemetry::TransportTelemetry;
 
 /// The (currently hardcoded) timeout on bundle fragments.
 const FRAGMENT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -33,7 +33,7 @@ pub struct Protocol {
     maintenance_at: Instant,
     input_window: Instant,
     input_count: usize,
-    reliable_sequence_drops: Option<Counter<u64>>,
+    telemetry: Option<TransportTelemetry>,
 }
 
 /// A structure referenced by any channel handle, containing shared states.
@@ -54,20 +54,59 @@ impl Protocol {
             maintenance_at: Instant::now(),
             input_window: Instant::now(),
             input_count: 0,
-            reliable_sequence_drops: None,
+            telemetry: None,
         }
     }
 
-    pub(crate) fn configure_metrics(&mut self, meter: &Meter) {
-        let drops = meter
-            .u64_counter("wot.mercury.reliable_sequence.drops")
-            .with_unit("{packet}")
-            .with_description("Mercury packets dropped for a mismatched last reliable sequence")
-            .build();
-        for direction in ["behind", "ahead"] {
-            drops.add(0, &[KeyValue::new("direction", direction)]);
+    pub(crate) fn configure_metrics(&mut self, meter: &Meter, listener: &'static str) {
+        self.telemetry = Some(TransportTelemetry::new(meter, listener));
+    }
+
+    pub(crate) fn record_rejection(
+        &mut self,
+        session: Option<i64>,
+        reason: &'static str,
+        bytes: usize,
+    ) {
+        if let Some(telemetry) = &mut self.telemetry {
+            telemetry.reject(Instant::now(), session, reason, bytes);
         }
-        self.reliable_sequence_drops = Some(drops);
+    }
+
+    pub(crate) fn record_retransmission(&self, sent: bool) {
+        if let Some(telemetry) = &self.telemetry {
+            telemetry.retransmission(1, if sent { "sent" } else { "socket_error" });
+        }
+    }
+
+    pub(crate) fn record_outbox_age(&self, age: Duration, outcome: &'static str) {
+        if let Some(telemetry) = &self.telemetry {
+            telemetry.flush(age, outcome);
+        }
+    }
+
+    pub(crate) fn send_reliable_bundle(
+        &mut self,
+        addr: SocketAddr,
+        bundle: &mut Bundle,
+        socket: &PacketSocket,
+    ) -> io::Result<()> {
+        let mut channel = self.channel(addr, None);
+        let start = channel.inner.off.out_reliable_packets.len();
+        channel.prepare(bundle, true);
+        let mut tracked = channel
+            .inner
+            .off
+            .out_reliable_packets
+            .iter_mut()
+            .skip(start);
+        for packet in bundle.iter() {
+            socket.send(packet, addr)?;
+            if let Some(packet) = tracked.next() {
+                packet.first_sent = Some(Instant::now());
+            }
+        }
+        Ok(())
     }
 
     /// Drop channel state, pending reliable packets and fragment assemblies for a peer.
@@ -192,6 +231,15 @@ impl Protocol {
         timeout: Duration,
         give_up: Duration,
     ) -> Vec<(SocketAddr, Packet)> {
+        self.take_resends_for(timeout, give_up, |_| None)
+    }
+
+    pub(crate) fn take_resends_for(
+        &mut self,
+        timeout: Duration,
+        give_up: Duration,
+        session_for: impl Fn(SocketAddr) -> Option<i64>,
+    ) -> Vec<(SocketAddr, Packet)> {
         let now = Instant::now();
         let offs = self
             .off_channels
@@ -202,11 +250,22 @@ impl Protocol {
             .iter_mut()
             .map(|(&(addr, _), channel)| (addr, &mut channel.off));
         let mut resends = Vec::new();
+        let telemetry = &mut self.telemetry;
         for (addr, off) in offs.chain(ons) {
             off.out_reliable_packets.retain(|packet| {
-                let keep = now.duration_since(packet.time) < give_up;
+                let age = now.saturating_duration_since(packet.time);
+                let keep = age < give_up;
                 if !keep {
-                    warn!(%addr, "Gave up resending reliable packet #{}, never acknowledged", packet.sequence_num);
+                    debug!("Gave up resending reliable packet #{}", packet.sequence_num);
+                    if let Some(telemetry) = telemetry {
+                        telemetry.exhausted(
+                            now,
+                            session_for(addr),
+                            packet.sequence_num.get(),
+                            packet.retries,
+                            age,
+                        );
+                    }
                 }
                 keep
             });
@@ -214,6 +273,7 @@ impl Protocol {
                 if now.duration_since(packet.sent) >= timeout {
                     debug!(%addr, "Resending reliable packet #{}", packet.sequence_num);
                     packet.sent = now;
+                    packet.retries = packet.retries.saturating_add(1);
                     resends.push((addr, packet.packet.clone()));
                 }
             }
@@ -225,36 +285,54 @@ impl Protocol {
     /// has been accepted. If any error in packet's decoding happens, then it's returned
     /// as an error and this packet, this packet cannot be accepted as-is. Any piggyback
     /// packet is still registered but errors are not forwarded.
-    #[instrument(name = "accept", level = "trace", skip(self, packet))]
     #[inline(always)]
     pub fn accept(&mut self, packet: Packet, addr: SocketAddr) -> Result<Channel<'_>, Packet> {
-        self.accept_inner(packet, addr, 0)
+        self.accept_from(packet, addr, None)
     }
 
-    /// Internal wrapper used to improve tracing of recursive span with piggybacks.
+    #[instrument(name = "accept", level = "trace", skip(self, packet, session))]
+    pub(crate) fn accept_from(
+        &mut self,
+        packet: Packet,
+        addr: SocketAddr,
+        session: Option<i64>,
+    ) -> Result<Channel<'_>, Packet> {
+        self.accept_inner(packet, addr, session, 0)
+    }
+
     fn accept_inner(
         &mut self,
         packet: Packet,
         addr: SocketAddr,
+        session: Option<i64>,
         depth: usize,
     ) -> Result<Channel<'_>, Packet> {
+        let time = Instant::now();
+        let bytes = packet.len();
+        let reject = |telemetry: &mut Option<TransportTelemetry>, reason| {
+            if let Some(telemetry) = telemetry {
+                telemetry.reject(time, session, reason, bytes);
+            }
+        };
         if depth >= limits::MAX_PIGGYBACK_DEPTH {
+            reject(&mut self.telemetry, "piggyback_depth");
             return Err(packet);
         }
-        let time = Instant::now();
         self.maintenance(time);
         if time.saturating_duration_since(self.input_window) >= Duration::from_secs(1) {
             self.input_window = time;
             self.input_count = 0;
         }
         if self.input_count >= limits::MAX_PACKETS_PER_SECOND {
+            reject(&mut self.telemetry, "packet_rate");
             return Err(packet);
         }
         self.input_count += 1;
         let mut packet = match packet.read_config_locked() {
             Ok(packet) => packet,
             Err((error, packet)) => {
-                warn!("Failed to read config: {error}");
+                debug!("Failed to read config: {error}");
+                reject(&mut self.telemetry, error.reason());
                 return Err(packet);
             }
         };
@@ -265,7 +343,7 @@ impl Protocol {
             trace!(bytes = piggyback.len(), "Processing piggyback packet");
             let _span = trace_span!("pigb").entered();
             // Ignore any error on channel decoding.
-            let _ = self.accept_inner(piggyback, addr, depth + 1);
+            let _ = self.accept_inner(piggyback, addr, session, depth + 1);
         }
 
         let index = packet.config().indexed_channel().map(|(index, _)| index);
@@ -278,11 +356,13 @@ impl Protocol {
         };
         let (_, slots, buffered) = self.transport_usage();
         if buffered >= limits::MAX_BUFFERED_PACKETS {
+            reject(&mut self.telemetry, "global_packet_budget");
             return Err(packet.destruct().0);
         }
         if let Some((first, last)) = packet.config().sequence_range() {
             let existing = off.is_some_and(|off| off.in_fragments.contains_key(&first));
             if !existing && slots + (last - first + 1) as usize > limits::MAX_FRAGMENT_SLOTS {
+                reject(&mut self.telemetry, "global_fragment_budget");
                 return Err(packet.destruct().0);
             }
         }
@@ -292,6 +372,7 @@ impl Protocol {
             self.off_channels.contains_key(&addr)
         };
         if !known && self.channels.len() + self.off_channels.len() >= limits::MAX_PEER_STATES {
+            reject(&mut self.telemetry, "peer_budget");
             return Err(packet.destruct().0);
         }
 
@@ -315,6 +396,7 @@ impl Protocol {
                 if version < current_version {
                     trace!("Outdated, expected v{current_version}");
                     // TODO: outdated packet
+                    reject(&mut self.telemetry, "outdated_channel");
                     return Err(packet.destruct().0);
                 }
             } else {
@@ -350,12 +432,14 @@ impl Protocol {
         if channel.off.in_bundles.len() >= limits::MAX_QUEUED_BUNDLES
             || channel.off.in_reliable_packets.len() >= limits::MAX_CHANNEL_BUFFERED_PACKETS
         {
+            reject(&mut self.telemetry, "channel_packet_budget");
             return Err(packet.destruct().0);
         }
         if let Some(on) = channel.on.as_deref_mut()
             && on.in_reliable_packets.len() + on.in_reliable_contiguous_packets.len()
                 >= limits::MAX_CHANNEL_BUFFERED_PACKETS
         {
+            reject(&mut self.telemetry, "channel_packet_budget");
             return Err(packet.destruct().0);
         }
 
@@ -363,25 +447,29 @@ impl Protocol {
         if let Some(cumulative_ack) = packet.config().cumulative_ack() {
             // Cumulative ack is not supported off-channel.
             if channel.on.is_none() {
-                warn!("Cumulative ack is not supported off-channel");
+                reject(&mut self.telemetry, "off_channel_cumulative_ack");
                 return Err(packet.destruct().0);
             }
 
             channel
                 .off
-                .ack_out_reliable_packet_cumulative(cumulative_ack);
+                .ack_out_reliable_packet_cumulative(cumulative_ack, |packet| {
+                    packet.record_rtt(self.telemetry.as_ref(), time, "cumulative");
+                });
         }
 
         // Immediately handle single acks because this packet may be buffered to be
         // processed in-order.
         for &ack in packet.config().single_acks() {
-            channel.off.ack_out_reliable_packet(ack);
+            if let Some(packet) = channel.off.ack_out_reliable_packet(ack) {
+                packet.record_rtt(self.telemetry.as_ref(), time, "single");
+            }
         }
 
         // Reliable packet must be acknowledged later.
         if packet.config().reliable() {
             if packet.config().last_reliable_sequence_num().is_some() {
-                warn!("Last reliable sequence is not support with reliable");
+                reject(&mut self.telemetry, "reliable_with_last_reliable_sequence");
                 return Err(packet.destruct().0);
             }
 
@@ -393,7 +481,11 @@ impl Protocol {
             if let Some(on) = channel.on.as_deref_mut() {
                 on.add_in_reliable_packet(packet);
                 while channel.off.in_bundles.len() < limits::MAX_QUEUED_BUNDLES {
-                    let Some(bundle) = on.pop_in_reliable_bundle() else {
+                    let Some(bundle) = on.pop_in_reliable_bundle(|reason, bytes| {
+                        if let Some(telemetry) = &mut self.telemetry {
+                            telemetry.reject(time, session, reason, bytes);
+                        }
+                    }) else {
                         break;
                     };
                     channel.off.in_bundles.push_back(bundle);
@@ -414,16 +506,19 @@ impl Protocol {
                     Ordering::Greater => Some("ahead"),
                 };
                 if let Some(direction) = direction {
-                    if let Some(drops) = &self.reliable_sequence_drops {
-                        drops.add(1, &[KeyValue::new("direction", direction)]);
+                    if let Some(telemetry) = &self.telemetry {
+                        telemetry
+                            .sequence_drops
+                            .add(1, &[KeyValue::new("direction", direction)]);
                     }
-                    warn!(
+                    reject(&mut self.telemetry, "last_reliable_sequence_mismatch");
+                    debug!(
                         "Invalid last reliable sequence number, expected: {expected}, got: {last_reliable_sequence_num}"
                     );
                     return Err(packet.destruct().0);
                 }
             } else {
-                warn!("Last reliable sequence is not supported off-channel");
+                reject(&mut self.telemetry, "off_channel_last_reliable_sequence");
                 return Err(packet.destruct().0);
             }
         }
@@ -432,7 +527,9 @@ impl Protocol {
         // packet is reliable but we are not in-channel (the latter seems forbidden by
         // WG source code, but it must be verified). TLDR, the packet don't need to
         // be reordered, so the logic is much simpler: we use off-channel fragments map.
-        channel.off.add_in_packet(packet, time);
+        if let Some(reason) = channel.off.add_in_packet(packet, time) {
+            reject(&mut self.telemetry, reason);
+        }
 
         Ok(Channel { inner: channel })
     }
@@ -647,6 +744,18 @@ struct OutReliablePacket {
     packet: Packet,
     /// When it was last sent.
     sent: Instant,
+    first_sent: Option<Instant>,
+    retries: u32,
+}
+
+impl OutReliablePacket {
+    fn record_rtt(&self, telemetry: Option<&TransportTelemetry>, now: Instant, kind: &'static str) {
+        if self.retries == 0
+            && let (Some(telemetry), Some(sent)) = (telemetry, self.first_sent)
+        {
+            telemetry.acknowledge(now.saturating_duration_since(sent), kind);
+        }
+    }
 }
 
 impl OffChannelData {
@@ -692,11 +801,13 @@ impl OffChannelData {
             time,
             packet,
             sent: time,
+            first_sent: None,
+            retries: 0,
         });
     }
 
     /// When a single ack is received on a packet, this can be called to
-    fn ack_out_reliable_packet(&mut self, sequence_num: Seq) {
+    fn ack_out_reliable_packet(&mut self, sequence_num: Seq) -> Option<OutReliablePacket> {
         // Naive search for now, because Seq is complicated!
         let index = self
             .out_reliable_packets
@@ -709,13 +820,19 @@ impl OffChannelData {
                 "Single ack for reliable packet: {sequence_num} after {:?}",
                 reliable_packet.time.elapsed()
             );
+            return Some(reliable_packet);
         }
+        None
     }
 
     /// When a cumulative ack is received, this can be used to acknowledge all sequences
     /// up to, but excluding, the given sequence number. Not supported off-channel but
     /// still present here.
-    fn ack_out_reliable_packet_cumulative(&mut self, sequence_num: Seq) {
+    fn ack_out_reliable_packet_cumulative(
+        &mut self,
+        sequence_num: Seq,
+        mut acknowledge: impl FnMut(OutReliablePacket),
+    ) {
         // Naive search for now, because Seq is complicated!
         // Using '.le' because it's cumulative ack is exclusive!
         let drain_len = self
@@ -731,6 +848,7 @@ impl OffChannelData {
                 reliable_packet.sequence_num,
                 reliable_packet.time.elapsed()
             );
+            acknowledge(reliable_packet);
         }
     }
 
@@ -744,40 +862,39 @@ impl OffChannelData {
     /// Push a packet that may be a bundle's fragment, if a bundle is completed, it is
     /// added to the internal bundles queue, there is no ordering guaranteed with such
     /// packet, see [`OnChannelData::add_in_reliable_packet`] for reordering.
-    fn add_in_packet(&mut self, packet: PacketLocked, time: Instant) {
+    fn add_in_packet(&mut self, packet: PacketLocked, time: Instant) -> Option<&'static str> {
         self.expire(time);
         let bundle = match packet.config().sequence_range() {
             Some((first_seq, last_seq)) => {
                 let count = last_seq - first_seq + 1;
                 let index = packet.config().sequence_num() - first_seq;
                 if count > limits::MAX_BUNDLE_PACKETS as u32 || index >= count {
-                    return;
+                    return Some("invalid_fragment_bounds");
                 }
                 if !self.in_fragments.contains_key(&first_seq)
                     && self.in_fragments.len() >= limits::MAX_FRAGMENT_ASSEMBLIES
                 {
-                    return;
+                    return Some("fragment_assembly_budget");
                 }
                 let fragments = self
                     .in_fragments
                     .entry(first_seq)
                     .or_insert_with(|| Fragments::new(count));
                 if fragments.fragments.len() != count as usize {
-                    return;
+                    return Some("inconsistent_fragment_range");
                 }
                 fragments.set(index, packet);
                 if !fragments.is_full() {
-                    return;
+                    return None;
                 }
-                let Some(fragments) = self.in_fragments.remove(&first_seq) else {
-                    return;
-                };
+                let fragments = self.in_fragments.remove(&first_seq)?;
                 fragments.into_bundle()
             }
             _ => Bundle::new_with_single(packet),
         };
 
         self.in_bundles.push_back(bundle);
+        None
     }
 }
 
@@ -916,7 +1033,10 @@ impl OnChannelData {
     }
 
     /// Try to construct any reliable bundle if possible.
-    fn pop_in_reliable_bundle(&mut self) -> Option<Bundle> {
+    fn pop_in_reliable_bundle(
+        &mut self,
+        mut reject: impl FnMut(&'static str, usize),
+    ) -> Option<Bundle> {
         loop {
             let first_packet = self.in_reliable_contiguous_packets.front()?;
             if let Some((first_seq, last_seq)) = first_packet.config().sequence_range() {
@@ -930,11 +1050,9 @@ impl OnChannelData {
                 // should also start the range, if not the case we just pop that invalid
                 // packet.
                 if first_packet.config().sequence_num() != first_seq {
-                    warn!(
-                        "Missing the first fragment packet, got: {}, range: {}..={}",
-                        first_packet.config().sequence_num(),
-                        first_seq.get(),
-                        last_seq.get()
+                    reject(
+                        "missing_first_reliable_fragment",
+                        first_packet.packet().len(),
                     );
                     // Forget this invalid packet and continue to the next packet.
                     let _ = self.in_reliable_contiguous_packets.pop_front();
@@ -978,8 +1096,12 @@ impl OnChannelData {
                 let drain = self.in_reliable_contiguous_packets.drain(..bundle_len);
                 if coherent {
                     return Some(Bundle::new_with_multiple(drain));
-                } else {
-                    continue;
+                }
+                for packet in drain {
+                    reject(
+                        "inconsistent_reliable_fragment_range",
+                        packet.packet().len(),
+                    );
                 }
             } else {
                 // Unwrap because we know that this packet exists.
@@ -1128,9 +1250,9 @@ mod tests {
             .build();
         let meter = provider.meter("mercury-test");
         let mut server = Protocol::new();
-        server.configure_metrics(&meter);
+        server.configure_metrics(&meter, "base");
         let mut other_listener = Protocol::new();
-        other_listener.configure_metrics(&meter);
+        other_listener.configure_metrics(&meter, "base");
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, 1));
         accept_ten(&mut server, addr);
 
