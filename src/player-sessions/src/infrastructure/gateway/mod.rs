@@ -368,6 +368,9 @@ impl Gateway {
                 let now = Instant::now();
                 if let Some(metrics) = &self.metrics {
                     metrics.record_counts(self.sessions.len(), self.battle_worker.active_count());
+                    metrics.record_snapshot_queue_drops(
+                        self.battle_worker.take_snapshot_queue_drops(),
+                    );
                 }
                 tick += interval;
                 if tick <= now {

@@ -3,11 +3,19 @@
 use super::{
     AvatarUpdate, ParticipantId, ScriptValue, mercury::MercuryArena, worker::BattleOutput,
 };
-use std::{io, net::SocketAddrV4};
+use std::{
+    io,
+    net::SocketAddrV4,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, Instant},
+};
 use tokio::sync::mpsc;
 use tracing::{Span, error};
 use wot_platform::mercury::{
-    app::client::element::arena::{AvatarPosition, VehiclePosition},
+    app::{
+        base::ArenaSnapshot,
+        client::element::arena::{AvatarPosition, VehiclePosition},
+    },
     net::element::{Element, SimpleElement},
 };
 
@@ -72,13 +80,14 @@ impl BattleDelivery {
 pub struct BattlePositions {
     pub(super) battle_id: u32,
     pub(super) tick: u8,
+    pub(super) queued_at: Instant,
     pub(super) recipients: Vec<ParticipantId>,
     pub(super) vehicles: Vec<VehiclePosition>,
     pub(super) spans: Vec<Span>,
 }
 
 impl BattlePositions {
-    pub fn deliver(self, adapter: &mut MercuryArena<'_>) {
+    pub fn deliver(self, adapter: &mut MercuryArena<'_>) -> Option<Duration> {
         let mut delivered = 0;
         let avatar = AvatarPosition {
             reference: 0,
@@ -91,28 +100,44 @@ impl BattlePositions {
             .first()
             .cloned()
             .unwrap_or_else(tracing::Span::none);
+        let recipients = self.recipients.iter().copied();
+        let snapshot = ArenaSnapshot::encode(
+            self.tick,
+            avatar,
+            self.vehicles.iter().cloned(),
+            self.queued_at,
+        );
+        let mut snapshot = match snapshot {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                replication.in_scope(|| {
+                    error!(%error, battle_id = self.battle_id, "Could not encode battle tick");
+                });
+                for participant in recipients {
+                    adapter.disconnect(participant);
+                }
+                let count = self.recipients.len();
+                self.finish(count, 0, Some("Arena pose snapshot encoding failed"));
+                return None;
+            }
+        };
         let mut attempted = 0;
-        for &participant in &self.recipients {
+        for participant in recipients {
             if !adapter.has_client(participant) {
                 continue;
             }
             attempted += 1;
-            let result = replication.in_scope(|| {
-                adapter.deliver_positions(
-                    participant,
-                    self.tick,
-                    avatar.clone(),
-                    self.vehicles.iter().cloned(),
-                )
-            });
-            match result {
+            match replication.in_scope(|| adapter.deliver_positions(participant, &mut snapshot)) {
                 Ok(()) => delivered += 1,
                 Err(error) => {
-                    error!(%error, battle_id = self.battle_id, "Could not send battle tick");
+                    replication.in_scope(|| {
+                        error!(%error, battle_id = self.battle_id, "Could not send battle tick");
+                    });
                     adapter.disconnect(participant);
                 }
             }
         }
+        let age = (attempted > 0).then(|| self.queued_at.elapsed());
         if delivered == attempted {
             self.finish(attempted, delivered, None);
         } else {
@@ -122,6 +147,7 @@ impl BattlePositions {
                 Some("Arena pose snapshot delivery failed"),
             );
         }
+        age
     }
 
     fn finish(self, recipients: usize, delivered: usize, error: Option<&str>) {
@@ -136,12 +162,13 @@ impl BattlePositions {
     }
 }
 
-pub(super) struct QueuedDelivery {
+pub(super) struct QueuedDelivery<'a> {
     pub(super) address: SocketAddrV4,
     pub(super) outbox: mpsc::Sender<BattleOutput>,
+    pub(super) snapshot_queue_drops: &'a AtomicU64,
 }
 
-impl QueuedDelivery {
+impl QueuedDelivery<'_> {
     fn send(
         &self,
         participant: ParticipantId,
@@ -157,7 +184,7 @@ impl QueuedDelivery {
     }
 }
 
-impl ArenaDelivery for QueuedDelivery {
+impl ArenaDelivery for QueuedDelivery<'_> {
     fn geometry_address(&self) -> io::Result<SocketAddrV4> {
         Ok(self.address)
     }
@@ -227,10 +254,12 @@ impl ArenaDelivery for QueuedDelivery {
         })
     }
 
-    fn publish_positions(&mut self, positions: BattlePositions) {
+    fn publish_positions(&mut self, mut positions: BattlePositions) {
+        positions.queued_at = Instant::now();
         if let Err(mpsc::error::TrySendError::Full(BattleOutput::Positions(positions))) =
             self.outbox.try_send(BattleOutput::Positions(positions))
         {
+            self.snapshot_queue_drops.fetch_add(1, Ordering::Relaxed);
             let recipients = positions.recipients.len();
             positions.finish(recipients, 0, Some("arena output queue full"));
         }
@@ -247,18 +276,21 @@ mod tests {
         let mut delivery = QueuedDelivery {
             address: SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0),
             outbox,
+            snapshot_queue_drops: &std::sync::atomic::AtomicU64::new(0),
         };
         let participant = ParticipantId(3);
         delivery.disconnect(participant);
         let snapshot = || BattlePositions {
             battle_id: 1,
             tick: 7,
+            queued_at: Instant::now(),
             recipients: vec![participant],
             vehicles: Vec::new(),
             spans: Vec::new(),
         };
 
         delivery.publish_positions(snapshot());
+        assert_eq!(delivery.snapshot_queue_drops.load(Ordering::Relaxed), 1);
         let BattleOutput::Deliver(disconnect) = outputs.try_recv().unwrap() else {
             panic!("disconnect should keep its slot");
         };

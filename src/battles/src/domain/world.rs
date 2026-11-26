@@ -44,10 +44,11 @@ pub(crate) struct VehicleBody {
     pub half_size: Vec3,
 }
 
-struct ContactBox {
+pub(crate) struct ContactBox {
     center: Vec3,
     half_size: Vec3,
     axes: [Vec3; 3],
+    reach: f32,
 }
 
 impl ContactBox {
@@ -78,7 +79,7 @@ impl Hull {
         )
     }
 
-    fn contact_box(self) -> ContactBox {
+    pub(crate) fn contact_box(self) -> ContactBox {
         let body = self.body.unwrap_or(VehicleBody {
             origin: self.position,
             tilt: Vec2::ZERO,
@@ -98,6 +99,7 @@ impl Hull {
             center: body.origin + rotation * body.center,
             half_size: body.half_size,
             axes: [Vec3::X, Vec3::Y, Vec3::Z].map(|axis| rotation * axis),
+            reach: body.half_size.length(),
         }
     }
 
@@ -184,17 +186,15 @@ pub(crate) struct Contact {
 }
 
 pub(crate) fn vehicle_contact(
-    first: Hull,
-    other: Hull,
+    first: &ContactBox,
+    other: &ContactBox,
     first_travel: Vec2,
     other_travel: Vec2,
 ) -> Option<(Contact, f32)> {
-    let first = first.contact_box();
-    let other = other.contact_box();
     let displacement = other.center - first.center;
     let relative_travel = first_travel - other_travel;
     let travel = Vec3::new(relative_travel.x, 0.0, relative_travel.y);
-    let reach = first.half_size.length() + other.half_size.length();
+    let reach = first.reach + other.reach;
     if displacement
         .abs()
         .cmpgt(travel.abs() + Vec3::splat(reach))
@@ -426,15 +426,24 @@ mod tests {
         let a = hull(0.0, 0.0, 0.0);
         let b = hull(6.0, 0.0, std::f32::consts::FRAC_PI_2);
         let travel = Vec2::new(10.0, 0.0);
-        let (contact, correction) = vehicle_contact(a, b, travel, Vec2::ZERO).unwrap();
+        let (contact, correction) =
+            vehicle_contact(&a.contact_box(), &b.contact_box(), travel, Vec2::ZERO).unwrap();
         assert!((contact.fraction - 3.0 / 10.0).abs() < 1e-5);
         assert_eq!(contact.normal, -Vec2::X);
         assert!((correction - 7.0).abs() < 1e-5);
-        assert!(vehicle_contact(a, hull(1.5, 0.0, 0.0), -travel, Vec2::ZERO).is_none());
         assert!(
             vehicle_contact(
-                a,
-                hull(6.0, BattleParameters::default().hull_height_metres, 0.0),
+                &a.contact_box(),
+                &hull(1.5, 0.0, 0.0).contact_box(),
+                -travel,
+                Vec2::ZERO
+            )
+            .is_none()
+        );
+        assert!(
+            vehicle_contact(
+                &a.contact_box(),
+                &hull(6.0, BattleParameters::default().hull_height_metres, 0.0).contact_box(),
                 travel,
                 Vec2::ZERO
             )
@@ -464,9 +473,23 @@ mod tests {
             body: Some(VehicleBody { origin, ..body }),
             ..first
         };
-        assert!(vehicle_contact(first, second, Vec2::Y * 0.04, Vec2::ZERO).is_none());
+        assert!(
+            vehicle_contact(
+                &first.contact_box(),
+                &second.contact_box(),
+                Vec2::Y * 0.04,
+                Vec2::ZERO
+            )
+            .is_none()
+        );
 
-        let (hit, correction) = vehicle_contact(first, second, Vec2::Y * 0.1, Vec2::ZERO).unwrap();
+        let (hit, correction) = vehicle_contact(
+            &first.contact_box(),
+            &second.contact_box(),
+            Vec2::Y * 0.1,
+            Vec2::ZERO,
+        )
+        .unwrap();
         assert!((hit.fraction - 0.5).abs() < 1e-4);
         assert!((correction - 0.05).abs() < 1e-4);
         assert!(hit.normal.abs_diff_eq(-Vec2::Y, 1e-5));

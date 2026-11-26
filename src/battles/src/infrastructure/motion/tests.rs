@@ -140,6 +140,7 @@ fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_comman
     let mut delivery = QueuedDelivery {
         address: SocketAddrV4::new(std::net::Ipv4Addr::LOCALHOST, 0),
         outbox,
+        snapshot_queue_drops: &std::sync::atomic::AtomicU64::new(0),
     };
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
@@ -215,6 +216,7 @@ fn pushing_through_a_wall_parents_pose_and_fracture_delivery_to_the_drive_comman
         let mut failed_delivery = QueuedDelivery {
             address: delivery.address,
             outbox: closed_outbox,
+            snapshot_queue_drops: &std::sync::atomic::AtomicU64::new(0),
         };
         simulation.active.get_mut(&id).unwrap().publish_breakages(
             &mut failed_delivery,

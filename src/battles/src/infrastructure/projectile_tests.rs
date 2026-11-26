@@ -616,6 +616,7 @@ fn ground_explosion_damages_and_stuns_vehicles_only_for_artillery() {
     let mut delivery = QueuedDelivery {
         address: "127.0.0.1:20010".parse().unwrap(),
         outbox,
+        snapshot_queue_drops: &std::sync::atomic::AtomicU64::new(0),
     };
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()

@@ -13,7 +13,7 @@ use std::{
     net::SocketAddrV4,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -78,6 +78,7 @@ pub struct BattleWorker {
     outputs: mpsc::Receiver<BattleOutput>,
     preparation: PreparationWorker,
     active: Arc<AtomicUsize>,
+    snapshot_queue_drops: Arc<AtomicU64>,
     maps: BTreeMap<i32, Option<String>>,
     task: JoinHandle<()>,
 }
@@ -120,6 +121,8 @@ impl BattleWorker {
         let (outbox, outputs) = mpsc::channel(DELIVERY_CAPACITY);
         let active = Arc::new(AtomicUsize::new(0));
         let worker_active = Arc::clone(&active);
+        let snapshot_queue_drops = Arc::new(AtomicU64::new(0));
+        let worker_snapshot_queue_drops = Arc::clone(&snapshot_queue_drops);
         let simulation = BattleSimulation {
             active: Default::default(),
             engagements: Default::default(),
@@ -129,7 +132,11 @@ impl BattleWorker {
         let task = runtime.spawn_blocking(move || {
             simulation.run(
                 inbox,
-                QueuedDelivery { address, outbox },
+                QueuedDelivery {
+                    address,
+                    outbox,
+                    snapshot_queue_drops: &worker_snapshot_queue_drops,
+                },
                 &worker_active,
                 &handle,
             );
@@ -139,6 +146,7 @@ impl BattleWorker {
             outputs,
             preparation,
             active,
+            snapshot_queue_drops,
             maps,
             task,
         }
@@ -215,6 +223,10 @@ impl BattleWorker {
         self.commands.is_closed()
     }
 
+    pub fn take_snapshot_queue_drops(&self) -> u64 {
+        self.snapshot_queue_drops.swap(0, Ordering::Relaxed)
+    }
+
     pub fn active_count(&self) -> usize {
         if self.is_stopped() {
             return 0;
@@ -237,7 +249,7 @@ impl BattleSimulation {
     fn run(
         mut self,
         mut commands: mpsc::Receiver<TracedCommand>,
-        mut delivery: QueuedDelivery,
+        mut delivery: QueuedDelivery<'_>,
         active: &AtomicUsize,
         runtime: &Handle,
     ) {
@@ -274,7 +286,7 @@ impl BattleSimulation {
         active.store(0, Ordering::Relaxed);
     }
 
-    fn apply(&mut self, delivery: &mut QueuedDelivery, command: Command) {
+    fn apply(&mut self, delivery: &mut QueuedDelivery<'_>, command: Command) {
         match command {
             Command::Start(battle) => self.start(*battle),
             Command::Enter(participant) => {
@@ -296,7 +308,11 @@ impl BattleSimulation {
         }
     }
 
-    fn return_participant(&mut self, delivery: &mut QueuedDelivery, participant: ParticipantId) {
+    fn return_participant(
+        &mut self,
+        delivery: &mut QueuedDelivery<'_>,
+        participant: ParticipantId,
+    ) {
         if let Some(departure) = self.remove_participant_with_delivery(delivery, participant) {
             let _ = delivery.outbox.blocking_send(BattleOutput::Return {
                 participant,
@@ -320,6 +336,7 @@ mod tests {
             outputs,
             preparation: PreparationWorker::spawn(&Handle::current(), |_, _| Ok(None)),
             active: Arc::new(AtomicUsize::new(0)),
+            snapshot_queue_drops: Arc::new(AtomicU64::new(0)),
             maps: BTreeMap::new(),
             task: tokio::spawn(async {}),
         };

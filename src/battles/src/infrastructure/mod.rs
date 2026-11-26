@@ -823,6 +823,7 @@ impl BattleSimulation {
                 delivery.publish_positions(delivery::BattlePositions {
                     battle_id,
                     tick: tick as u8,
+                    queued_at: now,
                     recipients,
                     vehicles: vehicles.collect(),
                     spans: movement,

@@ -62,7 +62,11 @@ impl Gateway {
                 }
                 BattleOutput::Positions(positions) => {
                     let mut adapter = MercuryArena::new(&mut self.base, &self.battle_clients);
-                    positions.deliver(&mut adapter);
+                    if let Some(age) = positions.deliver(&mut adapter)
+                        && let Some(metrics) = &self.metrics
+                    {
+                        metrics.record_snapshot_age(age);
+                    }
                 }
                 BattleOutput::Return {
                     participant,

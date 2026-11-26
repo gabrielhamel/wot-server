@@ -64,14 +64,16 @@ impl GatewayMetrics {
             };
             let duration = has_samples("wot.battle.tick.duration");
             let delay = has_samples("wot.battle.tick.delay");
+            let snapshot_age = has_samples("wot.battle.snapshot.age");
             if observed == (players, battles)
-                && (duration, delay) == (has_battle_ticks, has_battle_ticks)
+                && (duration, delay, snapshot_age)
+                    == (has_battle_ticks, has_battle_ticks, has_battle_ticks)
             {
                 return;
             }
             assert!(
                 Instant::now() < deadline,
-                "expected {players} players, {battles} battles, and battle tick samples={has_battle_ticks}; observed {observed:?}, duration samples={duration}, delay samples={delay}"
+                "expected {players} players, {battles} battles, and battle tick samples={has_battle_ticks}; observed {observed:?}, duration samples={duration}, delay samples={delay}, snapshot age samples={snapshot_age}"
             );
             std::thread::sleep(Duration::from_millis(25));
         }
