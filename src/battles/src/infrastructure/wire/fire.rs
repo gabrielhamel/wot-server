@@ -87,6 +87,10 @@ fn nodes(row: usize) -> Result<(u16, u16)> {
 }
 
 impl ArenaWire {
+    pub(in super::super) fn engine_and_fuel_extras(&self) -> [u8; 2] {
+        [self.fire.engine_extra, self.fire.fuel_extra]
+    }
+
     pub(in super::super) fn publish_fire_start(
         &self,
         delivery: &mut impl ArenaDelivery,

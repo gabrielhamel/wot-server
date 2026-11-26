@@ -791,6 +791,46 @@ fn profile() -> VehiclePerformance {
     }
 }
 
+fn owner_device_updates(
+    delivery: &ImpactDelivery,
+    wire: &ArenaWire,
+    name: &str,
+) -> Vec<Vec<BTreeMap<Arc<str>, ScriptValue>>> {
+    let own = wire.dispatch.entity_from_name("OwnVehicle").unwrap().1;
+    let (index, property) = own
+        .properties
+        .iter()
+        .enumerate()
+        .find(|(_, property)| property.name.as_ref() == name)
+        .unwrap();
+    let node = (1026 + index as u16).to_be_bytes();
+    delivery
+        .track_updates
+        .iter()
+        .filter_map(|(recipient, id, bytes)| {
+            if *id != NrlData::ID || !bytes.starts_with(&node) {
+                return None;
+            }
+            assert_eq!(*recipient, VICTIM);
+            let mut body = &bytes[4..];
+            assert_eq!(usize::from(bytes[3]), body.len());
+            let ScriptValue::Seq(rows) = ScriptValue::read(&mut body, &property.ty).unwrap() else {
+                panic!("Expected a device property array");
+            };
+            Some(
+                rows.into_iter()
+                    .map(|row| {
+                        let ScriptValue::Dict(fields) = row else {
+                            panic!("Expected a device row")
+                        };
+                        fields
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>()
+}
+
 #[test]
 #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
 fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
@@ -879,41 +919,8 @@ fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
     tank.advance_gun(2.0);
 
     let own = wire.dispatch.entity_from_name("OwnVehicle").unwrap().1;
-    let property_updates = |delivery: &ImpactDelivery, name| {
-        let (index, property) = own
-            .properties
-            .iter()
-            .enumerate()
-            .find(|(_, property)| property.name.as_ref() == name)
-            .unwrap();
-        let node = (1026 + index as u16).to_be_bytes();
-        delivery
-            .track_updates
-            .iter()
-            .filter_map(|(recipient, id, bytes)| {
-                if *id != NrlData::ID || !bytes.starts_with(&node) {
-                    return None;
-                }
-                assert_eq!(*recipient, VICTIM);
-                let mut body = &bytes[4..];
-                assert_eq!(usize::from(bytes[3]), body.len());
-                let ScriptValue::Seq(rows) = ScriptValue::read(&mut body, &property.ty).unwrap()
-                else {
-                    panic!("Expected a device property array");
-                };
-                Some(
-                    rows.into_iter()
-                        .map(|row| {
-                            let ScriptValue::Dict(fields) = row else {
-                                panic!("Expected a device row")
-                            };
-                            fields
-                        })
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .collect::<Vec<_>>()
-    };
+    let property_updates =
+        |delivery: &ImpactDelivery, name| owner_device_updates(delivery, &wire, name);
     let vehicle = wire.dispatch.entity_from_name("Vehicle").unwrap().1;
     let public_index = vehicle
         .properties
@@ -1289,9 +1296,7 @@ fn track_only_hits_show_a_chassis_critical_even_when_the_hull_ricochets() {
     }
 }
 
-#[test]
-#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
-fn engine_hit_replicates_fire_to_driver_attacker_and_observer() {
+fn engine_fire_battle() -> (u32, Battle, Arc<ArenaWire>) {
     use crate::domain::vehicle::Aim;
     use wot_shared_kernel::{ArmorDevice, Device, DeviceHealth, EngineCompartment};
 
@@ -1368,6 +1373,15 @@ fn engine_hit_replicates_fire_to_driver_attacker_and_observer() {
     }));
     shooter.advance_gun(2.0);
 
+    (id, battle, wire)
+}
+
+#[test]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
+fn engine_hit_replicates_fire_to_driver_attacker_and_observer() {
+    use wot_shared_kernel::Device;
+
+    let (id, mut battle, wire) = engine_fire_battle();
     let mut delivery = ImpactDelivery::default();
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
@@ -1596,5 +1610,136 @@ fn engine_hit_replicates_fire_to_driver_attacker_and_observer() {
                 .any(|field| field.key.as_str() == "output.recipients"
                     && field.value == opentelemetry::Value::I64(3))
         );
+    }
+}
+
+#[test]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
+fn engine_and_fuel_damage_update_only_the_driver_and_show_repairs() {
+    use wot_shared_kernel::{ArmorDevice, Device, DeviceHealth};
+    let (id, mut battle, wire) = engine_fire_battle();
+    let extras = wire.engine_and_fuel_extras();
+    let target = &mut battle.players.get_mut(&VICTIM).unwrap().tank;
+    target.parameters.fire_ticks = 0;
+    let profile = target.performance.as_mut().unwrap();
+    let hull = Arc::get_mut(&mut profile.armor[1].as_mut().unwrap().mesh).unwrap();
+    hull.engine_compartment = None;
+    let entry = hull.triangles.clone();
+    for (index, device) in [Device::Engine, Device::Fuel].into_iter().enumerate() {
+        hull.triangles.extend(entry.iter().map(|&triangle| {
+            let mut internal = triangle;
+            internal
+                .vertices
+                .iter_mut()
+                .for_each(|point| point.x += 0.2);
+            internal.material = [21, 29][index];
+            internal.plate.damage_factor = 0.0;
+            internal.plate.thickness_mm = 0.0;
+            internal.plate.device = Some(ArmorDevice {
+                device,
+                can_ignite_engine: false,
+                health: None,
+                projectile_chance: 1.0,
+                explosion_chance: 0.0,
+            });
+            internal
+        }));
+        profile.device_health.insert(
+            device,
+            DeviceHealth {
+                maximum: 100,
+                repaired: 60,
+                repair_seconds: (index + 1) as f32,
+                fire_chance: 0.0,
+            },
+        );
+    }
+    let mut delivery = ImpactDelivery::default();
+    let damage_updates =
+        |delivery: &ImpactDelivery| owner_device_updates(delivery, &wire, "vehicleDamageInfoList");
+    let repair_updates = |delivery: &ImpactDelivery| {
+        owner_device_updates(delivery, &wire, "destroyedDevicesIsRepairing")
+    };
+    let state = |delivery: &ImpactDelivery, expected: &[(u8, u8)]| {
+        let rows = damage_updates(delivery);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].len(), expected.len());
+        for (row, &(extra, code)) in rows[0].iter().zip(expected) {
+            assert_eq!(row["extraIndex"], ScriptValue::UInt8(extra));
+            assert_eq!(row["damageIndex"], ScriptValue::UInt8(code));
+        }
+    };
+    let timers = |delivery: &ImpactDelivery, expected: &[u8]| {
+        let rows = repair_updates(delivery);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0]
+                .iter()
+                .map(|row| row["extraIndex"].clone())
+                .collect::<Vec<_>>(),
+            expected
+                .iter()
+                .copied()
+                .map(ScriptValue::UInt8)
+                .collect::<Vec<_>>()
+        );
+    };
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("module-hud-test")));
+    tracing::subscriber::with_default(subscriber, || {
+        let mut impact = battle.started_at;
+        for code in [3, 4] {
+            delivery.track_updates.clear();
+            assert_eq!(
+                battle
+                    .fire(&mut delivery, &wire, id, SHOOTER, impact)
+                    .unwrap(),
+                "launched"
+            );
+            impact += Duration::from_millis(100);
+            battle.advance_projectiles(&mut delivery, &wire, id, impact);
+            state(&delivery, &[(extras[0], code), (extras[1], code)]);
+            timers(&delivery, if code == 3 { &[] } else { &extras });
+            if code == 3 {
+                impact += Duration::from_secs(1);
+            }
+        }
+        assert!(battle.players[&VICTIM].tank.condition.immobilized());
+        for (index, remaining) in [extras[1..].as_ref(), &[]].into_iter().enumerate() {
+            delivery.track_updates.clear();
+            impact += Duration::from_secs(1);
+            battle.advance_damage(&mut delivery, &wire, id, impact);
+            state(&delivery, &[(extras[index], 15)]);
+            timers(&delivery, remaining);
+            assert!(!battle.players[&VICTIM].tank.condition.immobilized());
+        }
+        battle.players.get_mut(&SHOOTER).unwrap().pending_reload = None;
+    });
+    let spans = exporter.get_finished_spans().unwrap();
+    let has = |span: &opentelemetry_sdk::trace::SpanData, key, value| {
+        span.attributes
+            .iter()
+            .any(|field| field.key.as_str() == key && field.value.to_string() == value)
+    };
+    let shot = spans
+        .iter()
+        .find(|span| {
+            span.name == "battles.shot"
+                && has(span, "output.engine.state", "broken")
+                && has(span, "output.fuel.state", "broken")
+        })
+        .unwrap();
+    for device in ["engine", "fuel_tank"] {
+        let repair = spans
+            .iter()
+            .find(|span| span.name == "battles.repair_device" && has(span, "input.device", device))
+            .unwrap();
+        assert_eq!(repair.parent_span_id, shot.span_context.span_id());
+        assert!(has(repair, "output.outcome", "repaired_critical"));
+        assert!(has(repair, "output.recipients", "1"));
     }
 }

@@ -6,7 +6,7 @@ use super::{
 };
 use crate::domain::{
     armor::{ArmorHit, ArmorOutcome},
-    devices::{DeviceDamage, TrackEvent},
+    devices::{DeviceDamage, DeviceEvent},
     tracer::{self, TracerView},
     vehicle::Shot,
 };
@@ -80,7 +80,7 @@ struct VehicleHit {
     outcome: ArmorOutcome,
     criticals: u8,
     critical_flags: u32,
-    tracks: [Option<TrackEvent>; 2],
+    device_events: [Option<DeviceEvent>; 4],
     track_hits: u8,
     fire_started: bool,
     fire_stopped: bool,
@@ -120,6 +120,8 @@ impl Battle {
         output.tracks.hit_count = tracing::field::Empty,
         output.tracks.left = tracing::field::Empty,
         output.tracks.right = tracing::field::Empty,
+        output.engine.state = tracing::field::Empty,
+        output.fuel.state = tracing::field::Empty,
         output.crew.injured = tracing::field::Empty,
         output.fire.started = tracing::field::Empty,
         output.fire.origin = tracing::field::Empty,
@@ -476,17 +478,31 @@ impl Battle {
                     span.record("output.devices.damaged", critical.damaged);
                     span.record("output.devices.destroyed", critical.destroyed);
                     span.record("output.tracks.hit_count", critical.track_hits);
-                    for (side, event) in critical.tracks.into_iter().enumerate() {
-                        let field = ["output.tracks.left", "output.tracks.right"][side];
+                    let device_events = [
+                        critical.tracks[0],
+                        critical.tracks[1],
+                        critical.engine.and_then(DeviceDamage::change),
+                        critical.fuel.and_then(DeviceDamage::change),
+                    ];
+                    for ((field, parent), event) in [
+                        "output.tracks.left",
+                        "output.tracks.right",
+                        "output.engine.state",
+                        "output.fuel.state",
+                    ]
+                    .into_iter()
+                    .zip(&mut victim.device_hud_repair_parents)
+                    .zip(device_events)
+                    {
                         if let Some(event) = event {
                             span.record(field, event.name());
                         }
-                        if event.is_some_and(TrackEvent::starts_repair) {
-                            victim.track_repair_parents[side] = Some(span.clone());
+                        if event.is_some_and(DeviceEvent::starts_repair) {
+                            *parent = Some(span.clone());
                         }
                     }
                     if victim.device_repair_parent.is_none()
-                        && victim.tank.condition.has_non_track_repair()
+                        && victim.tank.condition.has_other_device_repair()
                     {
                         victim.device_repair_parent = Some(span.clone());
                     }
@@ -541,7 +557,7 @@ impl Battle {
                         .tracks
                         .into_iter()
                         .flatten()
-                        .any(TrackEvent::starts_repair)
+                        .any(DeviceEvent::starts_repair)
                     {
                         critical_flags |= TRACK_DESTROYED;
                     } else if critical.track_hits > 0 {
@@ -560,7 +576,7 @@ impl Battle {
                         outcome: hit.outcome,
                         criticals: critical.damaged,
                         critical_flags,
-                        tracks: critical.tracks,
+                        device_events,
                         track_hits: critical.track_hits,
                         fire_started: ignition.is_some(),
                         fire_stopped,
@@ -614,7 +630,7 @@ impl Battle {
                     outcome,
                     criticals,
                     critical_flags,
-                    tracks,
+                    device_events,
                     track_hits,
                     fire_started,
                     fire_stopped,
@@ -664,16 +680,16 @@ impl Battle {
                 }
                 wire.show_shot_impact(delivery, peer, id, effect)?;
                 if let Some(target) = self.players.get(&victim) {
-                    if tracks.contains(&Some(TrackEvent::Broken)) {
+                    if device_events[..2].contains(&Some(DeviceEvent::Broken)) {
                         wire.publish_broken_tracks(delivery, peer, id, &target.tank)?;
                     }
-                    if peer == victim && tracks.iter().any(Option::is_some) {
+                    if peer == victim && device_events.iter().any(Option::is_some) {
                         let time = now.saturating_duration_since(self.started_at).as_secs_f32();
-                        wire.publish_track_damage(
+                        wire.publish_device_damage(
                             delivery,
                             peer,
                             &target.tank,
-                            tracks,
+                            device_events,
                             attacker,
                             (now, time),
                         )?;

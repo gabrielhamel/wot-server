@@ -420,6 +420,10 @@ state transitions on `battles.shot`.
 Each broken side retains the shot span that started or most recently restarted its repair. The
 `battles.repair_track` child records the repaired vehicle, side, outcome and
 client deliveries, and marks failed deliveries as errors.
+Engine and fuel tank state transitions are recorded on `battles.shot`.
+Automatic recovery emits `battles.repair_device` under the shot that broke
+that module. The span records the module, repair outcome and owner delivery
+count. A failed delivery marks the span as an error.
 Scene impacts record distance along the ray and parent the `explodeProjectile`
 deliveries. Obstacle impacts include the raw collision material kind. The same shot parents
 the shooter-only result, the victim-only direction and the private damage

@@ -174,7 +174,7 @@ struct Participant {
     active_fire: Option<vehicle_damage::ActiveFire>,
     device_repair_parent: Option<tracing::Span>,
     fire_roots: HashSet<usize>,
-    track_repair_parents: [Option<tracing::Span>; 2],
+    device_hud_repair_parents: [Option<tracing::Span>; 4],
     damage_stickers: DamageStickers,
 }
 
@@ -561,7 +561,7 @@ impl BattleRuntime {
                         active_fire: None,
                         device_repair_parent: None,
                         fire_roots: HashSet::new(),
-                        track_repair_parents: [None, None],
+                        device_hud_repair_parents: Default::default(),
                         damage_stickers: DamageStickers::default(),
                     },
                 ))

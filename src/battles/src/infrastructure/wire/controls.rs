@@ -1,7 +1,7 @@
 use super::*;
 use crate::domain::{
     armor::{ArmorOutcome, ImpactSegment},
-    devices::{TRACKS, TrackEvent},
+    devices::{DeviceEvent, ENGINE_AND_FUEL, TRACKS},
     vehicle::{GunRay, Shot, Tank},
 };
 use std::{collections::VecDeque, time::Instant};
@@ -663,12 +663,12 @@ impl ArenaWire {
         )
     }
 
-    pub(in super::super) fn publish_track_damage(
+    pub(in super::super) fn publish_device_damage(
         &self,
         delivery: &mut impl ArenaDelivery,
         client: ParticipantId,
         tank: &Tank,
-        events: [Option<TrackEvent>; 2],
+        events: [Option<DeviceEvent>; 4],
         attacker: u32,
         clock: (Instant, f32),
     ) -> Result<()> {
@@ -681,13 +681,18 @@ impl ArenaWire {
         let mut damage_rows = Vec::new();
         let mut repair_rows = Vec::new();
         let (now, time) = clock;
-        for ((track, extra), event) in TRACKS.into_iter().zip(self.track_extras).zip(events) {
+        let devices = TRACKS.into_iter().chain(ENGINE_AND_FUEL);
+        let extras = self
+            .track_extras
+            .into_iter()
+            .chain(self.engine_and_fuel_extras());
+        for ((device, extra), event) in devices.zip(extras).zip(events) {
             let code = match event {
-                Some(TrackEvent::Damaged) => Some(3),
-                Some(TrackEvent::Broken) => Some(4),
-                Some(TrackEvent::RepairedCritical) => Some(15),
-                Some(TrackEvent::Repaired) => Some(16),
-                Some(TrackEvent::RepairRestarted) | None => None,
+                Some(DeviceEvent::Damaged) => Some(3),
+                Some(DeviceEvent::Broken) => Some(4),
+                Some(DeviceEvent::RepairedCritical) => Some(15),
+                Some(DeviceEvent::Repaired) => Some(16),
+                Some(DeviceEvent::RepairRestarted) | None => None,
             };
             if let Some(code) = code {
                 damage_rows.push(dict(
@@ -701,7 +706,7 @@ impl ArenaWire {
                     ],
                 )?);
             }
-            if let Some((started, ends)) = tank.condition.track_repair(track) {
+            if let Some((started, ends)) = tank.condition.repair(device) {
                 let left = ends.saturating_duration_since(now).as_secs_f32();
                 let total = ends.saturating_duration_since(started).as_secs_f32();
                 let progress = ((1.0 - left / total.max(f32::EPSILON)) * 100.0) as u8;

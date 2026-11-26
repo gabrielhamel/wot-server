@@ -319,6 +319,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.tracks.left`](../src/battles/src/infrastructure/projectiles.rs), `output.tracks.right` | Track state on impact. Values are `damaged`, `broken` and `repair_restarted`. |
 | [`input.track.side`](../src/battles/src/infrastructure/vehicle_damage.rs) | Side being automatically repaired, `left` or `right`. The span also records `input.entity_id` for the repaired vehicle. |
 | [`output.outcome`](../src/battles/src/infrastructure/vehicle_damage.rs), `output.recipients` | Automatic track repair result (`repaired_critical` or `repaired`) and recipient count for successful repair deliveries. |
+| [`output.engine.state`](../src/battles/src/infrastructure/projectiles.rs), `output.fuel.state` | Module transitions on the shot span. Values are `damaged` and `broken`. Omitted when module HP changes within the same HUD state. |
+| [`input.device`](../src/battles/src/infrastructure/vehicle_damage.rs) | Module restored on `battles.repair_device`, either `engine` or `fuel_tank`. The span records the target entity, repair outcome and successful owner deliveries. |
 | [`output.crew.injured`](../src/battles/src/infrastructure/projectiles.rs) | Number of crew injured by the resolved contact. |
 | [`output.fire.started`](../src/battles/src/infrastructure/projectiles.rs) | Whether the impact started a vehicle fire. |
 | [`output.fire.origin`](../src/battles/src/infrastructure/projectiles.rs) | Ignition source on a shot that starts a fire. Either `engine` or `fuel_tank`. |
@@ -334,7 +336,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.explosion.trees`](../src/battles/src/infrastructure/explosions.rs) | Trunks broken by the detonation. |
 | [`output.explosion.targets`](../src/battles/src/infrastructure/explosions.rs) | Vehicles whose HP or stun deadline changed. |
 | [`output.explosion.stunned`](../src/battles/src/infrastructure/explosions.rs) | Number of new or extended stun deadlines. |
-| [`output.devices.repaired`](../src/battles/src/infrastructure/vehicle_damage.rs) | Number of non-track devices restored to their passive repair threshold on `battles.repair_devices`. |
+| [`output.devices.repaired`](../src/battles/src/infrastructure/vehicle_damage.rs) | Number of devices outside the track, engine and fuel tank HUD updates restored to their passive repair threshold on `battles.repair_devices`. |
 | [`output.explosion.fires_ended`](../src/battles/src/infrastructure/explosions.rs) | Number of burning vehicles destroyed by blast damage. |
 | [`output.shot.id`](../src/battles/src/infrastructure/projectiles.rs) | Arena-local sequence number assigned after firing, omitted on rejection. |
 | [`output.projectile.flight_seconds`](../src/battles/src/infrastructure/projectiles.rs) | Seconds from launch to scheduled contact. Omitted for shots with no contact. |

@@ -1,6 +1,6 @@
 use super::avatar::{BattleEvent, FIRE_ATTACK_REASON};
 use super::*;
-use crate::domain::devices::{FireOrigin, TrackEvent};
+use crate::domain::devices::FireOrigin;
 use wot_platform::mercury::script::Value as WireValue;
 
 #[derive(Clone)]
@@ -16,7 +16,7 @@ impl Participant {
         let result = self.tank.hit(damage);
         if result.1 == 0 {
             self.device_repair_parent = None;
-            self.track_repair_parents = [None, None];
+            self.device_hud_repair_parents = Default::default();
         }
         result
     }
@@ -110,12 +110,12 @@ impl Battle {
         now: Instant,
     ) {
         let mut updates = Vec::new();
-        let mut repaired_tracks = Vec::new();
+        let mut repaired_devices = Vec::new();
         for (&peer, participant) in self.players.iter_mut().filter(|(_, participant)| {
             participant.tank.health > 0 && participant.tank.condition.active()
         }) {
-            let (repairs, burn, tracks) = participant.tank.condition.tick(now, &self.parameters);
-            let device_repairs = repairs - tracks.iter().flatten().count() as u8;
+            let (repairs, burn, events) = participant.tank.condition.tick(now, &self.parameters);
+            let device_repairs = repairs - events.iter().flatten().count() as u8;
             if device_repairs > 0
                 && let Some(parent) = &participant.device_repair_parent
             {
@@ -125,14 +125,14 @@ impl Battle {
                     output.devices.repaired = device_repairs)
                 .in_scope(|| {});
             }
-            if !participant.tank.condition.has_non_track_repair() {
+            if !participant.tank.condition.has_other_device_repair() {
                 participant.device_repair_parent = None;
             }
-            for (side, event) in tracks.into_iter().enumerate() {
+            for (index, event) in events.into_iter().enumerate() {
                 if let Some(event) = event
-                    && let Some(parent) = participant.track_repair_parents[side].take()
+                    && let Some(parent) = participant.device_hud_repair_parents[index].take()
                 {
-                    repaired_tracks.push((peer, side, event, parent));
+                    repaired_devices.push((peer, index, event, parent));
                 }
             }
             if let (Some(ticks), Some(source)) = (burn, participant.active_fire.as_ref()) {
@@ -155,8 +155,8 @@ impl Battle {
                 ));
             }
         }
-        repaired_tracks.sort_unstable_by_key(|(peer, side, ..)| (peer.0, *side));
-        for (peer, side, event, parent) in repaired_tracks {
+        repaired_devices.sort_unstable_by_key(|(peer, index, ..)| (peer.0, *index));
+        for (peer, index, event, parent) in repaired_devices {
             let Some(player) = self
                 .players
                 .get(&peer)
@@ -165,20 +165,32 @@ impl Battle {
                 continue;
             };
             let id = player.vehicle.entity_id;
-            let span = tracing::info_span!(parent: &parent, "battles.repair_track",
-                ddd.bounded_context.name = "battles", input.entity_id = id,
-                input.track.side = ["left", "right"][side], output.outcome = event.name(),
-                output.recipients = tracing::field::Empty, otel.status_code = tracing::field::Empty);
+            let is_track = index < 2;
+            let span = if is_track {
+                tracing::info_span!(parent: &parent, "battles.repair_track",
+                    ddd.bounded_context.name = "battles", input.entity_id = id,
+                    input.track.side = ["left", "right"][index], output.outcome = event.name(),
+                    output.recipients = tracing::field::Empty, otel.status_code = tracing::field::Empty)
+            } else {
+                tracing::info_span!(parent: &parent, "battles.repair_device",
+                    ddd.bounded_context.name = "battles", input.entity_id = id,
+                    input.device = ["engine", "fuel_tank"][index - 2], output.outcome = event.name(),
+                    output.recipients = tracing::field::Empty, otel.status_code = tracing::field::Empty)
+            };
             span.in_scope(|| {
                 let mut recipients = 0;
-                for (&recipient, _) in self.players.iter().filter(|(_, player)| player.entered) {
+                for (&recipient, _) in self.players.iter().filter(|(recipient, player)| {
+                    player.entered && (is_track || **recipient == peer)
+                }) {
                     let result = (|| -> Result<()> {
-                        wire.publish_broken_tracks(delivery, recipient, id, &player.tank)?;
+                        if is_track {
+                            wire.publish_broken_tracks(delivery, recipient, id, &player.tank)?;
+                        }
                         if recipient == peer {
-                            let mut events: [Option<TrackEvent>; 2] = [None; 2];
-                            events[side] = Some(event);
+                            let mut events = [None; 4];
+                            events[index] = Some(event);
                             let time = now.saturating_duration_since(self.started_at).as_secs_f32();
-                            wire.publish_track_damage(
+                            wire.publish_device_damage(
                                 delivery,
                                 peer,
                                 &player.tank,
@@ -193,7 +205,7 @@ impl Battle {
                         Ok(()) => recipients += 1,
                         Err(error) => {
                             span.record("otel.status_code", "ERROR");
-                            error!(%error, "Track repair delivery failed");
+                            error!(%error, "Device repair delivery failed");
                             delivery.disconnect(recipient);
                         }
                     }

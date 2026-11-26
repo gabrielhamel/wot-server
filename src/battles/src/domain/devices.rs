@@ -15,9 +15,10 @@ pub(crate) struct DeviceStrike {
 }
 
 pub(crate) const TRACKS: [Device; 2] = [Device::TrackLeft, Device::TrackRight];
+pub(crate) const ENGINE_AND_FUEL: [Device; 2] = [Device::Engine, Device::Fuel];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TrackEvent {
+pub(crate) enum DeviceEvent {
     Damaged,
     Broken,
     RepairRestarted,
@@ -25,7 +26,7 @@ pub(crate) enum TrackEvent {
     Repaired,
 }
 
-impl TrackEvent {
+impl DeviceEvent {
     pub fn name(self) -> &'static str {
         match self {
             Self::Damaged => "damaged",
@@ -46,6 +47,16 @@ pub(crate) enum DeviceDamage {
     Hit,
     Critical,
     Destroyed,
+}
+
+impl DeviceDamage {
+    pub fn change(self) -> Option<DeviceEvent> {
+        match self {
+            Self::Hit => None,
+            Self::Critical => Some(DeviceEvent::Damaged),
+            Self::Destroyed => Some(DeviceEvent::Broken),
+        }
+    }
 }
 
 pub(crate) const DEVICE_STRIKE_CAPACITY: usize = 32;
@@ -79,7 +90,7 @@ pub(crate) struct Condition {
 
 #[derive(Default)]
 pub(crate) struct Criticals {
-    pub tracks: [Option<TrackEvent>; 2],
+    pub tracks: [Option<DeviceEvent>; 2],
     pub track_hits: u8,
     pub track_impact: Option<ImpactSegment>,
     pub damaged: u8,
@@ -132,12 +143,12 @@ impl Condition {
                 result.track_impact.get_or_insert(strike.impact);
                 if state.health == 0 {
                     result.tracks[side] = Some(if previous == 0 {
-                        TrackEvent::RepairRestarted
+                        DeviceEvent::RepairRestarted
                     } else {
-                        TrackEvent::Broken
+                        DeviceEvent::Broken
                     });
                 } else if previous > profile.repaired && state.health <= profile.repaired {
-                    result.tracks[side] = Some(TrackEvent::Damaged);
+                    result.tracks[side] = Some(DeviceEvent::Damaged);
                 }
             }
             let transition = if state.health == 0 {
@@ -204,27 +215,31 @@ impl Condition {
         self.disabled(Device::Engine) || TRACKS.into_iter().any(|track| self.disabled(track))
     }
 
-    pub fn track_repair(&self, track: Device) -> Option<(Instant, Instant)> {
-        self.devices.get(&track)?.repair
+    pub fn repair(&self, device: Device) -> Option<(Instant, Instant)> {
+        self.devices.get(&device)?.repair
     }
 
     pub fn tick(
         &mut self,
         now: Instant,
         parameters: &BattleParameters,
-    ) -> (u8, Option<u8>, [Option<TrackEvent>; 2]) {
+    ) -> (u8, Option<u8>, [Option<DeviceEvent>; 4]) {
         let mut repairs = 0;
-        let mut tracks = [None; 2];
+        let mut events = [None; 4];
         for (&device, state) in &mut self.devices {
             if state.repair.is_some_and(|(_, end)| end <= now) {
                 state.health = state.profile.repaired;
                 state.repair = None;
                 repairs += 1;
-                if let Some(side) = TRACKS.iter().position(|&track| track == device) {
-                    tracks[side] = Some(if state.health < state.profile.maximum {
-                        TrackEvent::RepairedCritical
+                if let Some(index) = TRACKS
+                    .into_iter()
+                    .chain(ENGINE_AND_FUEL)
+                    .position(|tracked| tracked == device)
+                {
+                    events[index] = Some(if state.health < state.profile.maximum {
+                        DeviceEvent::RepairedCritical
                     } else {
-                        TrackEvent::Repaired
+                        DeviceEvent::Repaired
                     });
                 }
             }
@@ -241,17 +256,17 @@ impl Condition {
                 ));
             }
         }
-        (repairs, burn, tracks)
+        (repairs, burn, events)
     }
 
     pub fn extinguish(&mut self) {
         self.fire = None;
     }
 
-    pub fn has_non_track_repair(&self) -> bool {
-        self.devices
-            .iter()
-            .any(|(device, state)| !TRACKS.contains(device) && state.repair.is_some())
+    pub fn has_other_device_repair(&self) -> bool {
+        self.devices.iter().any(|(device, state)| {
+            !TRACKS.contains(device) && !ENGINE_AND_FUEL.contains(device) && state.repair.is_some()
+        })
     }
 
     pub fn active(&self) -> bool {
@@ -403,11 +418,15 @@ mod tests {
         assert_eq!(ignored.tracks, [None; 2]);
         assert_eq!(
             condition.tick(now + Duration::from_secs(1), &parameters),
-            (0, None, [None; 2])
+            (0, None, [None; 4])
         );
         assert_eq!(
             condition.tick(now + Duration::from_secs(2), &parameters),
-            (1, None, [Some(TrackEvent::RepairedCritical), None])
+            (
+                1,
+                None,
+                [Some(DeviceEvent::RepairedCritical), None, None, None]
+            )
         );
         assert!(!condition.immobilized());
         assert!(
@@ -441,7 +460,11 @@ mod tests {
         );
         assert_eq!(
             armed.tick(now + Duration::from_secs(1), &parameters),
-            (1, Some(parameters.fire_ticks), [None; 2])
+            (
+                1,
+                Some(parameters.fire_ticks),
+                [None, None, None, Some(DeviceEvent::RepairedCritical)]
+            )
         );
     }
 }
