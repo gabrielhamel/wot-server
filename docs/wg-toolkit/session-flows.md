@@ -366,8 +366,8 @@ bounds, two spawn locations and extracted elevation tiles. The server accepts `v
 the player's Avatar and turret tracking on the player's Avatar or Vehicle.
 The target entity must belong to the sending session. The server advances
 tanks at 10 Hz and sends one snapshot per tick to both teams. It includes
-full-ID poses for moving tanks each tick and staggered refreshes for parked
-tanks. The snapshot starts with `TickSync` and uses the same channel sequencing
+full-ID poses for moving tanks and the recipient's own tank each tick, plus
+staggered refreshes for other parked tanks. The snapshot starts with `TickSync` and uses the same channel sequencing
 throughout countdown and combat. Turret property changes use the reliable
 channel. Movement had also sent reliable copies without a tick timestamp,
 which could deliver pose changes at the wrong sample time.

@@ -948,7 +948,7 @@ impl App {
     #[tracing::instrument(name = "mercury.arena_snapshot", skip_all, fields(
         ddd.bounded_context.name = "player_sessions",
         input.arena.tick = snapshot.tick,
-        input.vehicles.count = snapshot.vehicle_count,
+        input.vehicles.count = snapshot.vehicle_count + usize::from(own_vehicle.is_some()),
         mercury.session.id = client.slot.diagnostic_id(),
         network.peer.address = %client.addr.ip(),
         network.peer.port = client.addr.port(),
@@ -963,6 +963,7 @@ impl App {
         &mut self,
         client: ClientKey,
         snapshot: &mut ArenaSnapshot,
+        own_vehicle: Option<client::element::arena::VehiclePosition>,
     ) -> io::Result<()> {
         let span = tracing::Span::current();
         let result = (|| {
@@ -970,17 +971,23 @@ impl App {
             snapshot.bundle.clear_packet_config();
             // Native ping compensates for half a server tick. Carry pending ACKs on
             // outgoing traffic, including this snapshot when there are no replies.
-            let sequence = self
-                .protocol
-                .channel(client.addr, None)
-                .prepare(&mut snapshot.bundle, false);
-            let bytes = self.socket.send_bundle(&snapshot.bundle, client.addr)?;
-            span.record("output.snapshot.udp_payload_bytes", bytes);
-            span.record("output.snapshot.datagrams", snapshot.bundle.len());
-            if let Some(sequence) = sequence {
-                span.record("output.packet.sequence", i64::from(sequence.get()));
+            let mut send = |bundle: &mut Bundle| {
+                let sequence = self
+                    .protocol
+                    .channel(client.addr, None)
+                    .prepare(bundle, false);
+                let bytes = self.socket.send_bundle(bundle, client.addr)?;
+                span.record("output.snapshot.udp_payload_bytes", bytes);
+                span.record("output.snapshot.datagrams", bundle.len());
+                if let Some(sequence) = sequence {
+                    span.record("output.packet.sequence", i64::from(sequence.get()));
+                }
+                Ok(())
+            };
+            match own_vehicle {
+                Some(pose) => snapshot.bundle.with_appended_simple(pose, send),
+                None => send(&mut snapshot.bundle),
             }
-            Ok(())
         })();
         span.record(
             "output.snapshot.age_ms",

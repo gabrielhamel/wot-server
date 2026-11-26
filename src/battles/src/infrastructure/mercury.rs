@@ -8,6 +8,7 @@ use std::{collections::HashMap, io};
 use wot_platform::mercury::{
     app::{
         base::{self, ArenaSnapshot, ClientKey},
+        client::element::arena::VehiclePosition,
         entity::MethodDecodeError,
     },
     net::element::{Element, SimpleElement},
@@ -54,9 +55,10 @@ impl<'a> MercuryArena<'a> {
         &mut self,
         participant: ParticipantId,
         snapshot: &mut ArenaSnapshot,
+        own_vehicle: Option<VehiclePosition>,
     ) -> io::Result<()> {
         let client = self.client(participant)?;
-        self.base.arena_tick(client, snapshot)
+        self.base.arena_tick(client, snapshot, own_vehicle)
     }
 
     pub fn avatar_command(&self, event: &base::BaseMethodEvent) -> Option<AvatarCommand> {

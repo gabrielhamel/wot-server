@@ -827,34 +827,36 @@ impl BattleSimulation {
                         "otel.status_code" = tracing::field::Empty)
                 })
                 .collect();
+            let interval = battle.parameters.parked_vehicle_pose_interval_ticks;
+            let full = std::mem::take(&mut battle.full_snapshot_pending);
             let mut recipients = Vec::new();
-            for (&client, player) in &battle.players {
+            let mut vehicles = Vec::new();
+            for (&id, player) in &mut battle.players {
+                let entity_id = player.vehicle.entity_id;
+                let pose = (player.vehicle.position, player.vehicle.direction);
+                let include = player
+                    .pose_cadence
+                    .includes(pose, entity_id, tick, interval)
+                    || full;
+                let position = VehiclePosition {
+                    reference: 0,
+                    entity_id,
+                    position: pose.0,
+                    direction: pose.1,
+                };
                 if player.entered {
-                    recipients.push(client);
+                    let own_vehicle = (!include && !player.observer).then(|| position.clone());
+                    recipients.push((id, own_vehicle));
                 } else if player.entry.is_some()
                     && now >= battle.started_at + battle.round.load_timeout
                 {
-                    delivery.disconnect(client);
+                    delivery.disconnect(id);
+                }
+                if include {
+                    vehicles.push(position);
                 }
             }
             if !recipients.is_empty() {
-                let interval = battle.parameters.parked_vehicle_pose_interval_ticks;
-                let full = std::mem::take(&mut battle.full_snapshot_pending);
-                let vehicles: Vec<_> = battle
-                    .players
-                    .values_mut()
-                    .filter_map(|other| {
-                        let entity_id = other.vehicle.entity_id;
-                        let pose = (other.vehicle.position, other.vehicle.direction);
-                        let include = other.pose_cadence.includes(pose, entity_id, tick, interval);
-                        (include || full).then_some(VehiclePosition {
-                            reference: 0,
-                            entity_id,
-                            position: pose.0,
-                            direction: pose.1,
-                        })
-                    })
-                    .collect();
                 delivery.publish_positions(delivery::BattlePositions {
                     battle_id,
                     tick: tick as u8,

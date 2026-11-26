@@ -189,8 +189,8 @@ Both EU replays show 100 ms as the usual recorder cadence, with more gaps
 in the other vehicles' position streams. The reason for individual gaps
 cannot be determined from playback records. The
 [battle simulation](../src/battles/src/infrastructure/mod.rs) produces a
-snapshot for each 100 ms tick. It sends moving poses every tick and refreshes
-parked poses on the configured interval.
+snapshot for each 100 ms tick. It sends each driver's own pose and all moving
+poses every tick. Other parked poses use the configured interval.
 [Mercury](../src/shared-infrastructure/src/mercury/app/base/mod.rs) packs
 the clock, Avatar pose and selected vehicle poses into one unreliable bundle.
 The gateway encodes that payload once per snapshot and applies channel
@@ -203,8 +203,9 @@ counts, bytes, ACK timing and retransmissions.
 
 ## Widepark parked vehicle cadence from 2026-11-26
 
-A native client recording on WoT Server Mac LAN used a 500 ms parked refresh
-with one player and two Leopard 1 dummies. The EU client reported
+An initial native client experiment on WoT Server Mac LAN used a 500 ms
+parked refresh for all recipients, including their own hull, with one player
+and two Leopard 1 dummies. The EU client reported
 `v.2.4.2.0 #1000` and the launcher identified game build `2.4.2.5524`.
 The launched `win64/WorldOfTanks.exe` SHA-256 was
 `0547c40d8f55bb94437ba54603ddb7cec0075aca1a0d5a51cf181f1e044496f5`.
@@ -222,10 +223,24 @@ vehicle pose records at arena ticks 600–699. A full refresh of three tanks
 would include 300 records. At 30 bytes per Mercury VehiclePosition element,
 that removes 720 bytes/s of pose elements per recipient before UDP framing.
 
-The encrypted dashboard E2E checks that every tick still includes the Avatar
-pose, pending ACKs appear on the snapshot, parked vehicles refresh every fifth
-tick, and the moving vehicle resumes full-rate poses. The replay measures
-native playback and does not expose the Mercury ACK footer.
+A second native experiment on Prokhorovka reproduced the sparse own-hull
+cadence. The driver reported about a second of movement response delay when
+starting from rest. In a control battle on the same map with all vehicles at
+100 ms, the driver reported that the delay disappeared. The 500 ms and
+100 ms control replays have SHA-256 values
+`23a7c090eec3bf0a0bc86c3dac5319e68c5ce78664e5bd95353ecbfbe1e88473` and
+`fca1d9437442816a6219138225c9137fb430fd1c6c5d5d85ff0646e0a88c47f7`,
+respectively. Historical
+[BigWorld interpolation](references/BigWorld-Engine-14.4.1/programming/bigworld/lib/connection/avatar_filter_helper.cpp)
+uses a buffer measured in recent input intervals. This is a possible
+explanation for the delay in the current client.
+
+The server now appends a driver's own parked pose on ticks that skip its
+shared refresh. The encrypted dashboard E2E checks that each tick includes
+the driver's own hull, the Avatar pose and pending ACKs, that other parked
+vehicles refresh every fifth tick, and that motion resumes full-rate poses.
+The native replay records client poses. The encrypted E2E inspects the
+Mercury ACK footer.
 
 ## Vehicle movement and chassis animation
 

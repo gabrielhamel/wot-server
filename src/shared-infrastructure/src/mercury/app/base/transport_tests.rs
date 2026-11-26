@@ -240,7 +240,7 @@ fn shared_snapshot_can_be_framed_for_two_clients() {
                 position: Vec3::ZERO,
                 direction: Vec3::ZERO,
             },
-            (1..=60).map(|entity_id| VehiclePosition {
+            (1..=46).map(|entity_id| VehiclePosition {
                 reference: 0,
                 entity_id,
                 position: Vec3::X * entity_id as f32,
@@ -259,11 +259,42 @@ fn shared_snapshot_can_be_framed_for_two_clients() {
     };
 
     let mut shared = encode();
-    assert_eq!(shared.bundle.len(), 2);
+    assert_eq!(shared.bundle.len(), 1);
     let mut first = config(3, 8);
     first.single_acks_mut().push_back(Seq::ZERO + 12);
-    shared.bundle.write_config(&mut first);
-    shared.bundle.update_prefix(0);
+    let own_pose = VehiclePosition {
+        reference: 0,
+        entity_id: 12345,
+        position: Vec3::X,
+        direction: Vec3::ZERO,
+    };
+    shared
+        .bundle
+        .with_appended_simple(own_pose, |bundle| {
+            assert_eq!(bundle.len(), 2);
+            bundle.write_config(&mut first);
+            bundle.update_prefix(0);
+            let mut expected = encode();
+            expected
+                .bundle
+                .element_writer()
+                .write_simple(VehiclePosition {
+                    reference: 0,
+                    entity_id: 12345,
+                    position: Vec3::X,
+                    direction: Vec3::ZERO,
+                })?;
+            let mut fresh_config = config(3, 8);
+            fresh_config.single_acks_mut().push_back(Seq::ZERO + 12);
+            expected.bundle.write_config(&mut fresh_config);
+            expected.bundle.update_prefix(0);
+            assert_eq!(bundle.len(), expected.bundle.len());
+            for (reused, fresh) in bundle.iter().zip(expected.bundle.iter()) {
+                assert_eq!(reused.slice(), fresh.slice());
+            }
+            Ok(())
+        })
+        .unwrap();
 
     shared.bundle.clear_packet_config();
     shared.bundle.write_config(&mut config(20, 2));

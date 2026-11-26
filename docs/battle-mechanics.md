@@ -199,16 +199,17 @@ treats shooters as known.
 ### Parked vehicle positions
 
 Training sends `TickSync`, the hull-relative Avatar pose and pending Mercury
-ACKs every 100 ms. Each vehicle's position, yaw, pitch and roll are compared
-with the previous snapshot. A changed pose is sent immediately and remains
+ACKs every 100 ms. Each driver also receives their own hull pose every tick.
+For other vehicles, the server compares position, yaw, pitch and roll with
+the previous tick. A changed pose is sent immediately and remains
 at the full tick rate for the refresh interval starting with that change. A client
 entering the arena also triggers a full snapshot. Unchanged poses then use
 refresh slots staggered by entity ID. Turret angle properties have their own
 delivery path.
 
 Under **Admin → Battles → Battle parameters → Network replication**,
-**Parked vehicle pose interval (100 ms ticks)** accepts 1–5 and defaults to 5.
-Set it to 1 to include every pose on every tick. Native Training Rooms use the
+**Other parked vehicle pose interval (100 ms ticks)** accepts 1–5 and defaults to 5.
+It applies to other vehicles. Set it to 1 to include every pose on every tick. Native Training Rooms use the
 default. See the [native replay evidence](battle-replays.md#widepark-parked-vehicle-cadence-from-2026-11-26).
 
 ### Training movement coverage

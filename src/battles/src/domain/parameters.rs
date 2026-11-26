@@ -69,7 +69,7 @@ battle_parameters! {
         results_seconds: u64 = 6, 0..=60, true, "Results before garage return (seconds)";
     }
     "Network replication" {
-        parked_vehicle_pose_interval_ticks: u32 = 5, 1..=5, true, "Parked vehicle pose interval (100 ms ticks)";
+        parked_vehicle_pose_interval_ticks: u32 = 5, 1..=5, true, "Other parked vehicle pose interval (100 ms ticks)";
     }
     "Vehicle movement" {
         gravity_mps2: f32 = 9.81, 0.0..=30.0, false, "Gravity (m/s²)";
