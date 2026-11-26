@@ -225,13 +225,14 @@ impl App {
                 Err(error) => return Event::IoError(IoErrorEvent { error, addr: None }),
             };
 
-            let session = self
-                .client_keys
-                .get(&addr)
-                .map(|key| key.slot.diagnostic_id());
+            let client = self.client_keys.get(&addr).copied();
+            let session = client.map(|key| key.slot.diagnostic_id());
             let Ok(mut channel) = self.protocol.accept_from(packet, addr, session) else {
                 continue;
             };
+            if let Some(state) = client.and_then(|key| self.clients.get_mut(key.slot)) {
+                state.last_received = Instant::now();
+            }
 
             let Some(bundle) = channel.next_bundle() else {
                 continue;
@@ -298,9 +299,6 @@ impl App {
         reader: ElementReader<'_, '_>,
     ) -> io::Result<()> {
         let client = self.client_keys.get(&addr).copied();
-        if let Some(state) = client.and_then(|key| self.clients.get_mut(key.slot)) {
-            state.last_received = Instant::now();
-        }
 
         match reader.id() {
             LoginKey::ID => self.handle_client_auth(addr, reader),
@@ -1009,14 +1007,30 @@ impl App {
             .client_keys
             .values()
             .copied()
-            .filter(|key| {
-                self.clients
-                    .get(key.slot)
-                    .is_some_and(|client| now.duration_since(client.last_received) >= idle)
+            .filter_map(|key| {
+                let client = self.clients.get(key.slot)?;
+                let elapsed = now.saturating_duration_since(client.last_received);
+                (elapsed >= idle).then_some((key, elapsed, client.arena_vehicle_id.is_some()))
             })
             .collect();
-        for key in expired {
-            self.disconnect_client(key);
+        let millis = |duration: Duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX);
+        for (key, elapsed, in_arena) in expired {
+            let span = tracing::info_span!(
+                parent: None, "mercury.idle_disconnect",
+                ddd.bounded_context.name = "player_sessions",
+                mercury.listener = "base",
+                mercury.session.stage = "established",
+                mercury.session.id = key.slot.diagnostic_id(),
+                input.arena.active = in_arena,
+                input.idle.elapsed_ms = millis(elapsed),
+                input.idle.timeout_ms = millis(idle),
+                output.outcome = "disconnected",
+                otel.status_code = "ERROR",
+            );
+            span.in_scope(|| {
+                warn!("Mercury client idle timeout");
+                self.disconnect_client(key);
+            });
         }
     }
 
