@@ -5,6 +5,23 @@ to report a problem. Include the setup, exact steps, and expected and observed
 behavior. The [server guide](docs/server.md) and [testing guide](docs/testing.md)
 cover local setup and test fixtures.
 
+## AI-assisted contributions
+
+AI-assisted pull requests are welcome, even if you're new to software development.
+
+We recommend [Claude Code](https://code.claude.com/docs/en/overview) or
+[Codex in ChatGPT](https://openai.com/codex/). If you use Codex, GPT-6.2 Sol is
+sufficient for most focused contributions, including implementing a small feature,
+fixing a bug, and running the relevant tests. GPT-6.2 Astra is optional for this
+kind of work. See [OpenAI's model selection guide](https://developers.openai.com/api/docs/guides/model-selection).
+
+1. Before starting, make sure your AI tool or agent harness gives the model
+   access to [AGENTS.md](AGENTS.md) and the relevant project documentation. Have
+   it read and follow those instructions while working on the change. The
+   [documentation index](docs/README.md) can help you find the relevant guides.
+2. Give each AI-assisted pull request one purpose. Implement one missing feature,
+   fix one bug, or make one focused improvement.
+
 ## Scope and design
 
 - Give each contribution one clear purpose. Write commit messages and PR titles
