@@ -22,6 +22,11 @@ collector. Each series describes one server process.
 | `wot.battle.tick.delay`               | Histogram | Seconds     | Time between the scheduled tick deadline and the worker starting arena processing.                                                                                        |
 | `wot.battle.tick.skipped`             | Counter   | Ticks       | Number of subsequent deadlines the worker discarded when a tick started at least one full interval late. The interval is 100 ms.                                          |
 | `wot.mercury.reliable_sequence.drops` | Counter   | Packets     | Unreliable on-channel Mercury packets discarded because their last-reliable-sequence footer differs from the receiver's last contiguous reliable sequence.                |
+| `wot.mercury.ack.rtt`                 | Histogram | Seconds     | Time from the first successful UDP send of a reliable packet to processing its first matching ACK.                                                                        |
+| `wot.mercury.retransmissions`        | Counter   | Packets     | Reliable retransmission attempts, labeled by socket outcome.                                                                                                               |
+| `wot.mercury.retry.exhaustion`       | Counter   | Packets     | Reliable packets discarded after the retry deadline, by listener and session stage.                                                                                       |
+| `wot.mercury.outbox.age`              | Histogram | Seconds     | Age of the oldest queued element at a BaseApp outbox flush attempt, by outcome.                                                                                            |
+| `wot.mercury.packet.rejections`      | Counter   | Packets     | Rejected Mercury packets, including rejected piggybacks and dropped fragments, by listener, session stage and reason.                                                      |
 | `wot.db.operation.duration`           | Histogram | Seconds     | Elapsed time of each completed PostgreSQL operation observed by the shared adapter, including transaction boundaries. Sample counts give operation and error totals.      |
 | `wot.db.pool.connections`             | Gauge     | Connections | SQLx pool occupancy by `state`, reported as `idle` or `non_idle`. The latter is the pool size minus idle connections and can include connections being opened or checked. |
 | `wot.db.pool.capacity`                | Gauge     | Connections | Configured maximum size of the shared SQLx pool.                                                                                                                          |
@@ -47,6 +52,49 @@ query drops per five minutes by direction:
 
 ```promql
 sum by (direction) (increase(wot_mercury_reliable_sequence_drops{job="wot-server"}[5m]))
+```
+
+The [Mercury transport instruments](../src/shared-infrastructure/src/mercury/net/telemetry.rs)
+report ACK RTT as seen by the server. This includes time spent scheduling the
+client ACK and waiting for the server to process it. Single and cumulative
+ACKs use the `ack.kind` label. A cumulative ACK records one sample per newly
+acknowledged, eligible packet. A packet scheduled for a retry is excluded
+because the ACK cannot identify which transmission it acknowledges. Client
+frame stalls and client-side jitter require client measurements.
+
+The BaseApp outbox reports `outcome` as `sent`, `socket_error`, or
+`backpressured` after a flush attempt. A blocked attempt preserves the original
+queue timestamp. This measures the reliable UDP outbox. Arena position
+snapshots take the immediate socket path, and battle worker delivery queues
+have separate telemetry. Retransmissions report `sent` or `socket_error` for
+each attempted UDP write. Retry exhaustion reports expiry at the retry
+deadline.
+
+Packet rejections classify packet size, decryption, footer decoding, protocol
+limits, channel validation, and dropped fragments by a fixed `reason`.
+`listener` is `base` or `login`. `session.stage` is `established` if the
+sender has a registered BaseApp session at the time of observation, or
+`unestablished` otherwise. The legacy sequence mismatch counter and its
+corresponding rejection reason describe the same packets. Ordinary duplicate
+reliable packets are handled by the receive protocol and do not count as
+rejections.
+
+Each listener and session stage emits at most one reject burst span per
+five-second observation window, on the eighth reject. The span describes the
+triggering packet. Retry exhaustion emits a span on the first expiry per
+five-second window. Both counters continue counting after a diagnostic is
+sampled. The process-local session ID is trace-only and applicable to the
+triggering session; a burst may combine rejections from multiple peers. See
+[transport diagnostic spans](telemetry-attributes.md#transport-diagnostic-spans).
+
+Example Mimir queries for the transport panels:
+
+```promql
+histogram_quantile(0.95, sum by (le, ack_kind) (rate(wot_mercury_ack_rtt_bucket{job="wot-server"}[5m])))
+histogram_quantile(0.95, sum by (le, outcome) (rate(wot_mercury_outbox_age_bucket{job="wot-server"}[5m])))
+sum by (outcome) (increase(wot_mercury_retransmissions{job="wot-server"}[5m]))
+sum by (session_stage) (increase(wot_mercury_retry_exhaustion{job="wot-server"}[5m]))
+sum by (listener, session_stage, reason) (increase(wot_mercury_packet_rejections{job="wot-server"}[5m]))
 ```
 
 PostgreSQL operation timing starts when the adapter polls the SQLx future, so

@@ -1177,6 +1177,39 @@ pub enum PacketConfigError {
     InvalidChecksum,
 }
 
+impl PacketConfigError {
+    pub(super) fn reason(&self) -> &'static str {
+        match self {
+            Self::UnknownFlags(_) => "unknown_flags",
+            Self::MissingChecksumFooter => "missing_checksum_footer",
+            Self::MissingPiggybackFooter => "missing_piggyback_footer",
+            Self::MissingPiggybackData => "missing_piggyback_data",
+            Self::MissingIndexedChannelFooter => "missing_indexed_channel_footer",
+            Self::ZeroChannelIndex => "zero_channel_index",
+            Self::ZeroChannelVersion => "zero_channel_version",
+            Self::MissingCumulativeAckFooter => "missing_cumulative_ack_footer",
+            Self::InvalidCumulativeAck => "invalid_cumulative_ack",
+            Self::MissingAcksCountFooter => "missing_acks_count_footer",
+            Self::ZeroAcksCount => "zero_acks_count",
+            Self::MissingAckFooter => "missing_ack_footer",
+            Self::InvalidAck => "invalid_ack",
+            Self::MissingSequenceNumFooter => "missing_sequence_num_footer",
+            Self::InvalidSequenceNum => "invalid_sequence_num",
+            Self::MissingLastReliableSequenceNumFooter => {
+                "missing_last_reliable_sequence_num_footer"
+            }
+            Self::InvalidLastReliableSequenceNum => "invalid_last_reliable_sequence_num",
+            Self::MissingFirstRequestOffsetFooter => "missing_first_request_offset_footer",
+            Self::InvalidFirstRequestOffset => "invalid_first_request_offset",
+            Self::MissingSequenceRangeFooter => "missing_sequence_range_footer",
+            Self::InvalidSequenceRangeFirst => "invalid_sequence_range_first",
+            Self::InvalidSequenceRangeLast => "invalid_sequence_range_last",
+            Self::InvalidSequenceRange => "invalid_sequence_range",
+            Self::InvalidChecksum => "invalid_checksum",
+        }
+    }
+}
+
 impl Default for Packet {
     fn default() -> Self {
         Self::new()

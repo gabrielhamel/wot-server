@@ -55,9 +55,17 @@ impl PacketSocket {
     }
 
     pub fn recv(&self) -> io::Result<(Packet, SocketAddr)> {
+        self.recv_with_rejection(|_, _, _| {})
+    }
+
+    pub(crate) fn recv_with_rejection(
+        &self,
+        mut reject: impl FnMut(SocketAddr, &'static str, usize),
+    ) -> io::Result<(Packet, SocketAddr)> {
         let mut datagram = [0; packet::PACKET_CAP + 1];
         let (len, addr) = self.socket.recv_from(&mut datagram)?;
         if !(packet::PACKET_HEADER_LEN..=packet::PACKET_CAP).contains(&len) {
+            reject(addr, "datagram_size", len);
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "invalid UDP packet size",
@@ -68,8 +76,10 @@ impl PacketSocket {
         packet.buf_mut()[..len].copy_from_slice(&datagram[..len]);
         packet.set_len(len);
         if let Some(key) = self.encryption.get(&addr) {
-            packet = decrypt_packet(packet, key)
-                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid encryption"))?;
+            packet = decrypt_packet(packet, key).map_err(|_| {
+                reject(addr, "encryption", len);
+                io::Error::new(io::ErrorKind::InvalidData, "invalid encryption")
+            })?;
         }
         Ok((packet, addr))
     }

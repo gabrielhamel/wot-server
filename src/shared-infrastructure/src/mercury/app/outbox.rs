@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
+use std::time::Instant;
 
 use crate::mercury::net::bundle::Bundle;
 use crate::mercury::net::element::Element;
@@ -86,6 +87,7 @@ impl Outbox {
 pub struct ClientOutbox {
     bundle: Bundle,
     deliveries: Vec<tracing::Span>,
+    oldest_write: Option<Instant>,
     /// The entity the client will have selected once it has read the bundle so far, when
     /// known: any element written with [`Self::write`] may select another.
     player_selected: bool,
@@ -96,6 +98,7 @@ impl ClientOutbox {
         Self {
             bundle: Bundle::new(),
             deliveries: Vec::new(),
+            oldest_write: None,
             player_selected: false,
         }
     }
@@ -106,6 +109,7 @@ impl ClientOutbox {
             self.bundle
                 .element_writer()
                 .write_simple(SelectPlayerEntity {})?;
+            self.oldest_write.get_or_insert_with(Instant::now);
             self.player_selected = true;
         }
         Ok(())
@@ -117,13 +121,17 @@ impl ClientOutbox {
         element: E,
         config: &C,
     ) -> io::Result<()> {
-        self.bundle.element_writer().write(element, config)
+        let result = self.bundle.element_writer().write(element, config);
+        if !self.bundle.is_empty() {
+            self.oldest_write.get_or_insert_with(Instant::now);
+        }
+        result
     }
 
     /// Write any other element. It may select another entity, so the next selection is
     /// written whatever it is.
     pub fn write<E: Element<C>, C: ?Sized>(&mut self, element: E, config: &C) -> io::Result<()> {
-        self.bundle.element_writer().write(element, config)?;
+        self.write_selected(element, config)?;
         self.player_selected = false;
         Ok(())
     }
@@ -144,18 +152,30 @@ impl ClientOutbox {
         socket: &PacketSocket,
     ) -> io::Result<()> {
         if self.bundle.is_empty() {
+            self.oldest_write = None;
             return Ok(());
         }
         self.player_selected = false;
         if !protocol.can_queue_reliable(addr, self.bundle.len()) {
+            if let Some(oldest) = self.oldest_write {
+                protocol.record_outbox_age(oldest.elapsed(), "backpressured");
+            }
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "reliable send budget exhausted",
             ));
         }
-        protocol.channel(addr, None).prepare(&mut self.bundle, true);
-        let result = socket.send_bundle(&self.bundle, addr);
+        let age = self.oldest_write.take().map(|oldest| oldest.elapsed());
+        let result = protocol.send_reliable_bundle(addr, &mut self.bundle, socket);
         self.bundle.clear();
+        if let Some(age) = age {
+            let outcome = if result.is_ok() {
+                "sent"
+            } else {
+                "socket_error"
+            };
+            protocol.record_outbox_age(age, outcome);
+        }
         for span in self.deliveries.drain(..) {
             span.in_scope(|| match &result {
                 Ok(_) => {
@@ -168,7 +188,7 @@ impl ClientOutbox {
                 }
             });
         }
-        result.map(|_| ())
+        result
     }
 }
 

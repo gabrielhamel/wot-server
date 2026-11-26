@@ -3506,6 +3506,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-opentelemetry",
+ "tracing-subscriber",
  "wot-resources",
 ]
 

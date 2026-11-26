@@ -30,3 +30,5 @@ pub mod proto;
 pub mod socket;
 
 pub mod limits;
+
+mod telemetry;

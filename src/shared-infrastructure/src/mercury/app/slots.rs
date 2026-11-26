@@ -8,6 +8,13 @@ pub struct SlotKey {
     generation: u32,
 }
 
+impl SlotKey {
+    pub(super) fn diagnostic_id(self) -> i64 {
+        // Keep the value in the signed integer range used by OTLP.
+        (i64::from(self.generation & i32::MAX as u32) << 32) | i64::from(self.index)
+    }
+}
+
 /// See the module documentation.
 #[derive(Debug)]
 pub struct Slots<T> {

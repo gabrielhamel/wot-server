@@ -65,7 +65,7 @@ impl App {
     }
 
     pub fn configure_metrics(&mut self, meter: &opentelemetry::metrics::Meter) {
-        self.protocol.configure_metrics(meter);
+        self.protocol.configure_metrics(meter, "login");
     }
 
     /// Get the address this app is bound to.
@@ -142,7 +142,10 @@ impl App {
                 return Event::IoError(IoErrorEvent { error, addr: None });
             }
 
-            let (packet, addr) = match self.socket.recv() {
+            let received = self.socket.recv_with_rejection(|_addr, reason, bytes| {
+                self.protocol.record_rejection(None, reason, bytes);
+            });
+            let (packet, addr) = match received {
                 Ok(ret) => ret,
                 Err(error)
                     if matches!(
