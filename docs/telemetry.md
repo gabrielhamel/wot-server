@@ -74,6 +74,12 @@ acknowledged, eligible packet. A packet scheduled for a retry is excluded
 because the ACK cannot identify which transmission it acknowledges. Client
 frame stalls and client-side jitter require client measurements.
 
+BaseApp refreshes session activity when it accepts a Mercury packet from
+an established client. Single and cumulative ACKs refresh the timer even
+when the packet contains no game messages. After 120 seconds without accepted
+traffic, BaseApp emits `mercury.idle_disconnect` with the session ID, arena
+state, elapsed idle time and configured threshold.
+
 The BaseApp outbox reports `outcome` as `sent`, `socket_error`, or
 `backpressured` after a flush attempt. A blocked attempt preserves the original
 queue timestamp. This measures the reliable UDP outbox. Arena position

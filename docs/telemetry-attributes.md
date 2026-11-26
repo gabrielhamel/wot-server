@@ -426,20 +426,24 @@ meanings on different operations; those differences are listed explicitly.
 The [transport telemetry](../src/shared-infrastructure/src/mercury/net/telemetry.rs)
 exports sampled `mercury.packet_reject_burst` and `mercury.retry_exhausted`
 roots with error status and a warning event. They describe socket-level
-observations without an incoming command parent.
+observations without an incoming command parent. BaseApp also emits
+`mercury.idle_disconnect` as a root with error status and a warning event
+when it disconnects an expired session.
 
 | Attribute | Meaning and emission |
 | --- | --- |
 | `mercury.listener` | `base` for BaseApp or `login` for LoginApp on either diagnostic. |
 | `mercury.session.stage` | `established` when the diagnostic's peer is registered with BaseApp, otherwise `unestablished`. |
-| `mercury.session.id` | Process-local numeric ID for an established BaseApp session. Both diagnostics and the [BaseApp command and arena snapshot spans](../src/shared-infrastructure/src/mercury/app/base/mod.rs) use the same ID. Unestablished diagnostics omit it. |
+| `mercury.session.id` | Process-local numeric ID for an established BaseApp session. Transport diagnostics and the [BaseApp command and arena snapshot spans](../src/shared-infrastructure/src/mercury/app/base/mod.rs) use the same ID. Unestablished diagnostics omit it. |
 | `input.bytes` | Bytes observed for the reject burst's triggering packet. Includes the UDP datagram bytes for size and decryption failures, or the decoded Mercury packet bytes for protocol failures. An oversized datagram may fill the bounded receive buffer. |
 | `input.packet.sequence` | Outbound reliable Mercury sequence number on retry exhaustion. |
 | `output.reason` | Fixed rejection reason for the reject burst's triggering packet. |
 | `output.rejections.count` | Number of rejections in the current listener and session-stage observation window when the burst span is emitted. |
 | `output.retries.scheduled_count` | Number of times the expired packet was selected for retransmission. Socket send outcomes are counted separately. |
 | `output.packet.age_ms` | Milliseconds from the initial send preparation until retry exhaustion. |
-| `output.outcome` | `rejected` on a reject burst or `retry_exhausted` when a reliable packet missed its acknowledgement deadline. |
+| [`input.arena.active`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Whether the expired session had an arena vehicle assigned. |
+| [`input.idle.elapsed_ms`](../src/shared-infrastructure/src/mercury/app/base/mod.rs), `input.idle.timeout_ms` | Time since the session's last accepted packet and the configured idle threshold, in milliseconds, on idle disconnect. |
+| `output.outcome` | `rejected` on a reject burst, `retry_exhausted` when a reliable packet missed its acknowledgement deadline, or `disconnected` after idle expiry. |
 
 The Mercury [protocol tracker](../src/shared-infrastructure/src/mercury/net/proto.rs)
 also declares legacy TRACE-level spans with implicit argument fields. The

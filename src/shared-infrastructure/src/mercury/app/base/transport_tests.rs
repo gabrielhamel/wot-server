@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn udp_transport_exports_ack_timing_and_sampled_rejections() {
+fn udp_transport_counts_acks_as_activity_and_exports_diagnostics() {
     use blowfish::cipher::KeyInit;
     use opentelemetry::trace::TracerProvider;
     use opentelemetry::{Value, metrics::MeterProvider};
@@ -43,6 +43,8 @@ fn udp_transport_exports_ack_timing_and_sampled_rejections() {
     app.pending_clients.insert(addr, (1, Instant::now()));
     let client = app.answer_login_success(addr, cipher).unwrap();
     peer.recv().unwrap();
+    app.enable_arena_cell(client, 1);
+    let idle_timeout = Duration::from_secs(120);
 
     for (cumulative, retransmit) in [(false, false), (true, false), (false, true)] {
         app.send_simple(client, client::element::TickSync { tick: 1 })
@@ -63,11 +65,18 @@ fn udp_transport_exports_ack_timing_and_sampled_rejections() {
         config.set_on_channel(true);
         if cumulative {
             config.set_cumulative_ack(sequence + 1);
+        } else {
+            config.single_acks_mut().push_back(sequence);
         }
-        config.single_acks_mut().push_back(sequence);
         ack.write_config(&mut config);
+        app.clients.get_mut(client.slot).unwrap().last_received = Instant::now() - idle_timeout;
         peer.send(&ack, server_addr).unwrap();
         assert!(matches!(app.poll_until(Instant::now()), Event::Timeout));
+        app.disconnect_idle_clients(idle_timeout);
+        assert!(
+            app.client(client).is_ok(),
+            "ACK-only traffic should keep the arena client connected"
+        );
     }
 
     app.send_simple(client, client::element::TickSync { tick: 2 })
@@ -78,6 +87,7 @@ fn udp_transport_exports_ack_timing_and_sampled_rejections() {
     peer.recv().unwrap();
     app.retry_reliable(RESEND_TIMEOUT, Duration::ZERO).unwrap();
 
+    app.clients.get_mut(client.slot).unwrap().last_received = Instant::now() - idle_timeout;
     let mut invalid = Packet::new();
     invalid.write_flags(0x8000);
     for _ in 0..10 {
@@ -87,6 +97,9 @@ fn udp_transport_exports_ack_timing_and_sampled_rejections() {
     let unknown = std::net::UdpSocket::bind(localhost).unwrap();
     unknown.send_to(&[0], server_addr).unwrap();
     assert!(matches!(app.poll_until(Instant::now()), Event::IoError(_)));
+
+    app.disconnect_idle_clients(idle_timeout);
+    assert_eq!(app.take_disconnected_clients(), vec![client]);
 
     meters.force_flush().unwrap();
     let exports = metrics.get_finished_metrics().unwrap();
@@ -181,8 +194,8 @@ fn udp_transport_exports_ack_timing_and_sampled_rejections() {
     assert_eq!(established.value(), 1);
 
     let spans = traces.get_finished_spans().unwrap();
-    let [exhaustion, burst] = spans.as_slice() else {
-        panic!("expected two sampled spans, got {spans:?}");
+    let [exhaustion, burst, idle] = spans.as_slice() else {
+        panic!("expected retry, rejection and idle diagnostics, got {spans:?}");
     };
     assert_eq!(exhaustion.name, "mercury.retry_exhausted");
     assert_eq!(
@@ -222,6 +235,26 @@ fn udp_transport_exports_ack_timing_and_sampled_rejections() {
     );
     assert_eq!(attrs["output.rejections.count"], &Value::I64(8));
     assert_eq!(attrs["output.reason"].as_str(), "unknown_flags");
+    assert_eq!(idle.name, "mercury.idle_disconnect");
+    assert_eq!(idle.parent_span_id, opentelemetry::trace::SpanId::INVALID);
+    assert!(matches!(
+        idle.status,
+        opentelemetry::trace::Status::Error { .. }
+    ));
+    assert_eq!(idle.events.len(), 1);
+    let attrs: HashMap<_, _> = idle
+        .attributes
+        .iter()
+        .map(|kv| (kv.key.as_str(), &kv.value))
+        .collect();
+    assert_eq!(
+        attrs["mercury.session.id"],
+        &Value::I64(client.slot.diagnostic_id())
+    );
+    assert_eq!(attrs["input.arena.active"], &Value::Bool(true));
+    assert_eq!(attrs["input.idle.timeout_ms"], &Value::I64(120_000));
+    assert!(matches!(attrs["input.idle.elapsed_ms"], Value::I64(elapsed) if *elapsed >= 120_000));
+    assert_eq!(attrs["output.outcome"].as_str(), "disconnected");
 }
 
 #[test]
