@@ -2,7 +2,10 @@ use glam::{Vec3, Vec3Swizzles};
 use std::{collections::BTreeMap, io::Read};
 use wot_platform::client_formats::pxml::{Element, Value};
 use wot_resources::ResourceBundle;
-use wot_shared_kernel::{GunLoading, GunPerformance, Mobility, ShellEffects, Wheel};
+use wot_shared_kernel::{
+    ArmorMesh, Device, GunLoading, GunPerformance, Mobility, ShellEffects, TrackDamageProfile,
+    Wheel,
+};
 
 pub(super) fn collision_model<'a>(
     local: Option<&'a Element>,
@@ -122,6 +125,61 @@ pub(super) fn mobility(
                 .unwrap_or(false);
     }
     mobility
+}
+
+pub(super) fn track_damage(
+    local: Option<&Element>,
+    base: &Element,
+    mesh: &ArmorMesh,
+) -> Option<TrackDamageProfile> {
+    // The client derives driving wheel sizes from the named wheel radii.
+    const WHEEL_SIZE_COEFFICIENT: f32 = 2.2;
+
+    let bulk_health_factor = number(local, base, "bulkHealthFactor")
+        .filter(|value| value.is_finite() && *value > 0.0)?;
+    let mut names = field(local, base, &["drivingWheels"])?
+        .as_string()?
+        .split_whitespace();
+    let (front_name, rear_name) = (names.next()?, names.next()?);
+    let wheels = local
+        .and_then(|chassis| chassis.get_child_element("wheels"))
+        .or_else(|| base.get_child_element("wheels"))?;
+    let width = |name| {
+        wheels.iter_children_all().find_map(|(kind, value)| {
+            let wheel = value.as_element().filter(|_| kind == "wheel")?;
+            if wheel.get_child_string("name")?.trim() != name {
+                return None;
+            }
+            wheel
+                .get_child_float("radius")
+                .or_else(|| {
+                    wheel
+                        .get_child_element("geometry")?
+                        .get_child_float("radius")
+                })
+                .filter(|radius| (0.05..=2.0).contains(radius))
+                .map(|radius| radius * WHEEL_SIZE_COEFFICIENT)
+        })
+    };
+    let mut rear = f32::INFINITY;
+    let mut front = f32::NEG_INFINITY;
+    for triangle in &mesh.triangles {
+        if triangle
+            .plate
+            .device
+            .is_some_and(|device| matches!(device.device, Device::TrackLeft | Device::TrackRight))
+        {
+            for vertex in triangle.vertices {
+                rear = rear.min(vertex.z);
+                front = front.max(vertex.z);
+            }
+        }
+    }
+    let protected_z = [rear + width(rear_name)?, front - width(front_name)?];
+    (protected_z[0] < protected_z[1]).then_some(TrackDamageProfile {
+        protected_z,
+        bulk_health_factor,
+    })
 }
 
 fn general_wheels(wheels: &Element, physics: Option<&Element>) -> Vec<Wheel> {
@@ -419,6 +477,25 @@ mod tests {
         let amx30 = performance("france:F72_AMX_30");
         assert!(amx30.turret_pivot.unwrap().y > 0.0);
         assert!(amx30.gun.shot_position.unwrap().length() > 0.0);
+
+        let hwk40 = performance("germany:G195_HWK_40");
+        let track_damage = hwk40.mobility.track_damage.unwrap();
+        assert_eq!(track_damage.bulk_health_factor, 3.0);
+        assert!(track_damage.protected_z[0] < 0.0 && track_damage.protected_z[1] > 0.0);
+        let track_hp = hwk40.device_health[&Device::TrackLeft].maximum;
+        assert_eq!(track_hp, 240);
+        assert_eq!(hwk40.device_health[&Device::TrackRight].maximum, track_hp);
+        assert!(
+            amx30
+                .gun
+                .shell_ballistics
+                .iter()
+                .any(|(shell, ballistics)| {
+                    matches!(ballistics.kind, wot_shared_kernel::ShellKind::ArmorPiercing)
+                        && ballistics.device_damage[0] == 150.0
+                        && amx30.gun.shell_damage[shell] == 390
+                })
+        );
 
         let progetto = performance("italy:It13_Progetto_M35_mod_46");
         assert_eq!(

@@ -187,7 +187,7 @@ Battles owns the defaults and ranges in
 [parameters.rs](../src/battles/src/domain/parameters.rs). The admin dashboard
 can override round timing, parked position refresh, gravity and drive
 response, hull contacts and rollover, ballistic integration, armor and device
-damage, fire and tracer visibility. The validated values travel with the battle launch and are shared
+damage, track repair, fire and tracer visibility. The validated values travel with the battle launch and are shared
 by simulation and replication for that arena. The existing values are the
 defaults used by native Training Rooms.
 
@@ -404,7 +404,7 @@ the Toolkit's matching captured battle in its `WGDE` decoder and
 | Destruction coverage and fidelity | Unnumbered scenery lacks native synchronization. Trunk shapes, contact loads and pitch limits are estimates. Fall collisions with tanks and other trees, authoritative debris motion, and foliage concealment from standing and fallen vegetation remain open. Exact shell damage rules, shell continuation through broken cover and splash destruction remain open. |
 | Rollover fidelity and feedback | The current model tips onto a side. Full rotational dynamics, tumbles onto the roof, rollover destruction rules and native recovery HUD messages remain open. Ramming damage is outside this work. |
 | Environmental hazards | Airborne motion lands on the height map or a supporting surface. Landing and fall damage, water volumes and depth, drowning warnings and timers, and their battle outcomes remain open. |
-| Damage and vehicle abilities | Damaged-engine power loss, broken tracks and reserve tracks, crew incapacitation, emergency and repair interactions, wheeled mode switching, active consumables and vehicle-specific boosts require live battle state and further wire evidence. |
+| Damage and vehicle abilities | Damaged-engine power loss, reserve tracks, crew incapacitation, emergency and active repair interactions, wheeled mode switching, and vehicle-specific boosts still need implementation or further wire evidence. |
 | Full modifier fidelity | Situational perks, crew directive effects beyond the implemented equipment directives, progression slot overrides and field modifications, special equipment/vehicle overrides, and exact crew and perk stacking need further work. |
 | Native verification | Total speed and traverse curves, track-lock eligibility, slope grip, pushes, tipping and recovery, drop response and loadout modifiers need controlled latest-EU comparisons. |
 
@@ -432,7 +432,7 @@ mobility profile to vehicle preparation and drive steps to replication.
 | Penetration | Plate angle, normalization, caliber, range and the shell's remaining penetration determine the outcome. | **Partial.** The gun ray intersects the equipped chassis, hull, turret and gun collision meshes. The solver resolves AP-family normalization and overmatch, AP-family and HEAT ricochets, screen penetration and HEAT jet loss. AP-family shells retain 75% of remaining penetration at the first ricochet. Eligible shells can continue on the reflected ray for up to ten calibers and can hit the same tank again or another nearby enemy tank. A shell can carry unused penetration past a screen-only contact, and a hull penetration traces internal devices for ten calibers or until the next hull surface. Contacts with allies or wrecks and server-only internal geometry remain open. |
 | Shell and armor damage | A penetrating hit applies rolled damage and the plate's damage factor. Some contacts produce an impact with zero vehicle HP loss. | **Partial.** The server rolls penetration and hull damage from the equipped shell definitions and caps HP loss at the target's current health. The client receives the actual part and a short component-local ray through the contact. The normal roll distribution is an approximation. |
 | Modern direct-fire HE | Armor penetration deals hull damage. An exterior detonation against main armor causes spall. Screens can stop the shell or reduce penetration before it reaches main armor. [Wargaming's HE rework][eu-he] | **Partial.** Modern shells can penetrate permitted screens and destructible fragments. A penetrated screen subtracts three times its effective thickness. A shell stopped at a screen or passing through a screen with no armor behind it causes zero HP damage. Spall and fragments use the shell damage curves and configured fragment absorption. Exact spall transfer and fragment geometry still need production evidence. Ground impacts can break trees. Ground splash affects vehicle HP only for artillery. [Wargaming HE support][eu-he-support] |
-| Module and crew damage, ramming and repair | Module and crew damage have effects independent of vehicle HP. Ramming, fire, detonation and repair have separate conditions. | **Partial.** Model materials carry device hit probabilities. The server tracks hits to modeled devices and crew, disabled tracks and engines, gun disablement, passive module recovery, fire ticks and loaded ammunition-rack explosions. Full crew and module penalties, active repair and first aid, native per-device indicators, damage from collisions and falls, and exact fire tuning remain open. |
+| Module and crew damage, ramming and repair | Module and crew damage have effects independent of vehicle HP. Ramming, fire, detonation and repair have separate conditions. | **Partial.** Model materials carry device hit probabilities. The server tracks hits to modeled devices and crew, disabled tracks and engines, gun disablement, passive module recovery, fire ticks and loaded ammunition-rack explosions. Track HUD and sound updates use native vehicle state and shot feedback. Full crew and other module penalties and HUD feedback, active repair and first aid, damage from collisions and falls, and exact fire tuning remain open. |
 | Zero-damage hits and ghost shells | Surface contact can occur without a loss of HP. A visual shot can also miss its intended target. | **Partial.** Armor blocks, screen stops, screen penetrations, ricochets, scene impacts and range expiry have distinct results. The struck player receives a blocked directional indicator for armor blocks, screen stops and ricochets with zero HP loss. Those contacts leave a persistent surface mark when the shell defines one. The server sends health and damage-log updates only for actual HP loss. |
 | Crew voice messages | The client chooses announcements based on battle events such as penetration, ricochet and destruction. | **Partial.** The server sends the appropriate shot results and impact effects. Native cue selection and sticker placement still need a controlled client session. |
 
@@ -532,6 +532,67 @@ Deadeye adjustment. These figures describe the archive's model.
 | Crew | Loss of a crew member impairs the corresponding role. Loss of the full crew can end participation with hull HP remaining. First aid restores eligible incapacitated crew. |
 | Passive and active repair | Crew repair can restore a destroyed module to a functional but damaged state. Repair kits can restore modules fully, with scope and cooldown depending on the consumable. Verify module HP thresholds, timer inputs and cooldowns. |
 | Ramming and falling | Vehicle collisions can impart motion and deal damage. The archive's ramming model depends on relative speed, vehicle mass, contact armor and modifiers such as Spall Liner and Controlled Impact. Falling and impact damage belong to the physics outcome as well. |
+
+#### Tracks and automatic repair
+
+Each side has its own HP from the equipped chassis. A shell that penetrates
+a modeled track plate applies the shell's rolled vehicle damage to the track's
+own HP. A hit at the drive sprocket or idler uses that value in full. The
+center divides it by the chassis's `bulkHealthFactor`. The server projects
+the end zones inward from the track collision mesh using the named front and
+rear driving wheel radii and the wheel-size coefficient in the client reader.
+This projection approximates the production hitzones. When the bundle lacks
+usable zone data, a penetrated track takes full damage. Repeated contacts on
+one track along the resolved path count once. A shot that
+crosses both track plates below the hull can damage both with zero hull damage. When an AP or APCR shot crosses the hull, the server
+requires enough penetration for the entry and exit faces and the far track.
+The server applies hull damage once. This is a simulation rule for the
+client-supplied meshes, pending comparison with a controlled live shot.
+
+A track that reaches the chassis's regeneration threshold is marked damaged.
+At zero HP it breaks and disables powered movement and hull steering until
+both tracks are functional. The turret and gun can still operate. Each side
+repairs on its own timer and returns at its chassis regeneration HP. The
+loadout projects the base chassis repair time, the crew's average trained
+**Repairs** perk (scaled by perk efficiency), and passive general and
+suspension repair-speed modifiers from equipment and consumables. The
+**Automatic track repair time multiplier** under **Admin → Battles → Battle
+parameters → Tracks** defaults to 1.0 and accepts 0.1–10.0. Training Rooms use
+the default.
+
+The driver's `OwnVehicle.vehicleDamageInfoList` carries the side and damage
+or repair code before `OwnVehicle.destroyedDevicesIsRepairing` carries the
+countdown. The client's `ModulesCtrl` registers the destroyed chassis side
+before applying its timer, and the server initializes both properties on
+vehicle entry. `Vehicle.publicStateModifiers` carries broken-track extras to both
+clients for the damaged model. The shooter receives
+`CHASSIS_DAMAGED_BY_PROJECTILE` in `Avatar.showShotResults` for direct
+track strikes. The extra IDs come from the bundle's
+`scripts/item_defs/vehicles/common/vehicle.xml` in its declared order. The
+client reference routes these fields through `OwnVehicleBase`,
+`Avatar.showVehicleDamageInfo`, and `TrackHealth`. The schema and serialized
+updates are covered by the battle tests. Native audio and rendering still need
+a two-client check.
+
+Local validation used EU production build `2.4.2.5524`, labeled
+`v.2.4.2.0 #1000` by the client, with executable SHA-256 `0d7d61866dfe8f884a76f31a6c91308662b27e0ff09f14f08647234048c939f6`.
+The extracted T1 Cunningham chassis mesh has separate left- and right-track
+materials with a projectile damage chance of 1.0. A two-participant battle
+test with a controlled collision fixture decodes the shooter and driver
+feedback and checks that the repairs trace back to the shot. In the same
+bundle, the AMX 30 B's APCR lists 390 vehicle damage and 150 internal-module
+damage. The HWK 40 has 240 HP per track and a center divisor of 3. At the
+nominal roll the simulation applies 390 HP at either end or 130 HP at the
+center. The track damage zones and divisor are based on
+[controlled live tracking tests](https://www.reddit.com/r/WorldofTanks/comments/1p5a0ry/the_mechanics_of_tracking_tanks/),
+`Chassis.drivingWheelsSizes` in the client reference, and the extracted chassis
+definition.
+
+The scope covers the primary left and right tracks. Reserve tracks, active
+repair-kit use, the situational Field Support perk, and artillery splash
+damage to tracks remain open. See the
+[archived battle mechanics](https://web.archive.org/web/20250303052442/https://wiki.wargaming.net/en/Battle_Mechanics)
+and [current crew guide](https://worldoftanks.eu/en/content/guide/game-mechanics-and-achievements/crew-training/).
 
 ### Hit interpretation and voice cues
 

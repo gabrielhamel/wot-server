@@ -134,6 +134,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.element_id`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | One-byte Mercury element ID on arena delivery and incoming cell commands. |
 | [`input.drive.flags`](../src/battles/src/infrastructure/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. The accepted mask is also recorded on the drive step. |
 | [`input.drive.airborne`](../src/battles/src/domain/vehicle.rs) | Whether the drive step starts with airborne motion. |
+| [`output.drive.immobilized`](../src/battles/src/domain/vehicle.rs) | True when a ground drive step is stopped by a broken track or disabled engine. |
 | [`output.drive.track_locked`](../src/battles/src/domain/vehicle.rs) | Whether the completed step uses track-lock steering. |
 | [`output.world.scenery_contact`](../src/battles/src/infrastructure/motion.rs) | Whether scenery constrained this vehicle's movement or rotation on a world-motion event. |
 | [`output.world.scenery_support`](../src/battles/src/infrastructure/motion.rs) | Whether the hull's destination support comes from scenery geometry on a world-motion event. |
@@ -312,6 +313,11 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.projectile.screens_pierced`](../src/battles/src/infrastructure/projectiles.rs) | Number of screen-only vehicle contacts through which the shell continued. |
 | [`output.devices.damaged`](../src/battles/src/infrastructure/projectiles.rs) | Number of device or crew strikes applied at the resolved contact. |
 | [`output.devices.destroyed`](../src/battles/src/infrastructure/projectiles.rs) | Number of devices or crew hit regions reduced to zero health at contact. |
+| [`output.tracks.left_damage_hp`](../src/battles/src/domain/armor.rs), `output.tracks.right_damage_hp` | Calculated track damage in HP by side on `battles.resolve_armor`, before capping to the current track HP. Omitted for sides without a strike. |
+| [`output.tracks.hit_count`](../src/battles/src/infrastructure/projectiles.rs) | Count of track sides whose module HP was reduced by the projectile contact. |
+| [`output.tracks.left`](../src/battles/src/infrastructure/projectiles.rs), `output.tracks.right` | New state on a track crossing a threshold. Values are `damaged` and `broken`. |
+| [`input.track.side`](../src/battles/src/infrastructure/vehicle_damage.rs) | Side being automatically repaired, `left` or `right`. The span also records `input.entity_id` for the repaired vehicle. |
+| [`output.outcome`](../src/battles/src/infrastructure/vehicle_damage.rs), `output.recipients` | Automatic track repair result (`repaired_critical` or `repaired`) and recipient count for successful repair deliveries. |
 | [`output.crew.injured`](../src/battles/src/infrastructure/projectiles.rs) | Number of crew injured by the resolved contact. |
 | [`output.fire.started`](../src/battles/src/infrastructure/projectiles.rs) | Whether the impact started a vehicle fire. |
 | [`output.ammo_rack.detonated`](../src/battles/src/infrastructure/projectiles.rs) | Whether the strike destroyed an ammunition rack while rounds were aboard. |
@@ -320,7 +326,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.explosion.trees`](../src/battles/src/infrastructure/explosions.rs) | Trunks broken by the detonation. |
 | [`output.explosion.targets`](../src/battles/src/infrastructure/explosions.rs) | Vehicles whose HP or stun deadline changed. |
 | [`output.explosion.stunned`](../src/battles/src/infrastructure/explosions.rs) | Number of new or extended stun deadlines. |
-| [`output.devices.repaired`](../src/battles/src/infrastructure/vehicle_damage.rs) | Damaged devices restored to their passive repair threshold this tick. |
+| [`output.devices.repaired`](../src/battles/src/infrastructure/vehicle_damage.rs) | Non-track devices restored to their passive repair threshold this tick. Track repairs have a dedicated span. |
 | [`output.shot.id`](../src/battles/src/infrastructure/projectiles.rs) | Arena-local sequence number assigned after firing, omitted on rejection. |
 | [`output.projectile.flight_seconds`](../src/battles/src/infrastructure/projectiles.rs) | Seconds from launch to scheduled contact. Omitted for shots with no contact. |
 | [`output.damage_stickers.count`](../src/battles/src/infrastructure/projectiles.rs) | Number of retained damage stickers on the target when the hit adds a new sticker. |
@@ -533,6 +539,7 @@ checks representative exported fields and parent links through real entry points
 | [`output.vehicle.hit_points`](../src/accounts/src/infrastructure/client/custom_battle_loadout.rs) | Stock HP for a catalog lookup, equipped HP for an owned lookup, or final starting and maximum HP after projection. |
 | [`input.ammunition.types`](../src/accounts/src/infrastructure/client/custom_battle_loadout.rs), `output.ammunition.types`, `output.ammunition.capacity`, `output.ammunition.rounds` | Number of explicitly supplied shell types on a custom battle vehicle projection when a custom loadout is supplied, compatible shell type count and capacity in rounds on a successful options lookup, and total rounds on successful projection. Type counts include entries with zero rounds. |
 | [`output.vehicle.health_factor`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Unitless combined health multiplier from supported passive equipment, emitted on successful battle vehicle loadout projection. |
+| [`output.tracks.repair_speed_factor`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Unitless loadout multiplier combining the trained Repairs perk and passive repair-speed effects. Emitted during battle vehicle projection. |
 | [`output.players.handoff_count`](../src/player-administration/src/presentation/battles.rs), `output.battle.id` | Count of successful queued garage-to-arena handoffs and ID of the activated arena. The gateway also records zero handoffs when no selected client could transfer. |
 | [`output.outcome`](../src/player-administration/src/presentation/battles.rs) | Dashboard battle routes record `loaded`, `launched`, `launched_partial`, `invalid_payload`, `invalid_setup`, `invalid_parameters`, `player_unavailable`, `crew_incomplete`, `invalid_player_loadout`, `invalid_dummy`, `vehicle_unavailable`, `loadout_failed`, `unavailable` or `preparation_failed`. Custom battle vehicle projection records `prepared`, `invalid_loadout` or `projection_failed` and includes `user.id` for a connected player. |
 | [`input.inventory_id`](../src/accounts/src/infrastructure/client/battle_readiness.rs), `output.outcome` | Owned vehicle ID and result of the launch-time readiness check. Outcomes are `ready`, `crew_incomplete`, `vehicle_unavailable`, `invalid_loadout`, or `projection_failed`. |

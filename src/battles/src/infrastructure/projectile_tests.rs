@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     application::BattleParticipant,
     infrastructure::{
+        avatar::ShotResult,
         delivery::{BattlePositions, QueuedDelivery},
         worker::BattleOutput,
     },
@@ -9,7 +10,13 @@ use crate::{
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use tracing_subscriber::prelude::*;
-use wot_platform::mercury::net::element::{Element, SimpleElement};
+use wot_platform::mercury::{
+    app::client::element::arena::{ArenaEntityProperties, NrlData},
+    net::{
+        codec::Codec,
+        element::{Element, SimpleElement},
+    },
+};
 use wot_shared_kernel::{
     ArmorMesh, ArmorPlate, ArmorTriangle, ExplosiveShell, GunLoading, GunPerformance, MountedArmor,
     ShellBallistics, ShellEffects, ShellKind, ShellStun, VehiclePerformance,
@@ -91,6 +98,8 @@ struct ImpactDelivery {
     stops: Vec<i32>,
     health_changes: Vec<u32>,
     damage_logs: usize,
+    shot_results: Vec<(ParticipantId, ShotResult)>,
+    track_updates: Vec<(ParticipantId, u8, Vec<u8>)>,
 }
 
 impl ArenaDelivery for ImpactDelivery {
@@ -121,6 +130,9 @@ impl ArenaDelivery for ImpactDelivery {
                 self.indicators.push((recipient, update));
             }
             AvatarUpdate::BattleEvents(_) => self.damage_logs += 1,
+            AvatarUpdate::ShotResults(result) => {
+                self.shot_results.push((recipient, result));
+            }
             AvatarUpdate::Tracer {
                 id,
                 ricochet,
@@ -140,9 +152,15 @@ impl ArenaDelivery for ImpactDelivery {
 
     fn send_arena_element<E: SimpleElement + Send + 'static>(
         &mut self,
-        _: ParticipantId,
-        _: E,
+        recipient: ParticipantId,
+        element: E,
     ) -> std::io::Result<()> {
+        if matches!(E::ID, NrlData::ID | ArenaEntityProperties::ID) {
+            let mut payload = Vec::new();
+            element.write(&mut payload, &())?;
+            let _delivery = tracing::info_span!("test.track_delivery").entered();
+            self.track_updates.push((recipient, E::ID, payload));
+        }
         Ok(())
     }
 
@@ -749,5 +767,285 @@ fn profile() -> VehiclePerformance {
             shell_effects: Default::default(),
             shell_ballistics: Default::default(),
         },
+    }
+}
+
+#[test]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
+fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
+    use crate::domain::{devices::TRACKS, movement::GroundContact, vehicle::Aim};
+    use glam::Vec2;
+    use wot_shared_kernel::{ArmorDevice, DeviceHealth};
+
+    let (id, mut battle, wire) = projectile_battle(&[1, 2]);
+    let extras = wire.track_extras;
+    let target = &mut battle.players.get_mut(&VICTIM).unwrap().tank;
+    target.position = Vec3::new(8.0, 0.0, 0.0);
+    let target_profile = target.performance.as_mut().unwrap();
+    let hull = Arc::get_mut(&mut target_profile.armor[1].as_mut().unwrap().mesh).unwrap();
+    let entry = hull.triangles.clone();
+    hull.triangles.extend(entry.iter().map(|entry| {
+        let mut exit = *entry;
+        exit.vertices.iter_mut().for_each(|point| point.x += 1.0);
+        exit.vertices.swap(1, 2);
+        exit
+    }));
+    for triangle in &mut hull.triangles {
+        triangle.plate.damage_factor = 0.02;
+    }
+    hull.bounds[0].x = -0.75;
+    hull.bounds[1].x = 0.75;
+    for (side, device) in TRACKS.into_iter().enumerate() {
+        hull.triangles.extend(entry.iter().map(|entry| {
+            let mut track = *entry;
+            track
+                .vertices
+                .iter_mut()
+                .for_each(|point| point.x = [-0.75, 0.75][side]);
+            track.material = 2 + side as u32;
+            track.plate.damage_factor = 0.0;
+            track.plate.once = true;
+            track.plate.device = Some(ArmorDevice {
+                device,
+                health: None,
+                projectile_chance: 1.0,
+                explosion_chance: 0.0,
+            });
+            track
+        }));
+        target_profile.device_health.insert(
+            device,
+            DeviceHealth {
+                maximum: 100,
+                repaired: 50,
+                repair_seconds: [1.0, 2.0][side],
+                fire_chance: 0.0,
+            },
+        );
+    }
+    let tank = &mut battle.players.get_mut(&SHOOTER).unwrap().tank;
+    let gun = &mut tank.performance.as_mut().unwrap().gun;
+    gun.shell_damage.insert(10, 60);
+    gun.shell_ballistics.insert(
+        10,
+        ShellBallistics {
+            kind: ShellKind::ArmorPiercing,
+            caliber_mm: 90.0,
+            penetration_mm: [100.0; 2],
+            far_damage: 60.0,
+            device_damage: [1.0; 2],
+            speed: 100.0,
+            penetration_randomization: 0.0,
+            damage_randomization: 0.0,
+            uniform_penetration: true,
+            uniform_damage: true,
+            damage_limited_range: f32::INFINITY,
+            explosive: None,
+            gravity: 0.0,
+            normalization: 0.0,
+            ricochet_cos: 0.0,
+            trace_ricochet: false,
+            obstacle_damage: None,
+            obstacle_penetration_loss: 0.0,
+        },
+    );
+    assert!(tank.aim_at(Aim::HullAngles {
+        yaw: std::f32::consts::FRAC_PI_2,
+        pitch: 0.0
+    }));
+    tank.advance_gun(2.0);
+
+    let own = wire.dispatch.entity_from_name("OwnVehicle").unwrap().1;
+    let property_updates = |delivery: &ImpactDelivery, name| {
+        let (index, property) = own
+            .properties
+            .iter()
+            .enumerate()
+            .find(|(_, property)| property.name.as_ref() == name)
+            .unwrap();
+        let node = (1026 + index as u16).to_be_bytes();
+        delivery
+            .track_updates
+            .iter()
+            .filter_map(|(recipient, id, bytes)| {
+                if *id != NrlData::ID || !bytes.starts_with(&node) {
+                    return None;
+                }
+                assert_eq!(*recipient, VICTIM);
+                let mut body = &bytes[4..];
+                assert_eq!(usize::from(bytes[3]), body.len());
+                let ScriptValue::Seq(rows) = ScriptValue::read(&mut body, &property.ty).unwrap()
+                else {
+                    panic!("Expected a device property array");
+                };
+                Some(
+                    rows.into_iter()
+                        .map(|row| {
+                            let ScriptValue::Dict(fields) = row else {
+                                panic!("Expected a device row")
+                            };
+                            fields
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let vehicle = wire.dispatch.entity_from_name("Vehicle").unwrap().1;
+    let public_index = vehicle
+        .properties
+        .iter()
+        .position(|property| property.name.as_ref() == "publicStateModifiers")
+        .unwrap() as u8;
+    let public_updates = |delivery: &ImpactDelivery| {
+        let mut updates = delivery
+            .track_updates
+            .iter()
+            .filter(|(_, id, bytes)| {
+                *id == ArenaEntityProperties::ID && bytes.starts_with(&[1, public_index])
+            })
+            .map(|(recipient, _, bytes)| (*recipient, bytes[2..].to_vec()))
+            .collect::<Vec<_>>();
+        updates.sort_by_key(|(recipient, _)| recipient.0);
+        updates
+    };
+
+    let mut delivery = ImpactDelivery::default();
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("track-test")));
+    tracing::subscriber::with_default(subscriber, || {
+        let mut now = battle.started_at;
+        for damage_code in [3, 4] {
+            assert_eq!(
+                battle.fire(&mut delivery, &wire, id, SHOOTER, now).unwrap(),
+                "launched"
+            );
+            now += Duration::from_millis(200);
+            battle.advance_projectiles(&mut delivery, &wire, id, now);
+            let (recipient, result) = delivery.shot_results.pop().unwrap();
+            assert_eq!(recipient, SHOOTER);
+            assert_ne!(result.hitFlags & (1 << 11), 0);
+            let rows = property_updates(&delivery, "vehicleDamageInfoList");
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].len(), 2);
+            for (row, extra) in rows[0].iter().zip(extras) {
+                assert_eq!(row["extraIndex"], ScriptValue::UInt8(extra));
+                assert_eq!(row["damageIndex"], ScriptValue::UInt8(damage_code));
+                assert_eq!(row["entityID"], ScriptValue::Int32(12));
+            }
+            let target = &battle.players[&VICTIM].tank;
+            assert_eq!(target.condition.immobilized(), damage_code == 4);
+            assert_eq!(target.health, if damage_code == 3 { 99 } else { 98 });
+            if damage_code == 3 {
+                assert!(public_updates(&delivery).is_empty());
+                delivery.track_updates.clear();
+                now += Duration::from_secs(2);
+            }
+        }
+        let node = |name| {
+            (1026
+                + own
+                    .properties
+                    .iter()
+                    .position(|p| p.name.as_ref() == name)
+                    .unwrap() as u16)
+                .to_be_bytes()
+        };
+        let nrl = &delivery.track_updates;
+        let update_position = |name| {
+            nrl.iter()
+                .position(|(_, id, payload)| *id == NrlData::ID && payload.starts_with(&node(name)))
+                .unwrap()
+        };
+        assert!(
+            update_position("vehicleDamageInfoList")
+                < update_position("destroyedDevicesIsRepairing")
+        );
+        let rows = property_updates(&delivery, "destroyedDevicesIsRepairing");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].len(), 2);
+        for (row, seconds) in rows[0].iter().zip([1.0, 2.0]) {
+            assert_eq!(row["progress"], ScriptValue::UInt8(0));
+            assert_eq!(row["timeLeft"], ScriptValue::Float32(seconds));
+        }
+        let both_broken = vec![2, extras[0], extras[1]];
+        assert_eq!(
+            public_updates(&delivery),
+            [(SHOOTER, both_broken.clone()), (VICTIM, both_broken)]
+        );
+        let ground = GroundContact {
+            surfaces: [4, 0, 0],
+            pitch: 0.0,
+        };
+        let bounds = [Vec2::splat(-100.0), Vec2::splat(100.0)];
+        let target = &mut battle.players.get_mut(&VICTIM).unwrap().tank;
+        assert!(target.drive(1 | 4));
+        assert_eq!(target.engine_mode(), [1, 0]);
+        assert_eq!(target.scenery_push_load(0.1, false), 0.0);
+        assert_eq!(target.scenery_push_load(0.1, true), 0.0);
+        assert!(!target.step(0.1, bounds, ground));
+
+        for (side, state) in [vec![1, extras[1]], vec![0]].into_iter().enumerate() {
+            delivery.track_updates.clear();
+            now += Duration::from_secs(1);
+            battle.advance_damage(&mut delivery, &wire, id, now);
+            let rows = property_updates(&delivery, "vehicleDamageInfoList");
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].len(), 1);
+            assert_eq!(rows[0][0]["extraIndex"], ScriptValue::UInt8(extras[side]));
+            assert_eq!(rows[0][0]["damageIndex"], ScriptValue::UInt8(15));
+            assert_eq!(
+                public_updates(&delivery),
+                [(SHOOTER, state.clone()), (VICTIM, state)]
+            );
+            assert_eq!(
+                battle
+                    .players
+                    .get_mut(&VICTIM)
+                    .unwrap()
+                    .tank
+                    .step(0.1, bounds, ground),
+                side == 1
+            );
+        }
+        battle.players.get_mut(&SHOOTER).unwrap().pending_reload = None;
+    });
+
+    let spans = exporter.get_finished_spans().unwrap();
+    let has = |span: &opentelemetry_sdk::trace::SpanData, key, value| {
+        span.attributes
+            .iter()
+            .any(|field| field.key.as_str() == key && field.value.to_string() == value)
+    };
+    let shot = spans
+        .iter()
+        .find(|span| span.name == "battles.shot" && has(span, "output.tracks.left", "broken"))
+        .unwrap();
+    assert!(has(shot, "output.tracks.right", "broken"));
+    let armor = spans
+        .iter()
+        .find(|span| {
+            span.name == "battles.resolve_armor"
+                && span.parent_span_id == shot.span_context.span_id()
+        })
+        .unwrap();
+    assert!(has(armor, "output.tracks.left_damage_hp", "60"));
+    assert!(has(armor, "output.tracks.right_damage_hp", "60"));
+
+    for side in ["left", "right"] {
+        let repair = spans
+            .iter()
+            .find(|span| span.name == "battles.repair_track" && has(span, "input.track.side", side))
+            .unwrap();
+        assert_eq!(repair.parent_span_id, shot.span_context.span_id());
+        assert_eq!(repair.span_context.trace_id(), shot.span_context.trace_id());
+        assert!(has(repair, "output.outcome", "repaired_critical"));
+        assert!(has(repair, "output.recipients", "2"));
+        assert!(spans.iter().any(|span| span.name == "test.track_delivery"
+            && span.parent_span_id == repair.span_context.span_id()));
     }
 }

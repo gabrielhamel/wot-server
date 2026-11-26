@@ -199,7 +199,11 @@ impl Tank {
         } else {
             self.drive.throttle() != 0.0
         };
-        if !powered || self.vertical_speed.is_some() || self.is_tipped() {
+        if !powered
+            || self.vertical_speed.is_some()
+            || self.is_tipped()
+            || self.condition.immobilized()
+        {
             return 0.0;
         }
         let power = self
@@ -298,7 +302,11 @@ impl Tank {
     }
 
     pub fn engine_mode(&self) -> [u8; 2] {
-        self.drive.engine_mode()
+        if self.condition.immobilized() {
+            [1, 0]
+        } else {
+            self.drive.engine_mode()
+        }
     }
 
     pub fn rpm(&self) -> f32 {
@@ -344,6 +352,7 @@ impl Tank {
         input.ground.soft_contacts = ground.surfaces[2], input.ground.pitch_radians = ground.pitch,
         output.drive.speed_mps = tracing::field::Empty, output.drive.yaw_rate_rad_per_second = tracing::field::Empty,
         output.drive.track_locked = tracing::field::Empty,
+        output.drive.immobilized = tracing::field::Empty,
         input.drive.airborne = self.vertical_speed.is_some(),
     ))]
     pub fn step(&mut self, seconds: f32, bounds: [Vec2; 2], ground: GroundContact) -> bool {
@@ -356,6 +365,7 @@ impl Tank {
         };
         if self.condition.immobilized() {
             self.drive.stop();
+            tracing::Span::current().record("output.drive.immobilized", true);
             return false;
         }
         let before = (self.position, self.yaw);

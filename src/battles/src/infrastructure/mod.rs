@@ -172,6 +172,7 @@ struct Participant {
     pending_reload: Option<tracing::Span>,
     pending_stun: Option<(Instant, tracing::Span)>,
     pending_condition: Option<vehicle_damage::DamageSource>,
+    track_repair_parents: [Option<tracing::Span>; 2],
     damage_stickers: DamageStickers,
 }
 
@@ -556,6 +557,7 @@ impl BattleRuntime {
                         pending_reload: None,
                         pending_stun: None,
                         pending_condition: None,
+                        track_repair_parents: [None, None],
                         damage_stickers: DamageStickers::default(),
                     },
                 ))

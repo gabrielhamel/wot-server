@@ -6,6 +6,7 @@ use super::{
 };
 use crate::domain::{
     armor::{ArmorHit, ArmorOutcome},
+    devices::TrackEvent,
     tracer::{self, TracerView},
     vehicle::Shot,
 };
@@ -20,6 +21,9 @@ const ARMOR_PIERCED_WITH_DAMAGE: u32 = 1 << 4;
 const ARMOR_BLOCKED: u32 = 1 << 5;
 const SCREEN_PIERCED: u32 = 1 << 6;
 const SCREEN_BLOCKED: u32 = 1 << 7;
+const TRACK_DAMAGED_BY_PROJECTILE: u32 = 1 << 11;
+const TRACK_DAMAGED_BY_EXPLOSION: u32 = 1 << 17;
+const DEVICE_DAMAGED_BY_PROJECTILE: u32 = 1 << 10;
 const ARMOR_BLOCKED_WITH_DAMAGE: u32 = 1 << 25;
 const DIRECT_PROJECTILE: u32 = 1 << 20;
 const RICOCHET_PROJECTILE: u32 = 1 << 23;
@@ -69,6 +73,8 @@ struct VehicleHit {
     sticker_added: bool,
     outcome: ArmorOutcome,
     criticals: u8,
+    tracks: [Option<TrackEvent>; 2],
+    track_hits: u8,
     fire_started: bool,
     detonated: bool,
 }
@@ -95,6 +101,9 @@ impl Battle {
         output.projectile.screens_pierced = tracing::field::Empty,
         output.devices.damaged = tracing::field::Empty,
         output.devices.destroyed = tracing::field::Empty,
+        output.tracks.hit_count = tracing::field::Empty,
+        output.tracks.left = tracing::field::Empty,
+        output.tracks.right = tracing::field::Empty,
         output.crew.injured = tracing::field::Empty,
         output.fire.started = tracing::field::Empty,
         output.ammo_rack.detonated = tracing::field::Empty,
@@ -446,11 +455,26 @@ impl Battle {
                     let critical = victim.tank.apply_criticals(&hit.devices, now);
                     span.record("output.devices.damaged", critical.damaged);
                     span.record("output.devices.destroyed", critical.destroyed);
+                    span.record("output.tracks.hit_count", critical.track_hits);
+                    for (side, event) in critical.tracks.into_iter().enumerate() {
+                        let field = ["output.tracks.left", "output.tracks.right"][side];
+                        if let Some(event) = event {
+                            span.record(field, event.name());
+                        }
+                        if event == Some(TrackEvent::Broken) {
+                            victim.track_repair_parents[side] = Some(span.clone());
+                        }
+                    }
                     span.record("output.crew.injured", critical.crew);
                     span.record("output.fire.started", critical.fire_started);
                     span.record("output.ammo_rack.detonated", critical.detonated);
+                    let tracks_broken = critical
+                        .tracks
+                        .iter()
+                        .filter(|event| **event == Some(TrackEvent::Broken))
+                        .count() as u8;
                     if critical.fire_started
-                        || (critical.destroyed > critical.crew
+                        || (critical.destroyed > critical.crew + tracks_broken
                             && victim.pending_condition.is_none())
                     {
                         victim.pending_condition = Some(DamageSource {
@@ -463,10 +487,7 @@ impl Battle {
                     } else {
                         hit.damage
                     };
-                    let (previous, health) = victim.tank.hit(damage);
-                    if health <= 0 {
-                        victim.pending_condition = None;
-                    }
+                    let (previous, health) = victim.apply_damage(damage);
                     let damage = previous - health;
                     let effect = ShotImpact::new(
                         attacker,
@@ -497,6 +518,8 @@ impl Battle {
                         sticker_added,
                         outcome: hit.outcome,
                         criticals: critical.damaged,
+                        tracks: critical.tracks,
+                        track_hits: critical.track_hits,
                         fire_started: critical.fire_started,
                         detonated: critical.detonated,
                     });
@@ -547,6 +570,8 @@ impl Battle {
                     sticker_added,
                     outcome,
                     criticals,
+                    tracks,
+                    track_hits,
                     fire_started,
                     detonated,
                 }) = vehicle_hit
@@ -570,8 +595,15 @@ impl Battle {
                     if health == 0 {
                         flags |= VEHICLE_KILLED;
                     }
-                    if criticals > 0 {
-                        flags |= 1 << 10;
+                    if criticals > track_hits {
+                        flags |= DEVICE_DAMAGED_BY_PROJECTILE;
+                    }
+                    if track_hits > 0 {
+                        flags |= if outcome == ArmorOutcome::Spall {
+                            TRACK_DAMAGED_BY_EXPLOSION
+                        } else {
+                            TRACK_DAMAGED_BY_PROJECTILE
+                        };
                     }
                     if fire_started {
                         flags |= 1 << 2;
@@ -586,6 +618,22 @@ impl Battle {
                     )?;
                 }
                 wire.show_shot_impact(delivery, peer, id, effect)?;
+                if let Some(target) = self.players.get(&victim) {
+                    if tracks.contains(&Some(TrackEvent::Broken)) {
+                        wire.publish_broken_tracks(delivery, peer, id, &target.tank)?;
+                    }
+                    if peer == victim && tracks.iter().any(Option::is_some) {
+                        let time = now.saturating_duration_since(self.started_at).as_secs_f32();
+                        wire.publish_track_damage(
+                            delivery,
+                            peer,
+                            &target.tank,
+                            tracks,
+                            attacker,
+                            (now, time),
+                        )?;
+                    }
+                }
                 if sticker_added && let Some(target) = self.players.get(&victim) {
                     wire.publish_damage_stickers(delivery, peer, id, &target.damage_stickers)?;
                 }

@@ -404,8 +404,13 @@ time through the next contact after a ricochet or a destructible fragment. It
 also records the reflected tracer's range when a ricochet continues. Both
 armor decisions and their deliveries share the shot span. An impact that
 adds a persistent penetration or resisted mark records the retained sticker
-count and parents a `battles.damage_stickers` span per recipient. Scene impacts
-record distance along the ray and parent the `explodeProjectile`
+count and parents a `battles.damage_stickers` span per recipient.
+Track impacts record calculated HP per side on `battles.resolve_armor` and
+state transitions on `battles.shot`.
+Each broken side retains the causative shot span until it repairs. The
+`battles.repair_track` child records the repaired vehicle, side, outcome and
+client deliveries, and marks failed deliveries as errors.
+Scene impacts record distance along the ray and parent the `explodeProjectile`
 deliveries. Obstacle impacts include the raw collision material kind. The same shot parents
 the shooter-only result, the victim-only direction and the private damage
 feedback for each. When the direction update is queued for the victim, the

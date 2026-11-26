@@ -1,5 +1,5 @@
 use super::{
-    devices::{DEVICE_STRIKE_CAPACITY, DeviceStrike},
+    devices::{DEVICE_STRIKE_CAPACITY, DeviceStrike, TRACKS},
     parameters::BattleParameters,
     vehicle::{Shot, Tank},
 };
@@ -68,6 +68,7 @@ struct Surface {
     plate: ArmorPlate,
     cosine: f32,
     normal: Vec3,
+    track_damage_factor: f32,
 }
 
 impl Shot {
@@ -78,6 +79,8 @@ impl Shot {
         output.part.index = tracing::field::Empty, output.material.kind = tracing::field::Empty,
         output.plate.thickness_mm = tracing::field::Empty, output.plate.effective_mm = tracing::field::Empty,
         output.penetration.remaining_mm = tracing::field::Empty, output.damage = tracing::field::Empty,
+        output.tracks.left_damage_hp = tracing::field::Empty,
+        output.tracks.right_damage_hp = tracing::field::Empty,
         output.outcome = tracing::field::Empty,
     ))]
     pub fn resolve_armor(
@@ -95,6 +98,19 @@ impl Shot {
             span.record("output.plate.effective_mm", hit.effective_mm);
             span.record("output.penetration.remaining_mm", hit.remaining_mm);
             span.record("output.damage", hit.damage);
+            for (track, attribute) in TRACKS.into_iter().zip([
+                "output.tracks.left_damage_hp",
+                "output.tracks.right_damage_hp",
+            ]) {
+                if let Some(strike) = hit
+                    .devices
+                    .iter()
+                    .flatten()
+                    .find(|strike| strike.device == track)
+                {
+                    span.record(attribute, strike.damage);
+                }
+            }
             span.record("output.outcome", hit.outcome.name());
         } else {
             tracing::Span::current().record("output.outcome", "miss");
@@ -191,12 +207,22 @@ impl Shot {
                 let normal = (b - a).cross(c - a).normalize_or_zero();
                 let segment =
                     impact_segment(index as u8, bounds, origin, direction, near, far, distance);
+                let track_damage_factor = profile.mobility.track_damage.map_or(1.0, |tracks| {
+                    let [rear, front] = tracks.protected_z;
+                    let z = origin.z + direction.z * distance;
+                    if index == 0 && (rear..=front).contains(&z) {
+                        tracks.bulk_health_factor.recip()
+                    } else {
+                        1.0
+                    }
+                });
                 surfaces.push(Surface {
                     distance,
                     material: triangle.material,
                     plate: triangle.plate,
                     cosine: normal.dot(direction).abs().clamp(0.0, 1.0),
                     normal: rotation * normal,
+                    track_damage_factor,
                     segment,
                 });
             }
@@ -250,6 +276,7 @@ impl Shot {
                 plate,
                 cosine,
                 normal,
+                ..
             } = surface;
             let material_key = (segment.part, material);
             if seen.contains(&material_key) {
@@ -296,16 +323,7 @@ impl Shot {
                 }
                 return Some(hit);
             }
-            let mut normalization = if ap { shell.normalization } else { 0.0 };
-            if ap
-                && plate.caliber_normalization
-                && thickness > 0.0
-                && ratio > parameters.ap_normalization_overmatch_ratio
-            {
-                normalization *= parameters.ap_normalization_caliber_factor * ratio;
-            }
-            let angle = (cosine.acos() - normalization).max(0.0);
-            let effective = thickness / angle.cos().max(0.00001);
+            let effective = self.effective_thickness(surface, parameters);
             hit.effective_mm = effective;
             if plate.damage_factor > 0.0 {
                 if penetration >= effective && !matches!(shell.kind, ShellKind::Other) {
@@ -320,6 +338,9 @@ impl Shot {
                         {
                             break;
                         }
+                        if ap && is_track(*internal) {
+                            break;
+                        }
                         self.record_device(
                             *internal,
                             false,
@@ -329,6 +350,12 @@ impl Shot {
                         internal_penetration -= internal.plate.thickness_mm;
                     }
                     hit.remaining_mm = penetration - effective;
+                    let onward = &surfaces[index + 1..];
+                    if ap && onward.iter().copied().any(is_track) {
+                        self.strike_tracks_beyond_hull(
+                            surface, onward, &mut seen, &mut hit, parameters,
+                        );
+                    }
                     hit.damage = rolled_damage(
                         shell_value_at_distance(
                             [f32::from(self.damage), shell.far_damage],
@@ -413,6 +440,78 @@ impl Shot {
         }
         last_hit
     }
+    fn effective_thickness(&self, surface: Surface, parameters: &BattleParameters) -> f32 {
+        let plate = surface.plate;
+        let ap = matches!(self.ballistics.kind, ShellKind::ArmorPiercing);
+        let cosine = if plate.angled { surface.cosine } else { 1.0 };
+        let ratio = self.ballistics.caliber_mm / plate.thickness_mm;
+        let mut normalization = if ap {
+            self.ballistics.normalization
+        } else {
+            0.0
+        };
+        if ap
+            && plate.caliber_normalization
+            && plate.thickness_mm > 0.0
+            && ratio > parameters.ap_normalization_overmatch_ratio
+        {
+            normalization *= parameters.ap_normalization_caliber_factor * ratio;
+        }
+        let angle = (cosine.acos() - normalization).max(0.0);
+        plate.thickness_mm / angle.cos().max(0.00001)
+    }
+
+    fn strike_tracks_beyond_hull(
+        &self,
+        entry: Surface,
+        surfaces: &[Surface],
+        seen: &mut Vec<(u8, u32)>,
+        hit: &mut ArmorHit,
+        parameters: &BattleParameters,
+    ) {
+        let entering = entry.normal.dot(self.direction);
+        let mut exited = false;
+        let mut remaining = hit.remaining_mm;
+        for &surface in surfaces {
+            if surface.distance <= entry.distance {
+                continue;
+            }
+            if surface.plate.damage_factor > 0.0 {
+                if exited || surface.segment.part != entry.segment.part {
+                    break;
+                }
+                if surface.normal.dot(self.direction) * entering >= 0.0 {
+                    continue;
+                }
+                remaining -= self.effective_thickness(surface, parameters);
+                if remaining < 0.0 {
+                    break;
+                }
+                exited = true;
+            } else {
+                let key = (surface.segment.part, surface.material);
+                if seen.contains(&key) {
+                    continue;
+                }
+                remaining -= self.effective_thickness(surface, parameters);
+                if remaining < 0.0 {
+                    break;
+                }
+                if exited && is_track(surface) {
+                    self.record_device(
+                        surface,
+                        false,
+                        &mut hit.devices,
+                        parameters.max_device_hits,
+                    );
+                }
+                if surface.plate.once {
+                    seen.push(key);
+                }
+            }
+        }
+    }
+
     fn record_device(
         &self,
         hit: Surface,
@@ -438,18 +537,22 @@ impl Shot {
         if chance <= 0.0 || fastrand::f32() >= chance {
             return;
         }
-        let damage = if explosion {
-            self.ballistics
-                .explosive
-                .map_or([0.0; 2], |he| he.spall_device_damage)
+        let damage = if !explosion && is_track(hit) {
+            (self.damage_at(hit.distance) * hit.track_damage_factor).round() as u16
         } else {
-            self.ballistics.device_damage
+            let curve = if explosion {
+                self.ballistics
+                    .explosive
+                    .map_or([0.0; 2], |he| he.spall_device_damage)
+            } else {
+                self.ballistics.device_damage
+            };
+            rolled_damage(
+                shell_value_at_distance(curve, self.travelled + hit.distance),
+                self.damage_roll,
+                1.0,
+            )
         };
-        let damage = rolled_damage(
-            shell_value_at_distance(damage, self.travelled + hit.distance),
-            self.damage_roll,
-            1.0,
-        );
         if damage > 0
             && let Some(slot) = devices.iter_mut().take(limit).find(|slot| slot.is_none())
         {
@@ -460,6 +563,13 @@ impl Shot {
             });
         }
     }
+}
+
+fn is_track(surface: Surface) -> bool {
+    surface
+        .plate
+        .device
+        .is_some_and(|device| TRACKS.contains(&device.device))
 }
 
 fn rolled_damage(nominal: f32, roll: f32, factor: f32) -> u16 {
