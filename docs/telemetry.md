@@ -407,7 +407,7 @@ adds a persistent penetration or resisted mark records the retained sticker
 count and parents a `battles.damage_stickers` span per recipient.
 Track impacts record calculated HP per side on `battles.resolve_armor` and
 state transitions on `battles.shot`.
-Each broken side retains the causative shot span until it repairs. The
+Each broken side retains the shot span that started or most recently restarted its repair. The
 `battles.repair_track` child records the repaired vehicle, side, outcome and
 client deliveries, and marks failed deliveries as errors.
 Scene impacts record distance along the ray and parent the `explodeProjectile`

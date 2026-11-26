@@ -465,7 +465,7 @@ impl Battle {
                         if let Some(event) = event {
                             span.record(field, event.name());
                         }
-                        if event == Some(TrackEvent::Broken) {
+                        if event.is_some_and(TrackEvent::starts_repair) {
                             victim.track_repair_parents[side] = Some(span.clone());
                         }
                     }
@@ -652,13 +652,14 @@ impl Battle {
                     );
                 if peer == victim && (damage != 0 || criticals != 0 || blocked) {
                     let indicator_damage = if blocked { shot.damage } else { damage as u16 };
-                    let critical_flags = if tracks.contains(&Some(TrackEvent::Broken)) {
-                        TRACK_DESTROYED
-                    } else if track_hits > 0 {
-                        TRACK_CRITICAL
-                    } else {
-                        u32::from(criticals)
-                    };
+                    let critical_flags =
+                        if tracks.into_iter().flatten().any(TrackEvent::starts_repair) {
+                            TRACK_DESTROYED
+                        } else if track_hits > 0 {
+                            TRACK_CRITICAL
+                        } else {
+                            u32::from(criticals)
+                        };
                     delivery.send_avatar(
                         peer,
                         AvatarUpdate::HitDirection {

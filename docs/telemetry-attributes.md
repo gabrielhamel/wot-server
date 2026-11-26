@@ -314,8 +314,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.devices.damaged`](../src/battles/src/infrastructure/projectiles.rs) | Number of device or crew strikes applied at the resolved contact. |
 | [`output.devices.destroyed`](../src/battles/src/infrastructure/projectiles.rs) | Number of devices or crew hit regions reduced to zero health at contact. |
 | [`output.tracks.left_damage_hp`](../src/battles/src/domain/armor.rs), `output.tracks.right_damage_hp` | Calculated track damage in HP by side on `battles.resolve_armor`, before capping to the current track HP. Omitted for sides without a strike. |
-| [`output.tracks.hit_count`](../src/battles/src/infrastructure/projectiles.rs) | Count of track sides whose module HP was reduced by the projectile contact. |
-| [`output.tracks.left`](../src/battles/src/infrastructure/projectiles.rs), `output.tracks.right` | New state on a track crossing a threshold. Values are `damaged` and `broken`. |
+| [`output.tracks.hit_count`](../src/battles/src/infrastructure/projectiles.rs) | Count of track sides damaged or whose repair countdown was restarted by the contact. |
+| [`output.tracks.left`](../src/battles/src/infrastructure/projectiles.rs), `output.tracks.right` | Track state on impact. Values are `damaged`, `broken` and `repair_restarted`. |
 | [`input.track.side`](../src/battles/src/infrastructure/vehicle_damage.rs) | Side being automatically repaired, `left` or `right`. The span also records `input.entity_id` for the repaired vehicle. |
 | [`output.outcome`](../src/battles/src/infrastructure/vehicle_damage.rs), `output.recipients` | Automatic track repair result (`repaired_critical` or `repaired`) and recipient count for successful repair deliveries. |
 | [`output.crew.injured`](../src/battles/src/infrastructure/projectiles.rs) | Number of crew injured by the resolved contact. |

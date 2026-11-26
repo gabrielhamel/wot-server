@@ -552,7 +552,9 @@ client-supplied meshes, pending comparison with a controlled live shot.
 A track that reaches the chassis's regeneration threshold is marked damaged.
 At zero HP it breaks and disables powered movement and hull steering until
 both tracks are functional. The turret and gun can still operate. Each side
-repairs on its own timer and returns at its chassis regeneration HP. The
+repairs on its own timer and returns at its chassis regeneration HP. A damaging
+hit on a broken track restarts that side's full repair time. The countdown
+updates even when the shot deals zero hull HP damage. The
 loadout projects the base chassis repair time, the crew's average trained
 **Repairs** perk (scaled by perk efficiency), and passive general and
 suspension repair-speed modifiers from equipment and consumables. The

@@ -19,6 +19,7 @@ pub(crate) const TRACKS: [Device; 2] = [Device::TrackLeft, Device::TrackRight];
 pub(crate) enum TrackEvent {
     Damaged,
     Broken,
+    RepairRestarted,
     RepairedCritical,
     Repaired,
 }
@@ -28,9 +29,14 @@ impl TrackEvent {
         match self {
             Self::Damaged => "damaged",
             Self::Broken => "broken",
+            Self::RepairRestarted => "repair_restarted",
             Self::RepairedCritical => "repaired_critical",
             Self::Repaired => "repaired",
         }
+    }
+
+    pub fn starts_repair(self) -> bool {
+        matches!(self, Self::Broken | Self::RepairRestarted)
     }
 }
 
@@ -89,24 +95,29 @@ impl Condition {
                 profile,
                 repair: None,
             });
-            if state.health == 0 {
+            let track = TRACKS.iter().position(|&track| track == strike.device);
+            let previous = state.health;
+            if strike.damage == 0 || (previous == 0 && (track.is_none() || state.repair.is_none()))
+            {
                 continue;
             }
-            let previous = state.health;
             state.health = previous.saturating_sub(strike.damage);
-            let track = TRACKS.iter().position(|&track| track == strike.device);
             if let Some(side) = track {
                 result.track_hits += 1;
                 result.track_impact.get_or_insert(strike.impact);
                 if state.health == 0 {
-                    result.tracks[side] = Some(TrackEvent::Broken);
+                    result.tracks[side] = Some(if previous == 0 {
+                        TrackEvent::RepairRestarted
+                    } else {
+                        TrackEvent::Broken
+                    });
                 } else if previous > profile.repaired && state.health <= profile.repaired {
                     result.tracks[side] = Some(TrackEvent::Damaged);
                 }
             }
             result.damaged += 1;
             if state.health == 0 {
-                result.destroyed += 1;
+                result.destroyed += u8::from(previous > 0);
                 let detonates = strike.device == Device::AmmoRack && armed;
                 if crew {
                     result.crew += 1;
@@ -232,6 +243,16 @@ mod tests {
         );
         assert_eq!(critical.destroyed, 1);
         assert!(condition.immobilized());
+        let mut no_damage = strike(Device::TrackLeft).unwrap();
+        no_damage.damage = 0;
+        let ignored = condition.apply(
+            &[Some(no_damage)],
+            &profiles,
+            true,
+            now + Duration::from_secs(1),
+            &parameters,
+        );
+        assert_eq!(ignored.tracks, [None; 2]);
         assert_eq!(
             condition.tick(now + Duration::from_secs(1), &parameters),
             (0, false, [None; 2])

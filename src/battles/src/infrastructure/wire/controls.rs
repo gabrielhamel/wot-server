@@ -659,20 +659,19 @@ impl ArenaWire {
         let mut repair_rows = Vec::new();
         let (now, time) = clock;
         for ((track, extra), event) in TRACKS.into_iter().zip(self.track_extras).zip(events) {
-            if let Some(event) = event {
+            let code = match event {
+                Some(TrackEvent::Damaged) => Some(3),
+                Some(TrackEvent::Broken) => Some(4),
+                Some(TrackEvent::RepairedCritical) => Some(15),
+                Some(TrackEvent::Repaired) => Some(16),
+                Some(TrackEvent::RepairRestarted) | None => None,
+            };
+            if let Some(code) = code {
                 damage_rows.push(dict(
                     damage,
                     [
                         ("extraIndex", WireValue::UInt8(extra)),
-                        (
-                            "damageIndex",
-                            WireValue::UInt8(match event {
-                                TrackEvent::Damaged => 3,
-                                TrackEvent::Broken => 4,
-                                TrackEvent::RepairedCritical => 15,
-                                TrackEvent::Repaired => 16,
-                            }),
-                        ),
+                        ("damageIndex", WireValue::UInt8(code)),
                         ("entityID", id(damage, "entityID", attacker)?),
                         ("equipmentID", WireValue::UInt16(0)),
                         ("damageExtIndex", WireValue::Int8(-1)),
@@ -695,12 +694,14 @@ impl ArenaWire {
                 )?);
             }
         }
-        self.publish_own_properties(
-            delivery,
-            client,
-            component,
-            BTreeMap::from([("vehicleDamageInfoList", WireValue::Seq(damage_rows))]),
-        )?;
+        if !damage_rows.is_empty() {
+            self.publish_own_properties(
+                delivery,
+                client,
+                component,
+                BTreeMap::from([("vehicleDamageInfoList", WireValue::Seq(damage_rows))]),
+            )?;
+        }
         self.publish_own_properties(
             delivery,
             client,

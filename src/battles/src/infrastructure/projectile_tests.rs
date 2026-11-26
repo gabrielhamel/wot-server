@@ -831,6 +831,7 @@ fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
     let tank = &mut battle.players.get_mut(&SHOOTER).unwrap().tank;
     let gun = &mut tank.performance.as_mut().unwrap().gun;
     gun.shell_damage.insert(10, 60);
+    gun.loading.reload_time = 0.1;
     gun.shell_ballistics.insert(
         10,
         ShellBallistics {
@@ -994,9 +995,46 @@ fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
         assert_eq!(target.scenery_push_load(0.1, true), 0.0);
         assert!(!target.step(0.1, bounds, ground));
 
+        // Stop the follow-up shot at the hull after it strikes the near track.
+        let hull = target.performance.as_mut().unwrap().armor[1]
+            .as_mut()
+            .unwrap();
+        for triangle in &mut Arc::get_mut(&mut hull.mesh).unwrap().triangles {
+            if triangle.plate.damage_factor > 0.0 {
+                triangle.plate.thickness_mm = 200.0;
+            }
+        }
+        delivery.track_updates.clear();
+        now += Duration::from_millis(300);
+        assert_eq!(
+            battle.fire(&mut delivery, &wire, id, SHOOTER, now).unwrap(),
+            "launched"
+        );
+        now += Duration::from_millis(200);
+        battle.advance_projectiles(&mut delivery, &wire, id, now);
+        assert_eq!(battle.players[&VICTIM].tank.health, 98);
+        assert!(property_updates(&delivery, "vehicleDamageInfoList").is_empty());
+        assert!(public_updates(&delivery).is_empty());
+        let timers = property_updates(&delivery, "destroyedDevicesIsRepairing");
+        assert_eq!(timers.len(), 1);
+        assert_eq!(timers[0].len(), 2);
+        for ((row, extra), (seconds, progress)) in
+            timers[0].iter().zip(extras).zip([(1.0, 0), (1.5, 25)])
+        {
+            assert_eq!(row["extraIndex"], ScriptValue::UInt8(extra));
+            assert_eq!(row["timeLeft"], ScriptValue::Float32(seconds));
+            assert_eq!(row["progress"], ScriptValue::UInt8(progress));
+        }
+
+        delivery.track_updates.clear();
+        now += Duration::from_millis(500);
+        battle.advance_damage(&mut delivery, &wire, id, now);
+        assert!(delivery.track_updates.is_empty());
+        assert!(battle.players[&VICTIM].tank.condition.immobilized());
+
         for (side, state) in [vec![1, extras[1]], vec![0]].into_iter().enumerate() {
             delivery.track_updates.clear();
-            now += Duration::from_secs(1);
+            now += Duration::from_millis(500);
             battle.advance_damage(&mut delivery, &wire, id, now);
             let rows = property_updates(&delivery, "vehicleDamageInfoList");
             assert_eq!(rows.len(), 1);
@@ -1041,13 +1079,26 @@ fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
     assert!(has(armor, "output.tracks.left_damage_hp", "60"));
     assert!(has(armor, "output.tracks.right_damage_hp", "60"));
 
-    for side in ["left", "right"] {
+    let restarted = spans
+        .iter()
+        .find(|span| {
+            span.name == "battles.shot" && has(span, "output.tracks.left", "repair_restarted")
+        })
+        .unwrap();
+    assert!(has(restarted, "output.devices.destroyed", "0"));
+    assert!(has(restarted, "output.tracks.hit_count", "1"));
+    assert!(spans.iter().any(|span| span.name == "test.track_delivery"
+        && span.parent_span_id == restarted.span_context.span_id()));
+    for (side, parent) in [("left", restarted), ("right", shot)] {
         let repair = spans
             .iter()
             .find(|span| span.name == "battles.repair_track" && has(span, "input.track.side", side))
             .unwrap();
-        assert_eq!(repair.parent_span_id, shot.span_context.span_id());
-        assert_eq!(repair.span_context.trace_id(), shot.span_context.trace_id());
+        assert_eq!(repair.parent_span_id, parent.span_context.span_id());
+        assert_eq!(
+            repair.span_context.trace_id(),
+            parent.span_context.trace_id()
+        );
         assert!(has(repair, "output.outcome", "repaired_critical"));
         assert!(has(repair, "output.recipients", "2"));
         assert!(spans.iter().any(|span| span.name == "test.track_delivery"
