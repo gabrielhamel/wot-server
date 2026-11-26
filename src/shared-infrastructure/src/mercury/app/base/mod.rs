@@ -41,6 +41,7 @@ use element::{LoginKey, SessionKey};
 
 pub struct ArenaSnapshot {
     tick: u8,
+    vehicle_count: usize,
     bundle: Bundle,
     queued_at: Instant,
 }
@@ -56,11 +57,14 @@ impl ArenaSnapshot {
         let mut writer = bundle.element_writer();
         writer.write_simple(client::element::TickSync { tick })?;
         writer.write_simple(avatar)?;
+        let mut vehicle_count = 0;
         for position in vehicles {
             writer.write_simple(position)?;
+            vehicle_count += 1;
         }
         Ok(Self {
             tick,
+            vehicle_count,
             bundle,
             queued_at,
         })
@@ -944,11 +948,14 @@ impl App {
     #[tracing::instrument(name = "mercury.arena_snapshot", skip_all, fields(
         ddd.bounded_context.name = "player_sessions",
         input.arena.tick = snapshot.tick,
+        input.vehicles.count = snapshot.vehicle_count,
         mercury.session.id = client.slot.diagnostic_id(),
         network.peer.address = %client.addr.ip(),
         network.peer.port = client.addr.port(),
         output.packet.sequence = tracing::field::Empty,
         output.snapshot.age_ms = tracing::field::Empty,
+        output.snapshot.udp_payload_bytes = tracing::field::Empty,
+        output.snapshot.datagrams = tracing::field::Empty,
         output.delivery = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
     ), err)]
@@ -967,7 +974,9 @@ impl App {
                 .protocol
                 .channel(client.addr, None)
                 .prepare(&mut snapshot.bundle, false);
-            self.socket.send_bundle(&snapshot.bundle, client.addr)?;
+            let bytes = self.socket.send_bundle(&snapshot.bundle, client.addr)?;
+            span.record("output.snapshot.udp_payload_bytes", bytes);
+            span.record("output.snapshot.datagrams", snapshot.bundle.len());
             if let Some(sequence) = sequence {
                 span.record("output.packet.sequence", i64::from(sequence.get()));
             }

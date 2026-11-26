@@ -68,6 +68,9 @@ battle_parameters! {
         countdown_seconds: u64 = 10, 0..=60, true, "Countdown (seconds)";
         results_seconds: u64 = 6, 0..=60, true, "Results before garage return (seconds)";
     }
+    "Network replication" {
+        parked_vehicle_pose_interval_ticks: u32 = 5, 1..=5, true, "Parked vehicle pose interval (100 ms ticks)";
+    }
     "Vehicle movement" {
         gravity_mps2: f32 = 9.81, 0.0..=30.0, false, "Gravity (m/s²)";
         coast_deceleration_mps2: f32 = 14.0, 0.0..=60.0, false, "Coast deceleration (m/s²)";

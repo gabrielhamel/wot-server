@@ -139,6 +139,7 @@ struct Battle {
     players: HashMap<ParticipantId, Participant>,
     started_at: Instant,
     last_snapshot_tick: Option<u32>,
+    full_snapshot_pending: bool,
     round: Round,
     launch: Option<tracing::Span>,
     shot_sequence: i32,
@@ -150,6 +151,7 @@ struct Battle {
 
 struct Participant {
     vehicle: CreateArenaEntity,
+    pose_cadence: PoseCadence,
     avatar_id: u32,
     roster_row: usize,
     team: u8,
@@ -171,6 +173,25 @@ struct Participant {
     pending_stun: Option<(Instant, tracing::Span)>,
     pending_condition: Option<vehicle_damage::DamageSource>,
     damage_stickers: DamageStickers,
+}
+
+#[derive(Default)]
+struct PoseCadence {
+    previous: Option<(Vec3, Vec3)>,
+    changed_at: u32,
+}
+
+impl PoseCadence {
+    fn includes(&mut self, pose: (Vec3, Vec3), entity_id: u32, tick: u32, interval: u32) -> bool {
+        if interval <= 1 {
+            return true;
+        }
+        if self.previous != Some(pose) {
+            self.previous = Some(pose);
+            self.changed_at = tick;
+        }
+        tick.saturating_sub(self.changed_at) < interval || tick % interval == entity_id % interval
+    }
 }
 
 impl Battle {
@@ -510,6 +531,7 @@ impl BattleRuntime {
                     *client,
                     Participant {
                         vehicle: wire.vehicle(player)?,
+                        pose_cadence: PoseCadence::default(),
                         avatar_id: player.avatar_id,
                         roster_row,
                         team: player.team,
@@ -554,6 +576,7 @@ impl BattleRuntime {
                 players,
                 started_at: now,
                 last_snapshot_tick: None,
+                full_snapshot_pending: false,
                 round: Round::new(now, launch.duration, &launch.parameters),
                 launch: Some(tracing::Span::current()),
                 shot_sequence: 0,
@@ -673,6 +696,7 @@ impl BattleSimulation {
             Ok(()) => {
                 if let Some(player) = battle.players.get_mut(&client) {
                     player.entered = true;
+                    battle.full_snapshot_pending = true;
                 }
                 if battle
                     .players
@@ -814,18 +838,29 @@ impl BattleSimulation {
                 }
             }
             if !recipients.is_empty() {
-                let vehicles = battle.players.values().map(|other| VehiclePosition {
-                    reference: 0,
-                    entity_id: other.vehicle.entity_id,
-                    position: other.vehicle.position,
-                    direction: other.vehicle.direction,
-                });
+                let interval = battle.parameters.parked_vehicle_pose_interval_ticks;
+                let full = std::mem::take(&mut battle.full_snapshot_pending);
+                let vehicles: Vec<_> = battle
+                    .players
+                    .values_mut()
+                    .filter_map(|other| {
+                        let entity_id = other.vehicle.entity_id;
+                        let pose = (other.vehicle.position, other.vehicle.direction);
+                        let include = other.pose_cadence.includes(pose, entity_id, tick, interval);
+                        (include || full).then_some(VehiclePosition {
+                            reference: 0,
+                            entity_id,
+                            position: pose.0,
+                            direction: pose.1,
+                        })
+                    })
+                    .collect();
                 delivery.publish_positions(delivery::BattlePositions {
                     battle_id,
                     tick: tick as u8,
                     queued_at: now,
                     recipients,
-                    vehicles: vehicles.collect(),
+                    vehicles,
                     spans: movement,
                 });
             }
@@ -883,5 +918,27 @@ impl BattleSimulation {
         } else {
             ParticipantDeparture::Loading
         })
+    }
+}
+
+#[cfg(test)]
+mod pose_cadence_tests {
+    use super::*;
+
+    #[test]
+    fn parked_poses_are_staggered_and_motion_resumes_immediately() {
+        let mut cadence = PoseCadence::default();
+        let parked = (Vec3::ZERO, Vec3::ZERO);
+        let turning = (Vec3::ZERO, Vec3::Z);
+        let entity = 12;
+
+        assert!(cadence.includes(parked, entity, 1, 5));
+        assert!((2..=5).all(|tick| cadence.includes(parked, entity, tick, 5)));
+        assert!(!cadence.includes(parked, entity, 6, 5));
+        assert!(cadence.includes(parked, entity, 7, 5));
+        assert!(cadence.includes(turning, entity, 8, 5));
+        assert!((9..=12).all(|tick| cadence.includes(turning, entity, tick, 5)));
+        assert!(!cadence.includes(turning, entity, 13, 5));
+        assert!(cadence.includes(turning, entity, 14, 1));
     }
 }

@@ -185,9 +185,9 @@ safety ceilings remain implementation details.
 
 Battles owns the defaults and ranges in
 [parameters.rs](../src/battles/src/domain/parameters.rs). The admin dashboard
-can override round timing, gravity and drive response, hull contacts and
-rollover, ballistic integration, armor and device damage, fire and tracer
-visibility. The validated values travel with the battle launch and are shared
+can override round timing, parked position refresh, gravity and drive
+response, hull contacts and rollover, ballistic integration, armor and device
+damage, fire and tracer visibility. The validated values travel with the battle launch and are shared
 by simulation and replication for that arena. The existing values are the
 defaults used by native Training Rooms.
 
@@ -195,6 +195,21 @@ The native movement bitmask identifies commands. Shell ballistics and equipped
 vehicle performance come from the resource bundle. The tracer rule for hidden
 shooters is available to the simulator, while current Training replication
 treats shooters as known.
+
+### Parked vehicle positions
+
+Training sends `TickSync`, the hull-relative Avatar pose and pending Mercury
+ACKs every 100 ms. Each vehicle's position, yaw, pitch and roll are compared
+with the previous snapshot. A changed pose is sent immediately and remains
+at the full tick rate for the refresh interval starting with that change. A client
+entering the arena also triggers a full snapshot. Unchanged poses then use
+refresh slots staggered by entity ID. Turret angle properties have their own
+delivery path.
+
+Under **Admin → Battles → Battle parameters → Network replication**,
+**Parked vehicle pose interval (100 ms ticks)** accepts 1–5 and defaults to 5.
+Set it to 1 to include every pose on every tick. Native Training Rooms use the
+default. See the [native replay evidence](battle-replays.md#widepark-parked-vehicle-cadence-from-2026-11-26).
 
 ### Training movement coverage
 
