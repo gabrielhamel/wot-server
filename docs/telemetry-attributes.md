@@ -18,7 +18,7 @@ and [server configuration](server.md#logging-and-telemetry) for export setup.
 | `network.transport` | `tcp` for HTTP/XMPP and `udp` for Mercury on those roots and `store.http.request` or `web.ui.request` as applicable. |
 
 Supporting sources: [Admin HTTP middleware](../src/player-administration/src/presentation/mod.rs),
-[Store API middleware](../src/player-sessions/src/presentation/store/mod.rs),
+[Store API middleware](../src/store/src/presentation/store/mod.rs),
 [Web UI middleware](../src/server-runtime/src/infrastructure/web.rs),
 [HTTP address validation](../src/shared-infrastructure/src/infrastructure/http.rs),
 [Mercury gateway](../src/player-sessions/src/infrastructure/gateway/mod.rs), and
@@ -52,7 +52,7 @@ meanings on different operations; those differences are listed explicitly.
 
 | Attribute | Meaning and emission |
 | --- | --- |
-| [`ddd.bounded_context.name`](../src/player-sessions/src/application/grants.rs) | Custom DDD attribute naming the owning context. Values include `player_sessions`, `accounts`, `battles`, `social`, `player_administration`, and `server`. |
+| [`ddd.bounded_context.name`](../src/player-sessions/src/application/grants.rs) | Custom DDD attribute naming the owning context. Values include `player_sessions`, `accounts`, `battles`, `social`, `player_administration`, `store`, `training_rooms`, and `server`. |
 | [`user.id`](../src/player-sessions/src/application/mod.rs) | Local account ID when known: authenticated login, session, account operation, authenticated XMPP handler, or Store request authorized by a live garage or dashboard session. It identifies the affected account, not necessarily an admin caller. Login records it only after authentication succeeds. |
 | [`user.name`](../src/player-sessions/src/infrastructure/gateway/mod.rs) | Nonempty player display name from the account snapshot already returned by successful game authentication. Never copied from the login email; omitted if unavailable. No extra database query. |
 | [`user.email`](../src/player-sessions/src/infrastructure/gateway/mod.rs) | Email-shaped login supplied by the current game authentication payload, recorded after authentication succeeds. Requires nonempty local part, a dot in the domain, and no whitespace; this is a shape check, not proof of ownership. Omitted for non-email logins and requests without an email payload. |
@@ -78,7 +78,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.query.bytes`](../src/player-administration/src/presentation/mod.rs) | Length in bytes of the encoded URI query, when present. Query text is excluded. |
 | [`input.content_length`](../src/player-administration/src/presentation/mod.rs) | Declared body length in bytes when a valid nonnegative `Content-Length` fits in a signed 64-bit integer. This is request metadata and does not count bytes read. |
 | [`http.response.status_code`](../src/player-administration/src/presentation/mod.rs) | HTTP response status after the admin API, Store API or web UI handler returns. |
-| [`input.channel`](../src/player-sessions/src/presentation/store/mod.rs) | Store request credential channel, `garage` or `dashboard`, on the catalog and purchase handler spans. |
+| [`input.channel`](../src/store/src/presentation/store/mod.rs) | Store request credential channel, `garage` or `dashboard`, on the catalog and purchase handler spans. |
 | [`input.session.present`](../src/player-administration/src/presentation/access.rs) | Whether a well-formed session cookie was supplied on an admin session check or sign-out. |
 | [`input.session.lifetime_seconds`](../src/accounts/src/infrastructure/player_access.rs) | Configured admin session lifetime in seconds when a session is opened. |
 | [`input.role`](../src/player-administration/src/presentation/access.rs) | Requested account role (`player` or `admin`) on a role change. Bootstrap records `admin`. |
@@ -303,7 +303,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.roster.slot`](../src/player-sessions/src/infrastructure/gateway/training.rs) | Host's resulting roster slot on a valid team swap. |
 | [`output.count`](../src/social/src/application/mod.rs) | Number of returned Social search results, roster entries, resulting roster entries after a contact change, pending inbound requests, presence observers, or restored private conversations, depending on the operation. |
 | [`output.unlocked_vehicle_count`](../src/accounts/src/infrastructure/client/store.rs) | Number of gold vehicle descriptors purchasable through the native shop and projected in the Tech Tree economics unlock set during garage sync. |
-| [`output.offers.count`](../src/player-sessions/src/infrastructure/gateway/store.rs) | Number of offers included in a Store catalog response. |
+| [`output.offers.count`](../src/accounts/src/infrastructure/client/store.rs) | Number of offers included in a Store catalog response. |
 | [`output.arena_type_id`](../src/player-sessions/src/infrastructure/gateway/training/start.rs) | Arena type selected in the room when the host confirms or unlocks a team. |
 | [`input.shell.max_distance_metres`](../src/battles/src/infrastructure/projectiles.rs) | Equipped shell's effective travel limit in metres for the fired shell. |
 | [`input.shell.velocity_mps`](../src/battles/src/infrastructure/projectiles.rs) | Shell launch and tracer velocity magnitude in metres per second. |
@@ -363,7 +363,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.outcome`](../src/player-administration/src/presentation/players.rs) | First-admin setup records `created`, `setup_closed` when setup is unavailable, or the provisioning error outcome. Field validation records `invalid_email`, `invalid_display_name` or `invalid_password`. |
 | [`output.outcome`](../src/accounts/src/infrastructure/players.rs) | Account provisioning records `created` after commit or `conflict` after rolling back an existing username or a first-admin setup that is closed. |
 | [`output.delivery`](../src/player-sessions/src/infrastructure/gateway/admission.rs) | Session replacement notice was `sent` to the old UDP peer, `unavailable` because it had no Account entity, or `failed` during enqueue or send. |
-| [`output.outcome`](../src/player-sessions/src/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_funds`, `research_required` or `failed`. The [dashboard catalog load](../src/player-sessions/src/infrastructure/gateway/store.rs) records `success`, `busy` or `failed`. |
+| [`output.outcome`](../src/store/src/presentation/store/mod.rs) | Store request result such as `success`, `stale`, `busy`, `unauthorized`, `insufficient_funds`, `research_required` or `failed`. The [dashboard catalog load](../src/player-sessions/src/infrastructure/gateway/store.rs) records `success`, `busy` or `failed`. |
 | [`output.delivery`](../src/player-sessions/src/infrastructure/gateway/account_updates.rs) | Account update `queued` on the live garage connection or `next_sync` when recovered from persisted state on a later sync. |
 | [`output.delivery`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | `mercury.response.resource` records `sent` after writing the resource header and every fragment to the socket. |
 | [`output.outcome`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Mercury dispatch records `dispatched`, `wire_decode_failed`, `decode_failed`, `unknown_method`, `entity_unavailable`, `dispatch_failed` or `unimplemented` on the root. The root uses `unimplemented` for exposed base methods without a server handler. Unimplemented account commands record `unimplemented` and error status on the decoded command span, including fire-and-forget requests. Compatibility paths record `ignored` or `acknowledged_without_change`. Garage and shop sync record `up_to_date`, `cache_hit` or `stream` as applicable. |
@@ -537,6 +537,17 @@ checks representative exported fields and parent links through real entry points
 | [`output.outcome`](../src/player-administration/src/presentation/battles.rs) | Dashboard battle routes record `loaded`, `launched`, `launched_partial`, `invalid_payload`, `invalid_setup`, `invalid_parameters`, `player_unavailable`, `crew_incomplete`, `invalid_player_loadout`, `invalid_dummy`, `vehicle_unavailable`, `loadout_failed`, `unavailable` or `preparation_failed`. Custom battle vehicle projection records `prepared`, `invalid_loadout` or `projection_failed` and includes `user.id` for a connected player. |
 | [`input.inventory_id`](../src/accounts/src/infrastructure/client/battle_readiness.rs), `output.outcome` | Owned vehicle ID and result of the launch-time readiness check. Outcomes are `ready`, `crew_incomplete`, `vehicle_unavailable`, `invalid_loadout`, or `projection_failed`. |
 
+## Store and Training Rooms decisions
+
+| Span | Attributes and emission |
+| --- | --- |
+| [`store.resolve_quote`](../src/store/src/domain/mod.rs) | `input.item`, account revision in `input.revision`, submitted `input.price.currency`, and `input.price.amount` in whole currency units. `output.outcome` is `quoted`, `stale` or `offer_unavailable`. |
+| [`store.dashboard_account`](../src/store/src/application/mod.rs) | `user.id` is the authenticated account ID supplied for a dashboard catalog read. |
+| [`training_rooms.join`](../src/training-rooms/src/domain/mod.rs) | Local `input.room.id`, requesting account in `user.id`, and boolean `input.invitation`. `output.outcome` describes admission or rejection. `output.players.count` counts room members on admission. |
+| [`training_rooms.assign_roster`](../src/training-rooms/src/domain/mod.rs) | Local `input.room.id` and optional `input.team` (1 or 2 for an assigned slot). `output.outcome` describes the assignment decision. |
+| [`training_rooms.set_team_ready`](../src/training-rooms/src/domain/mod.rs) | Local `input.room.id`, `input.team`, boolean `input.ready`, and `output.outcome` for confirmation, rejection or unlock. |
+| [`training_rooms.leave`](../src/training-rooms/src/application/mod.rs) | Local `input.room.id`, `output.outcome`, and `output.players.count` for remaining members on removal. |
+
 ## Browser spans
 
 Every browser span declares `ddd.bounded_context.name`. Browser service
@@ -572,7 +583,7 @@ code. On error, the exception event's `exception.type` is that failure code.
 
 Supporting sources include the [browser HTTP adapter](../src/shared-infrastructure/src/infrastructure/web/http.ts),
 [admin API adapter](../src/player-administration/src/infrastructure/admin-api.ts),
-[Store API adapter](../src/player-sessions/src/infrastructure/store-api.ts),
+[Store API adapter](../src/store/src/infrastructure/store-api.ts),
 [browser exception observer](../src/shared-infrastructure/src/infrastructure/web/browser-telemetry.ts),
 [entry point](../src/server-runtime/src/presentation/web/main.tsx) and
 [OTLP relay](../src/server-runtime/src/infrastructure/browser_telemetry.rs).

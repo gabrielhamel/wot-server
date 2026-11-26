@@ -335,9 +335,15 @@ async fn exercise_garage(encrypted_login: bool, training_room_visible: bool) {
     let metrics = telemetry_capture::GatewayMetrics::attach(&mut gateway);
     metrics.assert_snapshot(0, 0, false);
     let store = training_battle_available.then(|| {
-        gateway
-            .enable_store("http://127.0.0.1:8081".to_owned())
-            .unwrap()
+        let store = gateway
+            .configure_store("http://127.0.0.1:8081".to_owned())
+            .unwrap();
+        let accounts = player_fixture::gateway_accounts(&repository, &catalog);
+        wot_store::contract::router(wot_store::contract::Store::new(
+            accounts.accounts,
+            accounts.catalog,
+            store,
+        ))
     });
     let (login, base) = gateway.addresses().unwrap();
     let grants = gateway.player_grants();

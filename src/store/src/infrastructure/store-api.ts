@@ -11,7 +11,7 @@ import type {
 import { notifyStorePurchase } from "./store-notifications";
 
 const minimumPurchaseMs = 350;
-const owner = "player_sessions";
+const owner = "store";
 
 export function garageStoreTransport(token: string): StoreTransport {
   function storeRequest(

@@ -2,7 +2,7 @@ import { ROOT_CONTEXT, SpanKind, SpanStatusCode, trace } from "@opentelemetry/ap
 import type { Attributes, Context, Span } from "@opentelemetry/api";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 
-export type WebContext = "player_administration" | "player_sessions" | "server";
+export type WebContext = "player_administration" | "player_sessions" | "store" | "server";
 
 const propagator = new W3CTraceContextPropagator();
 

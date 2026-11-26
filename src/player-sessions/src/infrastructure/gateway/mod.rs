@@ -6,7 +6,10 @@ use crate::domain::Admissions;
 use anyhow::{Context, Result};
 use blowfish::{Blowfish, cipher::KeyInit};
 use rsa::RsaPrivateKey;
-use wot_accounts::contract::{GameAccounts, GarageCommands, GarageQueries, PreparedAccount};
+use wot_accounts::contract::{
+    GameAccounts, PreparedAccount,
+    garage::{GarageCommands, GarageQueries},
+};
 use wot_battles::{
     contract::{BattleRuntime, BattleWorker, ParticipantId},
     mercury::MercuryArena,
@@ -172,15 +175,14 @@ pub struct Gateway {
     pending_admin_battles: HashMap<u32, admin_battles::PendingAdminBattle>,
     admin_battle_requests:
         tokio::sync::mpsc::Receiver<crate::application::admin_battles::BattleRequest>,
-    admin_battles: crate::contract::AdminBattles,
+    admin_battles: crate::contract::TrainingBattleLaunches,
     pending_battle_launches: HashMap<u32, training::PendingTrainingBattle>,
     battle_participants: HashSet<ParticipantId>,
     battle_departures: VecDeque<(ParticipantId, tracing::Span)>,
     battle_clients: HashMap<ParticipantId, ClientKey>,
     metrics: Option<metrics::GatewayMetrics>,
     account_bootstrap: AccountBootstrap,
-    training_rooms: BTreeMap<u32, training::HostedRoom>,
-    last_training_room_id: u32,
+    training_rooms: training::Rooms,
     pending_writes: HashSet<i64>,
     account_change_epoch: u64,
     grants: tokio::sync::mpsc::Receiver<crate::application::grants::GrantRequest>,
@@ -231,7 +233,8 @@ impl Gateway {
         let battles = bind_battles(&mut base, resources, config.training_room_visible)?;
         let (sender, completions) = mpsc::sync_channel(config.max_pending + 2 * config.max_clients);
         let workers = Arc::new(Semaphore::new(config.max_pending));
-        let (admin_battles, admin_battle_requests) = crate::contract::AdminBattles::channel();
+        let (admin_battles, admin_battle_requests) =
+            crate::contract::TrainingBattleLaunches::channel();
         let (grant_handle, grants) = crate::PlayerGrants::channel();
         let admissions = Admissions::new(config.max_pending);
         let xmpp = super::xmpp::XmppServer::from_listener(
@@ -275,8 +278,7 @@ impl Gateway {
             battle_clients: HashMap::new(),
             metrics: None,
             account_bootstrap,
-            training_rooms: BTreeMap::new(),
-            last_training_room_id: 0,
+            training_rooms: training::Rooms::default(),
             pending_writes: HashSet::new(),
             account_change_epoch: 0,
             grants,
@@ -293,7 +295,7 @@ impl Gateway {
         Ok((self.login.addr()?, self.base.addr()?))
     }
 
-    pub fn admin_battles(&self) -> crate::contract::AdminBattles {
+    pub fn training_battle_launches(&self) -> crate::contract::TrainingBattleLaunches {
         self.admin_battles.clone()
     }
 

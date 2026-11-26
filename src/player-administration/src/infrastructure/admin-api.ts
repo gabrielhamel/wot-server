@@ -6,7 +6,7 @@ import {
   responseStatus,
 } from "../../../shared-infrastructure/src/infrastructure/web/http";
 import { webOperation } from "../../../shared-infrastructure/src/infrastructure/web/telemetry";
-import type { StoreCatalog, StoreTransport } from "../../../player-sessions/src/web";
+import type { StoreCatalog, StoreTransport } from "../../../store/src/web";
 import type {
   AdminSession,
   AdminBattleSetup,

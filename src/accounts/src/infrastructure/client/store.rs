@@ -106,12 +106,6 @@ pub enum StoreAvailability {
     OwnershipLimit,
 }
 
-pub struct StoreOrder {
-    pub item: i32,
-    pub revision: i64,
-    pub price: StorePrice,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum StoreOrderError {
     #[error("The offer or account changed. Review the current price and try again.")]
@@ -218,30 +212,14 @@ impl GarageCatalog {
         StoreAvailability::Available
     }
 
-    #[tracing::instrument(name = "accounts.store.plan_purchase", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = account.id, input.revision = account.revision, input.previous_revision = order.revision, input.item = order.item, input.price.currency = order.price.currency(), input.price.amount = order.price.amount()), err)]
-    pub fn plan_store_purchase(
+    #[tracing::instrument(name = "accounts.store.plan_purchase", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = account.id, input.revision = account.revision, input.previous_revision = expected_revision, input.item = offer.item, input.price.currency = offer.price.currency(), input.price.amount = offer.price.amount()), err)]
+    pub(crate) fn fulfill_store_offer(
         &self,
         mut account: AccountSnapshot,
-        order: StoreOrder,
+        expected_revision: i64,
+        offer: &StoreOffer,
     ) -> Result<ProgressionChange, StoreOrderError> {
-        let offer = self
-            .store_offers
-            .iter()
-            .find(|offer| {
-                offer.item == order.item && offer.price.currency() == order.price.currency()
-            })
-            .ok_or_else(|| {
-                if self
-                    .store_offers
-                    .iter()
-                    .any(|offer| offer.item == order.item)
-                {
-                    StoreOrderError::Stale
-                } else {
-                    StoreOrderError::Unavailable
-                }
-            })?;
-        if order.revision != account.revision || offer.price != order.price {
+        if expected_revision != account.revision {
             return Err(StoreOrderError::Stale);
         }
 
@@ -332,13 +310,6 @@ impl GarageCatalog {
 }
 
 #[derive(serde::Serialize)]
-pub struct StoreCatalog {
-    pub revision: String,
-    pub premium_expires_at: Option<u32>,
-    pub offers: Vec<StoreListing>,
-}
-
-#[derive(serde::Serialize)]
 pub struct StoreListing {
     #[serde(flatten)]
     pub offer: StoreOffer,
@@ -348,20 +319,15 @@ pub struct StoreListing {
 
 impl GarageCatalog {
     #[tracing::instrument(name = "accounts.store.catalog", skip_all, fields(ddd.bounded_context.name = "accounts", user.id = snapshot.id, input.revision = snapshot.revision, output.offers.count = self.store_offers().len()))]
-    pub fn store_catalog(&self, snapshot: &AccountSnapshot) -> StoreCatalog {
+    pub fn store_listings(&self, snapshot: &AccountSnapshot) -> Vec<StoreListing> {
         let tiers = self.max_researched_tiers(snapshot);
-        StoreCatalog {
-            revision: snapshot.revision.to_string(),
-            premium_expires_at: snapshot.active_premium_until(),
-            offers: self
-                .store_offers()
-                .iter()
-                .map(|offer| StoreListing {
-                    offer: offer.clone(),
-                    availability: self.store_availability(snapshot, &tiers, offer),
-                    in_depot: self.store_depot_count(snapshot, offer),
-                })
-                .collect(),
-        }
+        self.store_offers()
+            .iter()
+            .map(|offer| StoreListing {
+                in_depot: self.store_depot_count(snapshot, offer),
+                availability: self.store_availability(snapshot, &tiers, offer),
+                offer: offer.clone(),
+            })
+            .collect()
     }
 }

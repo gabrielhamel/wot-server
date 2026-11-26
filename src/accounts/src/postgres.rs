@@ -7,7 +7,10 @@ use wot_resources::ResourceBundle;
 
 use super::{
     Accounts, GarageCatalog, PostgresAccounts,
-    contract::{GameAccounts, GarageCommands, GarageQueries, PlayerAccess, PlayerDirectory},
+    contract::{
+        GameAccounts, PlayerAccess, PlayerDirectory,
+        garage::{GarageCommands, GarageQueries},
+    },
     infrastructure::{directory::PostgresPlayerDirectory, players::PostgresPlayers},
 };
 use wot_platform::observability::in_current_span;

@@ -1,5 +1,5 @@
 use super::{Account, ClientKey, EntityKey, FAILURE, Gateway, Pickle, PreparedAccount, SUCCESS};
-use wot_accounts::contract::{AmmoError, GarageWrite, ShellSelection};
+use wot_accounts::contract::{AmmoError, ShellSelection, garage::GarageWrite};
 use wot_platform::client_formats::pickle::Value;
 
 pub(super) const SET_AND_FILL_LAYOUTS: i16 = 108;

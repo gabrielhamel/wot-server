@@ -5,7 +5,8 @@ published contracts, and storage ownership rules.
 
 ## wot-server workspace
 
-Accounts, Social, Player Sessions, Battles, and Player Administration compile
+Accounts, Social, Player Sessions, Battles, Player Administration, Store, and
+Training Rooms compile
 as separate Rust libraries under `src/`. The server binary starts the [server
 runtime library](src/server-runtime/README.md), which wires the contexts’ published
 contracts and adapters.
@@ -25,11 +26,20 @@ opaque account view upstream of [Player Sessions](src/player-sessions/README.md)
 and garage sessions. Both translate external client data through anti-corruption
 layers. Accounts' PostgreSQL adapter persists user state, including revision-checked
 ammunition, tank/module research, vehicle purchases and module, equipment, consumable and directive loadouts, cosmetic ownership and outfits, shared depot stock, balances and Premium Account expiration. Its resource adapter builds the garage projection. Player Sessions adapts shell, equipment, consumable, directive, camouflage, module and tank progression requests and publishes committed
-inventory/balance changes and purchase receipts. Player Sessions binds garage RPCs to the extracted script definitions. Its [Store HTTP adapter](docs/store.md)
-uses the live garage session to publish Accounts offers and route checkout through
-the revision-checked account transaction. Player Sessions publishes Premium Account
+inventory/balance changes and purchase receipts. Player Sessions binds garage RPCs to the extracted script definitions.
+Player Sessions publishes Premium Account
 activation, renewal and expiry to the garage. Both contexts use the shared
 [client formats](src/shared-infrastructure/src/infrastructure/client_formats/README.md) infrastructure.
+
+[Store](src/store/README.md) owns catalog requests, quote resolution and
+checkout for the native and dashboard storefronts. Accounts supplies
+resource-backed offers and atomically fulfills checkout. Player Sessions
+authenticates native Store entry and orders purchases alongside garage writes.
+Dashboard catalog reads use Accounts directly.
+
+[Training Rooms](src/training-rooms/README.md) owns hosted room state,
+invitations, roster assignment and team confirmations. Player Sessions adapts
+the game protocol to that contract and delivers updates to native clients.
 
 [Resource Extraction](tools/wot-extract/README.md) runs offline and publishes
 the [bundle contract](src/resources/README.md) to Accounts, Player Sessions and Battles. The

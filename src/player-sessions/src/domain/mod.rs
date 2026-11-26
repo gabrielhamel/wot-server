@@ -4,8 +4,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(super) mod training;
-
 pub struct Admissions {
     pending: HashMap<SocketAddr, (u64, Instant)>,
     next: u64,

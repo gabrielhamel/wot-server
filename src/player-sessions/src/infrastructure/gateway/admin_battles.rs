@@ -1,23 +1,21 @@
 use super::{battles::vehicle_loadout, *};
-use crate::{
-    application::admin_battles::{
-        AdminBattleError, AdminBattlePlayer, AdminBattleSetup, AvailablePlayer, BattleChoice,
-        BattleLaunchReceipt, BattleOptions, BattleRequest,
-    },
-    domain::training::TrainingRoomSettings,
+use crate::application::admin_battles::{
+    AvailablePlayer, BattleChoice, BattleLaunchReceipt, BattleOptions, BattleRequest,
+    TrainingBattleError, TrainingBattlePlayer, TrainingBattleSetup,
 };
 use tokio::sync::oneshot;
 use wot_battles::contract::{
     BattleLaunch, BattleMode, BattleParameters, BattleParticipant, BattlePreparationId,
     PreparedBattle,
 };
+use wot_training_rooms::contract::TrainingRoomSettings;
 
 const MAX_ENTRANTS: usize = 30;
 const MAX_PENDING: usize = 4;
 
 pub(super) struct PendingAdminBattle {
     players: Vec<SelectedPlayer>,
-    reply: oneshot::Sender<Result<BattleLaunchReceipt, AdminBattleError>>,
+    reply: oneshot::Sender<Result<BattleLaunchReceipt, TrainingBattleError>>,
     span: tracing::Span,
 }
 
@@ -59,7 +57,7 @@ impl Gateway {
                                             inventory_id,
                                         )
                                         .map_err(projection_failed)?
-                                        .map_err(AdminBattleError::VehicleUnavailable)
+                                        .map_err(TrainingBattleError::VehicleUnavailable)
                                 });
                         let _ = reply.send(result);
                     }
@@ -183,9 +181,9 @@ impl Gateway {
 
     fn queue_admin_battle(
         &mut self,
-        setup: AdminBattleSetup,
-    ) -> Result<(u32, Vec<SelectedPlayer>), AdminBattleError> {
-        use AdminBattleError::*;
+        setup: TrainingBattleSetup,
+    ) -> Result<(u32, Vec<SelectedPlayer>), TrainingBattleError> {
+        use TrainingBattleError::*;
         if setup.players.iter().any(|player| {
             (player.inventory_id.is_some() && player.loadout.is_some())
                 || (player.inventory_id.is_none() && player.owned_overrides.is_some())
@@ -264,7 +262,7 @@ impl Gateway {
     fn selected_admin_session(
         &self,
         account_id: i64,
-    ) -> Result<(ClientKey, &Session), AdminBattleError> {
+    ) -> Result<(ClientKey, &Session), TrainingBattleError> {
         self.sessions
             .iter()
             .find(|(_, session)| {
@@ -272,14 +270,14 @@ impl Gateway {
                     && self.admin_battle_unavailable_reason(session).is_none()
             })
             .map(|(&client, session)| (client, session))
-            .ok_or(AdminBattleError::PlayerUnavailable)
+            .ok_or(TrainingBattleError::PlayerUnavailable)
     }
 
     fn select_admin_battle_player(
         &self,
-        player: AdminBattlePlayer,
-    ) -> Result<(SelectedPlayer, BattleParticipant), AdminBattleError> {
-        use AdminBattleError::PlayerUnavailable;
+        player: TrainingBattlePlayer,
+    ) -> Result<(SelectedPlayer, BattleParticipant), TrainingBattleError> {
+        use TrainingBattleError::PlayerUnavailable;
         let (client, session) = self.selected_admin_session(player.account_id)?;
         let entity = session.entity.ok_or(PlayerUnavailable)?;
         let account = &session.account.snapshot;
@@ -288,14 +286,14 @@ impl Gateway {
                 .catalog
                 .custom_battle_vehicle(loadout, Some(account.id()))
                 .map_err(projection_failed)?
-                .ok_or(AdminBattleError::InvalidPlayerLoadout)?;
+                .ok_or(TrainingBattleError::InvalidPlayerLoadout)?;
             (vehicle_loadout(custom), false)
         } else if let Some(id) = player.inventory_id {
             let owned = self
                 .catalog
                 .admin_battle_vehicle(account, id, player.owned_overrides.as_ref())
                 .map_err(projection_failed)?
-                .map_err(AdminBattleError::VehicleUnavailable)?;
+                .map_err(TrainingBattleError::VehicleUnavailable)?;
             (vehicle_loadout(owned), false)
         } else {
             (
@@ -355,8 +353,8 @@ impl Gateway {
         &mut self,
         players: &[SelectedPlayer],
         result: Result<Option<Box<PreparedBattle>>>,
-    ) -> Result<BattleLaunchReceipt, AdminBattleError> {
-        use AdminBattleError::*;
+    ) -> Result<BattleLaunchReceipt, TrainingBattleError> {
+        use TrainingBattleError::*;
         let span = tracing::Span::current();
         let mut battle = result
             .map_err(projection_failed)?
@@ -412,7 +410,7 @@ impl Gateway {
     }
 }
 
-fn valid_roster(setup: &AdminBattleSetup) -> bool {
+fn valid_roster(setup: &TrainingBattleSetup) -> bool {
     let mut accounts = HashSet::new();
     let valid_team = |team| matches!(team, 1 | 2);
     !setup.players.is_empty()
@@ -429,18 +427,18 @@ fn valid_roster(setup: &AdminBattleSetup) -> bool {
         })
 }
 
-fn projection_failed(error: anyhow::Error) -> AdminBattleError {
+fn projection_failed(error: anyhow::Error) -> TrainingBattleError {
     tracing::Span::current().record("otel.status_code", "ERROR");
     error!(%error, "Could not prepare admin battle");
-    AdminBattleError::PreparationFailed
+    TrainingBattleError::PreparationFailed
 }
 
-fn record_launch_failure(error: AdminBattleError) {
+fn record_launch_failure(error: TrainingBattleError) {
     let span = tracing::Span::current();
     span.record("output.outcome", error.outcome());
     if matches!(
         error,
-        AdminBattleError::Unavailable | AdminBattleError::PreparationFailed
+        TrainingBattleError::Unavailable | TrainingBattleError::PreparationFailed
     ) {
         span.record("otel.status_code", "ERROR");
         error!(outcome = error.outcome(), "Admin battle launch failed");

@@ -10,6 +10,8 @@ members = [
   "src/shared-infrastructure",
   "src/shared-kernel",
   "src/social",
+  "src/store",
+  "src/training-rooms",
   "tools/wot-binary-map",
   "tools/wot-context-maps",
   "tools/wot-extract",
@@ -99,6 +101,8 @@ wot-resources = { path = "src/resources" }
 wot-server-runtime = { path = "src/server-runtime" }
 wot-shared-kernel = { path = "src/shared-kernel" }
 wot-social = { path = "src/social" }
+wot-store = { path = "src/store" }
+wot-training-rooms = { path = "src/training-rooms" }
 wot-web-build = { path = "src/server-runtime/src/infrastructure/web" }
 
 [package]
@@ -167,6 +171,7 @@ wot-player-administration.workspace = true
 wot-player-sessions.workspace = true
 wot-resources.workspace = true
 wot-social.workspace = true
+wot-store.workspace = true
 glam.workspace = true
 flate2.workspace = true
 base64.workspace = true

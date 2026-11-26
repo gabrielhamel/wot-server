@@ -1,6 +1,7 @@
 # Player Sessions
 
-The `wot-player-sessions` library publishes grants, Store requests and admin battle launches through
+The `wot-player-sessions` library publishes grant coordination, garage access
+for Store, and Training battle launches for selected garage players through
 `wot_player_sessions::contract`. Server composition supplies the Battles adapter
 when binding the gateway.
 
@@ -12,8 +13,10 @@ that the garage adapter translates into the versioned BigWorld protocol.
 Social owns contacts, private conversations and retained messages. The gateway
 adapts those operations for native XMPP and legacy BW/BW_CHAT2 clients, tracks
 presence, authenticates chat tokens through game sessions and routes delivery.
-Player Sessions owns the Training text channel through live room membership.
-When a room is ready to launch, Player Sessions sends the selected map,
+Player Sessions delivers Training chat and roster updates to live room members.
+[Training Rooms](../training-rooms/README.md) owns membership, host departure,
+invitation eligibility and readiness. When a room is ready to launch, Player
+Sessions sends the selected map,
 duration and equipped roster through the [Battles contract](../battles/src/contract.rs).
 The room remains discoverable during the round. Player Sessions handles the
 arena handoff and restores the same membership on garage return. It maps the
@@ -27,12 +30,11 @@ revision before transferring players.
 | Layer | Responsibilities |
 | --- | --- |
 | `domain/` | Bounded admission generations, expiry and stale completion rejection. |
-| `domain/training.rs` | Training Room duration and comment limits. |
 | `application/` | Credential input policy, preferences, and garage command translation and dispatch to Accounts' published application contract. |
 | `infrastructure/gateway/` | UDP event loop, bounded async workers, ticket/session lifecycle and garage command translation. |
 | `infrastructure/gateway/battles.rs` | Submit typed battle work, deliver queued outputs through the live BaseApp, and reset sessions for garage entry. |
 | `infrastructure/gateway/admission.rs` | Authorize handoff, replace a previous session or ticket, and hold logins while an account write finishes. |
-| `infrastructure/gateway/training.rs` | Check map IDs through Battles and manage shared room settings, membership, roster, readiness and deletion. |
+| `infrastructure/gateway/training.rs` | Adapt the Training Rooms contract to native commands, check maps through Battles, and deliver room settings and roster updates. |
 | `application/admin_battles.rs` | Bounded request and reply contract for dashboard battle setup. |
 | `infrastructure/gateway/admin_battles.rs` | List connected players and vehicle readiness, validate the selected roster, resolve loadouts and transfer sessions into a prepared Training arena. |
 | `infrastructure/gateway/training/start.rs` | Validate team confirmation, submit the roster for asynchronous arena preparation, and revalidate the room and account snapshots before handing off sessions. |
@@ -41,13 +43,10 @@ revision before transferring players.
 | `infrastructure/gateway/ammunition.rs` | Shell request validation, bounded proposal/commit jobs and committed inventory, balance and receipt delivery. |
 | `infrastructure/gateway/progression.rs` | Equipment, directive, module, tank and depot request validation, bounded progression jobs and committed cache delivery. |
 | `infrastructure/gateway/grants.rs` | Schedule operator grants alongside garage writes using the Accounts command contract. |
-| `application/store.rs` | Store customer identity, garage session tokens and the bounded request channel between HTTP and the gateway. |
+| `application/store.rs` | Garage Store tokens and the bounded request contract for token lookup and checkout coordination. |
 | `infrastructure/gateway/premium.rs` | Notify the live garage when an account’s Premium time expires. |
-| `infrastructure/gateway/store.rs` | Look up live Store sessions, read persisted dashboard catalogs and coordinate account writes. |
+| `infrastructure/gateway/store.rs` | Advertise the Store origin, resolve native tokens to live accounts, and coordinate purchase writes and garage publication. |
 | `infrastructure/gateway/account_updates.rs` | Update handoff and session snapshots and deliver committed cache diffs for external account writes. |
-| `presentation/store/` | In-game and dashboard Store HTTP catalog and checkout endpoints. |
-| `presentation/store/web/` | Store categories, vehicle filters and checkout state. |
-| `application/store-contracts.ts` and `infrastructure/store-api.ts` | Typed catalog and order contracts and the HTTP adapter that traces browser purchases. |
 | `infrastructure/gateway/cosmetics.rs` | Decode native cosmetic stock purchases and binary seasonal and common outfits for the shared progression transaction. |
 | `infrastructure/gateway/expendables.rs` | Decode consumable and directive layouts and auto-resupply settings for the shared progression transaction. |
 | `infrastructure/gateway/social.rs` | Messenger wire translation, bounded async Social requests, presence and private delivery. |
@@ -100,14 +99,11 @@ The Admin grant queue is bounded. A grant reserves the account's write slot unti
 its commit and session update complete. The gateway updates outstanding handoff
 tickets and refreshes any login lookup that could have read a pre-grant snapshot.
 
-The [Store](../../docs/store.md) accepts in-game requests with a live garage
-token and dashboard requests for the account authenticated by Player
-Administration. Both use the same write slot and cache publication as other
-external account changes.
-
-Player Administration uses the [published grants and Store contract](src/contract.rs)
-and the [Store browser entry point](src/web.ts). The embedded Store receives a
-transport from the dashboard and uses it for catalog reads and orders. The
-server injects Accounts and Social contracts into the gateway. The catalog,
+[Store](../store/README.md) uses the [published garage access contract](src/contract.rs)
+to verify the in-game token and to coordinate checkout for both channels.
+Checkout uses the same write slot and cache publication as other external
+account changes. Player Administration uses the published grant and Training
+battle launch contracts. The server injects Accounts and Social contracts
+into the gateway. The catalog,
 account view, and committed changes expose the projections needed for client
 delivery. Session state is held in memory.

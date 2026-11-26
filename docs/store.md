@@ -6,6 +6,14 @@ It combines client prices with selected offers from the
 The game HUD and the dashboard’s **My garage** tab display account balances.
 The Store displays each offer’s price, stock, and purchase eligibility.
 
+The [Store context](../src/store/README.md) publishes both HTTP adapters and
+selects the server offer matching the submitted quote. Resources and account
+ownership determine the available offers through Accounts' Garage contract.
+The dashboard authorizes its own session, and its catalog reads go directly
+to Accounts. Player Sessions verifies in-game Store tokens and coordinates
+checkout for both channels with live garage writes. Accounts commits the
+purchase atomically against the submitted revision.
+
 Both Store views use horizontal tabs to group offers. The embedded game page
 shows the catalog and checkout, and its controls stay on the shop page. On the
 web, the Store sits inside the dashboard’s **Store** tab.

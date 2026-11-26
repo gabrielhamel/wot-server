@@ -14,6 +14,8 @@ pub fn server_targets(level: LevelFilter) -> Targets {
             "wot_player_sessions",
             "wot_shared_kernel",
             "wot_social",
+            "wot_store",
+            "wot_training_rooms",
         ]
         .map(|target| (target, level)),
     )

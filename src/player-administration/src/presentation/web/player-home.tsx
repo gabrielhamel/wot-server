@@ -21,7 +21,7 @@ import {
 import { GarageBalances, OwnedTanks } from "./garage/garage-inventory";
 
 const DashboardStore = lazy(async () => ({
-  default: (await import("../../../../player-sessions/src/web")).EmbeddedStore,
+  default: (await import("../../../../store/src/web")).EmbeddedStore,
 }));
 
 const viewTitles = { garage: "My garage", store: "Store", admin: "Admin" };

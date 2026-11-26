@@ -10,9 +10,11 @@ owns player identities, roles, dashboard session records and garage state.
 Player Administration uses the published account and catalog data and submits
 grants through [Player Sessions](../player-sessions/README.md) to coordinate
 with live game sessions. It authenticates dashboard Store requests and delegates
-checkout to the same context. The Battles page collects map, duration, teams
-and vehicles. Player Administration requests available players and launches
-through the Player Sessions contract. The shared tank configuration form
+checkout to [Store](../store/README.md). The Battles page collects the
+operator's map, duration, teams, vehicles and overrides. The HTTP adapter
+translates those selections into the Player Sessions Training battle launch
+contract. Player Sessions resolves ready garage players and hands them off to
+the arena prepared by Battles. The shared tank configuration form
 uses Accounts options for owned tanks, custom player tanks and stationary dummies.
 
 | Layer | Responsibilities |
@@ -41,6 +43,6 @@ through gateway execution and response. See the [telemetry contract](../../docs/
 
 Player Administration uses the Accounts contract for player access, garage
 inspection and grant catalogs. The Player Sessions contract coordinates grant
-and purchase delivery. Administration supplies the embedded Store with its
+delivery. Administration supplies the embedded Store with its
 dashboard HTTP transport, including the request paths and write header. Player
 Administration has no database schema of its own.

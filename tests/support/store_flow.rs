@@ -129,12 +129,16 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
     let (login, _) = gateway.addresses().unwrap();
     assert!(
         gateway
-            .enable_store("https://*.example.test".to_owned())
+            .configure_store("https://*.example.test".to_owned())
             .is_err()
     );
-    let router = wot_player_sessions::store_router(
-        gateway.configure_store_on_listener("192.168.1.3:8081".parse().unwrap()),
-    );
+    let store = gateway.configure_store_on_listener("192.168.1.3:8081".parse().unwrap());
+    let store_accounts = player_fixture::gateway_accounts(&repository, &catalog);
+    let router = wot_store::contract::router(wot_store::contract::Store::new(
+        store_accounts.accounts,
+        store_accounts.catalog,
+        store,
+    ));
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
     let worker = tokio::task::spawn_blocking(move || gateway.run(worker_stop));
@@ -220,6 +224,7 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
             request(Some(&token), Some(&wrong_price)).0,
             StatusCode::CONFLICT
         );
+        assert_store_quote_rejection(account_id, item as i32, ("credits", cost - 1), 409, "stale");
         let mut unknown = order.clone();
         unknown["item"] = json!(-42);
         assert_eq!(
@@ -394,9 +399,11 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         let mut wrong_currency = buy_su.clone();
         wrong_currency["price"]["currency"] = json!("bonds");
         assert_eq!(request(Some(&token), Some(&wrong_currency)).0, StatusCode::CONFLICT);
+        assert_store_quote_rejection(account_id, su_gold["item"].as_i64().unwrap() as i32, ("bonds", 2900), 409, "stale");
         let (status, purchased_su) = request(Some(&token), Some(&buy_su));
         assert_eq!(status, StatusCode::OK);
         assert!(su_offers(&purchased_su).iter().all(|offer| offer["availability"] == "in_garage"));
+        assert_eq!(request(Some(&token), Some(&buy_su)).0, StatusCode::CONFLICT);
         let su_revision = purchased_su["revision"].as_str().unwrap().parse::<i64>().unwrap();
         let diff = next_update(&mut peer, &dispatch, su_revision);
         assert_eq!(dict(&dict(&diff, "stats"), "gold"), Pickle::I64(8800));
@@ -518,8 +525,8 @@ async fn store_purchase_updates_the_garage_and_rejects_replay() {
         let saved = runtime.block_on(accounts.snapshot(account_id)).unwrap();
         assert_eq!(saved.revision, persisted.revision);
         assert_eq!(saved.balances.gold, persisted.balances.gold);
-        assert_store_unavailable_trace(account_id, test_tank, 100);
-        assert_store_unavailable_trace(account_id, t22, 5);
+        assert_store_quote_rejection(account_id, test_tank, ("gold", 100), 404, "offer_unavailable");
+        assert_store_quote_rejection(account_id, t22, ("gold", 5), 404, "offer_unavailable");
 
         let skin_catalog = request(Some(&expiry_token), None).1;
         let birthday = skin_catalog["offers"].as_array().unwrap().iter()
@@ -595,7 +602,15 @@ pub fn assert_battle_catalog_traces(account: i64) {
                 .unwrap()
         };
         let http = find("store.http.request");
-        let catalog = find("player_sessions.store.catalog_request");
+        let catalog = find("store.catalog_request");
+        assert_eq!(
+            attribute(http, "ddd.bounded_context.name").as_deref(),
+            Some("store")
+        );
+        assert_eq!(
+            attribute(catalog, "ddd.bounded_context.name").as_deref(),
+            Some("store")
+        );
         assert_eq!(http.parent_span_id, SpanId::from(0x0123456789abcdef));
         assert_eq!(catalog.parent_span_id, http.span_context.span_id());
         assert_eq!(
@@ -840,12 +855,18 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
         spans
             .iter()
             .find(|span| {
-                span.name == "player_sessions.store.purchase_request"
+                span.name == "store.purchase_request"
                     && has(span, "user.id", &account_id.to_string())
                     && has(span, "input.item", &item.to_string())
                     && has(span, "output.outcome", outcome)
+                    && spans.iter().any(|quote| {
+                        quote.parent_span_id == span.span_context.span_id()
+                            && quote.span_context.trace_id() == span.span_context.trace_id()
+                            && quote.name == "store.resolve_quote"
+                            && has(quote, "output.outcome", "quoted")
+                    })
             })
-            .unwrap_or_else(|| panic!("Missing {outcome} Store request span"))
+            .unwrap_or_else(|| panic!("Missing {outcome} Store request span for item {item}"))
     };
     assert!(
         spans
@@ -861,6 +882,8 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
             .find(|span| span.span_context.span_id() == operation.parent_span_id)
             .expect("Missing Store HTTP request parent");
         assert_eq!(root.name, "store.http.request");
+        assert!(has(root, "ddd.bounded_context.name", "store"));
+        assert!(has(operation, "ddd.bounded_context.name", "store"));
         assert_eq!(
             root.parent_span_id,
             SpanId::from_hex("0123456789abcdef").unwrap()
@@ -931,7 +954,13 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
     ));
 }
 
-fn assert_store_unavailable_trace(account_id: i64, item: i32, amount: i64) {
+fn assert_store_quote_rejection(
+    account_id: i64,
+    item: i32,
+    (currency, amount): (&str, i64),
+    status: u16,
+    outcome: &str,
+) {
     let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key, expected: &str| {
         span.attributes
@@ -941,11 +970,19 @@ fn assert_store_unavailable_trace(account_id: i64, item: i32, amount: i64) {
     let request = spans
         .iter()
         .find(|span| {
-            span.name == "player_sessions.store.purchase_request"
+            span.name == "store.purchase_request"
                 && has(span, "input.item", &item.to_string())
-                && has(span, "output.outcome", "offer_unavailable")
+                && has(span, "output.outcome", outcome)
+                && spans.iter().any(|quote| {
+                    quote.name == "store.resolve_quote"
+                        && quote.parent_span_id == span.span_context.span_id()
+                        && quote.span_context.trace_id() == span.span_context.trace_id()
+                        && has(quote, "input.price.currency", currency)
+                        && has(quote, "input.price.amount", &amount.to_string())
+                        && has(quote, "output.outcome", outcome)
+                })
         })
-        .expect("Missing unavailable Store offer request span");
+        .expect("Missing rejected Store offer request span");
     let trace = request.span_context.trace_id();
     let find = |name, parent| {
         spans
@@ -955,7 +992,7 @@ fn assert_store_unavailable_trace(account_id: i64, item: i32, amount: i64) {
                     && span.span_context.trace_id() == trace
                     && span.parent_span_id == parent
             })
-            .unwrap_or_else(|| panic!("Missing {name} in the unavailable Store offer trace"))
+            .unwrap_or_else(|| panic!("Missing {name} in the rejected Store offer trace"))
     };
     let http = spans
         .iter()
@@ -967,29 +1004,14 @@ fn assert_store_unavailable_trace(account_id: i64, item: i32, amount: i64) {
         http.parent_span_id,
         SpanId::from_hex("0123456789abcdef").unwrap()
     );
-    assert!(has(http, "http.response.status_code", "404"));
-    let purchase = find(
-        "player_sessions.store.purchase",
-        request.span_context.span_id(),
-    );
-    assert!(has(purchase, "user.id", &account_id.to_string()));
-    let plan = find(
-        "accounts.store.plan_purchase",
-        purchase.span_context.span_id(),
-    );
-    assert!(has(plan, "input.price.currency", "gold"));
-    assert!(has(plan, "input.price.amount", &amount.to_string()));
-    assert!(matches!(
-        plan.status,
-        opentelemetry::trace::Status::Error { .. }
-    ));
-    let complete = find(
-        "player_sessions.store.complete_purchase",
-        purchase.span_context.span_id(),
-    );
-    assert!(has(complete, "output.success", "false"));
+    assert!(has(http, "http.response.status_code", &status.to_string()));
+    assert!(has(request, "user.id", &account_id.to_string()));
+    let quote = find("store.resolve_quote", request.span_context.span_id());
+    assert!(has(quote, "ddd.bounded_context.name", "store"));
+    assert!(has(quote, "input.price.currency", currency));
+    assert!(has(quote, "input.price.amount", &amount.to_string()));
+    assert!(has(quote, "output.outcome", outcome));
     assert!(!spans.iter().any(|span| {
-        span.parent_span_id == purchase.span_context.span_id()
-            && span.name == "accounts.garage.commit_progression"
+        span.span_context.trace_id() == trace && span.name == "accounts.garage.commit_progression"
     }));
 }

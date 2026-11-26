@@ -14,9 +14,9 @@ const pages = {
     load: () => import("../../../../player-administration/src/web"),
   },
   "/shop": {
-    owner: "player_sessions",
+    owner: "store",
     title: "Garage Store",
-    load: () => import("../../../../player-sessions/src/web"),
+    load: () => import("../../../../store/src/web"),
   },
 } as const;
 

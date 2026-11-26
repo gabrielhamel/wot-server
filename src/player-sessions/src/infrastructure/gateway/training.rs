@@ -1,7 +1,10 @@
 use super::*;
-use crate::domain::training::{TrainingRoomSettings, VoiceChatMode};
 use std::time::{SystemTime, UNIX_EPOCH};
 use wot_platform::mercury::app::entity::EntityId;
+use wot_training_rooms::contract::{
+    JoinRejection, MAX_ASSIGNED_PLAYERS, MAX_ROOM_PLAYERS, RoomDeparture, RoomMember, RosterSlot,
+    TrainingRoom, TrainingRoomSettings, TrainingRooms, VoiceChatMode,
+};
 
 mod start;
 pub(super) use start::{PendingTrainingBattle, TEAM_NOT_READY, TEAM_READY};
@@ -27,10 +30,6 @@ pub(super) const TRAINING: i32 = 2;
 pub(super) const LIST_PAGE_LIMIT: usize = 50;
 
 const TRAINING_BONUS_TYPE: i32 = 2;
-const MAX_TEAM_PLAYERS: usize = 15;
-const MAX_TEAM_OBSERVERS: usize = 5;
-const MAX_ASSIGNED_PLAYERS: usize = MAX_TEAM_PLAYERS + MAX_TEAM_OBSERVERS;
-const MAX_ROOM_PLAYERS: usize = 2 * MAX_TEAM_PLAYERS;
 const LOCAL_CLUSTER: i64 = 0;
 const NOT_FOUND: u8 = 2;
 const ACCOUNT_LOCK: u8 = 3;
@@ -53,101 +52,70 @@ const PLAYER_READY: i32 = 4;
 const PLAYER_IN_BATTLE: i32 = 8;
 const OBSERVER_INVENTORY_ID: i64 = -5000;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RosterSlot {
-    TeamOne = 1,
-    TeamTwo = 2,
-    UnassignedFromTeamOne = 17,
-    UnassignedFromTeamTwo = 18,
-}
-
-impl RosterSlot {
-    fn swap_team(self) -> Self {
-        match self {
-            Self::TeamOne => Self::TeamTwo,
-            Self::TeamTwo => Self::TeamOne,
-            unassigned => unassigned,
-        }
-    }
-
-    fn capacity(self) -> usize {
-        match self {
-            Self::TeamOne | Self::TeamTwo => MAX_ASSIGNED_PLAYERS,
-            Self::UnassignedFromTeamOne | Self::UnassignedFromTeamTwo => MAX_ROOM_PLAYERS,
-        }
-    }
-
-    fn from_wire(value: i64) -> Option<Self> {
-        match value {
-            1 => Some(Self::TeamOne),
-            2 => Some(Self::TeamTwo),
-            17 => Some(Self::UnassignedFromTeamOne),
-            18 => Some(Self::UnassignedFromTeamTwo),
-            _ => None,
-        }
+fn roster_slot_from_wire(value: i64) -> Option<RosterSlot> {
+    match value {
+        1 => Some(RosterSlot::TeamOne),
+        2 => Some(RosterSlot::TeamTwo),
+        17 => Some(RosterSlot::UnassignedFromTeamOne),
+        18 => Some(RosterSlot::UnassignedFromTeamTwo),
+        _ => None,
     }
 }
 
-pub(super) struct HostedRoom {
-    id: u32,
-    settings: TrainingRoomSettings,
-    created_at: f64,
-    host: ClientKey,
-    members: HashMap<ClientKey, RoomPlayer>,
-    invites: HashMap<i64, invites::Invitation>,
-    teams_ready: (bool, bool),
+fn roster_slot_to_wire(slot: RosterSlot) -> i32 {
+    match slot {
+        RosterSlot::TeamOne => 1,
+        RosterSlot::TeamTwo => 2,
+        RosterSlot::UnassignedFromTeamOne => 17,
+        RosterSlot::UnassignedFromTeamTwo => 18,
+    }
 }
 
-struct RoomPlayer {
+pub(super) struct RoomDelivery {
     entity: EntityKey<Account>,
-    account_id: i64,
-    name: String,
-    joined_at: f64,
-    in_battle: bool,
-    ready_vehicle: Option<Vec<u8>>,
-    ready_inventory: Option<i64>,
-    roster: RosterSlot,
     role: i32,
 }
 
-impl RoomPlayer {
-    fn new(entity: EntityKey<Account>, session: &Session, joined_at: f64, role: i32) -> Self {
-        Self {
-            entity,
-            account_id: session.account.snapshot.id(),
-            name: session.account.snapshot.display_name().to_owned(),
-            joined_at,
-            in_battle: false,
-            ready_vehicle: None,
-            ready_inventory: None,
-            roster: RosterSlot::UnassignedFromTeamOne,
-            role,
-        }
-    }
+type RoomPlayer = RoomMember<RoomDelivery>;
+type HostedRoom = TrainingRoom<ClientKey, RoomDelivery, invites::Invitation>;
+pub(super) type Rooms = TrainingRooms<ClientKey, RoomDelivery, invites::Invitation>;
 
-    fn roster_entry(&self) -> Value {
-        let (state, vehicle) = ready_state(self.ready_vehicle.as_deref());
-        wot_platform::pickle!((
-            (self.entity.id().0),
-            (self.name.as_str()),
-            (self.account_id),
-            ([], []),
-            (self.roster as i32),
-            (if self.in_battle {
-                PLAYER_IN_BATTLE
-            } else {
-                state
-            }),
-            (self.joined_at),
-            (vehicle),
-            0,
-            0,
-            "",
-            0,
-            {},
-            (self.role)
-        ))
-    }
+fn room_player(
+    entity: EntityKey<Account>,
+    session: &Session,
+    joined_at: f64,
+    role: i32,
+) -> RoomPlayer {
+    RoomMember::new(
+        RoomDelivery { entity, role },
+        session.account.snapshot.id(),
+        session.account.snapshot.display_name().to_owned(),
+        joined_at,
+    )
+}
+
+fn roster_entry(member: &RoomPlayer) -> Value {
+    let (state, vehicle) = ready_state(member.ready_vehicle());
+    wot_platform::pickle!((
+        (member.delivery.entity.id().0),
+        (member.name.as_str()),
+        (member.account_id),
+        ([], []),
+        (roster_slot_to_wire(member.roster())),
+        (if member.in_battle() {
+            PLAYER_IN_BATTLE
+        } else {
+            state
+        }),
+        (member.joined_at),
+        (vehicle),
+        0,
+        0,
+        "",
+        0,
+        {},
+        (member.delivery.role)
+    ))
 }
 
 pub(super) enum SettingArgument<'a> {
@@ -208,20 +176,28 @@ fn apply_setting(
     }
 }
 
-impl HostedRoom {
-    pub(super) fn player_count(&self) -> usize {
-        self.members.len()
+pub(super) trait TrainingRoomWire {
+    fn player_count(&self) -> usize;
+    fn list_entry(&self) -> Value;
+    fn send_initial_state(&self, base: &mut base::App, entity: EntityKey<Account>) -> Result<()>;
+    fn roster_snapshot(&self) -> Pickle;
+    fn broadcast(&self, base: &mut base::App, update: u8, data: Pickle, except: Option<ClientKey>);
+}
+
+impl TrainingRoomWire for HostedRoom {
+    fn player_count(&self) -> usize {
+        self.members().len()
     }
 
-    pub(super) fn list_entry(&self) -> Value {
+    fn list_entry(&self) -> Value {
         // Numeric keys are PREBATTLE_CACHE_KEY values used by PrbListItem.
-        let host = self.members.get(&self.host);
+        let host = self.members().get(&self.host());
         wot_platform::pickle!((
-            (self.created_at), (self.id), {
-                1: (TRAINING), 2: (self.settings.open), 5: (self.player_count() as i64),
-                6: (host.map_or("", |player| player.name.as_str())), 7: (self.created_at),
-                9: (self.settings.comment.as_str()), 11: (self.settings.arena_type_id),
-                12: (self.settings.duration_seconds),
+            (self.created_at()), (self.id()), {
+                1: (TRAINING), 2: (self.settings().open), 5: (self.player_count() as i64),
+                6: (host.map_or("", |player| player.name.as_str())), 7: (self.created_at()),
+                9: (self.settings().comment.as_str()), 11: (self.settings().arena_type_id),
+                12: (self.settings().duration_seconds),
                 18: (host.map_or(0, |player| player.account_id)), 20: (LOCAL_CLUSTER)
             }
         ))
@@ -229,13 +205,13 @@ impl HostedRoom {
 
     fn send_initial_state(&self, base: &mut base::App, entity: EntityKey<Account>) -> Result<()> {
         let host = self
-            .members
-            .get(&self.host)
+            .members()
+            .get(&self.host())
             .context("Training Room host is missing")?;
-        let settings = &self.settings;
-        let default_roster = RosterSlot::UnassignedFromTeamOne as i32;
+        let settings = self.settings();
+        let default_roster = roster_slot_to_wire(RosterSlot::UnassignedFromTeamOne);
         let mut account = base.entity(entity)?;
-        account.onPrebattleJoined(EntityId(self.id))?;
+        account.onPrebattleJoined(EntityId(self.id()))?;
         account.updatePrebattle(
             SETTINGS,
             Pickle(wot_platform::pickle!({
@@ -253,7 +229,7 @@ impl HostedRoom {
         )?;
         account.updatePrebattle(
             PROPERTIES,
-            Pickle(wot_platform::pickle!({"createTime": (self.created_at)})),
+            Pickle(wot_platform::pickle!({"createTime": (self.created_at())})),
         )?;
         account.updatePrebattle(ROSTER, self.roster_snapshot())?;
         Ok(())
@@ -261,18 +237,15 @@ impl HostedRoom {
 
     fn roster_snapshot(&self) -> Pickle {
         Pickle(Value::List(
-            self.members
-                .values()
-                .map(RoomPlayer::roster_entry)
-                .collect(),
+            self.members().values().map(roster_entry).collect(),
         ))
     }
 
     fn broadcast(&self, base: &mut base::App, update: u8, data: Pickle, except: Option<ClientKey>) {
-        for (&client, member) in &self.members {
-            if Some(client) != except && !member.in_battle {
-                deliver_training_update(base, client, self.id, |base| {
-                    base.entity(member.entity)?
+        for (&client, member) in self.members() {
+            if Some(client) != except && !member.in_battle() {
+                deliver_training_update(base, client, self.id(), |base| {
+                    base.entity(member.delivery.entity)?
                         .updatePrebattle(update, data.clone())?;
                     Ok(())
                 });
@@ -354,7 +327,7 @@ impl Gateway {
             let hosting = self
                 .training_rooms
                 .get(&id)
-                .is_some_and(|room| room.host == client);
+                .is_some_and(|room| room.host() == client);
             if !hosting {
                 span.record("output.outcome", "already_in_room");
                 self.base
@@ -364,30 +337,14 @@ impl Gateway {
             }
             (id, "already_hosting")
         } else {
-            let Some(id) = self.last_training_room_id.checked_add(1) else {
+            let host = room_player(entity, session, now(), HOST_ROLE);
+            let Some(id) = self.training_rooms.create(settings, client, host) else {
                 span.record("output.outcome", "unavailable");
                 self.base
                     .entity(entity)?
                     .onPrebattleJoinFailure(EVENT_DISABLED)?;
                 return Ok(());
             };
-            let created_at = now();
-            self.last_training_room_id = id;
-            self.training_rooms.insert(
-                id,
-                HostedRoom {
-                    id,
-                    settings,
-                    created_at,
-                    host: client,
-                    invites: HashMap::new(),
-                    teams_ready: (false, false),
-                    members: HashMap::from([(
-                        client,
-                        RoomPlayer::new(entity, session, created_at, HOST_ROLE),
-                    )]),
-                },
-            );
             session.training_room = Some(id);
             (id, "created")
         };
@@ -420,34 +377,39 @@ impl Gateway {
                     .ok()
                     .and_then(|id| self.training_rooms.get_mut(&id))
                 {
-                    Some(room) if session.training_room == Some(room.id) => {
-                        let room_id = room.id;
+                    Some(room) if session.training_room == Some(room.id()) => {
+                        let room_id = room.id();
                         span.record("output.players.count", room.player_count());
                         self.send_training_room_state(client, entity, room_id, false)?;
                         span.record("output.outcome", "already_joined");
                         return Ok(());
                     }
                     Some(_) if session.training_room.is_some() => (ACCOUNT_LOCK, "already_in_room"),
-                    Some(room)
-                        if invitation
-                            && !room.invites.contains_key(&session.account.snapshot.id()) =>
-                    {
-                        (PRIVACY, "invitation_unavailable")
-                    }
-                    Some(room) if !invitation && !room.settings.open => {
-                        (PRIVACY, "invitation_only")
-                    }
-                    Some(room) if room.player_count() >= MAX_ROOM_PLAYERS => {
-                        (ROOM_FULL, "room_full")
-                    }
                     Some(room) => {
-                        let id = room.id;
-                        room.members
-                            .insert(client, RoomPlayer::new(entity, session, now(), GUEST_ROLE));
+                        let id = room.id();
+                        let joined = room.join(
+                            client,
+                            room_player(entity, session, now(), GUEST_ROLE),
+                            invitation,
+                        );
+                        let invited = match joined {
+                            Ok(invited) => invited,
+                            Err(error) => {
+                                let (code, outcome) = match error {
+                                    JoinRejection::InvitationUnavailable => {
+                                        (PRIVACY, "invitation_unavailable")
+                                    }
+                                    JoinRejection::InvitationOnly => (PRIVACY, "invitation_only"),
+                                    JoinRejection::Full => (ROOM_FULL, "room_full"),
+                                };
+                                span.record("output.outcome", outcome);
+                                self.base.entity(entity)?.onPrebattleJoinFailure(code)?;
+                                return Ok(());
+                            }
+                        };
                         session.training_room = Some(id);
                         let count = room.player_count();
-                        let invited = room.invites.remove(&session.account.snapshot.id());
-                        if invited.is_some() {
+                        if invited {
                             invites::settle(
                                 &mut self.base,
                                 session,
@@ -459,12 +421,12 @@ impl Gateway {
                         }
                         self.send_training_room_state(client, entity, id, true)?;
                         if let Some(room) = self.training_rooms.get(&id)
-                            && let Some(member) = room.members.get(&client)
+                            && let Some(member) = room.members().get(&client)
                         {
                             room.broadcast(
                                 &mut self.base,
                                 PLAYER_ADDED,
-                                Pickle(member.roster_entry()),
+                                Pickle(roster_entry(member)),
                                 Some(client),
                             );
                         }
@@ -530,25 +492,22 @@ impl Gateway {
             span.record("output.outcome", "no_membership");
             return Ok(());
         };
-        let Some(member) = room
-            .members
-            .get_mut(&client)
-            .filter(|member| member.in_battle)
-        else {
+        let Some(member) = room.member_mut(&client).filter(|member| member.in_battle()) else {
             span.record("output.outcome", "already_in_room");
             return Ok(());
         };
-        member.entity = entity;
-        member.in_battle = false;
-        member.ready_vehicle = None;
-        let id = room.id;
+        member.return_to_room(RoomDelivery {
+            entity,
+            role: member.delivery.role,
+        });
+        let id = room.id();
         span.record("input.room.id", id);
         span.record("output.players.count", room.player_count());
         span.record(
             "output.players.in_battle.count",
-            room.members
+            room.members()
                 .values()
-                .filter(|member| member.in_battle)
+                .filter(|member| member.in_battle())
                 .count(),
         );
         room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), Some(client));
@@ -598,23 +557,23 @@ impl Gateway {
             .and_then(|session| session.training_room)
             .and_then(|id| self.training_rooms.get(&id));
         if let Some(room) = room {
-            span.record("output.room.id", room.id);
+            span.record("output.room.id", room.id());
         }
         let target = match (room, args) {
             (None, _) => Err(("room_unavailable", "Training Room is unavailable")),
-            (Some(room), _) if room.host != client => Err((
+            (Some(room), _) if room.host() != client => Err((
                 "host_required",
                 "Only the Training Room host can remove players",
             )),
             (Some(room), [player_id, 0, 0]) => room
-                .members
+                .members()
                 .iter()
                 .find(|(key, member)| {
                     **key != client
-                        && !member.in_battle
-                        && i64::from(member.entity.id().0) == player_id
+                        && !member.in_battle()
+                        && i64::from(member.delivery.entity.id().0) == player_id
                 })
-                .map(|(&key, member)| (key, member.entity))
+                .map(|(&key, member)| (key, member.delivery.entity))
                 .ok_or((
                     "invalid_target",
                     "Select another player in this Training Room",
@@ -659,18 +618,16 @@ impl Gateway {
             return None;
         };
         span.record("output.room.id", room_id);
-        let Some(room) = self.training_rooms.get_mut(&room_id) else {
+        let Some(departure) = self.training_rooms.leave(room_id, &client) else {
             span.record("output.outcome", "already_left");
             return None;
         };
-        let Some(member) = room.members.remove(&client) else {
-            span.record("output.outcome", "already_left");
-            return None;
-        };
-        let outcome = if room.host == client {
-            if let Some(room) = self.training_rooms.remove(&room_id) {
+        let outcome = match departure {
+            RoomDeparture::RoomClosed(room) => {
                 for session in self.sessions.values() {
-                    if room.invites.contains_key(&session.account.snapshot.id())
+                    if room
+                        .invitations()
+                        .contains_key(&session.account.snapshot.id())
                         && session.garage_synced
                         && let Some(entity) = session.entity
                     {
@@ -684,30 +641,30 @@ impl Gateway {
                         );
                     }
                 }
-                for (guest, member) in room.members {
+                for (guest, member) in room.into_members() {
                     if let Some(session) = self.sessions.get_mut(&guest) {
                         session.training_room = None;
                     }
-                    if !member.in_battle {
+                    if !member.in_battle() {
                         deliver_training_update(&mut self.base, guest, room_id, |base| {
-                            notify_training_left(base, member.entity, room_id)
+                            notify_training_left(base, member.delivery.entity, room_id)
                         });
                     }
                 }
+                span.record("output.players.count", 0);
+                "deleted"
             }
-            span.record("output.players.count", 0);
-            "deleted"
-        } else {
-            if matches!(member.roster, RosterSlot::TeamOne | RosterSlot::TeamTwo) {
-                room.clear_team_readiness();
+            RoomDeparture::MemberLeft(member) => {
+                if let Some(room) = self.training_rooms.get(&room_id) {
+                    let removed = Pickle(wot_platform::pickle!((
+                        (member.delivery.entity.id().0),
+                        (roster_slot_to_wire(member.roster()))
+                    )));
+                    room.broadcast(&mut self.base, PLAYER_REMOVED, removed, None);
+                    span.record("output.players.count", room.player_count());
+                }
+                "left"
             }
-            let removed = Pickle(wot_platform::pickle!((
-                (member.entity.id().0),
-                (member.roster as i32)
-            )));
-            room.broadcast(&mut self.base, PLAYER_REMOVED, removed, None);
-            span.record("output.players.count", room.player_count());
-            "left"
         };
         span.record("output.outcome", outcome);
         Some((room_id, outcome))
@@ -739,8 +696,8 @@ impl Gateway {
             )?;
             return Ok(());
         };
-        span.record("output.room.id", room.id);
-        if room.host != client {
+        span.record("output.room.id", room.id());
+        if room.host() != client {
             span.record("output.outcome", "host_required");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,
@@ -749,22 +706,13 @@ impl Gateway {
             )?;
             return Ok(());
         }
-        let assignment = RosterSlot::from_wire(roster_slot)
-            .filter(|_| group == 0)
-            .map(|destination| {
-                let occupied = room
-                    .members
-                    .values()
-                    .filter(|member| member.roster == destination)
-                    .count();
-                (destination, occupied >= destination.capacity())
-            })
-            .zip(
-                room.members
-                    .values_mut()
-                    .find(|member| i64::from(member.entity.id().0) == player_entity_id),
-            );
-        let Some(((destination, full), member)) = assignment else {
+        let assignment =
+            roster_slot_from_wire(roster_slot)
+                .filter(|_| group == 0)
+                .zip(room.members().iter().find(|(_, member)| {
+                    i64::from(member.delivery.entity.id().0) == player_entity_id
+                }));
+        let Some((destination, (&member, player))) = assignment else {
             span.record("output.outcome", "invalid_request");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,
@@ -773,9 +721,9 @@ impl Gateway {
             )?;
             return Ok(());
         };
-        let previous = member.roster;
-        span.record("output.roster.previous_slot", previous as i32);
-        if previous != destination && full {
+        let previous = player.roster();
+        span.record("output.roster.previous_slot", roster_slot_to_wire(previous));
+        if !room.assign(&member, destination) {
             span.record("output.outcome", "roster_full");
             self.base
                 .entity(entity)?
@@ -787,10 +735,6 @@ impl Gateway {
         } else {
             "assigned"
         };
-        member.roster = destination;
-        if previous != destination {
-            room.clear_team_readiness();
-        }
         room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), None);
         span.record("output.outcome", outcome);
         self.base
@@ -823,8 +767,8 @@ impl Gateway {
             )?;
             return Ok(());
         };
-        span.record("output.room.id", room.id);
-        if room.host != client {
+        span.record("output.room.id", room.id());
+        if room.host() != client {
             span.record("output.outcome", "host_required");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,
@@ -842,22 +786,20 @@ impl Gateway {
             )?;
             return Ok(());
         }
-        if let Some(host) = room.members.get(&client) {
-            span.record("output.roster.previous_slot", host.roster as i32);
-            span.record("output.roster.slot", host.roster.swap_team() as i32);
+        if let Some(host) = room.members().get(&client) {
+            span.record(
+                "output.roster.previous_slot",
+                roster_slot_to_wire(host.roster()),
+            );
         }
-        let mut changed = false;
-        for member in room.members.values_mut() {
-            let destination = member.roster.swap_team();
-            changed |= destination != member.roster;
-            member.roster = destination;
-        }
-        let outcome = if changed {
-            room.clear_team_readiness();
+        let outcome = if room.swap_teams() {
             "swapped"
         } else {
             "unchanged"
         };
+        if let Some(host) = room.members().get(&client) {
+            span.record("output.roster.slot", roster_slot_to_wire(host.roster()));
+        }
         room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), None);
         span.record("output.outcome", outcome);
         self.base
@@ -891,8 +833,8 @@ impl Gateway {
             )?;
             return Ok(());
         };
-        span.record("output.room.id", room.id);
-        if room.host != client {
+        span.record("output.room.id", room.id());
+        if room.host() != client {
             span.record("output.outcome", "host_required");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,
@@ -901,7 +843,7 @@ impl Gateway {
             )?;
             return Ok(());
         }
-        let mut next = room.settings.clone();
+        let mut next = room.settings().clone();
         let Some((key, value)) = apply_setting(&mut next, &self.battle_worker, command, argument)
         else {
             span.record("output.outcome", "invalid_request");
@@ -912,15 +854,13 @@ impl Gateway {
             )?;
             return Ok(());
         };
-        if next != room.settings {
+        if room.change_settings(next) {
             room.broadcast(
                 &mut self.base,
                 SETTING,
                 Pickle(wot_platform::pickle!(((key), (value)))),
                 None,
             );
-            room.settings = next;
-            room.clear_team_readiness();
             span.record("output.outcome", "changed");
         } else {
             span.record("output.outcome", "unchanged");
@@ -955,8 +895,8 @@ impl Gateway {
             )?;
             return Ok(());
         };
-        span.record("output.room.id", room.id);
-        let Some(member) = room.members.get_mut(&client) else {
+        span.record("output.room.id", room.id());
+        let Some(member) = room.member_mut(&client) else {
             span.record("output.outcome", "room_unavailable");
             self.base.entity(entity)?.onCmdResponse(
                 request_id,
@@ -1002,15 +942,9 @@ impl Gateway {
         };
         let (state, vehicle) = ready_state(descriptor.as_deref());
         let player_entity = entity.id().0;
-        let roster = member.roster as i32;
-        let role = member.role;
-        let readiness_changed =
-            member.ready_inventory != vehicle_id || member.ready_vehicle != descriptor;
-        member.ready_vehicle = descriptor;
-        member.ready_inventory = vehicle_id;
-        if readiness_changed && matches!(roster, 1 | 2) {
-            room.clear_team_readiness();
-        }
+        let roster = roster_slot_to_wire(member.roster());
+        let role = member.delivery.role;
+        room.set_member_ready(&client, vehicle_id, descriptor);
         room.broadcast(
             &mut self.base,
             PLAYER_STATE,

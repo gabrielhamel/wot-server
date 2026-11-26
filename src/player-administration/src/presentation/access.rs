@@ -13,8 +13,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tracing::Instrument;
 use wot_accounts::contract::{PlayerAccount, PlayerRole, RoleChange};
-use wot_player_sessions::contract::DashboardStorePlayer;
 use wot_shared_kernel::AccountId;
+use wot_store::contract::DashboardStorePlayer;
 
 const COOKIE_NAME: &str = "wot_admin_session";
 

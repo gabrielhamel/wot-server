@@ -673,21 +673,24 @@ pub fn assert_operation_traces(account: i64, research_account: i64, online_playe
         }
         false
     };
-    assert!(
-        spans.iter().all(|span| {
+    for span in &spans {
+        assert!(
             [
                 "player_sessions",
                 "accounts",
                 "battles",
                 "social",
                 "player_administration",
+                "store",
+                "training_rooms",
                 "server",
             ]
             .iter()
-            .any(|context| has(span, "ddd.bounded_context.name", context))
-        }),
-        "every exported operation must identify its bounded context"
-    );
+            .any(|context| has(span, "ddd.bounded_context.name", context)),
+            "{} must identify its bounded context",
+            span.name,
+        );
+    }
     for (outcome, response_code) in [("empty", "1"), ("invalid_request", "-1")] {
         let listing = spans
             .iter()

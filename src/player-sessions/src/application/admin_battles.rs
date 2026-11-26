@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::BTreeMap;
 use tokio::sync::{mpsc, oneshot};
 use wot_accounts::contract::{
@@ -7,7 +7,7 @@ use wot_accounts::contract::{
 use wot_battles::contract::BattleParameterDefinition;
 
 #[derive(Clone)]
-pub struct AdminBattles(mpsc::Sender<BattleRequest>);
+pub struct TrainingBattleLaunches(mpsc::Sender<BattleRequest>);
 
 pub(crate) enum BattleRequest {
     Options(tracing::Span, oneshot::Sender<BattleOptions>),
@@ -15,12 +15,12 @@ pub(crate) enum BattleRequest {
         tracing::Span,
         i64,
         i64,
-        oneshot::Sender<Result<CustomBattleLoadoutOptions, AdminBattleError>>,
+        oneshot::Sender<Result<CustomBattleLoadoutOptions, TrainingBattleError>>,
     ),
     Launch(
         tracing::Span,
-        AdminBattleSetup,
-        oneshot::Sender<Result<BattleLaunchReceipt, AdminBattleError>>,
+        TrainingBattleSetup,
+        oneshot::Sender<Result<BattleLaunchReceipt, TrainingBattleError>>,
     ),
 }
 
@@ -52,20 +52,17 @@ pub struct AvailablePlayer {
     pub vehicles: Vec<BattleVehicleChoice>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AdminBattleSetup {
+#[derive(Debug)]
+pub struct TrainingBattleSetup {
     pub arena_type: i32,
     pub duration_seconds: i32,
-    pub players: Vec<AdminBattlePlayer>,
-    pub dummies: Vec<AdminBattleDummy>,
-    #[serde(default)]
+    pub players: Vec<TrainingBattlePlayer>,
+    pub dummies: Vec<TrainingBattleDummy>,
     pub parameters: BTreeMap<String, f64>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AdminBattlePlayer {
+#[derive(Debug)]
+pub struct TrainingBattlePlayer {
     pub account_id: i64,
     pub team: u8,
     pub inventory_id: Option<i64>,
@@ -73,15 +70,14 @@ pub struct AdminBattlePlayer {
     pub owned_overrides: Option<CustomBattleLoadout>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AdminBattleDummy {
+#[derive(Debug)]
+pub struct TrainingBattleDummy {
     pub team: u8,
     pub loadout: CustomBattleLoadout,
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
-pub enum AdminBattleError {
+pub enum TrainingBattleError {
     #[error(
         "Select a map, a duration from 5 to 30 minutes, and vehicles on both teams. Include at least one connected player and no more than 30 entrants."
     )]
@@ -106,7 +102,7 @@ pub enum AdminBattleError {
     PreparationFailed,
 }
 
-impl AdminBattleError {
+impl TrainingBattleError {
     pub fn outcome(self) -> &'static str {
         match self {
             Self::InvalidSetup => "invalid_setup",
@@ -121,25 +117,25 @@ impl AdminBattleError {
     }
 }
 
-impl AdminBattles {
+impl TrainingBattleLaunches {
     pub(crate) fn channel() -> (Self, mpsc::Receiver<BattleRequest>) {
         let (sender, receiver) = mpsc::channel(4);
         (Self(sender), receiver)
     }
 
-    pub async fn options(&self) -> Result<BattleOptions, AdminBattleError> {
+    pub async fn options(&self) -> Result<BattleOptions, TrainingBattleError> {
         let (reply, response) = oneshot::channel();
         self.0
             .try_send(BattleRequest::Options(tracing::Span::current(), reply))
-            .map_err(|_| AdminBattleError::Unavailable)?;
-        response.await.map_err(|_| AdminBattleError::Unavailable)
+            .map_err(|_| TrainingBattleError::Unavailable)?;
+        response.await.map_err(|_| TrainingBattleError::Unavailable)
     }
 
     pub async fn owned_loadout(
         &self,
         account_id: i64,
         inventory_id: i64,
-    ) -> Result<CustomBattleLoadoutOptions, AdminBattleError> {
+    ) -> Result<CustomBattleLoadoutOptions, TrainingBattleError> {
         let (reply, response) = oneshot::channel();
         self.0
             .try_send(BattleRequest::OwnedLoadout(
@@ -148,14 +144,16 @@ impl AdminBattles {
                 inventory_id,
                 reply,
             ))
-            .map_err(|_| AdminBattleError::Unavailable)?;
-        response.await.map_err(|_| AdminBattleError::Unavailable)?
+            .map_err(|_| TrainingBattleError::Unavailable)?;
+        response
+            .await
+            .map_err(|_| TrainingBattleError::Unavailable)?
     }
 
     pub async fn start(
         &self,
-        setup: AdminBattleSetup,
-    ) -> Result<BattleLaunchReceipt, AdminBattleError> {
+        setup: TrainingBattleSetup,
+    ) -> Result<BattleLaunchReceipt, TrainingBattleError> {
         let (reply, response) = oneshot::channel();
         self.0
             .try_send(BattleRequest::Launch(
@@ -163,7 +161,9 @@ impl AdminBattles {
                 setup,
                 reply,
             ))
-            .map_err(|_| AdminBattleError::Unavailable)?;
-        response.await.map_err(|_| AdminBattleError::Unavailable)?
+            .map_err(|_| TrainingBattleError::Unavailable)?;
+        response
+            .await
+            .map_err(|_| TrainingBattleError::Unavailable)?
     }
 }

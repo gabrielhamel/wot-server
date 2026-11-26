@@ -27,7 +27,7 @@ use application::{CreatePlayerError, PlayerAccessRepository, PlayerProvision, Pl
 use contract::PreparedAccount;
 use domain::*;
 use infrastructure::client::{
-    CosmeticGrantEntry, GarageCatalog, StoreCatalog, StoreOrder, StoreOrderError,
+    CosmeticGrantEntry, GarageCatalog, StoreListing, StoreOffer, StoreOrderError,
     VehicleCatalogEntry,
 };
 use infrastructure::postgres::PostgresAccounts;

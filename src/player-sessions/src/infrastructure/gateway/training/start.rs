@@ -36,20 +36,6 @@ struct TrainingEntrant {
     revision: i64,
 }
 
-impl HostedRoom {
-    fn set_team_ready(&mut self, team: u8, ready: bool) {
-        match team {
-            1 => self.teams_ready.0 = ready,
-            2 => self.teams_ready.1 = ready,
-            _ => {}
-        }
-    }
-
-    pub(super) fn clear_team_readiness(&mut self) {
-        self.teams_ready = (false, false);
-    }
-}
-
 impl Gateway {
     #[tracing::instrument(name = "player_sessions.start_training_battle", skip_all, fields(ddd.bounded_context.name = "player_sessions", input.request_id = request_id, input.team = args[0], input.force = args[1], input.ready = ready, output.room.id = tracing::field::Empty, output.arena_type_id = tracing::field::Empty, output.players.count = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty), err)]
     pub(in crate::infrastructure::gateway) fn change_training_team_ready(
@@ -83,17 +69,17 @@ impl Gateway {
                 "Training Room is unavailable",
             );
         };
-        let room_id = room.id;
+        let room_id = room.id();
         span.record("output.room.id", room_id);
-        span.record("output.arena_type_id", room.settings.arena_type_id);
-        if room.host != client {
+        span.record("output.arena_type_id", room.settings().arena_type_id);
+        if room.host() != client {
             return reject(
                 &mut self.base,
                 "not_host",
                 "Only the Training Room host can start the battle",
             );
         }
-        if room.members.values().any(|member| member.in_battle) {
+        if room.members().values().any(|member| member.in_battle()) {
             return reject(
                 &mut self.base,
                 "battle_in_progress",
@@ -101,7 +87,7 @@ impl Gateway {
             );
         }
         if !ready {
-            room.set_team_ready(team, false);
+            room.set_team_ready(team, false, OBSERVER_INVENTORY_ID);
             self.base
                 .entity(entity)?
                 .onCmdResponse(request_id, SUCCESS, String::new())?;
@@ -120,27 +106,14 @@ impl Gateway {
                 "A training arena is already being prepared",
             );
         }
-        let has_team = |wanted| {
-            room.members.values().any(|p| {
-                team_of(p.roster) == Some(wanted)
-                    && p.ready_inventory
-                        .is_some_and(|id| id != OBSERVER_INVENTORY_ID)
-            })
-        };
-        if !has_team(team)
-            || room
-                .members
-                .values()
-                .any(|p| team_of(p.roster) == Some(team) && p.ready_inventory.is_none())
-        {
+        if !room.set_team_ready(team, true, OBSERVER_INVENTORY_ID) {
             return reject(
                 &mut self.base,
                 "team_not_ready",
                 "Assign a ready player to this team and ready all assigned players",
             );
         }
-        room.set_team_ready(team, true);
-        if room.teams_ready != (true, true) {
+        if !room.teams_ready() {
             self.base
                 .entity(entity)?
                 .onCmdResponse(request_id, SUCCESS, String::new())?;
@@ -268,7 +241,7 @@ impl Gateway {
             || !self
                 .training_rooms
                 .get(&room_id)
-                .is_some_and(|room| room.host == pending.client)
+                .is_some_and(|room| room.host() == pending.client)
         {
             return reject(
                 self,
@@ -310,40 +283,42 @@ impl Gateway {
 
     fn training_battle_roster(&self, room_id: u32) -> Option<TrainingLaunchRoster> {
         let room = self.training_rooms.get(&room_id)?;
-        if room.teams_ready != (true, true) {
+        if !room.teams_ready() {
             return None;
         }
         let mut entrants = Vec::new();
-        for (&client, member) in &room.members {
-            let Some(team) = team_of(member.roster) else {
+        for (&client, member) in room.members() {
+            let Some(team) = member.roster().assigned_team() else {
                 continue;
             };
-            let inventory_id = member.ready_inventory?;
+            let inventory_id = member.ready_inventory()?;
             let session = self.sessions.get(&client).filter(|session| {
-                session.entity == Some(member.entity) && !session.saving && !session.crew_running
+                session.entity == Some(member.delivery.entity)
+                    && !session.saving
+                    && !session.crew_running
             })?;
             let participant = ParticipantId(session.generation);
-            if member.in_battle || self.battle_participants.contains(&participant) {
+            if member.in_battle() || self.battle_participants.contains(&participant) {
                 return None;
             }
             entrants.push(TrainingEntrant {
                 client,
                 participant,
-                entity_id: member.entity.id().0,
+                entity_id: member.delivery.entity.id().0,
                 inventory_id,
                 team,
                 revision: session.account.snapshot.revision(),
             });
         }
-        if !entrants.iter().any(|entrant| entrant.client == room.host)
+        if !entrants.iter().any(|entrant| entrant.client == room.host())
             || entrants.len() + self.battle_participants.len() > self.config.max_clients
         {
             return None;
         }
         entrants.sort_unstable_by_key(|entrant| entrant.entity_id);
         Some(TrainingLaunchRoster {
-            arena_type: room.settings.arena_type_id,
-            duration: Duration::from_secs(u64::try_from(room.settings.duration_seconds).ok()?),
+            arena_type: room.settings().arena_type_id,
+            duration: Duration::from_secs(u64::try_from(room.settings().duration_seconds).ok()?),
             entrants,
         })
     }
@@ -367,7 +342,7 @@ impl Gateway {
         } in &roster.entrants
         {
             let (Some(member), Some(session)) =
-                (room.members.get(&client), self.sessions.get(&client))
+                (room.members().get(&client), self.sessions.get(&client))
             else {
                 return Ok(false);
             };
@@ -387,7 +362,7 @@ impl Gateway {
                 account_id: member.account_id,
                 name: member.name.clone(),
                 team,
-                is_host: room.host == client,
+                is_host: room.host() == client,
                 observer,
                 stationary_dummy: false,
                 customization_display_type: session.account.snapshot.customization_display_type(),
@@ -429,25 +404,24 @@ impl Gateway {
             None,
         );
         room.clear_team_readiness();
-        for (&client, member) in &mut room.members {
-            member.ready_inventory = None;
+        for (&client, member) in room.members_mut() {
             let Some(session) = self
                 .sessions
                 .get_mut(&client)
                 .filter(|session| battle.contains(ParticipantId(session.generation)))
             else {
-                member.ready_vehicle = None;
+                member.begin_round(false);
                 continue;
             };
             self.battle_participants
                 .insert(ParticipantId(session.generation));
             // The client renders a vehicle descriptor for every in-battle roster entry.
-            member.in_battle = true;
+            member.begin_round(true);
             session.entity = None;
             session.garage_synced = false;
             let result = (|| -> Result<()> {
-                chat::update_membership(&mut self.base, member.entity, room_id, false)?;
-                self.base.entity(member.entity)?.onArenaCreated()?;
+                chat::update_membership(&mut self.base, member.delivery.entity, room_id, false)?;
+                self.base.entity(member.delivery.entity)?.onArenaCreated()?;
                 self.base.reset_player(client)?;
                 Ok(())
             })();
@@ -465,13 +439,5 @@ impl Gateway {
         room.broadcast(&mut self.base, ROSTER, room.roster_snapshot(), None);
         battle.assign_scenery_entities(|| self.base.arena_entity_id());
         start.start(battle);
-    }
-}
-
-fn team_of(roster: RosterSlot) -> Option<u8> {
-    match roster {
-        RosterSlot::TeamOne => Some(1),
-        RosterSlot::TeamTwo => Some(2),
-        RosterSlot::UnassignedFromTeamOne | RosterSlot::UnassignedFromTeamTwo => None,
     }
 }
