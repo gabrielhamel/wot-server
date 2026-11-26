@@ -414,7 +414,7 @@ Scene impacts record distance along the ray and parent the `explodeProjectile`
 deliveries. Obstacle impacts include the raw collision material kind. The same shot parents
 the shooter-only result, the victim-only direction and the private damage
 feedback for each. When the direction update is queued for the victim, the
-shot records its yaw, blocked flag and displayed damage amount. The reload
+shot records its yaw, blocked flag, critical flags and displayed damage amount. The reload
 initiator parents the simulation tick deliveries as the gun cooldown and
 magazine refill complete. Unsupported methods emit an error span.
 Target ownership, invalid input, inactive rounds, and reloading are distinct

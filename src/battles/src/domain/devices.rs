@@ -1,4 +1,4 @@
-use super::parameters::BattleParameters;
+use super::{armor::ImpactSegment, parameters::BattleParameters};
 use std::{
     collections::BTreeMap,
     time::{Duration, Instant},
@@ -10,6 +10,7 @@ pub(crate) struct DeviceStrike {
     pub device: Device,
     pub health: Option<DeviceHealth>,
     pub damage: u16,
+    pub impact: ImpactSegment,
 }
 
 pub(crate) const TRACKS: [Device; 2] = [Device::TrackLeft, Device::TrackRight];
@@ -51,6 +52,7 @@ pub(crate) struct Condition {
 pub(crate) struct Criticals {
     pub tracks: [Option<TrackEvent>; 2],
     pub track_hits: u8,
+    pub track_impact: Option<ImpactSegment>,
     pub damaged: u8,
     pub destroyed: u8,
     pub crew: u8,
@@ -95,6 +97,7 @@ impl Condition {
             let track = TRACKS.iter().position(|&track| track == strike.device);
             if let Some(side) = track {
                 result.track_hits += 1;
+                result.track_impact.get_or_insert(strike.impact);
                 if state.health == 0 {
                     result.tracks[side] = Some(TrackEvent::Broken);
                 } else if previous > profile.repaired && state.health <= profile.repaired {
@@ -211,6 +214,11 @@ mod tests {
                 device,
                 health: Some(profile),
                 damage: 10,
+                impact: ImpactSegment {
+                    part: 0,
+                    start: [0; 3],
+                    end: [255; 3],
+                },
             })
         };
         let mut condition = Condition::default();

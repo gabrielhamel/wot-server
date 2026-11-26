@@ -82,6 +82,7 @@ pub(in super::super) struct ShotImpact {
     damage_factor: u8,
     segment: u64,
     params: u32,
+    track_impact: Option<ImpactSegment>,
     effects: ShellEffects,
     outcome: ArmorOutcome,
     speed: f32,
@@ -103,9 +104,7 @@ impl ShotImpact {
             ArmorOutcome::Blocked | ArmorOutcome::ScreenBlocked | ArmorOutcome::Spall => 3,
             _ => 0,
         };
-        let [ax, ay, az] = contact.start;
-        let [bx, by, bz] = contact.end;
-        let segment = u64::from_le_bytes([effect, contact.part, ax, ay, az, bx, by, bz]);
+        let segment = encode_impact_segment(contact, effect);
         Self {
             attacker,
             damage,
@@ -115,6 +114,7 @@ impl ShotImpact {
             params: (u32::from((effects.caliber_mm * 10.0) as u16) << 8)
                 | (u32::from(effects.kind) << 4)
                 | u32::from(effect),
+            track_impact: None,
             effects,
             outcome,
             speed,
@@ -135,22 +135,46 @@ impl ShotImpact {
         })
     }
 
+    pub(in super::super) fn with_track_impact(
+        mut self,
+        track_impact: Option<ImpactSegment>,
+    ) -> Self {
+        self.track_impact = track_impact.filter(|_| self.damage == 0);
+        self
+    }
+
     fn args(self) -> Vec<WireValue> {
+        const CRITICAL_HIT: u8 = 5;
+        let point = if let Some(contact) = self.track_impact {
+            let segment = encode_impact_segment(contact, CRITICAL_HIT);
+            hit_point(segment, (self.params & !0xf) | u32::from(CRITICAL_HIT))
+        } else {
+            hit_point(self.segment, self.params)
+        };
         vec![
             WireValue::Int32(self.attacker as i32),
-            WireValue::Seq(vec![hit_point(self.segment, self.params)]),
+            WireValue::Seq(vec![point]),
             WireValue::UInt8(self.effects.legacy_index),
             WireValue::UInt8(self.effects.prefab_index),
             WireValue::Int32(i32::from(self.damage)),
             WireValue::UInt8(self.damage_factor),
-            WireValue::UInt8(u8::from(matches!(
-                self.outcome,
-                ArmorOutcome::ScreenPenetrated | ArmorOutcome::ScreenBlocked
-            ))),
+            WireValue::UInt8(u8::from(
+                self.track_impact.is_none()
+                    && matches!(
+                        self.outcome,
+                        ArmorOutcome::ScreenPenetrated | ArmorOutcome::ScreenBlocked
+                    ),
+            )),
             WireValue::Float32(self.speed),
             WireValue::UInt8(0),
         ]
     }
+}
+
+fn encode_impact_segment(contact: ImpactSegment, effect: u8) -> u64 {
+    let [ax, ay, az] = contact.start;
+    let [bx, by, bz] = contact.end;
+    u64::from_le_bytes([effect, contact.part, ax, ay, az, bx, by, bz])
 }
 
 pub(super) fn track_extras(resources: &ResourceBundle) -> Result<[u8; 2]> {

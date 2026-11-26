@@ -100,6 +100,7 @@ struct ImpactDelivery {
     damage_logs: usize,
     shot_results: Vec<(ParticipantId, ShotResult)>,
     track_updates: Vec<(ParticipantId, u8, Vec<u8>)>,
+    impacts: Vec<(ParticipantId, Vec<ScriptValue>)>,
 }
 
 impl ArenaDelivery for ImpactDelivery {
@@ -182,14 +183,18 @@ impl ArenaDelivery for ImpactDelivery {
 
     fn arena_vehicle_method(
         &mut self,
-        _: ParticipantId,
+        recipient: ParticipantId,
         entity: u32,
         name: &str,
-        _: Vec<ScriptValue>,
+        args: Vec<ScriptValue>,
     ) -> std::io::Result<()> {
         if name == "onHealthChanged" {
             let _delivery = tracing::info_span!("test.health_delivery").entered();
             self.health_changes.push(entity);
+        }
+        if name == "showDamageFromShot" {
+            let _delivery = tracing::info_span!("test.impact_delivery").entered();
+            self.impacts.push((recipient, args));
         }
         Ok(())
     }
@@ -1047,5 +1052,169 @@ fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
         assert!(has(repair, "output.recipients", "2"));
         assert!(spans.iter().any(|span| span.name == "test.track_delivery"
             && span.parent_span_id == repair.span_context.span_id()));
+    }
+}
+
+#[test]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
+fn track_only_hits_show_a_chassis_critical_even_when_the_hull_ricochets() {
+    use crate::domain::vehicle::Aim;
+    use wot_shared_kernel::{ArmorDevice, Device, DeviceHealth};
+
+    for (ricochet_cos, outcome, contact_flag) in [
+        (0.0, "screen_penetrated", 1 << 6),
+        (0.0, "armor_blocked", 1 << 5),
+        (1.0, "ricochet", 1 << 3),
+    ] {
+        let (id, mut battle, wire) = projectile_battle(&[1, 2]);
+        let target = &mut battle.players.get_mut(&VICTIM).unwrap().tank;
+        target.position = Vec3::new(8.0, 0.0, 0.0);
+        let profile = target.performance.as_mut().unwrap();
+        let hull = Arc::get_mut(&mut profile.armor[1].as_mut().unwrap().mesh).unwrap();
+        for triangle in &mut hull.triangles {
+            triangle.plate.ricochets = true;
+        }
+        let mut tracks = hull.triangles.clone();
+        for triangle in &mut tracks {
+            triangle.plate.thickness_mm = 1.0;
+            triangle.plate.damage_factor = 0.0;
+            triangle.plate.ricochets = false;
+            triangle.plate.device = Some(ArmorDevice {
+                device: Device::TrackLeft,
+                health: Some(DeviceHealth {
+                    maximum: 80,
+                    repaired: 40,
+                    repair_seconds: 2.0,
+                    fire_chance: 0.0,
+                }),
+                projectile_chance: 1.0,
+                explosion_chance: 1.0,
+            });
+        }
+        profile.armor[0] = Some(MountedArmor {
+            offset: Vec3::new(-0.25, 0.0, 0.0),
+            mesh: Arc::new(ArmorMesh {
+                bounds: hull.bounds,
+                triangles: tracks,
+            }),
+        });
+        if outcome == "screen_penetrated" {
+            profile.armor[1] = None;
+        }
+        let shooter = &mut battle.players.get_mut(&SHOOTER).unwrap().tank;
+        shooter
+            .performance
+            .as_mut()
+            .unwrap()
+            .gun
+            .shell_ballistics
+            .insert(
+                10,
+                ShellBallistics {
+                    kind: ShellKind::ArmorPiercing,
+                    caliber_mm: 20.0,
+                    penetration_mm: [5.0; 2],
+                    penetration_randomization: 0.0,
+                    damage_randomization: 0.0,
+                    uniform_penetration: true,
+                    uniform_damage: true,
+                    far_damage: 100.0,
+                    damage_limited_range: f32::INFINITY,
+                    device_damage: [0.0; 2],
+                    explosive: None,
+                    speed: 100.0,
+                    gravity: 0.0,
+                    normalization: 0.0,
+                    ricochet_cos,
+                    trace_ricochet: true,
+                    obstacle_damage: None,
+                    obstacle_penetration_loss: 0.0,
+                },
+            );
+        assert!(shooter.aim_at(Aim::HullAngles {
+            yaw: std::f32::consts::FRAC_PI_2,
+            pitch: 0.0
+        }));
+        shooter.advance_gun(2.0);
+
+        let mut delivery = ImpactDelivery::default();
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("track-only-hit")));
+        tracing::subscriber::with_default(subscriber, || {
+            let now = battle.started_at;
+            assert_eq!(
+                battle.fire(&mut delivery, &wire, id, SHOOTER, now).unwrap(),
+                "launched"
+            );
+            battle.advance_projectiles(&mut delivery, &wire, id, now + Duration::from_millis(200));
+            let target = &battle.players[&VICTIM].tank;
+            assert_eq!(target.health, 100);
+            assert!(target.condition.disabled(Device::TrackLeft));
+        });
+        drop(battle);
+
+        let [(SHOOTER, result)] = delivery.shot_results.as_slice() else {
+            panic!("Expected the shooter's shot result");
+        };
+        assert_eq!(
+            result.hitFlags,
+            (1 << 20) | (1 << 11) | (1 << 8) | contact_flag
+        );
+        assert!(matches!(
+            delivery.indicators.as_slice(),
+            [(
+                VICTIM,
+                AvatarUpdate::HitDirection {
+                    damage: 0,
+                    criticals: 0x10000,
+                    blocked: false,
+                    ..
+                }
+            ),]
+        ));
+        assert!(delivery.health_changes.is_empty());
+        assert_eq!(delivery.impacts.len(), 2);
+        for (_, args) in &delivery.impacts {
+            let ScriptValue::Seq(points) = &args[1] else {
+                panic!("Expected impact points");
+            };
+            let [ScriptValue::Dict(point)] = points.as_slice() else {
+                panic!("Expected one track impact");
+            };
+            let ScriptValue::UInt64(segment) = point["segment"] else {
+                panic!("Expected packed segment");
+            };
+            let [effect, part, ..] = segment.to_le_bytes();
+            assert_eq!((effect, part), (5, 0));
+            assert_eq!(point["params"].as_i64().unwrap() & 0xf, 5);
+            assert_eq!(args[4], ScriptValue::Int32(0));
+            assert_eq!(args[6], ScriptValue::UInt8(0));
+        }
+
+        let spans = exporter.get_finished_spans().unwrap();
+        let shot = spans
+            .iter()
+            .find(|span| span.name == "battles.shot")
+            .unwrap();
+        for (key, value) in [
+            ("output.outcome", outcome),
+            ("output.hit_direction.blocked", "false"),
+            ("output.hit_direction.critical_flags", "65536"),
+        ] {
+            assert!(
+                shot.attributes
+                    .iter()
+                    .any(|field| field.key.as_str() == key && field.value.to_string() == value)
+            );
+        }
+        for name in ["test.impact_delivery", "test.hit_direction_delivery"] {
+            assert!(spans.iter().any(
+                |span| span.name == name && span.parent_span_id == shot.span_context.span_id()
+            ));
+        }
     }
 }

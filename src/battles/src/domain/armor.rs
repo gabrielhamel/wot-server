@@ -560,6 +560,7 @@ impl Shot {
                 device: device.device,
                 health: device.health,
                 damage,
+                impact: hit.segment,
             });
         }
     }

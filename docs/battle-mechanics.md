@@ -602,6 +602,20 @@ vehicle can also result from prediction, missing tracer effects, a gap in
 collision geometry or a cosmetic part with no collision. Compare server
 contact and the effects seen by shooter and target before assigning a cause.
 
+A track can take damage with zero hull HP loss, including when a shell
+continues into the hull and ricochets. The driver's
+`Avatar.showOwnVehicleHitDirection` sends zero HP damage with the track
+critical or destroyed bit and the blocked flag cleared. The client's
+`crits_mask_parser` maps that bit to the track icon in the critical-hit
+direction indicator. The shooter receives the chassis damage and device
+penetration flags in `Avatar.showShotResults` for the track-hit cue.
+For a track-only hit, `Vehicle.showDamageFromShot` uses effect 5
+(`CRITICAL_HIT`) at the chassis contact so the client feedback adaptor
+selects the chassis critical marker. The hull result still controls projectile
+flight and persistent armor marks. Hull HP hits keep their penetration or
+damage effect. The decoded packet regression covers bare-track hits, hull
+blocks and hull ricochets. Native rendering remains unverified.
+
 The article's voice inventory maps cues to round start, auto-aim acquisition
 and loss, hit outcome, enemy destruction, damage and recovery by module,
 crew loss by role, vehicle or crew defeat, and friendly destruction. It

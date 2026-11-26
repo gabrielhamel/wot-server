@@ -21,6 +21,9 @@ const ARMOR_PIERCED_WITH_DAMAGE: u32 = 1 << 4;
 const ARMOR_BLOCKED: u32 = 1 << 5;
 const SCREEN_PIERCED: u32 = 1 << 6;
 const SCREEN_BLOCKED: u32 = 1 << 7;
+const DEVICE_PIERCED_BY_PROJECTILE: u32 = 1 << 8;
+const TRACK_CRITICAL: u32 = 1 << 4;
+const TRACK_DESTROYED: u32 = 1 << (12 + 4);
 const TRACK_DAMAGED_BY_PROJECTILE: u32 = 1 << 11;
 const TRACK_DAMAGED_BY_EXPLOSION: u32 = 1 << 17;
 const DEVICE_DAMAGED_BY_PROJECTILE: u32 = 1 << 10;
@@ -110,6 +113,7 @@ impl Battle {
         output.target.entity_id = tracing::field::Empty, output.damage = tracing::field::Empty,
         output.hit_direction.radians = tracing::field::Empty,
         output.hit_direction.blocked = tracing::field::Empty,
+        output.hit_direction.critical_flags = tracing::field::Empty,
         output.hit_direction.damage = tracing::field::Empty,
         output.damage_log.shell_type = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty
@@ -497,7 +501,8 @@ impl Battle {
                         hit.outcome,
                         shot.effects,
                         shot.ballistics.speed,
-                    );
+                    )
+                    .with_track_impact(critical.track_impact);
                     let sticker_added = victim.damage_stickers.add(effect);
                     if sticker_added {
                         span.record("output.damage_stickers.count", victim.damage_stickers.len());
@@ -602,7 +607,7 @@ impl Battle {
                         flags |= if outcome == ArmorOutcome::Spall {
                             TRACK_DAMAGED_BY_EXPLOSION
                         } else {
-                            TRACK_DAMAGED_BY_PROJECTILE
+                            TRACK_DAMAGED_BY_PROJECTILE | DEVICE_PIERCED_BY_PROJECTILE
                         };
                     }
                     if fire_started {
@@ -638,6 +643,7 @@ impl Battle {
                     wire.publish_damage_stickers(delivery, peer, id, &target.damage_stickers)?;
                 }
                 let blocked = damage == 0
+                    && track_hits == 0
                     && matches!(
                         outcome,
                         ArmorOutcome::Blocked
@@ -646,13 +652,20 @@ impl Battle {
                     );
                 if peer == victim && (damage != 0 || criticals != 0 || blocked) {
                     let indicator_damage = if blocked { shot.damage } else { damage as u16 };
+                    let critical_flags = if tracks.contains(&Some(TrackEvent::Broken)) {
+                        TRACK_DESTROYED
+                    } else if track_hits > 0 {
+                        TRACK_CRITICAL
+                    } else {
+                        u32::from(criticals)
+                    };
                     delivery.send_avatar(
                         peer,
                         AvatarUpdate::HitDirection {
                             yaw: direction,
                             attacker,
                             damage: indicator_damage,
-                            criticals: u32::from(criticals),
+                            criticals: critical_flags,
                             blocked,
                             explosive: shot.effects.kind == HIGH_EXPLOSIVE_SHELL_KIND,
                             victim: id,
@@ -660,6 +673,7 @@ impl Battle {
                     )?;
                     span.record("output.hit_direction.radians", direction);
                     span.record("output.hit_direction.blocked", blocked);
+                    span.record("output.hit_direction.critical_flags", critical_flags);
                     span.record("output.hit_direction.damage", indicator_damage);
                 }
                 if detonated {
