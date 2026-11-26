@@ -28,66 +28,97 @@ and repairs can replace the server list.
 
 ## How to run the server in development
 
-The server needs a **PostgreSQL database**. Start one with the included [Compose file](compose.yaml).
+Run these commands from the repository root. You’ll need Docker Compose, Rust
+with Cargo, Node.js and npm for the [dashboard build](docs/admin.md#enable-the-dashboard),
+and access to the latest World of Tanks EU installation.
 
-```bash
-docker compose up -d
+### 1. Start PostgreSQL
+
+Start the database with the included [Compose file](compose.yaml). The command
+waits for PostgreSQL to be ready on `127.0.0.1:54329`.
+
+```sh
+docker compose up -d --wait postgres
 ```
 
-### 1. Extract the game resources
+### 2. Set the game installation path
 
-Extract the game resources into `.local/extracted-client`. Replace
-`/path/to/World_of_Tanks_EU` with your game installation path in the commands below.
+Replace the example path with the directory that contains `WorldOfTanks.exe`.
 
-The [extractor](docs/resources.md) requires a new output directory.
+**Linux (Bash)**
 
 ```bash
-cargo run -p wot-extract -- --output .local/extracted-client '/path/to/World_of_Tanks_EU'
+game_dir='/path/to/World_of_Tanks_EU'
 ```
 
-### 2. Generate a login key pair
+**Windows (PowerShell)**
+
+```powershell
+$game_dir = 'C:\Games\World_of_Tanks_EU'
+```
+
+### 3. Extract the game resources
+
+Run this command in the same terminal. The [extractor](docs/resources.md)
+requires a new output directory.
+
+```sh
+cargo run -p wot-extract -- --output .local/extracted-client "$game_dir"
+```
+
+### 4. Generate a login key pair
 
 Generate a 2048-bit RSA key pair in `.local`. The tool asks before replacing
 either key file.
 
-```bash
+```sh
 cargo run -p wot-login-key -- --name login --output .local/
 ```
 
-### 3. Add the local server to the game
+### 5. Run the server
 
-Close World of Tanks. From the repository root, run `wot-server-list insert` with
-your game installation directory and the server details.
+```sh
+cargo run -- --resource-dir .local/extracted-client --database-url 'postgresql://wot_server:local-development@127.0.0.1:54329/wot_server' --private-key .local/login.pem
+```
+
+The server applies database migrations automatically. Leave it running and
+use a second terminal for the client setup commands if needed.
+
+### 6. Create the first account in the dashboard
+
+Open the [local dashboard](http://127.0.0.1:8080/dashboard/) and complete the
+first-administrator form with an email address, a display name, and a password.
+Use the same email and password to sign in to the game.
+
+### 7. Connect the game client
+
+Close World of Tanks. From the repository root, add **WoT Local** to the game’s
+server list and copy the public key into the game’s `res` folder. If you opened
+a new terminal, set `game_dir` again as shown in step 2.
+
+**Linux (Bash)**
 
 ```bash
-cargo run -p wot-server-list -- insert --game-dir '/path/to/World_of_Tanks_EU' \
+cargo run -p wot-server-list -- insert --game-dir "$game_dir" \
   --address 127.0.0.1:20016 \
   --name 'WoT Local' --short-name WOTLOCAL \
   --key-name loginapp_wot_server_250.pubkey \
   --periphery-id 250
+cp .local/login.pubkey "$game_dir/res/loginapp_wot_server_250.pubkey"
 ```
 
-Manually copy the server's exported `.local/login.pubkey` into the game's
-`res` folder as `loginapp_wot_server_250.pubkey`. The filename must match
-`--key-name`. Use the server's reachable IPv4 address and UDP port in
-`--address` if the game runs on another computer. Choose an unused
-`--periphery-id` and use the same value on the game server.
+**Windows (PowerShell)**
 
-The [server guide](docs/server.md#connecting-the-game)
-shows how to list existing IDs and delete entries.
-
-### 4. Run the server
-
-```bash
-cargo run -- \
-  --resource-dir '.local/extracted-client' \
-  --database-url 'postgresql://wot_server:local-development@127.0.0.1:54329/wot_server' \
-  --private-key '.local/login.pem'
+```powershell
+cargo run -p wot-server-list -- insert --game-dir "$game_dir" --address 127.0.0.1:20016 --name 'WoT Local' --short-name WOTLOCAL --key-name loginapp_wot_server_250.pubkey --periphery-id 250
+Copy-Item -LiteralPath '.local\login.pubkey' -Destination "$game_dir\res\loginapp_wot_server_250.pubkey"
 ```
 
-The server applies database migrations automatically. Open the [local dashboard](http://127.0.0.1:8080/dashboard/)
-and follow the first-administrator setup. You can use that account's email and
-password to sign in to the game.
+If the game runs on another computer, use the server’s reachable IPv4 address
+and UDP port in `--address`. The public key filename must match `--key-name`,
+and the periphery ID must match the running server’s setting. See the
+[server guide](docs/server.md#connecting-the-game) to list existing IDs or
+delete an entry.
 
 Launch the game. **WoT Local** will appear in the server list on the sign-in
 screen. Choose **Switch Account** if Game Center signs you in automatically,
