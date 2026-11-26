@@ -171,6 +171,35 @@ and clock range, record type and payload shape. Compare several observations
 and check the matching client definitions. Use a controlled client session to
 vary one input at a time when inferring command semantics, timing or physics.
 
+## Battle position cadence
+
+Use `cargo wot-replay positions` to select type-`0x0a` records for roster
+vehicles with secondary ID zero. Group by entity and remove repeated
+timestamps before calculating intervals. The local comparison uses the
+[Tundra Training capture](#direction-indicator-in-the-2026-11-22-training-room-capture)
+from WoT Server Public.
+
+| Capture | Recorder vehicle | Distinct recorder timestamps | Median recorder interval | Median intervals for other observed vehicles | Other-vehicle intervals of 190–210 ms |
+| --- | ---: | ---: | ---: | --- | ---: |
+| EU 1344, Prokhorovka | 553323838 | 9,058 | 100 ms | 29 at 100 ms | 11.9% |
+| EU 1345, Karelia | 543436810 | 7,127 | 100 ms | 24 at 100 ms, 1 at 200 ms | 22.8% |
+| WoT Server Public Training, Tundra | 1925198086 | 2,482 | 100 ms | 3 at 100 ms | 0% |
+
+Both EU replays show 100 ms as the usual recorder cadence, with more gaps
+in the other vehicles' position streams. The reason for individual gaps
+cannot be determined from playback records. The current
+[battle simulation](../src/battles/src/infrastructure/mod.rs) includes every
+arena vehicle's pose in each 100 ms snapshot for each entered client.
+[Mercury](../src/shared-infrastructure/src/mercury/app/base/mod.rs) packs
+the clock, Avatar pose and vehicle poses into a single unreliable bundle.
+The gateway encodes that payload once per snapshot and applies channel
+sequencing, pending ACKs and encryption for each recipient. The archived
+Battle Mechanics page gives historical intervals for spotting checks and
+flags them as outdated after 9.16. It gives no position replication or ACK
+frequency. A bidirectional wire capture is needed to compare datagram
+counts, bytes, ACK timing and retransmissions.
+[Archived Battle Mechanics](https://web.archive.org/web/20250303052442/https://wiki.wargaming.net/en/Battle_Mechanics#Rate_of_Visibility_Checks)
+
 ## Vehicle movement and chassis animation
 
 Replay 1344's LT-432 (entity `553323838`) was stationary through 32.04 s.

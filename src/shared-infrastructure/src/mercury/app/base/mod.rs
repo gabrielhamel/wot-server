@@ -39,6 +39,34 @@ use super::{
 };
 use element::{LoginKey, SessionKey};
 
+pub struct ArenaSnapshot {
+    tick: u8,
+    bundle: Bundle,
+    queued_at: Instant,
+}
+
+impl ArenaSnapshot {
+    pub fn encode(
+        tick: u8,
+        avatar: client::element::arena::AvatarPosition,
+        vehicles: impl Iterator<Item = client::element::arena::VehiclePosition>,
+        queued_at: Instant,
+    ) -> io::Result<Self> {
+        let mut bundle = Bundle::new();
+        let mut writer = bundle.element_writer();
+        writer.write_simple(client::element::TickSync { tick })?;
+        writer.write_simple(avatar)?;
+        for position in vehicles {
+            writer.write_simple(position)?;
+        }
+        Ok(Self {
+            tick,
+            bundle,
+            queued_at,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct App {
     /// The scripting model for this app, and its per entity-type dispatch tables
@@ -915,43 +943,40 @@ impl App {
 
     #[tracing::instrument(name = "mercury.arena_snapshot", skip_all, fields(
         ddd.bounded_context.name = "player_sessions",
-        input.arena.tick = tick,
+        input.arena.tick = snapshot.tick,
         mercury.session.id = client.slot.diagnostic_id(),
         network.peer.address = %client.addr.ip(),
         network.peer.port = client.addr.port(),
         output.packet.sequence = tracing::field::Empty,
+        output.snapshot.age_ms = tracing::field::Empty,
         output.delivery = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
     ), err)]
     pub fn arena_tick(
         &mut self,
         client: ClientKey,
-        tick: u8,
-        avatar: client::element::arena::AvatarPosition,
-        vehicles: impl Iterator<Item = client::element::arena::VehiclePosition>,
+        snapshot: &mut ArenaSnapshot,
     ) -> io::Result<()> {
         let span = tracing::Span::current();
         let result = (|| {
             self.client(client)?;
-            self.bundle.clear();
-            let mut writer = self.bundle.element_writer();
-            writer.write_simple(client::element::TickSync { tick })?;
-            writer.write_simple(avatar)?;
-            for position in vehicles {
-                writer.write_simple(position)?;
-            }
+            snapshot.bundle.clear_packet_config();
             // Native ping compensates for half a server tick. Carry pending ACKs on
             // outgoing traffic, including this snapshot when there are no replies.
             let sequence = self
                 .protocol
                 .channel(client.addr, None)
-                .prepare(&mut self.bundle, false);
-            self.socket.send_bundle(&self.bundle, client.addr)?;
+                .prepare(&mut snapshot.bundle, false);
+            self.socket.send_bundle(&snapshot.bundle, client.addr)?;
             if let Some(sequence) = sequence {
                 span.record("output.packet.sequence", i64::from(sequence.get()));
             }
             Ok(())
         })();
+        span.record(
+            "output.snapshot.age_ms",
+            snapshot.queued_at.elapsed().as_secs_f64() * 1_000.0,
+        );
         if result.is_ok() {
             span.record("output.delivery", "sent");
         } else {

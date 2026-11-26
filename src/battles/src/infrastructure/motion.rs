@@ -1,7 +1,7 @@
 use super::obstacles::{Breakage, Scenery};
 use super::scenery::BreakageCause;
 use super::*;
-use crate::domain::world::{Hull, vehicle_contact};
+use crate::domain::world::{ContactBox, Hull, vehicle_contact};
 use glam::Vec3Swizzles;
 use tracing::Span;
 
@@ -37,6 +37,10 @@ pub(super) struct VehicleMotion {
 impl VehicleMotion {
     pub(super) fn breakages(&self) -> (&[Breakage], BreakageCause) {
         (&self.scenery.broken, self.scenery.fall)
+    }
+
+    fn is_stationary(&self) -> bool {
+        self.travel == Vec2::ZERO && self.hull.yaw == self.previous_direction.z
     }
 
     fn pressure_towards(&self, direction: Vec2) -> Vec2 {
@@ -93,7 +97,7 @@ impl Battle {
             .filter_map(|id| {
                 self.players
                     .get(id)
-                    .map(|player| (*id, player.tank.collision_hull()))
+                    .map(|player| (*id, player.tank.collision_hull().contact_box()))
             })
             .collect();
         let mut moves = Vec::with_capacity(ids.len());
@@ -161,11 +165,12 @@ impl Battle {
                         .clamp(self.map.bounds[0], self.map.bounds[1])
                         - hull.position.xz();
                     if probe.length_squared() > 1e-8 {
+                        let contact_box = hull.contact_box();
                         let reachable = occupants
                             .iter()
                             .filter(|(id, _)| *id != client)
                             .filter_map(|(_, other)| {
-                                vehicle_contact(hull, *other, probe, Vec2::ZERO)
+                                vehicle_contact(&contact_box, other, probe, Vec2::ZERO)
                             })
                             .fold(1.0_f32, |fraction, (hit, _)| fraction.min(hit.fraction));
                         scenery.push(
@@ -335,6 +340,13 @@ fn resolve_contacts(
     seconds: f32,
     can_damage: bool,
 ) {
+    if moves.len() < 2 || moves.iter().all(VehicleMotion::is_stationary) {
+        return;
+    }
+    let contact_boxes: Vec<_> = moves
+        .iter()
+        .map(|motion| motion.hull.contact_box())
+        .collect();
     let mut groups: Vec<_> = (0..moves.len()).collect();
     let mut seen = HashSet::new();
     for pass in 0..CONTACT_PASSES {
@@ -346,15 +358,14 @@ fn resolve_contacts(
                 moves.len() - offset
             };
             let (prior, rest) = moves.split_at_mut(i);
-            let Some(other) = rest.first_mut() else {
+            let (Some(other), Some((other_box, prior_boxes))) = (
+                rest.first_mut(),
+                contact_boxes.get(..=i).and_then(<[ContactBox]>::split_last),
+            ) else {
                 continue;
             };
-            for (j, first) in prior.iter_mut().enumerate() {
-                if first.travel == Vec2::ZERO
-                    && other.travel == Vec2::ZERO
-                    && first.hull.yaw == first.previous_direction.z
-                    && other.hull.yaw == other.previous_direction.z
-                {
+            for (j, (first, first_box)) in prior.iter_mut().zip(prior_boxes).enumerate() {
+                if first.is_stationary() && other.is_stationary() {
                     continue;
                 }
                 let total = first.inverse_mass + other.inverse_mass;
@@ -362,7 +373,7 @@ fn resolve_contacts(
                     continue;
                 }
                 let Some((hit, correction)) =
-                    vehicle_contact(first.hull, other.hull, first.travel, other.travel)
+                    vehicle_contact(first_box, other_box, first.travel, other.travel)
                 else {
                     continue;
                 };
@@ -400,7 +411,7 @@ fn resolve_contacts(
                 // If a wall, wreck or boundary denied one body's share, the other
                 // body stops at the remaining contact instead of pushing it through.
                 if let Some((residual, remainder)) =
-                    vehicle_contact(first.hull, other.hull, first.travel, other.travel)
+                    vehicle_contact(first_box, other_box, first.travel, other.travel)
                     && remainder > 0.001
                 {
                     for (motion, normal) in [
@@ -425,7 +436,7 @@ fn resolve_contacts(
             return;
         }
     }
-    hold_unresolved_groups(moves, &mut groups);
+    hold_unresolved_groups(moves, &contact_boxes, &mut groups);
 }
 
 fn group(groups: &mut [usize], mut index: usize) -> usize {
@@ -442,18 +453,18 @@ fn join_group(groups: &mut [usize], a: usize, b: usize) {
     groups[right] = left;
 }
 
-fn hold_unresolved_groups(moves: &mut [VehicleMotion], groups: &mut [usize]) {
+fn hold_unresolved_groups(
+    moves: &mut [VehicleMotion],
+    contact_boxes: &[ContactBox],
+    groups: &mut [usize],
+) {
     let mut unresolved = Vec::new();
-    for (i, other) in moves.iter().enumerate() {
-        for (j, first) in moves[..i].iter().enumerate() {
-            if first.travel == Vec2::ZERO
-                && other.travel == Vec2::ZERO
-                && first.hull.yaw == first.previous_direction.z
-                && other.hull.yaw == other.previous_direction.z
-            {
+    for (i, (other, other_box)) in moves.iter().zip(contact_boxes).enumerate() {
+        for (j, (first, first_box)) in moves.iter().zip(contact_boxes).take(i).enumerate() {
+            if first.is_stationary() && other.is_stationary() {
                 continue;
             }
-            if vehicle_contact(first.hull, other.hull, first.travel, other.travel)
+            if vehicle_contact(first_box, other_box, first.travel, other.travel)
                 .is_some_and(|(_, depth)| depth > PILEUP_TOLERANCE_METRES)
             {
                 join_group(groups, i, j);
@@ -465,12 +476,12 @@ fn hold_unresolved_groups(moves: &mut [VehicleMotion], groups: &mut [usize]) {
         return;
     }
     // Also group paths that would become blocked if their neighbour held its original pose.
-    for (i, other) in moves.iter().enumerate() {
-        for (j, first) in moves[..i].iter().enumerate() {
+    for (i, (other, other_box)) in moves.iter().zip(contact_boxes).enumerate() {
+        for (j, (first, first_box)) in moves.iter().zip(contact_boxes).take(i).enumerate() {
             if (first.travel != Vec2::ZERO
-                && vehicle_contact(first.hull, other.hull, first.travel, Vec2::ZERO).is_some())
+                && vehicle_contact(first_box, other_box, first.travel, Vec2::ZERO).is_some())
                 || (other.travel != Vec2::ZERO
-                    && vehicle_contact(first.hull, other.hull, Vec2::ZERO, other.travel).is_some())
+                    && vehicle_contact(first_box, other_box, Vec2::ZERO, other.travel).is_some())
             {
                 join_group(groups, i, j);
             }

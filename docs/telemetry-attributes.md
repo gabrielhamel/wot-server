@@ -173,6 +173,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.replication.kind`](../src/battles/src/infrastructure/controls.rs) | Arena delivery kind, including `position`, `hull_aim` (driver orientation and track motion), `engine_mode`, `wheels_scroll`, `steering_angles`, `gun_angles`, `gun_marker` and `ammunition`. |
 | [`input.arena.tick`](../src/battles/src/infrastructure/mod.rs) | Full arena tick count for the first position snapshot carrying a drive command's change. One unit is 100 ms. |
 | [`input.arena.tick`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Low 8 bits of the arena tick written into the snapshot's TickSync element. One unit is 100 ms. |
+| [`output.snapshot.age_ms`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Milliseconds since the arena snapshot was enqueued, recorded after this recipient's send attempt or session validation failure on `mercury.arena_snapshot`. |
 | [`input.geometry`](../src/battles/src/infrastructure/terrain.rs) | Bundle geometry path when loading terrain or obstacles for the selected arena. |
 | [`input.roster.row`](../src/battles/src/infrastructure/mod.rs) | Zero-based row index when updating a player's ready state in the arena roster. |
 | [`input.players.count`](../src/battles/src/infrastructure/mod.rs) | Requested connected player count on dashboard battle launch, total roster size during preparation and activation, or current participant count on a period transition. |

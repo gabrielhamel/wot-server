@@ -319,6 +319,17 @@ displacement against the remaining scenery and arena bounds in the same tick.
 If a pileup still overlaps after the solver budget, the affected group holds
 its previous horizontal pose for that tick. Other groups can continue moving.
 
+The [solver](../src/battles/src/infrastructure/motion.rs) computes oriented
+contact boxes once for the proposed poses and reuses them across passes.
+Each pair test still receives the current travels, including corrections
+from earlier pairs. A pass is unnecessary when every tank holds its pose.
+In a November 26, 2026 microbenchmark on an Apple M1 Max, one sweep of all
+435 pairs of 30 moving hulls went from 22.9 to 1.4 µs at 30 m spacing and
+from 48.4 to 23.4 µs at 3.3 m spacing. The two implementations found the
+same contacts in both layouts. These timings cover the pair tests and
+contact-box construction for one pass. A full tick also includes scenery
+queries, contact corrections and replication.
+
 On steep surfaces, gravity can overcome material-dependent grip. The vehicle
 then slides downhill even without a drive command. Side slopes, hard turns
 and lateral contacts can tip a hull onto its side. A tipped vehicle cannot

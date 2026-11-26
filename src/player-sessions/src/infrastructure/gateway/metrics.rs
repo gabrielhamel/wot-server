@@ -8,6 +8,8 @@ pub(super) struct GatewayMetrics {
     tick_duration: Histogram<f64>,
     tick_delay: Histogram<f64>,
     skipped_ticks: Counter<u64>,
+    snapshot_age: Histogram<f64>,
+    snapshot_queue_drops: Counter<u64>,
 }
 
 impl GatewayMetrics {
@@ -19,7 +21,16 @@ impl GatewayMetrics {
             .build();
         skipped_ticks.add(0, &[]);
 
-        let tick_histogram = |name, description| {
+        let snapshot_queue_drops = meter
+            .u64_counter("wot.battle.snapshot.queue_drops")
+            .with_unit("{snapshot}")
+            .with_description(
+                "Arena position snapshots discarded because the battle output queue was full",
+            )
+            .build();
+        snapshot_queue_drops.add(0, &[]);
+
+        let seconds_histogram = |name, description| {
             meter
                 .f64_histogram(name)
                 .with_unit("s")
@@ -41,21 +52,36 @@ impl GatewayMetrics {
                 .with_unit("{battle}")
                 .with_description("Current activated arenas with participants")
                 .build(),
-            tick_duration: tick_histogram(
+            tick_duration: seconds_histogram(
                 "wot.battle.tick.duration",
                 "Time spent processing a shared battle tick",
             ),
-            tick_delay: tick_histogram(
+            tick_delay: seconds_histogram(
                 "wot.battle.tick.delay",
                 "Time from a scheduled battle tick to the start of its processing",
             ),
             skipped_ticks,
+            snapshot_age: seconds_histogram(
+                "wot.battle.snapshot.age",
+                "Time from arena snapshot enqueue to the last recipient's UDP send attempt",
+            ),
+            snapshot_queue_drops,
         }
     }
 
     pub(super) fn record_counts(&self, players: usize, battles: usize) {
         self.online_players.record(players as u64, &[]);
         self.running_battles.record(battles as u64, &[]);
+    }
+
+    pub(super) fn record_snapshot_age(&self, age: Duration) {
+        self.snapshot_age.record(age.as_secs_f64(), &[]);
+    }
+
+    pub(super) fn record_snapshot_queue_drops(&self, drops: u64) {
+        if drops > 0 {
+            self.snapshot_queue_drops.add(drops, &[]);
+        }
     }
 
     pub(super) fn record_battle_tick(&self, delay: Duration, duration: Duration) {

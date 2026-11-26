@@ -223,3 +223,56 @@ fn udp_transport_exports_ack_timing_and_sampled_rejections() {
     assert_eq!(attrs["output.rejections.count"], &Value::I64(8));
     assert_eq!(attrs["output.reason"].as_str(), "unknown_flags");
 }
+
+#[test]
+fn shared_snapshot_can_be_framed_for_two_clients() {
+    use crate::mercury::{
+        app::client::element::arena::{AvatarPosition, VehiclePosition},
+        net::{packet::PacketConfig, seq::Seq},
+    };
+    use glam::Vec3;
+
+    let encode = || {
+        ArenaSnapshot::encode(
+            42,
+            AvatarPosition {
+                reference: 0,
+                position: Vec3::ZERO,
+                direction: Vec3::ZERO,
+            },
+            (1..=60).map(|entity_id| VehiclePosition {
+                reference: 0,
+                entity_id,
+                position: Vec3::X * entity_id as f32,
+                direction: Vec3::Y,
+            }),
+            Instant::now(),
+        )
+        .unwrap()
+    };
+    let config = |sequence, ack| {
+        let mut config = PacketConfig::new();
+        config.set_on_channel(true);
+        config.set_sequence_num(Seq::ZERO + sequence);
+        config.set_cumulative_ack(Seq::ZERO + ack);
+        config
+    };
+
+    let mut shared = encode();
+    assert_eq!(shared.bundle.len(), 2);
+    let mut first = config(3, 8);
+    first.single_acks_mut().push_back(Seq::ZERO + 12);
+    shared.bundle.write_config(&mut first);
+    shared.bundle.update_prefix(0);
+
+    shared.bundle.clear_packet_config();
+    shared.bundle.write_config(&mut config(20, 2));
+    shared.bundle.update_prefix(0);
+    let mut fresh = encode();
+    fresh.bundle.write_config(&mut config(20, 2));
+    fresh.bundle.update_prefix(0);
+
+    for (reused, fresh) in shared.bundle.iter().zip(fresh.bundle.iter()) {
+        assert_eq!(reused.slice(), fresh.slice());
+    }
+}

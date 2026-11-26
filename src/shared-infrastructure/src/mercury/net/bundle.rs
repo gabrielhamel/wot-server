@@ -157,6 +157,16 @@ impl Bundle {
         config.clear_first_request_offset(); // Some cleanup...
     }
 
+    /// Restore the encoded elements without the previous recipient's framing.
+    pub(crate) fn clear_packet_config(&mut self) {
+        for packet in &mut self.packets {
+            packet.packet.reset();
+            packet
+                .packet
+                .set_len(packet::PACKET_HEADER_LEN + packet.len());
+        }
+    }
+
     /// Write the given prefix to all packet.
     pub fn write_prefix(&mut self, prefix: u32) {
         for packet in &mut self.packets {

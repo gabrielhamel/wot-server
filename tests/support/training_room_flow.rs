@@ -2745,6 +2745,10 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
                 attribute.key.as_str() == "output.packet.sequence"
                     && matches!(attribute.value, opentelemetry::Value::I64(0..=0x0fff_ffff))
             })
+            && span.attributes.iter().any(|attribute| {
+                attribute.key.as_str() == "output.snapshot.age_ms"
+                    && matches!(attribute.value, opentelemetry::Value::F64(ms) if ms.is_finite() && ms >= 0.0)
+            })
     }));
     let host_id = host.to_string();
     let guest_id = guest.to_string();

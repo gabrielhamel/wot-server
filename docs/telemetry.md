@@ -21,6 +21,8 @@ collector. Each series describes one server process.
 | `wot.battle.tick.duration`            | Histogram | Seconds     | Time for the worker to advance all active arenas and enqueue their outputs, including waits for output capacity.                                                          |
 | `wot.battle.tick.delay`               | Histogram | Seconds     | Time between the scheduled tick deadline and the worker starting arena processing.                                                                                        |
 | `wot.battle.tick.skipped`             | Counter   | Ticks       | Number of subsequent deadlines the worker discarded when a tick started at least one full interval late. The interval is 100 ms.                                          |
+| `wot.battle.snapshot.age`            | Histogram | Seconds     | From enqueue to the last recipient's local UDP send attempt, sampled once per snapshot with an attempt.                                                                        |
+| `wot.battle.snapshot.queue_drops`    | Counter   | Snapshots   | Arena position snapshots discarded when the battle output queue is full, counted once per snapshot.                                                                            |
 | `wot.mercury.reliable_sequence.drops` | Counter   | Packets     | Unreliable on-channel Mercury packets discarded because their last-reliable-sequence footer differs from the receiver's last contiguous reliable sequence.                |
 | `wot.mercury.ack.rtt`                 | Histogram | Seconds     | Time from the first successful UDP send of a reliable packet to processing its first matching ACK.                                                                        |
 | `wot.mercury.retransmissions`        | Counter   | Packets     | Reliable retransmission attempts, labeled by socket outcome.                                                                                                               |
@@ -42,6 +44,16 @@ independently of the preparation task. Mercury
 delivery spans and position snapshot socket outcomes are recorded in the
 gateway when it drains the queue. See the [metric instruments](../src/player-sessions/src/infrastructure/gateway/metrics.rs)
 and [battle scheduler](../src/battles/src/infrastructure/worker.rs).
+
+Snapshot age includes waiting in the battle output queue, shared position
+encoding, and gateway fan-out. It measures local delivery through the socket
+attempt. The queue-drop counter covers snapshots that never reach the gateway.
+Compare both with worker tick duration and delay when diagnosing late snapshots.
+
+```promql
+histogram_quantile(0.99, sum by (le) (rate(wot_battle_snapshot_age_bucket{job="wot-server"}[5m])))
+sum(increase(wot_battle_snapshot_queue_drops{job="wot-server"}[5m]))
+```
 
 The [Mercury receive check](../src/shared-infrastructure/src/mercury/net/proto.rs)
 counts each rejected packet once. The `direction` label is `behind` or
@@ -346,8 +358,8 @@ marker update. Enabling the marker parents its first delivery. The marker
 replicates to the owner and the packed angle replicates to battle peers.
 Position replication records the tick and counts the recipients and successful
 socket writes of the shared timestamped snapshot. `mercury.arena_snapshot`
-records the peer, wire tick, sequence number and delivery result for the
-datagram that also carries any pending acknowledgements. The driving command also
+records the peer, wire tick, sequence number, elapsed time since enqueue, and
+delivery result for the datagram that also carries any pending acknowledgements. The driving command also
 parents `battles.drive_vehicle` for the first simulation step, the driver's
 `hull_aim` update, and any changed `engine_mode`, `wheels_scroll` and
 `steering_angles` deliveries to battle peers. The step records the sampled
