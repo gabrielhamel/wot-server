@@ -191,6 +191,12 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let countdown = parameters.iter().find(|p| p["key"] == "countdown_seconds").unwrap();
         assert_eq!(countdown["default"], 10.0);
         assert_eq!(countdown["integer"], true);
+        let track_repair = parameters.iter().find(|p| p["key"] == "track_repair_time_scale").unwrap();
+        assert_eq!(track_repair["group"], "Tracks");
+        assert_eq!(track_repair["default"], 1.0);
+        assert_eq!(track_repair["min"], 0.1);
+        assert_eq!(track_repair["max"], 10.0);
+        assert_eq!(track_repair["integer"], false);
         let vehicles = options["players"][0]["vehicles"].as_array().unwrap();
         let unavailable = |id| vehicles.iter().find(|vehicle| vehicle["id"] == id).unwrap()["unavailable_reason"].clone();
         assert_eq!(unavailable(1), Json::Null);
@@ -259,6 +265,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             json!({"countdown_seconds": 1.5}),
             json!({"parked_vehicle_pose_interval_ticks": 6}),
             json!({"max_flight_segments": 10000}),
+            json!({"track_repair_time_scale": 0.0}),
         ] {
             let mut invalid = battle.clone();
             invalid["parameters"] = parameters;
@@ -266,7 +273,11 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             assert_eq!(status, 400);
             assert!(rejection["message"].as_str().unwrap().contains("battle parameter"));
         }
-        battle["parameters"] = json!({"countdown_seconds": 2, "parked_vehicle_pose_interval_ticks": 5});
+        battle["parameters"] = json!({
+            "countdown_seconds": 2,
+            "parked_vehicle_pose_interval_ticks": 5,
+            "track_repair_time_scale": 1.5,
+        });
         let mut unready = battle.clone();
         unready["players"][0]["inventory_id"] = json!(2);
         let (status, rejected) = request("POST", "/battles", &cookie, unready);
@@ -581,7 +592,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     for span in [launch, handler] {
         assert_eq!(
             get(span, "input.battle.parameters.count").as_deref(),
-            Some("2")
+            Some("3")
         );
     }
     assert!(spans.iter().any(|span| {

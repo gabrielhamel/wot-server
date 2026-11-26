@@ -1,6 +1,7 @@
 use super::*;
 use crate::domain::{
     armor::{ArmorOutcome, ImpactSegment},
+    devices::{TRACKS, TrackEvent},
     vehicle::{GunRay, Shot, Tank},
 };
 use std::{collections::VecDeque, time::Instant};
@@ -81,6 +82,7 @@ pub(in super::super) struct ShotImpact {
     damage_factor: u8,
     segment: u64,
     params: u32,
+    track_impact: Option<ImpactSegment>,
     effects: ShellEffects,
     outcome: ArmorOutcome,
     speed: f32,
@@ -102,9 +104,7 @@ impl ShotImpact {
             ArmorOutcome::Blocked | ArmorOutcome::ScreenBlocked | ArmorOutcome::Spall => 3,
             _ => 0,
         };
-        let [ax, ay, az] = contact.start;
-        let [bx, by, bz] = contact.end;
-        let segment = u64::from_le_bytes([effect, contact.part, ax, ay, az, bx, by, bz]);
+        let segment = encode_impact_segment(contact, effect);
         Self {
             attacker,
             damage,
@@ -114,6 +114,7 @@ impl ShotImpact {
             params: (u32::from((effects.caliber_mm * 10.0) as u16) << 8)
                 | (u32::from(effects.kind) << 4)
                 | u32::from(effect),
+            track_impact: None,
             effects,
             outcome,
             speed,
@@ -134,22 +135,81 @@ impl ShotImpact {
         })
     }
 
+    pub(in super::super) fn with_track_impact(
+        mut self,
+        track_impact: Option<ImpactSegment>,
+    ) -> Self {
+        self.track_impact = track_impact.filter(|_| self.damage == 0);
+        self
+    }
+
     fn args(self) -> Vec<WireValue> {
+        const CRITICAL_HIT: u8 = 5;
+        let point = if let Some(contact) = self.track_impact {
+            let segment = encode_impact_segment(contact, CRITICAL_HIT);
+            hit_point(segment, (self.params & !0xf) | u32::from(CRITICAL_HIT))
+        } else {
+            hit_point(self.segment, self.params)
+        };
         vec![
             WireValue::Int32(self.attacker as i32),
-            WireValue::Seq(vec![hit_point(self.segment, self.params)]),
+            WireValue::Seq(vec![point]),
             WireValue::UInt8(self.effects.legacy_index),
             WireValue::UInt8(self.effects.prefab_index),
             WireValue::Int32(i32::from(self.damage)),
             WireValue::UInt8(self.damage_factor),
-            WireValue::UInt8(u8::from(matches!(
-                self.outcome,
-                ArmorOutcome::ScreenPenetrated | ArmorOutcome::ScreenBlocked
-            ))),
+            WireValue::UInt8(u8::from(
+                self.track_impact.is_none()
+                    && matches!(
+                        self.outcome,
+                        ArmorOutcome::ScreenPenetrated | ArmorOutcome::ScreenBlocked
+                    ),
+            )),
             WireValue::Float32(self.speed),
             WireValue::UInt8(0),
         ]
     }
+}
+
+fn encode_impact_segment(contact: ImpactSegment, effect: u8) -> u64 {
+    let [ax, ay, az] = contact.start;
+    let [bx, by, bz] = contact.end;
+    u64::from_le_bytes([effect, contact.part, ax, ay, az, bx, by, bz])
+}
+
+pub(super) fn track_extras(resources: &ResourceBundle) -> Result<[u8; 2]> {
+    let definition = wot_platform::client_formats::pxml::from_reader(BufReader::new(
+        resources.read("scripts/item_defs/vehicles/common/vehicle.xml")?,
+    ))?;
+    let extras = definition
+        .get_child_element("extras")
+        .context("Missing vehicle extras")?;
+    let mut indices = [None; 2];
+    for (index, (name, value)) in extras.iter_children_all().enumerate() {
+        let side = match name.as_str() {
+            "leftTrack0Health" => 0,
+            "rightTrack0Health" => 1,
+            _ => continue,
+        };
+        let class = value
+            .as_element()
+            .context("Missing track extra definition")?;
+        anyhow::ensure!(
+            class
+                .value
+                .as_string()
+                .and_then(|class| class.split(':').next())
+                .map(str::trim)
+                == Some("TrackHealth"),
+            "Unexpected class for {name}"
+        );
+        // The client reserves index zero for its implicit NoneExtra.
+        indices[side] = Some(u8::try_from(index + 1)?);
+    }
+    Ok([
+        indices[0].context("Missing left track extra")?,
+        indices[1].context("Missing right track extra")?,
+    ])
 }
 
 impl ArenaWire {
@@ -365,10 +425,44 @@ impl ArenaWire {
             matches!(marker_setting.args.as_slice(), [ty] if ty.is_instance(&WireValue::UInt8(1))),
             "Invalid Avatar.setServerMarker arguments"
         );
-        let methods = &dispatch
+        let own = dispatch
+            .entity_from_id(self.own_vehicle_type)
+            .context("Missing OwnVehicle")?;
+        for (name, fields) in [
+            (
+                "vehicleDamageInfoList",
+                [
+                    ("extraIndex", WireValue::UInt8(1)),
+                    ("damageIndex", WireValue::UInt8(4)),
+                    ("entityID", WireValue::Int32(0)),
+                    ("equipmentID", WireValue::UInt16(0)),
+                    ("damageExtIndex", WireValue::Int8(-1)),
+                ],
+            ),
+            (
+                "destroyedDevicesIsRepairing",
+                [
+                    ("extraIndex", WireValue::UInt8(1)),
+                    ("progress", WireValue::UInt8(0)),
+                    ("endTime", WireValue::Float32(1.0)),
+                    ("timeLeft", WireValue::Float32(1.0)),
+                    ("repairMode", WireValue::UInt8(0)),
+                ],
+            ),
+        ] {
+            dict(rows(property_type(own, name)?)?, fields)?;
+        }
+        let vehicle = dispatch
             .entity_from_id(self.vehicle_type)
-            .context("Missing Vehicle")?
-            .client_methods;
+            .context("Missing Vehicle")?;
+        properties_by_id(
+            vehicle,
+            [(
+                "publicStateModifiers",
+                WireValue::Seq(self.track_extras.map(WireValue::UInt8).to_vec()),
+            )],
+        )?;
+        let methods = &vehicle.client_methods;
         for (name, args) in [
             (
                 "showShooting",
@@ -430,6 +524,9 @@ impl ArenaWire {
         let tank = player.tank();
         let gun = tank.performance.as_ref().map(|profile| &profile.gun);
         let mut fields = own_state(component, player.vehicle_id, &tank, Instant::now(), 0.0)?;
+        for name in ["vehicleDamageInfoList", "destroyedDevicesIsRepairing"] {
+            fields.insert(name, WireValue::Seq(Vec::new()));
+        }
         let ty = property_type(component, "syncVehicleAttrs")?;
         fields.insert(
             "syncVehicleAttrs",
@@ -485,7 +582,17 @@ impl ArenaWire {
             .dispatch
             .entity_from_id(self.own_vehicle_type)
             .context("Missing OwnVehicle")?;
-        let mut values = own_state(component, vehicle_id, tank, now, time)?;
+        let values = own_state(component, vehicle_id, tank, now, time)?;
+        self.publish_own_properties(delivery, client, component, values)
+    }
+
+    fn publish_own_properties(
+        &self,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
+        component: &EntityDispatch,
+        mut values: Fields,
+    ) -> Result<()> {
         let mut records = Vec::new();
         for (index, property) in component.properties.iter().enumerate() {
             let Some(value) = values.remove(&*property.name) else {
@@ -510,6 +617,97 @@ impl ArenaWire {
             delivery.send_arena_element(client, ApplyNrlUpdate {})?;
         }
         Ok(())
+    }
+
+    pub(in super::super) fn publish_broken_tracks(
+        &self,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
+        vehicle: u32,
+        tank: &Tank,
+    ) -> Result<()> {
+        let extras = TRACKS
+            .into_iter()
+            .zip(self.track_extras)
+            .filter(|(track, _)| tank.condition.disabled(*track))
+            .map(|(_, extra)| WireValue::UInt8(extra))
+            .collect();
+        self.vehicle_properties(
+            delivery,
+            client,
+            vehicle,
+            [("publicStateModifiers", WireValue::Seq(extras))],
+        )
+    }
+
+    pub(in super::super) fn publish_track_damage(
+        &self,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
+        tank: &Tank,
+        events: [Option<TrackEvent>; 2],
+        attacker: u32,
+        clock: (Instant, f32),
+    ) -> Result<()> {
+        let component = self
+            .dispatch
+            .entity_from_id(self.own_vehicle_type)
+            .context("Missing OwnVehicle")?;
+        let damage = rows(property_type(component, "vehicleDamageInfoList")?)?;
+        let repairs = rows(property_type(component, "destroyedDevicesIsRepairing")?)?;
+        let mut damage_rows = Vec::new();
+        let mut repair_rows = Vec::new();
+        let (now, time) = clock;
+        for ((track, extra), event) in TRACKS.into_iter().zip(self.track_extras).zip(events) {
+            let code = match event {
+                Some(TrackEvent::Damaged) => Some(3),
+                Some(TrackEvent::Broken) => Some(4),
+                Some(TrackEvent::RepairedCritical) => Some(15),
+                Some(TrackEvent::Repaired) => Some(16),
+                Some(TrackEvent::RepairRestarted) | None => None,
+            };
+            if let Some(code) = code {
+                damage_rows.push(dict(
+                    damage,
+                    [
+                        ("extraIndex", WireValue::UInt8(extra)),
+                        ("damageIndex", WireValue::UInt8(code)),
+                        ("entityID", id(damage, "entityID", attacker)?),
+                        ("equipmentID", WireValue::UInt16(0)),
+                        ("damageExtIndex", WireValue::Int8(-1)),
+                    ],
+                )?);
+            }
+            if let Some((started, ends)) = tank.condition.track_repair(track) {
+                let left = ends.saturating_duration_since(now).as_secs_f32();
+                let total = ends.saturating_duration_since(started).as_secs_f32();
+                let progress = ((1.0 - left / total.max(f32::EPSILON)) * 100.0) as u8;
+                repair_rows.push(dict(
+                    repairs,
+                    [
+                        ("extraIndex", WireValue::UInt8(extra)),
+                        ("progress", WireValue::UInt8(progress)),
+                        ("endTime", WireValue::Float32(time + left)),
+                        ("timeLeft", WireValue::Float32(left)),
+                        ("repairMode", WireValue::UInt8(0)),
+                    ],
+                )?);
+            }
+        }
+        if !damage_rows.is_empty() {
+            self.publish_own_properties(
+                delivery,
+                client,
+                component,
+                BTreeMap::from([("vehicleDamageInfoList", WireValue::Seq(damage_rows))]),
+            )?;
+        }
+        self.publish_own_properties(
+            delivery,
+            client,
+            component,
+            BTreeMap::from([("destroyedDevicesIsRepairing", WireValue::Seq(repair_rows))]),
+        )
     }
 
     pub(in super::super) fn vehicle_properties<const N: usize>(

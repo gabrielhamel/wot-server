@@ -61,6 +61,7 @@ fn surface(distance: f32, material: u32, plate: ArmorPlate, angle: f32) -> Surfa
         material,
         plate,
         cosine: angle.cos(),
+        track_damage_factor: 1.0,
         normal: Vec3::new(angle.sin(), 0.0, -angle.cos()),
         segment: ImpactSegment {
             part: 1,
@@ -344,4 +345,99 @@ fn shell_curves_can_limit_reach_before_the_nominal_range() {
     assert_eq!(reach, 550.0);
     assert_eq!(shell_value_at_distance([50.0, 5.0], reach), 0.0);
     assert!(shell_zero_distance([50.0; 2]).is_infinite());
+}
+
+#[test]
+fn across_hull_tracks_require_penetration_of_both_hull_faces() {
+    let mut shot = shot(ShellKind::ArmorPiercing, 90.0);
+    shot.ballistics.device_damage = [50.0; 2];
+    let track = |distance, material, device| {
+        let mut contact = surface(distance, material, plate(10.0, 0.0), 0.0);
+        contact.plate.once = true;
+        contact.plate.device = Some(ArmorDevice {
+            device,
+            health: None,
+            projectile_chance: 1.0,
+            explosion_chance: 0.0,
+        });
+        contact
+    };
+    let left = track(29.5, 1, Device::TrackLeft);
+    let entry = surface(30.0, 3, plate(20.0, 1.0), 0.0);
+    let mut exit = surface(32.0, 3, plate(20.0, 1.0), 0.0);
+    exit.normal = -exit.normal;
+    let right = track(32.5, 2, Device::TrackRight);
+    let parameters = BattleParameters::default();
+    let devices = |hit: ArmorHit| {
+        hit.devices
+            .into_iter()
+            .flatten()
+            .map(|strike| strike.device)
+            .collect::<Vec<_>>()
+    };
+    for (budget, expected) in [
+        (90.0, vec![Device::TrackLeft, Device::TrackRight]),
+        (55.0, vec![Device::TrackLeft]),
+        (40.0, vec![Device::TrackLeft]),
+    ] {
+        shot.ballistics.penetration_mm = [budget; 2];
+        let hit = shot
+            .resolve_surfaces(&[left, entry, exit, right], &parameters)
+            .unwrap();
+        assert_eq!(hit.outcome, ArmorOutcome::Penetrated);
+        assert_eq!(hit.damage, 100);
+        assert_eq!(devices(hit), expected);
+    }
+    shot.ballistics.penetration_mm = [90.0; 2];
+    assert_eq!(
+        devices(shot.resolve_surfaces(&[left, right], &parameters).unwrap()),
+        [Device::TrackLeft, Device::TrackRight],
+    );
+    assert_eq!(
+        devices(
+            shot.resolve_surfaces(&[left, entry, right], &parameters)
+                .unwrap()
+        ),
+        [Device::TrackLeft],
+    );
+}
+
+#[test]
+fn amx_30_b_shell_can_break_a_fresh_hwk_40_track_at_the_ends() {
+    use crate::domain::devices::Condition;
+    use std::{collections::BTreeMap, time::Instant};
+    use wot_shared_kernel::DeviceHealth;
+
+    let parameters = BattleParameters::default();
+    let mut shot = shot(ShellKind::ArmorPiercing, 260.0);
+    shot.damage = 390;
+    shot.ballistics.far_damage = 390.0;
+    shot.ballistics.device_damage = [150.0; 2];
+    let mut contact = surface(30.0, 1, plate(20.0, 0.0), 0.0);
+    contact.plate.device = Some(ArmorDevice {
+        device: Device::TrackLeft,
+        health: Some(DeviceHealth {
+            maximum: 240,
+            repaired: 180,
+            repair_seconds: 6.0,
+            fire_chance: 0.0,
+        }),
+        projectile_chance: 1.0,
+        explosion_chance: 1.0,
+    });
+    for (factor, damage, broken) in [(1.0, 390, true), (1.0 / 3.0, 130, false)] {
+        contact.track_damage_factor = factor;
+        let hit = shot.resolve_surfaces(&[contact], &parameters).unwrap();
+        assert_eq!(hit.damage, 0);
+        assert_eq!(hit.devices[0].unwrap().damage, damage);
+        let mut condition = Condition::default();
+        condition.apply(
+            &hit.devices,
+            &BTreeMap::new(),
+            false,
+            Instant::now(),
+            &parameters,
+        );
+        assert_eq!(condition.immobilized(), broken);
+    }
 }

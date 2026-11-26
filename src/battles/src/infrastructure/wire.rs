@@ -38,6 +38,7 @@ pub(super) struct ArenaWire {
     hull_aim_element: u8,
     damage_stickers_element: u8,
     impact_materials: ImpactMaterials,
+    pub(super) track_extras: [u8; 2],
 }
 
 pub(super) struct ArenaEntry {
@@ -67,6 +68,7 @@ impl ArenaWire {
         let schema = Self {
             dispatch: dispatch.clone(),
             impact_materials: ImpactMaterials::load(resources)?,
+            track_extras: controls::track_extras(resources)?,
             avatar_type,
             vehicle_type,
             info_type: type_id("AvatarInfo")?,

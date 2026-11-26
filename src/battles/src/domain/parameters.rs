@@ -133,6 +133,9 @@ battle_parameters! {
         fire_ticks: u8 = 5, 0..=30, true, "Fire damage ticks";
         fire_damage_percent: f32 = 1.0, 0.01..=25.0, false, "Maximum HP lost per fire tick (%)";
     }
+    "Tracks" {
+        track_repair_time_scale: f32 = 1.0, 0.1..=10.0, false, "Automatic track repair time multiplier";
+    }
     "Tracer visibility" {
         tracer_draw_distance_metres: f32 = 565.0, 0.0..=1500.0, false, "Known shooter tracer range (metres)";
         hidden_tracer_distance_metres: f32 = 445.0, 0.0..=1500.0, false, "Hidden shooter tracer range (metres)";

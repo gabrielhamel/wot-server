@@ -22,6 +22,7 @@ pub struct Mobility {
     pub rolling_friction: [f32; 3],
     pub track_half_width: f32,
     pub track_half_length: f32,
+    pub track_damage: Option<TrackDamageProfile>,
     pub collision_bounds: Option<[Vec3; 2]>,
     pub wheels: Vec<Wheel>,
     pub turns_in_place: bool,
@@ -41,6 +42,7 @@ impl Default for Mobility {
             rolling_friction: [0.045, 0.065, 0.105],
             track_half_width: 1.25,
             track_half_length: 2.5,
+            track_damage: None,
             collision_bounds: None,
             wheels: Vec::new(),
             turns_in_place: true,
@@ -50,6 +52,12 @@ impl Default for Mobility {
             max_climb_angle: None,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TrackDamageProfile {
+    pub protected_z: [f32; 2],
+    pub bulk_health_factor: f32,
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -163,7 +163,7 @@ impl Battle {
             let Some(target) = self.players.get_mut(&victim) else {
                 continue;
             };
-            let (previous, health) = target.tank.hit(damage);
+            let (previous, health) = target.apply_damage(damage);
             let stunned = (health > 0 && stun > 0.0)
                 .then(|| now + Duration::from_secs_f32(stun))
                 .filter(|end| {

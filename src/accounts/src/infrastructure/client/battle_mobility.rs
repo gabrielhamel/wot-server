@@ -1,14 +1,16 @@
 use super::{
     CatalogVehicle, account::Vehicle, equipment::words, item_defs::read_xml, items::IntCompactDescr,
 };
-use crate::{CrewMember, CrewRoster, MAX_EFFICIENCY_XP, ModuleLoadout};
+use crate::{CrewMember, CrewRoster, MAX_EFFICIENCY_XP, ModuleLoadout, perk_role};
 use anyhow::Result;
 use std::collections::{BTreeMap, BTreeSet};
 use wot_platform::client_formats::pxml::Element;
 use wot_resources::ResourceBundle;
-use wot_shared_kernel::VehiclePerformance;
+use wot_shared_kernel::{Device, VehiclePerformance};
 
 const DRIVER: u8 = 3;
+const REPAIRS: u8 = 6;
+const FULL_CREW_REPAIRS_BONUS: f32 = 0.8;
 const BROTHERS_IN_ARMS: u8 = 9;
 const CLUTCH_BRAKING: u8 = 28;
 const OFF_ROAD_DRIVING: u8 = 30;
@@ -39,6 +41,8 @@ struct Modifiers {
     rolling_friction: f32,
     crew_bonus: f32,
     health: f32,
+    repair_speed: f32,
+    chassis_repair_speed: f32,
 }
 
 impl Default for Modifiers {
@@ -53,6 +57,8 @@ impl Default for Modifiers {
             rolling_friction: 1.0,
             crew_bonus: 0.0,
             health: 1.0,
+            repair_speed: 1.0,
+            chassis_repair_speed: 1.0,
         }
     }
 }
@@ -68,6 +74,8 @@ impl Modifiers {
         self.rolling_friction *= other.rolling_friction;
         self.crew_bonus += other.crew_bonus;
         self.health *= other.health;
+        self.repair_speed *= other.repair_speed;
+        self.chassis_repair_speed *= other.chassis_repair_speed;
     }
 }
 
@@ -126,6 +134,7 @@ impl BattleMobility {
         input.mobility.consumable_count = vehicle.consumables.iter().filter(|&&id| id != 0).count(),
         input.mobility.directive_id = vehicle.directive,
         output.vehicle.health_factor = tracing::field::Empty,
+        output.tracks.repair_speed_factor = tracing::field::Empty,
         output.mobility.collision_bounds_available = performance.mobility.collision_bounds.is_some(),
         output.mobility.equipment_mass_kg = tracing::field::Empty,
         output.mobility.power_watts_per_kg = tracing::field::Empty,
@@ -203,6 +212,7 @@ impl BattleMobility {
         performance.reverse_speed += modifiers.reverse_kmh / 3.6;
         performance.gun.turret_traverse *= modifiers.turret_traverse;
 
+        let mut repair_speed = modifiers.repair_speed * modifiers.chassis_repair_speed;
         if let Some(roster) = crew {
             let seats = roster.seats(inventory_id, catalog.crew_roles.len());
             let members = seats.iter().map(|id| {
@@ -216,6 +226,13 @@ impl BattleMobility {
                 .sum::<f32>()
                 / catalog.crew_roles.len().max(1) as f32;
             let crew_bonus = (modifiers.crew_bonus + 5.0 * brothers) / 100.0;
+            let repairs = members
+                .clone()
+                .flatten()
+                .map(|member| perk(member, REPAIRS, member.role))
+                .sum::<f32>()
+                / seats.len().max(1) as f32;
+            repair_speed *= 1.0 + FULL_CREW_REPAIRS_BONUS * repairs * (1.0 + crew_bonus);
             if let Some((role, driver)) =
                 catalog
                     .crew_roles
@@ -239,7 +256,13 @@ impl BattleMobility {
                 *soft -= (*soft - *medium).max(0.0) * off_road;
             }
         }
+        for track in [Device::TrackLeft, Device::TrackRight] {
+            if let Some(health) = performance.device_health.get_mut(&track) {
+                health.repair_seconds = (health.repair_seconds / repair_speed).clamp(0.1, 120.0);
+            }
+        }
         let span = tracing::Span::current();
+        span.record("output.tracks.repair_speed_factor", repair_speed);
         span.record("output.mobility.equipment_mass_kg", equipment_mass);
         span.record("output.mobility.power_watts_per_kg", mobility.power_per_kg);
         span.record(
@@ -261,7 +284,7 @@ impl BattleMobility {
 
 fn perk(member: &CrewMember, perk: u8, seat_role: u8) -> f32 {
     let training = &member.training;
-    let level = if seat_role == DRIVER || perk == BROTHERS_IN_ARMS {
+    let level = if seat_role == DRIVER || perk_role(perk) == Some(None) {
         training
             .perks
             .iter()
@@ -338,6 +361,8 @@ fn read_modifiers(item: &Element, specialized: bool) -> Modifiers {
                     modifiers.turret_traverse *= value
                 }
                 ("mul", "crewLevel") => modifiers.crew_bonus += (value - 1.0) * 100.0,
+                ("mul", "vehicleRepairSpeed") => modifiers.repair_speed *= value,
+                ("mul", "vehicleChassisRepairSpeed") => modifiers.chassis_repair_speed *= value,
                 _ => {}
             }
         }
@@ -497,7 +522,7 @@ mod tests {
                     slot: driver_slot,
                 }),
                 training: CrewTraining {
-                    perks: vec![CLUTCH_BRAKING, OFF_ROAD_DRIVING, ENGINEER],
+                    perks: vec![REPAIRS, CLUTCH_BRAKING, OFF_ROAD_DRIVING, ENGINEER],
                     last_perk_level: 50,
                     ..Default::default()
                 },
@@ -514,6 +539,13 @@ mod tests {
             .unwrap()
             .unwrap()
             .performance;
+        let expected_speedup = 1.0 + 0.8 / vehicle.crew_roles.len() as f32;
+        for track in [Device::TrackLeft, Device::TrackRight] {
+            let original = equipped.device_health[&track].repair_seconds;
+            let trained = trained.device_health[&track].repair_seconds;
+            assert!((original / trained - expected_speedup).abs() < 1e-4);
+        }
+
         assert!((trained.forward_speed - equipped.forward_speed - 0.5 / 3.6).abs() < 1e-4);
         assert!(trained.hull_traverse > equipped.hull_traverse);
         assert!(trained.mobility.terrain_resistance[2] <= trained.mobility.terrain_resistance[1]);

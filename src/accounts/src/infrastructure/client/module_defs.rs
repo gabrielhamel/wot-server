@@ -385,6 +385,10 @@ impl VehicleModules {
                         hull_positions.insert(id, position);
                     }
                     if let Some(mesh) = armor.mesh(fs, local, base)? {
+                        if !wheeled {
+                            mobility.track_damage =
+                                battle_performance::track_damage(local, base, &mesh);
+                        }
                         chassis_armor.insert(id, mesh);
                     }
                     let chassis_bounds = battle_performance::collision_bounds(fs, local, base)?;

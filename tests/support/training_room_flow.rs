@@ -1910,6 +1910,7 @@ pub fn exercise_battle(
         Some(health[1].as_i64().unwrap() - health[0].as_i64().unwrap())
     );
     assert_eq!(direction[6].as_i64(), Some(i64::from(second)));
+    assert_eq!(direction[3].as_i64(), Some(0));
     assert_eq!(direction[4].as_i64(), Some(0));
     let Value::Float32(yaw) = direction[0] else {
         panic!("Expected hit bearing in radians");

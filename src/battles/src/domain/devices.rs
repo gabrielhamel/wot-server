@@ -1,4 +1,4 @@
-use super::parameters::BattleParameters;
+use super::{armor::ImpactSegment, parameters::BattleParameters};
 use std::{
     collections::BTreeMap,
     time::{Duration, Instant},
@@ -10,6 +10,34 @@ pub(crate) struct DeviceStrike {
     pub device: Device,
     pub health: Option<DeviceHealth>,
     pub damage: u16,
+    pub impact: ImpactSegment,
+}
+
+pub(crate) const TRACKS: [Device; 2] = [Device::TrackLeft, Device::TrackRight];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TrackEvent {
+    Damaged,
+    Broken,
+    RepairRestarted,
+    RepairedCritical,
+    Repaired,
+}
+
+impl TrackEvent {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Damaged => "damaged",
+            Self::Broken => "broken",
+            Self::RepairRestarted => "repair_restarted",
+            Self::RepairedCritical => "repaired_critical",
+            Self::Repaired => "repaired",
+        }
+    }
+
+    pub fn starts_repair(self) -> bool {
+        matches!(self, Self::Broken | Self::RepairRestarted)
+    }
 }
 
 pub(crate) const DEVICE_STRIKE_CAPACITY: usize = 32;
@@ -17,7 +45,7 @@ pub(crate) const DEVICE_STRIKE_CAPACITY: usize = 32;
 struct DeviceState {
     health: u16,
     profile: DeviceHealth,
-    repair_at: Option<Instant>,
+    repair: Option<(Instant, Instant)>,
 }
 
 #[derive(Default)]
@@ -28,6 +56,9 @@ pub(crate) struct Condition {
 
 #[derive(Default)]
 pub(crate) struct Criticals {
+    pub tracks: [Option<TrackEvent>; 2],
+    pub track_hits: u8,
+    pub track_impact: Option<ImpactSegment>,
     pub damaged: u8,
     pub destroyed: u8,
     pub crew: u8,
@@ -62,21 +93,43 @@ impl Condition {
             let state = self.devices.entry(strike.device).or_insert(DeviceState {
                 health: profile.maximum,
                 profile,
-                repair_at: None,
+                repair: None,
             });
-            if state.health == 0 {
+            let track = TRACKS.iter().position(|&track| track == strike.device);
+            let previous = state.health;
+            if strike.damage == 0 || (previous == 0 && (track.is_none() || state.repair.is_none()))
+            {
                 continue;
             }
-            state.health = state.health.saturating_sub(strike.damage);
+            state.health = previous.saturating_sub(strike.damage);
+            if let Some(side) = track {
+                result.track_hits += 1;
+                result.track_impact.get_or_insert(strike.impact);
+                if state.health == 0 {
+                    result.tracks[side] = Some(if previous == 0 {
+                        TrackEvent::RepairRestarted
+                    } else {
+                        TrackEvent::Broken
+                    });
+                } else if previous > profile.repaired && state.health <= profile.repaired {
+                    result.tracks[side] = Some(TrackEvent::Damaged);
+                }
+            }
             result.damaged += 1;
             if state.health == 0 {
-                result.destroyed += 1;
+                result.destroyed += u8::from(previous > 0);
                 let detonates = strike.device == Device::AmmoRack && armed;
                 if crew {
                     result.crew += 1;
                 } else if !detonates {
-                    state.repair_at =
-                        Some(now + Duration::from_secs_f32(state.profile.repair_seconds));
+                    let time_scale = if track.is_some() {
+                        parameters.track_repair_time_scale
+                    } else {
+                        1.0
+                    };
+                    let duration =
+                        Duration::from_secs_f32(state.profile.repair_seconds * time_scale);
+                    state.repair = Some((now, now + duration));
                 }
                 result.detonated |= detonates;
             }
@@ -100,18 +153,32 @@ impl Condition {
     }
 
     pub fn immobilized(&self) -> bool {
-        [Device::TrackLeft, Device::TrackRight, Device::Engine]
-            .into_iter()
-            .any(|device| self.disabled(device))
+        self.disabled(Device::Engine) || TRACKS.into_iter().any(|track| self.disabled(track))
     }
 
-    pub fn tick(&mut self, now: Instant, parameters: &BattleParameters) -> (u8, bool) {
+    pub fn track_repair(&self, track: Device) -> Option<(Instant, Instant)> {
+        self.devices.get(&track)?.repair
+    }
+
+    pub fn tick(
+        &mut self,
+        now: Instant,
+        parameters: &BattleParameters,
+    ) -> (u8, bool, [Option<TrackEvent>; 2]) {
         let mut repairs = 0;
-        for state in self.devices.values_mut() {
-            if state.repair_at.is_some_and(|end| end <= now) {
+        let mut tracks = [None; 2];
+        for (&device, state) in &mut self.devices {
+            if state.repair.is_some_and(|(_, end)| end <= now) {
                 state.health = state.profile.repaired;
-                state.repair_at = None;
+                state.repair = None;
                 repairs += 1;
+                if let Some(side) = TRACKS.iter().position(|&track| track == device) {
+                    tracks[side] = Some(if state.health < state.profile.maximum {
+                        TrackEvent::RepairedCritical
+                    } else {
+                        TrackEvent::Repaired
+                    });
+                }
             }
         }
         let burn = self.fire.is_some_and(|(next, _)| next <= now);
@@ -124,11 +191,11 @@ impl Condition {
                 ticks - 1,
             ));
         }
-        (repairs, burn)
+        (repairs, burn, tracks)
     }
 
     pub fn active(&self) -> bool {
-        self.burning() || self.devices.values().any(|state| state.repair_at.is_some())
+        self.burning() || self.devices.values().any(|state| state.repair.is_some())
     }
 
     pub fn burning(&self) -> bool {
@@ -143,7 +210,10 @@ mod tests {
     #[test]
     fn destroyed_track_repairs_and_loaded_rack_detonates() {
         let now = Instant::now();
-        let parameters = BattleParameters::default();
+        let parameters = BattleParameters {
+            track_repair_time_scale: 2.0,
+            ..BattleParameters::default()
+        };
         let profile = DeviceHealth {
             maximum: 10,
             repaired: 5,
@@ -155,6 +225,11 @@ mod tests {
                 device,
                 health: Some(profile),
                 damage: 10,
+                impact: ImpactSegment {
+                    part: 0,
+                    start: [0; 3],
+                    end: [255; 3],
+                },
             })
         };
         let mut condition = Condition::default();
@@ -168,9 +243,23 @@ mod tests {
         );
         assert_eq!(critical.destroyed, 1);
         assert!(condition.immobilized());
+        let mut no_damage = strike(Device::TrackLeft).unwrap();
+        no_damage.damage = 0;
+        let ignored = condition.apply(
+            &[Some(no_damage)],
+            &profiles,
+            true,
+            now + Duration::from_secs(1),
+            &parameters,
+        );
+        assert_eq!(ignored.tracks, [None; 2]);
         assert_eq!(
             condition.tick(now + Duration::from_secs(1), &parameters),
-            (1, false)
+            (0, false, [None; 2])
+        );
+        assert_eq!(
+            condition.tick(now + Duration::from_secs(2), &parameters),
+            (1, false, [Some(TrackEvent::RepairedCritical), None])
         );
         assert!(!condition.immobilized());
         assert!(
@@ -203,7 +292,7 @@ mod tests {
         );
         assert_eq!(
             armed.tick(now + Duration::from_secs(1), &parameters),
-            (1, true)
+            (1, true, [None; 2])
         );
     }
 }
