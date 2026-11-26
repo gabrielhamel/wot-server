@@ -2,9 +2,9 @@ use serde_json::Value;
 use std::{path::PathBuf, process::Command};
 
 #[test]
-#[ignore = "requires the external supplied WorldOfTanks.exe; set WOT_GAME_FOLDER"]
+#[ignore = "requires the external supplied WorldOfTanks.exe; set WOT_GAME_DIR"]
 fn supplied_client_regression_and_determinism() {
-    let game = PathBuf::from(std::env::var_os("WOT_GAME_FOLDER").expect("set WOT_GAME_FOLDER"));
+    let game = PathBuf::from(std::env::var_os("WOT_GAME_DIR").expect("set WOT_GAME_DIR"));
     let root = std::env::temp_dir().join(format!("wg-map-live-{}", std::process::id()));
     std::fs::create_dir(&root).unwrap();
     let result = std::panic::catch_unwind(|| {

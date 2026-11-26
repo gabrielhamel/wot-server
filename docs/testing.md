@@ -29,7 +29,7 @@ inputs and output overwrite rejection. Fixtures contain no game binary bytes.
 To validate the supplied client explicitly:
 
 ```sh
-WOT_GAME_FOLDER=/path/to/game cargo test -p wot-binary-map --test supplied_client -- --ignored
+WOT_GAME_DIR=/path/to/game cargo test -p wot-binary-map --test supplied_client -- --ignored
 ```
 
 This opt-in test checks the documented executable hash, interface sizes and
