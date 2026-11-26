@@ -12,7 +12,7 @@ fn udp_transport_exports_ack_timing_and_sampled_rejections() {
         },
         trace::{InMemorySpanExporter, SdkTracerProvider},
     };
-    use tracing_subscriber::prelude::*;
+    use tracing_subscriber::{filter::LevelFilter, prelude::*};
 
     use crate::mercury::net::packet::{Packet, PacketConfig};
 
@@ -24,8 +24,11 @@ fn udp_transport_exports_ack_timing_and_sampled_rejections() {
     let tracers = SdkTracerProvider::builder()
         .with_simple_exporter(traces.clone())
         .build();
-    let subscriber = tracing_subscriber::registry()
-        .with(tracing_opentelemetry::layer().with_tracer(tracers.tracer("mercury-test")));
+    let subscriber = tracing_subscriber::registry().with(
+        tracing_opentelemetry::layer()
+            .with_tracer(tracers.tracer("mercury-test"))
+            .with_filter(LevelFilter::INFO),
+    );
     let _subscriber = tracing::subscriber::set_default(subscriber);
 
     let localhost = "127.0.0.1:0".parse().unwrap();
