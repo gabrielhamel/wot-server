@@ -365,8 +365,9 @@ countdown, and uses the room's selected time limit. Maps need geometry,
 bounds, two spawn locations and extracted elevation tiles. The server accepts `vehicle_moveWith` on
 the player's Avatar and turret tracking on the player's Avatar or Vehicle.
 The target entity must belong to the sending session. The server advances
-tanks at 10 Hz and sends one full-ID pose snapshot per tick to both teams.
-The snapshot starts with `TickSync` and uses the same channel sequencing
+tanks at 10 Hz and sends one snapshot per tick to both teams. It includes
+full-ID poses for moving tanks and the recipient's own tank each tick, plus
+staggered refreshes for other parked tanks. The snapshot starts with `TickSync` and uses the same channel sequencing
 throughout countdown and combat. Turret property changes use the reliable
 channel. Movement had also sent reliable copies without a tick timestamp,
 which could deliver pose changes at the wrong sample time.
@@ -508,8 +509,9 @@ to the locally controlled set. The detailed Avatar pose handler at
 `0x142cf7070` returns early for members of that set. Arena entry sends
 `controlEntity` (`0x41`) with the Avatar ID and control disabled, which
 removes it from that set at `0x142cf7a3c`. The server then supplies
-hull-relative Avatar poses and detailed Vehicle poses each tick, including
-while parked. Driving and shooting still use Avatar cell methods. The
+the hull-relative Avatar pose each tick. Vehicle poses follow the
+[parked refresh policy](../battle-mechanics.md#parked-vehicle-positions).
+Driving and shooting still use Avatar cell methods. The
 two-peer protocol test models the compiled client's pose gate. In a native
 multiplayer session, players reported the lag indicator staying green when
 the battle started, even though the displayed ping dropped to 1 ms.

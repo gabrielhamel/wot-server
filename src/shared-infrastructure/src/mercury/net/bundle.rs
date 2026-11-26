@@ -167,6 +167,30 @@ impl Bundle {
         }
     }
 
+    /// Append a regular element for one send, then restore the shared payload.
+    pub(crate) fn with_appended_simple<E: super::element::SimpleElement, T>(
+        &mut self,
+        element: E,
+        send: impl FnOnce(&mut Self) -> io::Result<T>,
+    ) -> io::Result<T> {
+        let packet_count = self.packets.len();
+        let last_len = self.packets.last().map_or(0, |packet| packet.len);
+        let free = self.free;
+        let last_request_link_offset = self.last_request_link_offset;
+        let result = self
+            .element_writer()
+            .write_simple(element)
+            .and_then(|()| send(self));
+        self.packets.truncate(packet_count);
+        if let Some(last) = self.packets.last_mut() {
+            last.len = last_len;
+        }
+        self.free = free;
+        self.last_request_link_offset = last_request_link_offset;
+        self.clear_packet_config();
+        result
+    }
+
     /// Write the given prefix to all packet.
     pub fn write_prefix(&mut self, prefix: u32) {
         for packet in &mut self.packets {

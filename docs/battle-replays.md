@@ -187,11 +187,12 @@ from WoT Server Public.
 
 Both EU replays show 100 ms as the usual recorder cadence, with more gaps
 in the other vehicles' position streams. The reason for individual gaps
-cannot be determined from playback records. The current
-[battle simulation](../src/battles/src/infrastructure/mod.rs) includes every
-arena vehicle's pose in each 100 ms snapshot for each entered client.
+cannot be determined from playback records. The
+[battle simulation](../src/battles/src/infrastructure/mod.rs) produces a
+snapshot for each 100 ms tick. It sends each driver's own pose and all moving
+poses every tick. Other parked poses use the configured interval.
 [Mercury](../src/shared-infrastructure/src/mercury/app/base/mod.rs) packs
-the clock, Avatar pose and vehicle poses into a single unreliable bundle.
+the clock, Avatar pose and selected vehicle poses into one unreliable bundle.
 The gateway encodes that payload once per snapshot and applies channel
 sequencing, pending ACKs and encryption for each recipient. The archived
 Battle Mechanics page gives historical intervals for spotting checks and
@@ -199,6 +200,47 @@ flags them as outdated after 9.16. It gives no position replication or ACK
 frequency. A bidirectional wire capture is needed to compare datagram
 counts, bytes, ACK timing and retransmissions.
 [Archived Battle Mechanics](https://web.archive.org/web/20250303052442/https://wiki.wargaming.net/en/Battle_Mechanics#Rate_of_Visibility_Checks)
+
+## Widepark parked vehicle cadence from 2026-11-26
+
+An initial native client experiment on WoT Server Mac LAN used a 500 ms
+parked refresh for all recipients, including their own hull, with one player
+and two Leopard 1 dummies. The EU client reported
+`v.2.4.2.0 #1000` and the launcher identified game build `2.4.2.5524`.
+The launched `win64/WorldOfTanks.exe` SHA-256 was
+`0547c40d8f55bb94437ba54603ddb7cec0075aca1a0d5a51cf181f1e044496f5`.
+The working replay `.local/parked-poses-500ms.wotreplay` has SHA-256
+`4f1a6eaf805f3eecf6cc86b1a7828d89a2f2aee5544f08e66a568c06ec5352a5`.
+
+Use `cargo wot-replay positions` and remove duplicate timestamps for each
+entity. The 45-byte type-`0x0a` records give a median interval of 100 ms for
+640 Avatar samples (entity `490780339`, relative to `490780340)). Each dummy
+(`490780343` and `490780346`) has 128 samples with a 500 ms median interval.
+Leopard 1 `490780340` has 20 samples in the 26–28 s window while pivoting in
+place, and four identical samples per two seconds from 52 through 64 s after
+stopping. The corresponding server log has 100 consecutive snapshots and 60
+vehicle pose records at arena ticks 600–699. A full refresh of three tanks
+would include 300 records. At 30 bytes per Mercury VehiclePosition element,
+that removes 720 bytes/s of pose elements per recipient before UDP framing.
+
+A second native experiment on Prokhorovka reproduced the sparse own-hull
+cadence. The driver reported about a second of movement response delay when
+starting from rest. In a control battle on the same map with all vehicles at
+100 ms, the driver reported that the delay disappeared. The 500 ms and
+100 ms control replays have SHA-256 values
+`23a7c090eec3bf0a0bc86c3dac5319e68c5ce78664e5bd95353ecbfbe1e88473` and
+`fca1d9437442816a6219138225c9137fb430fd1c6c5d5d85ff0646e0a88c47f7`,
+respectively. Historical
+[BigWorld interpolation](references/BigWorld-Engine-14.4.1/programming/bigworld/lib/connection/avatar_filter_helper.cpp)
+uses a buffer measured in recent input intervals. This is a possible
+explanation for the delay in the current client.
+
+The server now appends a driver's own parked pose on ticks that skip its
+shared refresh. The encrypted dashboard E2E checks that each tick includes
+the driver's own hull, the Avatar pose and pending ACKs, that other parked
+vehicles refresh every fifth tick, and that motion resumes full-rate poses.
+The native replay records client poses. The encrypted E2E inspects the
+Mercury ACK footer.
 
 ## Vehicle movement and chassis animation
 

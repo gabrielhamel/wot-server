@@ -402,6 +402,7 @@ mod tests {
                 players: Default::default(),
                 started_at: now,
                 last_snapshot_tick: None,
+                full_snapshot_pending: false,
                 round: Round::new(now, Duration::from_secs(300), &Default::default()),
                 launch: None,
                 shot_sequence: 0,

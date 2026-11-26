@@ -358,8 +358,11 @@ marker update. Enabling the marker parents its first delivery. The marker
 replicates to the owner and the packed angle replicates to battle peers.
 Position replication records the tick and counts the recipients and successful
 socket writes of the shared timestamped snapshot. `mercury.arena_snapshot`
-records the peer, wire tick, sequence number, elapsed time since enqueue, and
-delivery result for the datagram that also carries any pending acknowledgements. The driving command also
+records the peer, wire tick, vehicle pose count, sequence number, elapsed time
+since enqueue, and delivery result. Successful sends record the datagram count
+and final UDP payload bytes, including the Mercury framing, pending ACKs and
+encryption. Parked pose refresh can reduce the bytes while the snapshot
+and the recipient's own hull remain on the 100 ms tick. The driving command also
 parents `battles.drive_vehicle` for the first simulation step, the driver's
 `hull_aim` update, and any changed `engine_mode`, `wheels_scroll` and
 `steering_angles` deliveries to battle peers. The step records the sampled

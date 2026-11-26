@@ -81,7 +81,7 @@ pub struct BattlePositions {
     pub(super) battle_id: u32,
     pub(super) tick: u8,
     pub(super) queued_at: Instant,
-    pub(super) recipients: Vec<ParticipantId>,
+    pub(super) recipients: Vec<(ParticipantId, Option<VehiclePosition>)>,
     pub(super) vehicles: Vec<VehiclePosition>,
     pub(super) spans: Vec<Span>,
 }
@@ -100,7 +100,6 @@ impl BattlePositions {
             .first()
             .cloned()
             .unwrap_or_else(tracing::Span::none);
-        let recipients = self.recipients.iter().copied();
         let snapshot = ArenaSnapshot::encode(
             self.tick,
             avatar,
@@ -113,7 +112,7 @@ impl BattlePositions {
                 replication.in_scope(|| {
                     error!(%error, battle_id = self.battle_id, "Could not encode battle tick");
                 });
-                for participant in recipients {
+                for &(participant, _) in &self.recipients {
                     adapter.disconnect(participant);
                 }
                 let count = self.recipients.len();
@@ -122,12 +121,14 @@ impl BattlePositions {
             }
         };
         let mut attempted = 0;
-        for participant in recipients {
+        for (participant, own_vehicle) in self.recipients.iter().cloned() {
             if !adapter.has_client(participant) {
                 continue;
             }
             attempted += 1;
-            match replication.in_scope(|| adapter.deliver_positions(participant, &mut snapshot)) {
+            match replication
+                .in_scope(|| adapter.deliver_positions(participant, &mut snapshot, own_vehicle))
+            {
                 Ok(()) => delivered += 1,
                 Err(error) => {
                     replication.in_scope(|| {
@@ -284,7 +285,7 @@ mod tests {
             battle_id: 1,
             tick: 7,
             queued_at: Instant::now(),
-            recipients: vec![participant],
+            recipients: vec![(participant, None)],
             vehicles: Vec::new(),
             spans: Vec::new(),
         };

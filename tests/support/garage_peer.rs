@@ -80,6 +80,7 @@ pub struct Peer {
     pub arena_roster: Option<Vec<u8>>,
     pub resets: usize,
     pub positions: BTreeMap<u32, glam::Vec3>,
+    pub vehicle_position_frames: BTreeMap<u32, usize>,
     pub arena_tick: Option<u8>,
     pub avatar_position_frames: usize,
     avatar_locally_controlled: Option<bool>,
@@ -133,6 +134,7 @@ impl Peer {
             arena_roster: None,
             resets: 0,
             positions: BTreeMap::new(),
+            vehicle_position_frames: BTreeMap::new(),
             arena_tick: None,
             avatar_position_frames: 0,
             avatar_locally_controlled: None,
@@ -548,6 +550,7 @@ impl Peer {
                             self.entered_arena = None;
                             self.cell = None;
                             self.positions.clear();
+                            self.vehicle_position_frames.clear();
                             self.arena_tick = None;
                             self.snapshot_ack_through = None;
                             self.avatar_locally_controlled = None;
@@ -631,6 +634,10 @@ impl Peer {
                                 .unwrap()
                                 .element;
                             self.positions.insert(update.entity_id, update.position);
+                            *self
+                                .vehicle_position_frames
+                                .entry(update.entity_id)
+                                .or_default() += 1;
                             self.vehicle_directions
                                 .insert(update.entity_id, update.direction);
                         }

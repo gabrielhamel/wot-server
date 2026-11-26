@@ -257,6 +257,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         for parameters in [
             json!({"unknown_setting": 1}),
             json!({"countdown_seconds": 1.5}),
+            json!({"parked_vehicle_pose_interval_ticks": 6}),
             json!({"max_flight_segments": 10000}),
         ] {
             let mut invalid = battle.clone();
@@ -265,7 +266,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             assert_eq!(status, 400);
             assert!(rejection["message"].as_str().unwrap().contains("battle parameter"));
         }
-        battle["parameters"] = json!({"countdown_seconds": 2});
+        battle["parameters"] = json!({"countdown_seconds": 2, "parked_vehicle_pose_interval_ticks": 5});
         let mut unready = battle.clone();
         unready["players"][0]["inventory_id"] = json!(2);
         let (status, rejected) = request("POST", "/battles", &cookie, unready);
@@ -368,13 +369,25 @@ async fn dashboard_launches_player_and_stationary_dummies() {
                 Ok(super::Pickle::Tuple(fields)) if fields.first() == Some(&super::Pickle::I64(3)))
         }) && p.arena_tick.is_some());
         let tick = peer.arena_tick.unwrap();
-        peer.until(&script, |p| p.arena_tick.is_some_and(|later| (3..=127).contains(&later.wrapping_sub(tick))));
+        let avatar_frames = peer.avatar_position_frames;
+        let position_frames = peer.vehicle_position_frames.clone();
+        let ready_ack = peer.last_sent_reliable + 1;
+        peer.until(&script, |p| p.arena_tick.is_some_and(|later| (15..=127).contains(&later.wrapping_sub(tick))));
+        assert_eq!(peer.arena_tick.unwrap().wrapping_sub(tick), 15);
+        assert_eq!(peer.avatar_position_frames - avatar_frames, 15);
+        assert_eq!(peer.vehicle_position_frames[&own] - position_frames[&own], 15);
+        assert!(peer.snapshot_ack_through.is_some_and(|ack| ack.wrapping_cmp(ready_ack).is_ge()));
         for (id, position) in dummies {
             assert!(peer.positions[&id].distance(position) < 0.01);
+            assert_eq!(peer.vehicle_position_frames[&id] - position_frames[&id], 3);
         }
         let own_position = peer.positions[&own];
         peer.cell_command(&script, "vehicle_moveWith", vec![Value::UInt8(1)]);
         peer.until(&script, |p| p.positions[&own].distance(own_position) > 0.2);
+        let tick = peer.arena_tick.unwrap();
+        let movement_frames = peer.vehicle_position_frames[&own];
+        peer.until(&script, |p| p.arena_tick.is_some_and(|later| (5..=127).contains(&later.wrapping_sub(tick))));
+        assert_eq!(peer.vehicle_position_frames[&own] - movement_frames, 5);
         peer.cell_command(&script, "vehicle_shoot", vec![]);
         peer.until(&script, |p| p.vehicle_methods.iter().any(|(entity, name, _)| {
             *entity == own && name == "showShooting"
@@ -405,6 +418,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let mut invalid = battle.clone();
         invalid["players"][0]["owned_overrides"]["vehicle"] = json!(custom_tank);
         assert_eq!(request("POST", "/battles", &cookie, invalid).0, 400);
+        battle["parameters"]["parked_vehicle_pose_interval_ticks"] = json!(1);
         let (status, owned_battle) = request("POST", "/battles", &cookie, battle);
         assert_eq!(status, 200, "{owned_battle}");
         peer.until(&script, |p| p.resets == 3);
@@ -431,6 +445,14 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         };
         assert_eq!(outfit.as_bytes(), &[4, 16, 111]);
         assert_eq!(public["maxHealth"].as_i64(), Some(811));
+        peer.until(&script, |p| p.arena_tick.is_some());
+        let tick = peer.arena_tick.unwrap();
+        let counts = peer.vehicle_position_frames.clone();
+        peer.until(&script, |p| p.arena_tick.is_some_and(|later| (5..=127).contains(&later.wrapping_sub(tick))));
+        assert_eq!(counts.len(), 3);
+        for (id, count) in counts {
+            assert_eq!(peer.vehicle_position_frames[&id] - count, 5);
+        }
         peer.command(&script, "leaveArena", vec![]);
         peer.until(&script, |p| p.resets == 4);
         peer.enable_entities();
@@ -559,9 +581,18 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     for span in [launch, handler] {
         assert_eq!(
             get(span, "input.battle.parameters.count").as_deref(),
-            Some("1")
+            Some("2")
         );
     }
+    assert!(spans.iter().any(|span| {
+        span.name == "mercury.arena_snapshot"
+            && get(span, "input.vehicles.count").as_deref() == Some("1")
+            && get(span, "output.snapshot.datagrams").as_deref() == Some("1")
+            && get(span, "output.snapshot.udp_payload_bytes")
+                .and_then(|bytes| bytes.parse::<u64>().ok())
+                .is_some_and(|bytes| bytes > 0)
+            && get(span, "output.delivery").as_deref() == Some("sent")
+    }));
     for name in [
         "accounts.custom_battle_vehicle",
         "battles.prepare",
