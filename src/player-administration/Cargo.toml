@@ -17,6 +17,7 @@ tracing.workspace = true
 wot-accounts.workspace = true
 wot-platform.workspace = true
 wot-player-sessions.workspace = true
+wot-store.workspace = true
 wot-shared-kernel.workspace = true
 
 [dev-dependencies]

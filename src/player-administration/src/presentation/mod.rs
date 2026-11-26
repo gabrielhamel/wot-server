@@ -20,10 +20,9 @@ use std::{
 };
 use tokio::sync::Semaphore;
 use tracing::Instrument;
-use wot_accounts::contract::{GameAccounts, GarageQueries, PlayerAccess};
-use wot_player_sessions::contract::{
-    AdminBattles, PlayerGrants, StoreRequests, dashboard_store_router,
-};
+use wot_accounts::contract::{GameAccounts, PlayerAccess, garage::GarageQueries};
+use wot_player_sessions::contract::{PlayerGrants, TrainingBattleLaunches};
+use wot_store::contract::{Store, dashboard_router as dashboard_store_router};
 
 #[derive(Clone)]
 struct AdminState {
@@ -34,7 +33,7 @@ struct AdminState {
     garage_accounts: GameAccounts,
     catalog: GarageQueries,
     grants: PlayerGrants,
-    battles: Option<AdminBattles>,
+    battles: Option<TrainingBattleLaunches>,
     battle_loadout_slots: Arc<Semaphore>,
     create_slots: Arc<Semaphore>,
     username_check_slots: Arc<Semaphore>,
@@ -46,7 +45,7 @@ struct RequestSpan(tracing::Span);
 pub struct DashboardConfig {
     pub secure_cookies: bool,
     pub trusted_proxies: Vec<IpAddr>,
-    pub battles: Option<AdminBattles>,
+    pub battles: Option<TrainingBattleLaunches>,
 }
 
 pub fn router(
@@ -54,7 +53,7 @@ pub fn router(
     garage_accounts: GameAccounts,
     catalog: GarageQueries,
     grants: PlayerGrants,
-    store: Option<StoreRequests>,
+    store: Option<Store>,
     DashboardConfig {
         secure_cookies,
         trusted_proxies,

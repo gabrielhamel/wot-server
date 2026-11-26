@@ -1,4 +1,4 @@
-use crate::application::store::{StoreCustomer, StoreError, StoreRequests, StoreToken};
+use crate::{application::Store, domain::StoreOrder};
 use axum::{
     Extension, Json, Router,
     extract::{DefaultBodyLimit, MatchedPath, Request, State, rejection::JsonRejection},
@@ -9,22 +9,23 @@ use axum::{
 };
 use std::net::SocketAddr;
 use tracing::Instrument;
-use wot_accounts::contract::{ProgressionError, StoreOrder, StoreOrderError, StorePrice};
+use wot_accounts::contract::{ProgressionError, StoreOrderError, StorePrice};
+use wot_player_sessions::contract::{StoreCustomer, StoreError, StoreToken};
 
 #[derive(Clone, Copy)]
 pub struct DashboardStorePlayer(pub i64);
 
-pub fn router(requests: StoreRequests) -> Router {
+pub fn router(requests: Store) -> Router {
     endpoints("/api/shop/catalog", "/api/shop/orders")
         .layer(from_fn(serve_request))
         .with_state(requests)
 }
 
-pub fn dashboard_router<S>(requests: StoreRequests) -> Router<S> {
+pub fn dashboard_router<S>(requests: Store) -> Router<S> {
     endpoints("/me/shop/catalog", "/me/shop/orders").with_state(requests)
 }
 
-fn endpoints(catalog_path: &str, order_path: &str) -> Router<StoreRequests> {
+fn endpoints(catalog_path: &str, order_path: &str) -> Router<Store> {
     Router::new()
         .route(catalog_path, get(catalog))
         .route(order_path, post(purchase))
@@ -37,7 +38,7 @@ async fn serve_request(request: Request, next: Next) -> Response {
         "store.http.request",
         otel.kind = "server",
         otel.status_code = tracing::field::Empty,
-        ddd.bounded_context.name = "player_sessions",
+        ddd.bounded_context.name = "store",
         network.transport = "tcp",
         network.peer.address = tracing::field::Empty,
         network.peer.port = tracing::field::Empty,
@@ -72,9 +73,9 @@ async fn serve_request(request: Request, next: Next) -> Response {
     .await
 }
 
-#[tracing::instrument(name = "player_sessions.store.catalog_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = route.as_str(), input.channel = channel(player.as_ref()), user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
+#[tracing::instrument(name = "store.catalog_request", skip_all, fields(ddd.bounded_context.name = "store", http.route = route.as_str(), input.channel = channel(player.as_ref()), user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
 async fn catalog(
-    State(store): State<StoreRequests>,
+    State(store): State<Store>,
     route: MatchedPath,
     player: Option<Extension<DashboardStorePlayer>>,
     headers: HeaderMap,
@@ -100,9 +101,9 @@ impl OrderPayload {
     }
 }
 
-#[tracing::instrument(name = "player_sessions.store.purchase_request", skip_all, fields(ddd.bounded_context.name = "player_sessions", http.route = route.as_str(), input.channel = channel(player.as_ref()), input.item = tracing::field::Empty, user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
+#[tracing::instrument(name = "store.purchase_request", skip_all, fields(ddd.bounded_context.name = "store", http.route = route.as_str(), input.channel = channel(player.as_ref()), input.item = tracing::field::Empty, user.id = tracing::field::Empty, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
 async fn purchase(
-    State(store): State<StoreRequests>,
+    State(store): State<Store>,
     route: MatchedPath,
     player: Option<Extension<DashboardStorePlayer>>,
     headers: HeaderMap,
@@ -125,7 +126,7 @@ fn channel(player: Option<&Extension<DashboardStorePlayer>>) -> &'static str {
 }
 
 async fn respond(
-    store: &StoreRequests,
+    store: &Store,
     player: Option<Extension<DashboardStorePlayer>>,
     headers: &HeaderMap,
     order: Option<StoreOrder>,

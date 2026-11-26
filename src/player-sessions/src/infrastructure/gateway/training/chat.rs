@@ -62,12 +62,12 @@ impl Gateway {
             .training_room
             .and_then(|id| self.training_rooms.get(&id));
         let Some((room, sender)) =
-            room.and_then(|room| room.members.get(&client).map(|sender| (room, sender)))
+            room.and_then(|room| room.members().get(&client).map(|sender| (room, sender)))
         else {
             span.record("output.outcome", "not_in_room");
             return self.reject_training_chat(entity, request_id, NOT_READY);
         };
-        span.record("output.room.id", room.id);
+        span.record("output.room.id", room.id());
         let valid = message.len() <= MAX_MESSAGE_CHARS * 4
             && std::str::from_utf8(&message).is_ok_and(|text| {
                 !text.trim().is_empty()
@@ -95,12 +95,19 @@ impl Gateway {
         };
 
         let mut recipients = 0;
-        let garage_members = room.members.values().filter(|member| !member.in_battle);
+        let garage_members = room.members().values().filter(|member| !member.in_battle());
         let expected = garage_members.clone().count();
         for member in garage_members {
-            let delivery = self.base.entity(member.entity).and_then(|mut account| {
-                account.messenger_onActionByServer_chat2(ON_UNIT_MESSAGE_BROADCAST, 0, args.clone())
-            });
+            let delivery = self
+                .base
+                .entity(member.delivery.entity)
+                .and_then(|mut account| {
+                    account.messenger_onActionByServer_chat2(
+                        ON_UNIT_MESSAGE_BROADCAST,
+                        0,
+                        args.clone(),
+                    )
+                });
             match delivery {
                 Ok(()) => recipients += 1,
                 Err(error) => error!(%error, "Training chat delivery failed"),

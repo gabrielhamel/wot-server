@@ -133,15 +133,20 @@ async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Mete
             .with_context(|| format!("Bind web HTTP listener at {}", config.web_bind))?;
         let web_address = listener.local_addr()?;
         let store = if store_enabled {
-            Some(match config.store_origin {
+            let garage = match config.store_origin {
                 Some(origin) => gateway.configure_store(origin)?,
                 None => gateway.configure_store_on_listener(web_address),
-            })
+            };
+            Some(wot_store::contract::Store::new(
+                account_services.accounts(),
+                account_services.garage_queries(),
+                garage,
+            ))
         } else {
             None
         };
         if let Some(store) = &store {
-            router = router.merge(wot_player_sessions::store_router(store.clone()));
+            router = router.merge(wot_store::contract::router(store.clone()));
         }
         if admin_enabled {
             let garage_accounts = account_services.accounts();
@@ -160,7 +165,7 @@ async fn serve(config: Configuration, meter: Option<opentelemetry::metrics::Mete
                 player_administration::DashboardConfig {
                     secure_cookies: config.secure_cookies,
                     trusted_proxies,
-                    battles: Some(gateway.admin_battles()),
+                    battles: Some(gateway.training_battle_launches()),
                 },
             ));
         }

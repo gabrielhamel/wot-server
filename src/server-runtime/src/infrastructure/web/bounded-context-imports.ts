@@ -10,6 +10,7 @@ const boundedContexts = new Set([
   "player-administration",
   "player-sessions",
   "social",
+  "store",
 ]);
 
 const publishedContextImport = defineRule({

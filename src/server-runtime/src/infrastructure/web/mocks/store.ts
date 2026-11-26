@@ -5,7 +5,7 @@ import type {
   StoreOffer,
   StoreOrder,
   StorePrice,
-} from "../../../../../player-sessions/src/web";
+} from "../../../../../store/src/web";
 
 export const demoStoreToken = "demo".padEnd(43, "_");
 

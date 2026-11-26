@@ -6,7 +6,7 @@ import { httpServer } from "../../../../server-runtime/src/infrastructure/web/te
 import { adminHandlers } from "../../../../server-runtime/src/infrastructure/web/mocks/admin";
 import { captureTraces } from "../../../../server-runtime/src/infrastructure/web/test/traces";
 import type { AdminSession, Garage, Grant, PlayerRecord } from "../../application/admin-contracts";
-import type { StoreOffer } from "../../../../player-sessions/src/web";
+import type { StoreOffer } from "../../../../store/src/web";
 import Admin from "./admin-page";
 
 const origin = "http://localhost:8080/api/admin";
@@ -165,9 +165,9 @@ describe("Server Administration", () => {
       );
       expect(httpCatalog?.attributes["ddd.bounded_context.name"]).toBe("player_administration");
       expect(httpOrder?.attributes["ddd.bounded_context.name"]).toBe("player_administration");
-      expect(catalogOperation?.attributes["ddd.bounded_context.name"]).toBe("player_sessions");
+      expect(catalogOperation?.attributes["ddd.bounded_context.name"]).toBe("store");
       expect(parent?.attributes).toMatchObject({
-        "ddd.bounded_context.name": "player_sessions",
+        "ddd.bounded_context.name": "store",
         "input.item": -1,
         "input.revision": "9",
         "input.price.currency": "gold",
@@ -204,7 +204,7 @@ describe("Server Administration", () => {
       );
       expect(denied.http?.attributes["output.outcome"]).toBe("rejected");
       expect(denied.http?.attributes["ddd.bounded_context.name"]).toBe("player_administration");
-      expect(denied.parent?.attributes["ddd.bounded_context.name"]).toBe("player_sessions");
+      expect(denied.parent?.attributes["ddd.bounded_context.name"]).toBe("store");
     } finally {
       await telemetry.stop();
     }
@@ -1521,13 +1521,15 @@ it("launches a Training battle with selected players and a customized stationary
       "/api/admin/battles",
       409,
     );
-    const { parent } = telemetry.expectRequest(
+    const { http, parent } = telemetry.expectRequest(
       posts[1]?.trace ?? null,
       "web.admin.start_battle",
       "/api/admin/battles",
       200,
     );
+    expect(http?.attributes["ddd.bounded_context.name"]).toBe("player_administration");
     expect(parent?.attributes).toMatchObject({
+      "ddd.bounded_context.name": "player_administration",
       "input.arena_type_id": 5,
       "input.round_length.seconds": 600,
       "input.battle.parameters.count": 1,

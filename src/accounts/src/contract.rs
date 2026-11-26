@@ -1,14 +1,13 @@
 //! Operations, command inputs, and projections published to runtime contexts.
 
 pub use super::application::queries::{
-    BattleVehicle, BattleVehicleChoice, BattleVehicleUnavailable,
+    BattleVehicle, BattleVehicleChoice, BattleVehicleUnavailable, PurchasableOffer,
+    PurchasableOfferRef,
 };
 pub use super::application::{
     AccountNotFound, CreatePlayerError, DepotSaleRequest, GameAccounts, MAX_DEPOT_SALE_LINES,
     PlayerAccess, ProgressionCommand, VehicleSaleRequest,
-    garage::{CommittedGarageChange, GarageCommands, GarageWrite},
     inspection::{GarageInspection, PlayerGarage},
-    queries::GarageQueries,
 };
 pub use super::domain::{
     AmmoError, ConsumableSelection, CosmeticChange, CrewCommand, CrewRecruitment, EquipmentChange,
@@ -20,10 +19,17 @@ pub use super::domain::{
 };
 pub use super::infrastructure::client::{
     CosmeticGrantEntry, SpecialRecruitCountry, SpecialRecruitGrantEntry, StoreAvailability,
-    StoreCatalog, StoreCategory, StoreListing, StoreOffer, StoreOrder, StoreOrderError, StorePrice,
-    VehicleCatalogEntry,
+    StoreCategory, StoreListing, StoreOffer, StoreOrderError, StorePrice, VehicleCatalogEntry,
 };
 pub use super::infrastructure::client::{CustomBattleLoadout, CustomBattleLoadoutOptions};
+
+/// Garage reads and atomic, revision-checked writes.
+pub mod garage {
+    pub use crate::application::{
+        garage::{CommittedGarageChange, GarageCommands, GarageWrite},
+        queries::GarageQueries,
+    };
+}
 
 use super::AccountSnapshot;
 use std::{future::Future, pin::Pin, sync::Arc};

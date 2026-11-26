@@ -3533,6 +3533,7 @@ dependencies = [
  "wot-platform",
  "wot-player-sessions",
  "wot-shared-kernel",
+ "wot-store",
 ]
 
 [[package]]
@@ -3565,6 +3566,7 @@ dependencies = [
  "wot-resources",
  "wot-shared-kernel",
  "wot-social",
+ "wot-training-rooms",
 ]
 
 [[package]]
@@ -3623,6 +3625,7 @@ dependencies = [
  "wot-resources",
  "wot-server-runtime",
  "wot-social",
+ "wot-store",
 ]
 
 [[package]]
@@ -3665,6 +3668,7 @@ dependencies = [
  "wot-player-sessions",
  "wot-resources",
  "wot-social",
+ "wot-store",
  "wot-web-build",
 ]
 
@@ -3686,6 +3690,26 @@ dependencies = [
  "wot-accounts",
  "wot-platform",
  "wot-shared-kernel",
+]
+
+[[package]]
+name = "wot-store"
+version = "0.26.3"
+dependencies = [
+ "axum",
+ "serde",
+ "tokio",
+ "tracing",
+ "wot-accounts",
+ "wot-platform",
+ "wot-player-sessions",
+]
+
+[[package]]
+name = "wot-training-rooms"
+version = "0.26.3"
+dependencies = [
+ "tracing",
 ]
 
 [[package]]

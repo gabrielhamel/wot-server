@@ -35,7 +35,8 @@ RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sh
     --mount=type=cache,id=wot-npm-cache,target=/root/.npm,sharing=locked \
     cargo clean --release -p wot-server -p wot-server-runtime -p wot-web-build -p wot-resources \
         -p wot-accounts -p wot-battles -p wot-platform -p wot-player-administration \
-        -p wot-player-sessions -p wot-shared-kernel -p wot-social && \
+        -p wot-player-sessions -p wot-shared-kernel -p wot-social \
+        -p wot-store -p wot-training-rooms && \
     cargo build --locked --release --bin wot-server && \
     cp target/release/wot-server /build/wot-server
 
@@ -49,7 +50,8 @@ RUN --mount=type=cache,id=wot-cargo-registry,target=/usr/local/cargo/registry,sh
     --mount=type=cache,id=wot-npm-cache,target=/root/.npm,sharing=locked \
     cargo clean -p wot-server -p wot-server-runtime -p wot-web-build -p wot-resources \
         -p wot-accounts -p wot-battles -p wot-platform -p wot-player-administration \
-        -p wot-player-sessions -p wot-shared-kernel -p wot-social && \
+        -p wot-player-sessions -p wot-shared-kernel -p wot-social \
+        -p wot-store -p wot-training-rooms && \
     cargo test --locked -p wot-server --features integration-test-support --test garage \
         --no-run --message-format=json-render-diagnostics > /tmp/e2e-build.json && \
     test_executable=$(jq -er 'select(.reason == "compiler-artifact" and .target.name == "garage" and .profile.test) | .executable | strings' /tmp/e2e-build.json) && \

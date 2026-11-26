@@ -646,6 +646,11 @@ async fn exports_admin_http_access_lifecycle() {
     let store = gateway
         .configure_store("http://127.0.0.1:8081".to_owned())
         .unwrap();
+    let store = wot_store::contract::Store::new(
+        accounts_fixtures::game_accounts(Accounts::new(repository.clone())),
+        accounts_fixtures::garage_queries(catalog.clone()),
+        store,
+    );
     let grants = gateway.player_grants();
     let build_router = |repository: &PostgresAccounts| {
         TowerToHyperService::new(router(
@@ -1619,9 +1624,9 @@ async fn exports_admin_http_access_lifecycle() {
     }
 
     for (handler, outcome, status) in [
-        ("player_sessions.store.catalog_request", "success", "200"),
-        ("player_sessions.store.purchase_request", "success", "200"),
-        ("player_sessions.store.purchase_request", "stale", "409"),
+        ("store.catalog_request", "success", "200"),
+        ("store.purchase_request", "success", "200"),
+        ("store.purchase_request", "stale", "409"),
     ] {
         let operation = spans
             .iter()
@@ -1632,6 +1637,10 @@ async fn exports_admin_http_access_lifecycle() {
             })
             .unwrap();
         assert_eq!(attribute(operation, "user.id"), Some(player_id.to_string()));
+        assert_eq!(
+            attribute(operation, "ddd.bounded_context.name").as_deref(),
+            Some("store")
+        );
         let root = spans
             .iter()
             .find(|span| span.span_context.span_id() == operation.parent_span_id)
@@ -1655,12 +1664,17 @@ async fn exports_admin_http_access_lifecycle() {
             Some("authorized")
         );
         if handler.ends_with("catalog_request") {
-            let load = child(operation, "player_sessions.store.load_catalog");
-            let snapshot = child(child(load, "player_sessions.snapshot"), "accounts.snapshot");
+            let load = child(operation, "store.dashboard_account");
+            let snapshot = child(load, "accounts.snapshot");
             let repository = child(snapshot, "accounts.postgres.snapshot");
             let read = child(repository, "accounts.postgres.read_snapshot");
             assert!(attribute(child(read, "postgresql.query"), "db.query.text").is_some());
         } else {
+            let quote = child(operation, "store.resolve_quote");
+            assert_eq!(
+                attribute(quote, "output.outcome").as_deref(),
+                Some("quoted")
+            );
             let purchase = child(operation, "player_sessions.store.purchase");
             child(purchase, "accounts.store.plan_purchase");
             let completion = child(purchase, "player_sessions.store.complete_purchase");

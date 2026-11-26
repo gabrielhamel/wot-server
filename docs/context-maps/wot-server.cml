@@ -1,7 +1,7 @@
 ContextMap Server {
   type = SYSTEM_LANDSCAPE
   state = AS_IS
-  contains GameClient, ResourceExtraction, BinaryMapping, Accounts, Social, PlayerSessions, Battles, PlayerAdministration, SharedKernel, Platform
+  contains GameClient, ResourceExtraction, BinaryMapping, Accounts, Social, PlayerSessions, Battles, PlayerAdministration, Store, TrainingRooms, SharedKernel, Platform
   SharedKernel [U] -> [D] PlayerAdministration {
     implementationTechnology = "Shared Rust AccountId validates parsed HTTP path identifiers"
   }
@@ -21,7 +21,7 @@ ContextMap Server {
     implementationTechnology = "Common client-format codecs and PostgreSQL span adapter"
   }
   Platform [U] -> [D] PlayerSessions {
-    implementationTechnology = "Common Mercury transport and client-format codecs, bounded HTTP serving, blocking-work span propagation, and browser HTTP tracing and theme"
+    implementationTechnology = "Common Mercury transport and client-format codecs, with blocking-work span propagation"
   }
   Platform [U] -> [D] Battles {
     implementationTechnology = "Script dispatch and client-format codecs; the local arena delivery adapter uses the shared BaseApp"
@@ -48,7 +48,7 @@ ContextMap Server {
     implementationTechnology = "Versioned resource bundle containing script definitions and component class presence for Mercury dispatch"
   }
   GameClient [U] -> [D,ACL] PlayerSessions {
-    implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage, shared Training Room RPCs, invitations, BW_CHAT2 room messages and garage-to-arena handoff; session-authorized Store page and API on the shared listener with the configured host in the browser allowlist"
+    implementationTechnology = "Mercury UDP login, handoff, session replacement notices, garage, shared Training Room RPCs, invitations, BW_CHAT2 room messages and garage-to-arena handoff; native Store token and configured host in the browser allowlist"
   }
   ResourceExtraction [U,PL] -> [D,ACL] Battles {
     implementationTechnology = "Resource bundle with arena definitions, terrain and scenery collision geometry, native destructible IDs, fragment dependencies, SpeedTree contacts and battle entity schemas"
@@ -63,7 +63,22 @@ ContextMap Server {
     implementationTechnology = "Accounts Rust library PlayerAccess API for identity listing, registration, provisioning, roles and web sessions, plus garage inspection and grant catalog projections for vehicles, cosmetics, crew items, recruit groups with country options, and equipment, and vehicle-specific equipment, consumables, crew seats and perks, stock and equipped modules, hit points and ammunition options for owned, custom player and dummy loadouts"
   }
   PlayerSessions [U,OHS,PL] -> [D,ACL] PlayerAdministration {
-    implementationTechnology = "Player Sessions Rust library contracts for bounded PlayerGrants and StoreRequests coordinate dashboard requests with garage writes. AdminBattles lists connected players, vehicle readiness, Training maps and battle parameter definitions, and launches a validated roster with per-arena overrides. The embedded Store web entry point accepts the dashboard transport."
+    implementationTechnology = "PlayerGrants coordinates dashboard grants with garage writes. TrainingBattleLaunches publishes ready garage players, maps and battle parameter definitions and hands selected sessions to the prepared arena."
+  }
+  Platform [U] -> [D] Store {
+    implementationTechnology = "Shared HTTP tracing, W3C parent extraction and browser presentation primitives."
+  }
+  Accounts [U,OHS,PL] -> [D,ACL] Store {
+    implementationTechnology = "Garage publishes an opaque purchasable offer, account availability and stock projections. Dashboard catalog reads use an Accounts snapshot without entering the gateway."
+  }
+  PlayerSessions [U,OHS,PL] -> [D,ACL] Store {
+    implementationTechnology = "GarageStoreAccess verifies live Store tokens and coordinates fulfillment with pending garage writes and account-cache delivery."
+  }
+  Store [U,OHS,PL] -> [D,ACL] PlayerAdministration {
+    implementationTechnology = "Dashboard-authenticated Store routes and embedded Store browser entry point accepting the dashboard transport."
+  }
+  TrainingRooms [U,OHS,PL] -> [D,ACL] PlayerSessions {
+    implementationTechnology = "In-process room registry and rules for membership, invitations, roster assignment and team confirmation. Player Sessions adapts native requests and carries delivery identifiers."
   }
   Accounts [U,OHS,PL] -> [D,ACL] Social {
     implementationTechnology = "Accounts Rust library PlayerDirectory operations resolve account IDs and display names in the Accounts schema. Social persists scalar IDs in its own schema."
@@ -88,7 +103,7 @@ BoundedContext Accounts {
   domainVisionStatement = "Own durable identity, password hashes, player roles, dashboard sessions, balances, vehicle ownership, integer preferences, tank/module research, vehicle purchases and sales, installed modules, mounted equipment, consumables and directives, loaded ammunition, shared depot stock and sales, cosmetic ownership and seasonal and common outfits, crew rosters and training, Premium Account expiry, and revisions in PostgreSQL; project snapshots into versioned garage caches."
 }
 BoundedContext PlayerSessions {
-  domainVisionStatement = "Own player admission, expiring handoff tickets, session lifecycle, Training Room membership, invitations, room text chat, administrator battle launches, garage-to-arena handoff, Store browser access and delivery of committed garage and chat updates and Premium Account expiry notifications."
+  domainVisionStatement = "Own live player admission, expiring handoff tickets, session lifecycle, garage write coordination, native Store token access, garage-to-arena handoff and delivery of garage, room and chat updates."
 }
 
 BoundedContext Battles {
@@ -101,6 +116,14 @@ BoundedContext Social {
 
 BoundedContext PlayerAdministration {
   domainVisionStatement = "Serve player registration, web sign-in, a personal garage view and dashboard Store access, and authorize administrators to provision players, manage roles, inspect garages, launch Training battles with dummies and grant currency, vehicles, cosmetics, crew books, Improved Equipment, Bounty Equipment or Experimental Equipment."
+}
+
+BoundedContext Store {
+  domainVisionStatement = "Serve the in-game and dashboard storefront, resolve item and currency to a published server offer, validate the quoted price and orchestrate checkout."
+}
+
+BoundedContext TrainingRooms {
+  domainVisionStatement = "Own hosted Training Room settings, invitations, membership, roster assignment, readiness and room closure between battles."
 }
 
 BoundedContext SharedKernel {

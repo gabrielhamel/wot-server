@@ -1,7 +1,8 @@
 use super::{Account, ClientKey, EntityKey, FAILURE, Gateway, Pickle, PreparedAccount, SUCCESS};
 use wot_accounts::contract::{
-    DepotSaleRequest, EquipmentChange, EquipmentUpgradeSource, GarageWrite, MAX_DEPOT_SALE_LINES,
+    DepotSaleRequest, EquipmentChange, EquipmentUpgradeSource, MAX_DEPOT_SALE_LINES,
     MAX_EQUIPMENT_SLOTS, ProgressionCommand, ProgressionError, VehicleSaleRequest,
+    garage::GarageWrite,
 };
 use wot_platform::client_formats::pickle::Value;
 

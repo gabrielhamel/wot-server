@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     Accounts, AmmoError, AmmunitionChange, GarageCatalog, GrantError, PlayerGrant, PreparedAccount,
-    ProgressionChange, ProgressionCommand, ProgressionError, ShellSelection, StoreOrder,
-    StoreOrderError,
+    ProgressionChange, ProgressionCommand, ProgressionError, ShellSelection, StoreOrderError,
 };
 use wot_platform::{client_formats::pickle::Value, observability::in_current_span};
 
@@ -37,12 +36,17 @@ impl GarageCommands {
     pub async fn purchase_offer(
         &self,
         id: i64,
-        order: StoreOrder,
+        expected_revision: i64,
+        offer: super::queries::PurchasableOffer,
     ) -> anyhow::Result<Result<Option<CommittedGarageChange>, StoreOrderError>> {
         let previous = self.accounts.snapshot(id).await?;
         let catalog = self.catalog.clone();
         let projection = tokio::task::spawn_blocking(in_current_span(move || {
-            let change = match catalog.plan_store_purchase(previous.clone(), order) {
+            let change = match catalog.fulfill_store_offer(
+                previous.clone(),
+                expected_revision,
+                offer.offer(),
+            ) {
                 Ok(change) => change,
                 Err(error) => return Ok(Err(error)),
             };

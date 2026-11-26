@@ -185,16 +185,9 @@ async fn admin_grants_reach_live_garage_and_survive_reconnect() {
     let skin_item = skin_offer.item;
     assert_eq!(skin_offer.price.currency(), "credits");
     assert_eq!(skin_offer.price.amount(), 50_000);
-    let bought = catalog
-        .plan_store_purchase(
-            snapshot.clone(),
-            wot_accounts::contract::StoreOrder {
-                item: skin_item,
-                price: skin_offer.price,
-                revision: snapshot.revision,
-            },
-        )
-        .unwrap();
+    let bought =
+        wot_accounts::test_support::plan_store_fulfillment(&catalog, snapshot.clone(), skin_offer)
+            .unwrap();
     assert_eq!(
         bought.snapshot.balances.credits,
         snapshot.balances.credits - 50_000

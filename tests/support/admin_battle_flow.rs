@@ -146,7 +146,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         DashboardConfig {
             secure_cookies: false,
             trusted_proxies: vec![],
-            battles: Some(gateway.admin_battles()),
+            battles: Some(gateway.training_battle_launches()),
         },
     ));
     let running = Arc::new(AtomicBool::new(false));
@@ -748,7 +748,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
 }
 
 fn alternative_gun(
-    garage: &wot_accounts::contract::GarageQueries,
+    garage: &wot_accounts::contract::garage::GarageQueries,
     options: &Json,
     vehicle: i64,
 ) -> (Json, i64, Vec<u8>) {

@@ -5,7 +5,7 @@ use crate::{
 };
 use tokio::sync::oneshot;
 use wot_accounts::contract::AccountNotFound;
-use wot_accounts::contract::CommittedGarageChange;
+use wot_accounts::contract::garage::CommittedGarageChange;
 
 pub(super) struct Completion {
     account_id: i64,

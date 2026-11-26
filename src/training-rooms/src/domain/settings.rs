@@ -1,11 +1,11 @@
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum VoiceChatMode {
+pub enum VoiceChatMode {
     General,
     Team,
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct TrainingRoomSettings {
+pub struct TrainingRoomSettings {
     pub arena_type_id: i32,
     pub duration_seconds: i32,
     pub open: bool,

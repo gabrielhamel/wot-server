@@ -2,12 +2,12 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rsa::rand_core::{OsRng, RngCore};
 use subtle::ConstantTimeEq;
 use tokio::sync::{mpsc, oneshot};
-use wot_accounts::contract::{StoreCatalog, StoreOrder, StoreOrderError};
+use wot_accounts::contract::{AccountView, PurchasableOffer, StoreOrderError};
 
-pub(crate) struct StoreToken([u8; 32]);
+pub struct StoreToken([u8; 32]);
 
 impl StoreToken {
-    pub fn generate() -> anyhow::Result<Self> {
+    pub(crate) fn generate() -> anyhow::Result<Self> {
         let mut bytes = [0; 32];
         OsRng
             .try_fill_bytes(&mut bytes)
@@ -15,7 +15,7 @@ impl StoreToken {
         Ok(Self(bytes))
     }
 
-    pub fn encode(&self) -> String {
+    pub(crate) fn encode(&self) -> String {
         URL_SAFE_NO_PAD.encode(self.0)
     }
 
@@ -28,13 +28,13 @@ impl StoreToken {
         Some(Self(bytes))
     }
 
-    pub fn matches(&self, other: &Self) -> bool {
+    pub(crate) fn matches(&self, other: &Self) -> bool {
         bool::from(self.0.ct_eq(&other.0))
     }
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum StoreError {
+pub enum StoreError {
     #[error("Open the Store from a connected garage.")]
     Unauthorized,
     #[error("The account is busy. Try again shortly.")]
@@ -47,9 +47,9 @@ pub(crate) enum StoreError {
     Internal(#[from] anyhow::Error),
 }
 
-pub(crate) type StoreReply = oneshot::Sender<Result<StoreCatalog, StoreError>>;
+pub(crate) type StoreReply = oneshot::Sender<Result<AccountView, StoreError>>;
 
-pub(crate) enum StoreCustomer {
+pub enum StoreCustomer {
     Garage(StoreToken),
     Dashboard(i64),
 }
@@ -57,30 +57,47 @@ pub(crate) enum StoreCustomer {
 pub(crate) struct StoreRequest {
     pub parent: tracing::Span,
     pub customer: StoreCustomer,
-    pub order: Option<StoreOrder>,
+    pub checkout: Option<Result<StoreCheckout, StoreOrderError>>,
     pub reply: StoreReply,
 }
 
-#[derive(Clone)]
-pub struct StoreRequests(mpsc::Sender<StoreRequest>);
+pub struct StoreCheckout {
+    pub offer: PurchasableOffer,
+    pub revision: i64,
+}
 
-impl StoreRequests {
+#[derive(Clone)]
+pub struct GarageStoreAccess(mpsc::Sender<StoreRequest>);
+
+impl GarageStoreAccess {
     pub(crate) fn channel() -> (Self, mpsc::Receiver<StoreRequest>) {
         let (sender, receiver) = mpsc::channel(16);
         (Self(sender), receiver)
     }
 
-    pub(crate) async fn request(
+    pub async fn garage_account(&self, token: StoreToken) -> Result<AccountView, StoreError> {
+        self.request(StoreCustomer::Garage(token), None).await
+    }
+
+    pub async fn checkout(
         &self,
         customer: StoreCustomer,
-        order: Option<StoreOrder>,
-    ) -> Result<StoreCatalog, StoreError> {
+        checkout: Result<StoreCheckout, StoreOrderError>,
+    ) -> Result<AccountView, StoreError> {
+        self.request(customer, Some(checkout)).await
+    }
+
+    async fn request(
+        &self,
+        customer: StoreCustomer,
+        checkout: Option<Result<StoreCheckout, StoreOrderError>>,
+    ) -> Result<AccountView, StoreError> {
         let (reply, result) = oneshot::channel();
         self.0
             .try_send(StoreRequest {
                 parent: tracing::Span::current(),
                 customer,
-                order,
+                checkout,
                 reply,
             })
             .map_err(|error| match error {

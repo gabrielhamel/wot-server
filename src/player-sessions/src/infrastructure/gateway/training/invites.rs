@@ -4,11 +4,10 @@ use super::{TRAINING, now};
 pub(in super::super) const ACCEPT_INVITE: i16 = 417;
 pub(in super::super) const DECLINE_INVITE: i16 = 418;
 
-const MAX_RECIPIENTS: usize = 100;
-const MAX_COMMENT_CHARS: usize = 400;
+use wot_training_rooms::contract::valid_invitation_comment;
 const INVITE_COOLDOWN: Duration = Duration::from_secs(8);
 
-pub(super) struct Invitation {
+pub(in crate::infrastructure::gateway) struct Invitation {
     payload: Value,
     queued_by: Option<tracing::Span>,
 }
@@ -36,18 +35,15 @@ impl Gateway {
         let Some(room) = session
             .training_room
             .and_then(|id| self.training_rooms.get_mut(&id))
-            .filter(|room| room.host == client)
+            .filter(|room| room.host() == client)
         else {
             span.record("output.outcome", "host_required");
             return;
         };
-        span.record("output.room.id", room.id);
-        let comment = std::str::from_utf8(comment).ok().filter(|text| {
-            text.len() <= MAX_COMMENT_CHARS * 4
-                && text.chars().count() <= MAX_COMMENT_CHARS
-                && !text.chars().any(|c| c.is_control() && c != '\n')
-        });
-        let Some(comment) = comment.filter(|_| (1..=MAX_RECIPIENTS).contains(&recipients.len()))
+        span.record("output.room.id", room.id());
+        let Some(comment) = std::str::from_utf8(comment)
+            .ok()
+            .filter(|text| valid_invitation_comment(text, recipients.len()))
         else {
             span.record("output.outcome", "invalid_request");
             return;
@@ -67,23 +63,14 @@ impl Gateway {
             "creatorDBID": (host_id),
             "state": (State::Active as i32),
             "count": 1,
-            "extraData": {"arenaTypeID": (room.settings.arena_type_id)},
+            "extraData": {"arenaTypeID": (room.settings().arena_type_id)},
         });
         let mut sent = 0;
         let mut queued = 0;
         let mut failed = false;
         for &account_id in recipients {
-            if account_id <= 0
-                || room
-                    .members
-                    .values()
-                    .any(|member| member.account_id == account_id)
-                || room.invites.contains_key(&account_id)
-            {
+            if !room.can_invite(account_id) {
                 continue;
-            }
-            if room.invites.len() >= MAX_RECIPIENTS {
-                break;
             }
             let recipient = self.sessions.values().find(|session| {
                 session.account.snapshot.id() == account_id && session.garage_synced
@@ -94,7 +81,7 @@ impl Gateway {
                         &mut self.base,
                         session,
                         entity,
-                        room.id,
+                        room.id(),
                         self.config.periphery_id,
                         State::Active,
                         invite.clone(),
@@ -115,7 +102,7 @@ impl Gateway {
                     Some(span.clone())
                 }
             };
-            room.invites.insert(
+            room.invite(
                 account_id,
                 Invitation {
                     payload: invite.clone(),
@@ -154,7 +141,8 @@ impl Gateway {
         let span = tracing::Span::current();
         let mut delivered = 0;
         for room in self.training_rooms.values_mut() {
-            let Some(invite) = room.invites.get_mut(&session.account.snapshot.id()) else {
+            let room_id = room.id();
+            let Some(invite) = room.invitation_mut(session.account.snapshot.id()) else {
                 continue;
             };
             if let Some(queued_by) = &invite.queued_by {
@@ -164,7 +152,7 @@ impl Gateway {
                 &mut self.base,
                 session,
                 entity,
-                room.id,
+                room_id,
                 self.config.periphery_id,
                 State::Active,
                 invite.payload.clone(),
@@ -204,15 +192,14 @@ impl Gateway {
         };
         if let Some(session) = self.sessions.get(&client)
             && room
-                .invites
-                .remove(&session.account.snapshot.id())
+                .remove_invitation(session.account.snapshot.id())
                 .is_some()
         {
             settle(
                 &mut self.base,
                 session,
                 entity,
-                room.id,
+                room.id(),
                 self.config.periphery_id,
                 State::Declined,
             );

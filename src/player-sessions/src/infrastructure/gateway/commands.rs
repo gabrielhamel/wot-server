@@ -1,3 +1,4 @@
+use super::training::TrainingRoomWire;
 use super::*;
 use wot_platform::mercury::app::entity::MethodDecodeError;
 

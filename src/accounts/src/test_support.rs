@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use super::{
     contract::{
-        AccountView, GameAccounts, GarageCommands, GarageQueries, PlayerAccess, PlayerDirectory,
+        AccountView, GameAccounts, PlayerAccess, PlayerDirectory,
+        garage::{GarageCommands, GarageQueries},
     },
     infrastructure::directory::PostgresPlayerDirectory,
 };
@@ -17,8 +18,7 @@ pub use super::application::{
 pub use super::domain::*;
 pub use super::infrastructure::{
     client::{
-        GarageCatalog, StoreCategory, StoreOffer, StoreOrder, StoreOrderError, StorePrice,
-        decode_outfits,
+        GarageCatalog, StoreCategory, StoreOffer, StoreOrderError, StorePrice, decode_outfits,
     },
     players::PostgresPlayers,
     postgres::PostgresAccounts,
@@ -50,4 +50,13 @@ pub fn player_access(repository: PostgresPlayers) -> PlayerAccess {
 
 pub fn directory(pool: sqlx::PgPool) -> Arc<dyn PlayerDirectory> {
     Arc::new(PostgresPlayerDirectory::new(pool))
+}
+
+pub fn plan_store_fulfillment(
+    catalog: &GarageCatalog,
+    account: AccountSnapshot,
+    offer: &StoreOffer,
+) -> Result<ProgressionChange, StoreOrderError> {
+    let revision = account.revision;
+    catalog.fulfill_store_offer(account, revision, offer)
 }

@@ -89,15 +89,23 @@ describe("Garage Store", () => {
       expect(screen.getByText("1 in Depot")).toBeVisible();
       expect(screen.getByText("Insufficient funds")).toBeVisible();
       expect(buy).toBeDisabled();
-      telemetry.expectRequest(catalogTrace, "web.store.load_catalog", "/api/shop/catalog", 200);
-      const { parent } = telemetry.expectRequest(
+      const catalog = telemetry.expectRequest(
+        catalogTrace,
+        "web.store.load_catalog",
+        "/api/shop/catalog",
+        200,
+      );
+      expect(catalog.http?.attributes["ddd.bounded_context.name"]).toBe("store");
+      expect(catalog.parent?.attributes["ddd.bounded_context.name"]).toBe("store");
+      const { http: orderRequest, parent } = telemetry.expectRequest(
         orderTrace,
         "web.store.purchase",
         "/api/shop/orders",
         200,
       );
+      expect(orderRequest?.attributes["ddd.bounded_context.name"]).toBe("store");
       expect(parent?.attributes).toMatchObject({
-        "ddd.bounded_context.name": "player_sessions",
+        "ddd.bounded_context.name": "store",
         "input.item": 121,
         "input.revision": "9",
         "input.price.currency": "credits",

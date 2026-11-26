@@ -1,6 +1,6 @@
 use super::super::{
     CosmeticChange, CosmeticGrantEntry, GarageCatalog, GarageInspection, PlayerGarage,
-    PreparedAccount, StoreCatalog, VehicleCatalogEntry, contract::AccountView,
+    PreparedAccount, StoreListing, StoreOffer, VehicleCatalogEntry, contract::AccountView,
     infrastructure::client::decode_outfits,
 };
 use std::sync::Arc;
@@ -48,6 +48,36 @@ pub struct BattleVehicleChoice {
 #[derive(Clone)]
 pub struct GarageQueries(Arc<GarageCatalog>);
 
+/// An offer published from the server catalog for Accounts to fulfill.
+#[derive(Clone)]
+pub struct PurchasableOffer(StoreOffer);
+
+impl PurchasableOffer {
+    pub fn item(&self) -> i32 {
+        self.0.item
+    }
+    pub fn price(&self) -> crate::contract::StorePrice {
+        self.0.price
+    }
+    pub(super) fn offer(&self) -> &StoreOffer {
+        &self.0
+    }
+}
+
+pub struct PurchasableOfferRef<'a>(&'a StoreOffer);
+
+impl PurchasableOfferRef<'_> {
+    pub fn item(&self) -> i32 {
+        self.0.item
+    }
+    pub fn price(&self) -> crate::contract::StorePrice {
+        self.0.price
+    }
+    pub fn to_owned(&self) -> PurchasableOffer {
+        PurchasableOffer(self.0.clone())
+    }
+}
+
 impl GarageQueries {
     pub(crate) fn new(catalog: Arc<GarageCatalog>) -> Self {
         Self(catalog)
@@ -65,8 +95,12 @@ impl GarageQueries {
         PlayerGarage::from_snapshot(account.0, &self.0)
     }
 
-    pub fn store_catalog(&self, account: &AccountView) -> StoreCatalog {
-        self.0.store_catalog(&account.0)
+    pub fn purchasable_offers(&self) -> impl Iterator<Item = PurchasableOfferRef<'_>> {
+        self.0.store_offers().iter().map(PurchasableOfferRef)
+    }
+
+    pub fn store_listings(&self, account: &AccountView) -> Vec<StoreListing> {
+        self.0.store_listings(&account.0)
     }
 
     pub fn shop_revision(&self) -> i32 {

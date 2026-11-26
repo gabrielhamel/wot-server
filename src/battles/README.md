@@ -7,10 +7,11 @@ participant. It allocates battle IDs, loads arena geometry, spawns vehicles,
 advances rounds, resolves vehicle controls and hits, and replicates battle state
 to connected players. Active battles and simulation state live in memory.
 
-Player Sessions owns Training Room discovery, invitations, text chat, team
-confirmation and the handoff between the garage and the arena. When the room
-is ready, it resolves the equipped vehicles through Accounts and submits the
-map, duration and assigned roster to Battles. A dashboard launch submits
+[Training Rooms](../training-rooms/README.md) owns room discovery,
+invitations, membership and team confirmation. Player Sessions delivers room
+updates and handles the handoff between the garage and the arena. When the room
+is ready, Player Sessions resolves equipped vehicles through Accounts and
+submits the map, duration and assigned roster to Battles. A dashboard launch submits
 the same Training battle mode and can include stationary dummies. Battles
 gives dummies a vehicle and a roster row, pre-marks them as ready and keeps
 their hulls fixed in vehicle contact resolution. The last player's departure

@@ -17,9 +17,11 @@ integer preferences, tank/module research, vehicle purchases and sales, garage c
 
 Runtime consumers import the context's [published contract](src/contract.rs).
 Game authentication returns an opaque `AccountView` with identity and revision
-accessors. `GarageQueries` publishes session projections, Store offers and
-dashboard inspections. `GarageCommands` validates garage changes against the
-current revision and commits them. Player Sessions delivers the committed
+accessors. The [Garage contract](src/contract.rs) groups `GarageQueries` and
+`GarageCommands`. Queries publish session projections, resource-backed Store
+offers and dashboard inspections. Commands validate and commit garage changes
+against the current revision. [Store](../store/README.md) verifies the
+client's quote and passes the selected server offer for fulfillment. Player Sessions delivers the committed
 projection and receipt. Server composition creates these services through
 the [PostgreSQL entry point](src/postgres.rs).
 

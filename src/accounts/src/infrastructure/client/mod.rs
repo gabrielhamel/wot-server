@@ -32,8 +32,7 @@ pub use special_recruits::{SpecialRecruitCountry, SpecialRecruitGrantEntry};
 mod starter_garage;
 mod store;
 pub use store::{
-    StoreAvailability, StoreCatalog, StoreCategory, StoreListing, StoreOffer, StoreOrder,
-    StoreOrderError, StorePrice,
+    StoreAvailability, StoreCategory, StoreListing, StoreOffer, StoreOrderError, StorePrice,
 };
 mod supply_slots;
 mod vehicle_defs;

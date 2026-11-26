@@ -4,10 +4,14 @@ use axum::{
     extract::{Path, State, rejection::JsonRejection},
     http::StatusCode,
 };
-use serde::Serialize;
-use wot_accounts::contract::{BattleVehicleUnavailable, CustomBattleLoadoutOptions};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use wot_accounts::contract::{
+    BattleVehicleUnavailable, CustomBattleLoadout, CustomBattleLoadoutOptions,
+};
 use wot_player_sessions::contract::{
-    AdminBattleError, AdminBattleSetup, AdminBattles, BattleLaunchReceipt, BattleOptions,
+    BattleLaunchReceipt, BattleOptions, TrainingBattleDummy, TrainingBattleError,
+    TrainingBattleLaunches, TrainingBattlePlayer, TrainingBattleSetup,
 };
 
 #[derive(Serialize)]
@@ -17,27 +21,84 @@ pub(super) struct Options {
     dummy_vehicles: Vec<VehicleRecord>,
 }
 
-fn service(state: &AdminState) -> Result<&AdminBattles, ApiError> {
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AdminBattleSetup {
+    arena_type: i32,
+    duration_seconds: i32,
+    players: Vec<PlayerSetup>,
+    dummies: Vec<DummySetup>,
+    #[serde(default)]
+    parameters: BTreeMap<String, f64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlayerSetup {
+    account_id: i64,
+    team: u8,
+    inventory_id: Option<i64>,
+    loadout: Option<CustomBattleLoadout>,
+    owned_overrides: Option<CustomBattleLoadout>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DummySetup {
+    team: u8,
+    loadout: CustomBattleLoadout,
+}
+
+impl From<AdminBattleSetup> for TrainingBattleSetup {
+    fn from(setup: AdminBattleSetup) -> Self {
+        Self {
+            arena_type: setup.arena_type,
+            duration_seconds: setup.duration_seconds,
+            players: setup
+                .players
+                .into_iter()
+                .map(|player| TrainingBattlePlayer {
+                    account_id: player.account_id,
+                    team: player.team,
+                    inventory_id: player.inventory_id,
+                    loadout: player.loadout,
+                    owned_overrides: player.owned_overrides,
+                })
+                .collect(),
+            dummies: setup
+                .dummies
+                .into_iter()
+                .map(|dummy| TrainingBattleDummy {
+                    team: dummy.team,
+                    loadout: dummy.loadout,
+                })
+                .collect(),
+            parameters: setup.parameters,
+        }
+    }
+}
+
+fn service(state: &AdminState) -> Result<&TrainingBattleLaunches, ApiError> {
     state
         .battles
         .as_ref()
-        .ok_or_else(|| battle_error(AdminBattleError::Unavailable))
+        .ok_or_else(|| battle_error(TrainingBattleError::Unavailable))
 }
 
-fn battle_error(error: AdminBattleError) -> ApiError {
+fn battle_error(error: TrainingBattleError) -> ApiError {
     let status = match error {
-        AdminBattleError::InvalidSetup
-        | AdminBattleError::InvalidParameters
-        | AdminBattleError::InvalidPlayerLoadout
-        | AdminBattleError::InvalidDummy
-        | AdminBattleError::VehicleUnavailable(BattleVehicleUnavailable::InvalidLoadout) => {
+        TrainingBattleError::InvalidSetup
+        | TrainingBattleError::InvalidParameters
+        | TrainingBattleError::InvalidPlayerLoadout
+        | TrainingBattleError::InvalidDummy
+        | TrainingBattleError::VehicleUnavailable(BattleVehicleUnavailable::InvalidLoadout) => {
             StatusCode::BAD_REQUEST
         }
-        AdminBattleError::PlayerUnavailable | AdminBattleError::VehicleUnavailable(_) => {
+        TrainingBattleError::PlayerUnavailable | TrainingBattleError::VehicleUnavailable(_) => {
             StatusCode::CONFLICT
         }
-        AdminBattleError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
-        AdminBattleError::PreparationFailed => StatusCode::INTERNAL_SERVER_ERROR,
+        TrainingBattleError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+        TrainingBattleError::PreparationFailed => StatusCode::INTERNAL_SERVER_ERROR,
     };
     let span = tracing::Span::current();
     span.record("output.outcome", error.outcome());
@@ -84,7 +145,7 @@ pub(super) async fn loadout(
     let permit = state
         .battle_loadout_slots
         .try_acquire_owned()
-        .map_err(|_| battle_error(AdminBattleError::Unavailable))?;
+        .map_err(|_| battle_error(TrainingBattleError::Unavailable))?;
     let options =
         tokio::task::spawn_blocking(wot_platform::observability::in_current_span(move || {
             let _permit = permit;
@@ -166,7 +227,10 @@ pub(super) async fn start(
     );
     span.record("input.battle.parameters.count", setup.parameters.len());
     let requested = setup.players.len();
-    let receipt = service(&state)?.start(setup).await.map_err(battle_error)?;
+    let receipt = service(&state)?
+        .start(setup.into())
+        .await
+        .map_err(battle_error)?;
     span.record("output.battle.id", receipt.battle_id);
     span.record("output.players.handoff_count", receipt.players_handed_off);
     span.record(

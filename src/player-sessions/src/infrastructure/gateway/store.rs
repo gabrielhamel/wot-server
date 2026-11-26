@@ -1,6 +1,6 @@
 use super::{Gateway, TracedCompletion};
 use crate::application::store::{
-    StoreCustomer, StoreError, StoreReply, StoreRequest, StoreRequests,
+    GarageStoreAccess, StoreCheckout, StoreCustomer, StoreError, StoreReply, StoreRequest,
 };
 use std::{
     borrow::Cow,
@@ -8,8 +8,8 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tracing::Instrument;
-use wot_accounts::contract::CommittedGarageChange;
-use wot_accounts::contract::{StoreOrder, StoreOrderError};
+use wot_accounts::contract::StoreOrderError;
+use wot_accounts::contract::garage::CommittedGarageChange;
 
 pub(super) struct StoreAccess {
     origin: StoreOrigin,
@@ -60,13 +60,7 @@ pub(super) struct Completion {
 }
 
 impl Gateway {
-    #[cfg(feature = "integration-test-support")]
-    pub fn enable_store(&mut self, origin: String) -> anyhow::Result<axum::Router> {
-        self.configure_store(origin)
-            .map(crate::presentation::store::router)
-    }
-
-    pub fn configure_store(&mut self, origin: String) -> anyhow::Result<StoreRequests> {
+    pub fn configure_store(&mut self, origin: String) -> anyhow::Result<GarageStoreAccess> {
         let uri: axum::http::Uri = origin.parse()?;
         let host = uri
             .host()
@@ -85,12 +79,12 @@ impl Gateway {
     }
 
     /// Advertise a local Store origin based on the bound HTTP listener and the game client.
-    pub fn configure_store_on_listener(&mut self, bound: SocketAddr) -> StoreRequests {
+    pub fn configure_store_on_listener(&mut self, bound: SocketAddr) -> GarageStoreAccess {
         self.set_store_origin(StoreOrigin::Listener(bound))
     }
 
-    fn set_store_origin(&mut self, origin: StoreOrigin) -> StoreRequests {
-        let (handle, requests) = StoreRequests::channel();
+    fn set_store_origin(&mut self, origin: StoreOrigin) -> GarageStoreAccess {
+        let (handle, requests) = GarageStoreAccess::channel();
         self.store = Some(StoreAccess { origin, requests });
         handle
     }
@@ -99,7 +93,7 @@ impl Gateway {
         let StoreRequest {
             parent,
             customer,
-            order,
+            checkout,
             reply,
         } = request;
         parent.in_scope(|| {
@@ -120,18 +114,25 @@ impl Gateway {
                         return;
                     };
                     let snapshot = &session.account.snapshot;
-                    if order.is_none() {
+                    if checkout.is_none() {
                         tracing::Span::current().record("user.id", snapshot.id());
-                        let _ = reply.send(Ok(self.catalog.store_catalog(snapshot)));
+                        let _ = reply.send(Ok(snapshot.clone()));
                         return;
                     }
                     snapshot.id()
                 }
             };
             tracing::Span::current().record("user.id", account_id);
-            let Some(order) = order else {
-                self.load_dashboard_catalog(account_id, reply);
-                return;
+            let checkout = match checkout {
+                Some(Ok(checkout)) => checkout,
+                Some(Err(error)) => {
+                    let _ = reply.send(Err(error.into()));
+                    return;
+                }
+                None => {
+                    let _ = reply.send(Err(StoreError::Unauthorized));
+                    return;
+                }
             };
 
             if self.pending_writes.contains(&account_id) {
@@ -150,50 +151,15 @@ impl Gateway {
             {
                 session.saving = true;
             }
-            self.start_store_purchase(account_id, order, reply, permit);
+            self.start_store_purchase(account_id, checkout, reply, permit);
         });
     }
 
-    #[tracing::instrument(name = "player_sessions.store.load_catalog", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account_id, output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty))]
-    fn load_dashboard_catalog(&self, account_id: i64, reply: StoreReply) {
-        let Ok(permit) = self.workers.clone().try_acquire_owned() else {
-            tracing::Span::current().record("output.outcome", "busy");
-            let _ = reply.send(Err(StoreError::Busy));
-            return;
-        };
-        let accounts = self.accounts.clone();
-        let catalog = self.catalog.clone();
-        self.runtime.spawn(
-            async move {
-                let _permit = permit;
-                let result = async {
-                    let snapshot = accounts.snapshot(account_id).await?;
-                    tokio::task::spawn_blocking(wot_platform::observability::in_current_span(
-                        move || catalog.store_catalog(&snapshot),
-                    ))
-                    .await
-                    .map_err(anyhow::Error::from)
-                }
-                .await;
-                let span = tracing::Span::current();
-                if result.is_err() {
-                    span.record("otel.status_code", "ERROR");
-                    span.record("output.outcome", "failed");
-                    tracing::error!("Could not load the dashboard Store catalog");
-                } else {
-                    span.record("output.outcome", "success");
-                }
-                let _ = reply.send(result.map_err(StoreError::from));
-            }
-            .in_current_span(),
-        );
-    }
-
-    #[tracing::instrument(name = "player_sessions.store.purchase", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account_id, input.item = order.item, input.revision = order.revision, input.price.currency = order.price.currency(), input.price.amount = order.price.amount()))]
+    #[tracing::instrument(name = "player_sessions.store.purchase", skip_all, fields(ddd.bounded_context.name = "player_sessions", user.id = account_id, input.item = checkout.offer.item(), input.revision = checkout.revision, input.price.currency = checkout.offer.price().currency(), input.price.amount = checkout.offer.price().amount()))]
     fn start_store_purchase(
         &self,
         account_id: i64,
-        order: StoreOrder,
+        checkout: StoreCheckout,
         reply: StoreReply,
         permit: tokio::sync::OwnedSemaphorePermit,
     ) {
@@ -203,7 +169,7 @@ impl Gateway {
             async move {
                 let result = async {
                     garage
-                        .purchase_offer(account_id, order)
+                        .purchase_offer(account_id, checkout.revision, checkout.offer)
                         .await??
                         .ok_or_else(|| StoreOrderError::Stale.into())
                 }
@@ -231,9 +197,9 @@ impl Gateway {
     pub(super) fn complete_store(&mut self, completion: Completion) {
         self.release_account_write(completion.account_id);
         let result = completion.result.map(|change| {
-            let catalog = self.catalog.store_catalog(&change.prepared.snapshot);
+            let snapshot = change.prepared.snapshot.clone();
             self.publish_account_change(change);
-            catalog
+            snapshot
         });
         let _ = completion.reply.send(result);
     }

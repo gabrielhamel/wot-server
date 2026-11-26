@@ -1,6 +1,6 @@
 use super::{Gateway, Pickle};
 use crate::GrantDelivery;
-use wot_accounts::contract::CommittedGarageChange;
+use wot_accounts::contract::garage::CommittedGarageChange;
 
 impl Gateway {
     pub(super) fn finish_account_write(&mut self, account_id: i64) {

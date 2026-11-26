@@ -25,9 +25,4 @@ pub mod test_support {
     }
 }
 
-mod presentation;
-
-/// HTTP adapter for the garage Store.
-pub use presentation::store::router as store_router;
-
 pub mod contract;

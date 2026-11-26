@@ -123,7 +123,8 @@ these metrics after connecting and applying migrations. See the
 Each game command, XMPP stanza, admin request and Store request starts an operation trace.
 Spans below it represent meaningful boundaries and decisions in the owning
 bounded context. The custom attribute `ddd.bounded_context.name` identifies
-`player_sessions`, `accounts`, `social`, `player_administration`, or `server`
+`player_sessions`, `accounts`, `social`, `player_administration`, `battles`,
+`store`, `training_rooms`, or `server`
 (server composition).
 Omit architecture
 layer segments (presentation, application, domain, infrastructure) from span names.
@@ -195,7 +196,8 @@ A Store checkout joins the HTTP request to the account transaction and garage
 delivery even though they run on separate workers.
 
     store.http.request                            [POST /api/shop/orders, 200]
-      player_sessions.store.purchase_request
+      store.purchase_request
+        store.resolve_quote                       [quoted]
         player_sessions.store.purchase
           accounts.store.plan_purchase
             accounts.progression.plan_progression
@@ -307,6 +309,7 @@ host notification and command acknowledgement under the same command.
       player_sessions.commands.command
         player_sessions.leave_training_room       [deleted, room ID]
           player_sessions.remove_training_member  [deleted, 0 players]
+            training_rooms.leave                  [deleted, 0 players]
             mercury.response                      [guest onPrebattleLeft, sent]
           mercury.response                        [host onPrebattleLeft, sent]
           mercury.response                        [onCmdResponse, sent]
@@ -335,6 +338,7 @@ preparation and the participants' `EnableEntities` acknowledgments.
 game.command                                      [doCmdInt3, 411]
   player_sessions.commands.command
     player_sessions.start_training_battle
+      training_rooms.set_team_ready               [team_ready]
       mercury.response                            [onCmdResponse]
       player_sessions.prepare_training_battle
         accounts.battle_vehicle                   [for each combat vehicle, outfit byte count]
@@ -635,10 +639,10 @@ The expected sequence for a purchase is `web.store.purchase` →
 delivery. Dashboard checkout follows the same sequence through
 `admin.http.request`, with session lookup before the Store request. The
 dashboard transport creates the child `web.http.request` span in
-`player_administration` and preserves the parent Store operation in
-`player_sessions`. Dashboard
-catalog reads continue through `player_sessions.store.load_catalog` to the
-Accounts snapshot and catalog projection. A grant follows the equivalent path through `web.admin.grant` and
+`player_administration` and preserves the parent operation in `store`.
+Dashboard catalog reads continue through `store.catalog_request` and
+`store.dashboard_account` to the Accounts snapshot and catalog projection.
+A grant follows the equivalent path through `web.admin.grant` and
 `admin.http.request`. Registration follows `web.panel.register` →
 `web.http.request` → `admin.http.request` → `web_panel.registration.create` →
 Accounts validation and provisioning spans, including the SQL transaction.

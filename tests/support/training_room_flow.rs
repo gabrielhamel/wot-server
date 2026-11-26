@@ -2991,6 +2991,20 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
             .find(|s| s.name == "player_sessions.start_training_battle" && child_of(s, command))
             .unwrap();
         assert!(has(launch, "output.outcome", outcome));
+        let readiness = traces
+            .iter()
+            .find(|s| s.name == "training_rooms.set_team_ready" && child_of(s, launch));
+        if request == "5100" {
+            assert!(readiness.is_none());
+        } else {
+            let readiness = readiness.expect("Training Rooms decision in the launch trace");
+            let room_outcome = match outcome {
+                "team_not_ready" | "team_unlocked" => outcome,
+                _ => "team_ready",
+            };
+            assert!(has(readiness, "ddd.bounded_context.name", "training_rooms"));
+            assert!(has(readiness, "output.outcome", room_outcome));
+        }
         assert!(traces.iter().any(|s| s.name == "mercury.response"
             && child_of(s, launch)
             && has(s, "input.request_id", request)
