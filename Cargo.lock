@@ -3375,7 +3375,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "wot-accounts"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3397,7 +3397,7 @@ dependencies = [
 
 [[package]]
 name = "wot-battles"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -3420,7 +3420,7 @@ dependencies = [
 
 [[package]]
 name = "wot-binary-map"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3433,7 +3433,7 @@ dependencies = [
 
 [[package]]
 name = "wot-context-maps"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3447,7 +3447,7 @@ dependencies = [
 
 [[package]]
 name = "wot-extract"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -3461,7 +3461,7 @@ dependencies = [
 
 [[package]]
 name = "wot-game-client"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3475,7 +3475,7 @@ dependencies = [
 
 [[package]]
 name = "wot-login-key"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3485,7 +3485,7 @@ dependencies = [
 
 [[package]]
 name = "wot-platform"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3512,7 +3512,7 @@ dependencies = [
 
 [[package]]
 name = "wot-player-administration"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3538,7 +3538,7 @@ dependencies = [
 
 [[package]]
 name = "wot-player-sessions"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3571,7 +3571,7 @@ dependencies = [
 
 [[package]]
 name = "wot-replay"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "blowfish",
@@ -3583,7 +3583,7 @@ dependencies = [
 
 [[package]]
 name = "wot-resources"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3591,7 +3591,7 @@ dependencies = [
 
 [[package]]
 name = "wot-server"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3630,7 +3630,7 @@ dependencies = [
 
 [[package]]
 name = "wot-server-list"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3640,7 +3640,7 @@ dependencies = [
 
 [[package]]
 name = "wot-server-runtime"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3674,14 +3674,14 @@ dependencies = [
 
 [[package]]
 name = "wot-shared-kernel"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "glam",
 ]
 
 [[package]]
 name = "wot-social"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3694,7 +3694,7 @@ dependencies = [
 
 [[package]]
 name = "wot-store"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "axum",
  "serde",
@@ -3707,14 +3707,14 @@ dependencies = [
 
 [[package]]
 name = "wot-training-rooms"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "tracing",
 ]
 
 [[package]]
 name = "wot-web-build"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
 ]
