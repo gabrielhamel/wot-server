@@ -142,6 +142,16 @@ fn powered_push_replicates_the_parked_hull_and_only_the_broken_wall_part() {
                 && child_of(span, control)
         })
         .expect("pushed tank fracture belongs to the pusher's command");
+    for key in [
+        "output.world.pitch_radians",
+        "output.world.lateral_speed_mps",
+        "output.world.vertical_speed_mps",
+    ] {
+        assert!(fracture.attributes.iter().any(|attribute| {
+            attribute.key.as_str() == key
+                && matches!(attribute.value, opentelemetry::Value::F64(value) if value.is_finite())
+        }), "missing solved hull measurement {key}");
+    }
     assert!(spans.iter().any(|span| span.name == "battles.scenery"
         && child_of(span, fracture)
         && has(span, "output.scenery.fragments.count", "1")

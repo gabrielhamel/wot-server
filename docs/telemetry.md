@@ -391,8 +391,10 @@ With the Rapier hull model selected, `battles.hull_physics` times the shared
 arena step and records the requested simulation interval, participating hulls
 and fixed step count. A pending or held drive parents the shared step. Each hull's
 `battles.world_motion` follows its own command or the available command of a
-tank that pushed it. It records support, contact, displacement and fracture
-before pose and scenery delivery.
+tank that pushed it. It records support, contact, displacement, pitch, roll
+and fracture before pose and scenery delivery. For a dynamic hull, the same
+span reports its final sideways and vertical speeds. These can be read alongside
+the fracture count to check for a kick when an obstacle gives way.
 
 `battles.scenery` follows the world-motion or shot span for each nonempty batch
 of newly broken fragments. It counts fragments with native identities, changed

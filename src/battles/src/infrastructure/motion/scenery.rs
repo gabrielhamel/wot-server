@@ -119,6 +119,17 @@ impl SceneryMotion {
         self.damage_fragment(scenery, fragment, normal, speed, pressure, true)
     }
 
+    pub(in crate::infrastructure) fn remaining_contact_budget(&self) -> usize {
+        MAX_CONTACTS_PER_STEP.saturating_sub(self.attempted.len())
+    }
+
+    pub(in crate::infrastructure) fn impact_damage(&self, speed: f32, pressure: f32) -> (f32, u32) {
+        // The client predicts instantaneous scenery damage from a fraction of kinetic energy.
+        let kinetic = 0.000075 * speed * speed / self.inverse_mass;
+        let damage = (kinetic + pressure).clamp(1.0, 250.0) as u32;
+        (kinetic, damage)
+    }
+
     fn damage_fragment(
         &mut self,
         scenery: &mut Scenery,
@@ -136,10 +147,9 @@ impl SceneryMotion {
         }
         self.attempted.push(fragment);
 
-        // The client predicts instantaneous scenery damage from a fraction of kinetic energy.
-        let kinetic = 0.000075 * speed * speed / self.inverse_mass;
+        let (kinetic, damage) = self.impact_damage(speed, pressure);
         let health = scenery.remaining_health(fragment) as f32;
-        let broken = scenery.damage(fragment, (kinetic + pressure).clamp(1.0, 250.0) as u32);
+        let broken = scenery.damage(fragment, damage);
         if broken.is_empty() {
             return false;
         }

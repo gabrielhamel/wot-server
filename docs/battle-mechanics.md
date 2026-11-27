@@ -261,21 +261,33 @@ loads the spawn neighborhoods. Each physics step keeps the map placements
 around the swept hulls in 32 m pages, across all elevations.
 Fixed scenery meshes preserve bridges, underpasses, arena visibility and
 vehicle-pass flags. Destroyed fragments affect subsequent physical contacts
-in the same arena. Armor intersections and HP decisions use the Battles rules.
+in the same arena. Before each step the server sweeps the hull and tracks
+along their approach to nearby obstacles. When a fragment gives way under
+the impact, the tank pays its horizontal speed cost and the suspension can
+reach the ground beneath it. Solid surfaces and surviving fragments still
+support or deflect the hull. Armor intersections and HP decisions use the Battles rules.
 Hulls collide with other vehicles and wrecks. A tank perched entirely on
 another hull needs to regain contact with map geometry before its tracks
 can propel it. The suspension treats support entirely on scenery as hard
 ground.
+
+During a turn, the tracks supply the sideways force needed to follow the
+hull's heading. On a bank they also oppose gravity along the surface.
+Neutral and braked tracks can hold a parked hull across, along or diagonally
+to the slope. The available grip depends on surface material and the load on
+each track contact. Once gravity exceeds that grip the hull slides downhill.
+Track-lock steering keeps its own skid response.
 
 | Rapier setting | Default | Range |
 | --- | --- | --- |
 | Suspension travel | 0.30 m | 0.05–0.8 m |
 | Suspension frequency | 3 Hz | 1–5 Hz |
 | Suspension damping ratio | 0.8 | 0.1–1.5 |
-| Lateral grip response | 0.20 s | 0.05–2 s |
+| Lateral grip response | 0.08 s | 0.05–2 s |
 
-These are server tuning values. Capture comparisons with a native EU driver
-are still needed to calibrate lateral grip, suspension and rollover feel.
+These are server tuning values. The [El Halluf playtest](battle-replays.md#el-halluf-training-capture-from-2026-11-27)
+informed the handling changes. Retail grip limits and suspension response
+still need calibration.
 
 ##### Validation on 2026-11-27
 
@@ -299,9 +311,30 @@ finite deck, compares two sets of controls in free fall, and lands on a bank.
 Another powers a parked tank through a destructible wall and checks the
 native fracture delivery, the adjacent fragment and both tanks' HP.
 
+In a 5 m/s powered turn on flat hard ground, sideways speed after one
+second fell from 0.93 m/s to less than 0.01 m/s. The heading change was
+0.78 rad in both runs. A separate fixture starts with a 2 m/s sideways
+push. The tracks brought that below 0.1 m/s in 0.40 s, down from 0.65 s.
+Across an 11.5° hard bank, a parked hull moved 0.009 m in four seconds,
+compared with 1.41 m before the change. On a 37.2° hard bank, all three
+tested headings slid downhill with the brake applied as well as in neutral.
+At 26° the same hull held on hard ground and slid 1.07 m on soft ground
+in two seconds. Driving across the 11.5° bank for 1.67 s produced
+6.24 m of forward travel and 0.02 m of sideways drift. On the 37.2°
+bank the hull still moved 5.40 m forward while sliding 1.56 m downhill
+in the map plane and losing 1.18 m in height.
+
+The El Halluf regression uses the approach to tree 36 in chunk `0x8181`
+from the playtest. It drives a test hull on the extracted map twice, first
+with the trunk cleared, then with it standing. Over the 0.30 s after the
+tree broke, the second run added less than 0.01° of pitch or yaw and
+less than 2 mm of hull rise. On a separate flat course, an off-centre
+4 m tree proxy previously added 13.86° of pitch. The same impact now adds
+less than 0.02°. A 24 cm breakable prop also fractures as the track reaches it.
+
 On an Apple M1 Max, a release build with 30 dispersed drivers on Serene
-Coast measured 21.5 ms at p95 and 56.0 ms maximum over 300 timed arena
-ticks while other builds ran. The test process peaked at 113.5 MiB RSS.
+Coast measured 14.0 ms at p95 and 26.1 ms maximum over 300 timed arena
+ticks. The test process peaked at 115.6 MiB RSS.
 It updates the arena and queues snapshots for all 30 drivers. Gateway UDP
 encoding, network transport and competition between active arenas need
 separate measurements. To reproduce, set `WOT_RESOURCE_DIR` and run

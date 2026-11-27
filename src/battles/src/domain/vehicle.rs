@@ -974,6 +974,9 @@ mod tests {
                 steering_limit: Some(0.4),
             })
             .to_vec();
+        wheeled.drive(LEFT);
+        let creep = wheeled.drive_demand(0.1, HARD, 0.0, 0.0);
+        assert!(creep.requests_travel && creep.longitudinal_acceleration > 0.0);
         wheeled.drive(FORWARD | LEFT);
         for _ in 0..5 {
             wheeled.step(0.1, bounds, HARD);
@@ -1136,13 +1139,15 @@ mod tests {
         let demand = tank.drive_demand(0.1, HARD, 0.0, 0.0);
         assert!(demand.yaw_acceleration < 0.0);
         assert_eq!(demand.longitudinal_acceleration, 0.0);
+        assert!(!demand.requests_travel);
+        assert!(tank.drive_demand(0.1, HARD, -3.0, 0.0).yaw_acceleration > 0.0);
         tank.performance
             .as_mut()
             .unwrap()
             .mobility
             .rotation_around_center = false;
         let demand = tank.drive_demand(0.1, HARD, 0.0, 0.0);
-        assert!(demand.longitudinal_acceleration > 0.0);
+        assert!(demand.requests_travel && demand.longitudinal_acceleration > 0.0);
         let forward_speed = demand.longitudinal_acceleration * 0.1;
         let yaw_rate = demand.yaw_acceleration * 0.1;
         tank.sync_physics(Vec3::Z, Vec3::ZERO, forward_speed, yaw_rate, true);

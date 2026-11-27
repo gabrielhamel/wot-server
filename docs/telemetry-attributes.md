@@ -157,6 +157,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.world.vehicle_contacts`](../src/battles/src/infrastructure/motion.rs) | Distinct tank pairs that applied a correction to this vehicle during the tick. |
 | [`output.world.displacement_metres`](../src/battles/src/infrastructure/motion.rs) | Horizontal distance after contact resolution, in metres, on a world-motion event. |
 | [`output.world.roll_radians`](../src/battles/src/infrastructure/motion.rs) | Resulting hull roll, in radians, on a world-motion event. |
+| [`output.world.pitch_radians`](../src/battles/src/infrastructure/motion/update.rs) | Final replicated hull pitch in radians on a Rapier world-motion span. Positive points the nose down. |
+| [`output.world.lateral_speed_mps`](../src/battles/src/infrastructure/physics.rs) | Signed centre-of-mass speed along the hull's local right axis, in m/s, at the end of a Rapier tick for an enabled dynamic hull. |
+| [`output.world.vertical_speed_mps`](../src/battles/src/infrastructure/physics.rs) | Signed centre-of-mass speed along the world's up axis, in m/s, at the end of a Rapier tick for an enabled dynamic hull. |
 | [`input.mobility.equipment_count`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Number of mounted optional devices in the projected Training loadout. |
 | [`input.mobility.consumable_count`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Number of mounted consumables in the projected Training loadout. |
 | [`input.mobility.directive_id`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Installed directive compact descriptor, when present. |

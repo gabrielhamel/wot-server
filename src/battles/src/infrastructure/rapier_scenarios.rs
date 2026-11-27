@@ -5,6 +5,10 @@ use glam::Vec3Swizzles;
 use projectile_tests::profile;
 
 fn prepare(count: u32, model: u8) -> (u32, BattleSimulation) {
+    prepare_on("47_canada_a", count, model)
+}
+
+fn prepare_on(geometry: &str, count: u32, model: u8) -> (u32, BattleSimulation) {
     let resources = ResourceBundle::open(std::path::Path::new(
         &std::env::var_os("WOT_RESOURCE_DIR").expect("extracted resources"),
     ))
@@ -21,11 +25,11 @@ fn prepare(count: u32, model: u8) -> (u32, BattleSimulation) {
         .iter()
         .filter_map(|(id, map)| {
             map.as_ref()
-                .filter(|map| map.geometry.ends_with("47_canada_a"))
+                .filter(|map| map.geometry.ends_with(geometry))
                 .map(|_| *id)
         })
         .min()
-        .expect("Serene Coast Training arena");
+        .expect("Training arena in the extracted resource bundle");
     let prepared = runtime
         .prepare(
             BattleLaunch {
@@ -101,6 +105,8 @@ fn drive(simulation: &mut BattleSimulation, delivery: &mut QueuedDelivery, id: u
 }
 
 mod acceptance {
+    mod breakage;
+    mod el_halluf;
     mod pushing;
     use super::*;
     use opentelemetry::trace::TracerProvider;

@@ -98,7 +98,7 @@ battle_parameters! {
         suspension_travel_metres: f32 = 0.3, 0.05..=0.8, false, "Rapier suspension travel (metres)";
         suspension_frequency_hz: f32 = 3.0, 1.0..=5.0, false, "Rapier suspension frequency (Hz)";
         suspension_damping_ratio: f32 = 0.8, 0.1..=1.5, false, "Rapier suspension damping ratio";
-        lateral_grip_response_seconds: f32 = 0.2, 0.05..=2.0, false, "Rapier lateral grip response (seconds)";
+        lateral_grip_response_seconds: f32 = 0.08, 0.05..=2.0, false, "Rapier lateral grip response (seconds)";
     }
     "World contacts" {
         contact_skin_metres: f32 = 0.025, 0.0..=0.25, false, "Collision clearance (metres)";

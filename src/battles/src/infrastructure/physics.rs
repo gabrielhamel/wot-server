@@ -4,6 +4,7 @@ use super::scenery::BreakageCause;
 use super::terrain::Terrain;
 use super::{BattleParameters, Participant, ParticipantId, Result, Tank, Vec2, Vec3};
 use glam::{EulerRot, Quat, Vec3Swizzles};
+use rapier3d::parry::shape::{Cuboid, RoundCuboid};
 use rapier3d::prelude::{
     ColliderBuilder, ColliderHandle, PhysicsWorld, Pose, QueryFilter, Ray, RigidBody,
     RigidBodyBuilder, RigidBodyHandle, RigidBodyType, Rotation, Vector,
@@ -28,6 +29,8 @@ pub(super) struct ArenaPhysics {
 struct Chassis {
     body: RigidBodyHandle,
     collider: ColliderHandle,
+    contact_hull: RoundCuboid,
+    hull_center: Vector,
     track_half_width: f32,
     track_half_length: f32,
     yaw_inertia_per_kg: f32,
@@ -45,6 +48,8 @@ pub(super) struct PhysicsMotion {
     pub broken: Vec<Breakage>,
     pub fall: BreakageCause,
     pub scenery_speed_scale: f32,
+    pub lateral_speed_mps: Option<f32>,
+    pub vertical_speed_mps: Option<f32>,
     pub substeps: u32,
 }
 
@@ -56,6 +61,7 @@ struct StepState {
     mass_center: Vector,
     press: Vec2,
     pivot_press: f32,
+    track_contact: Option<contacts::TrackContact>,
 }
 
 fn game_vec(value: Vector) -> Vec3 {
@@ -198,6 +204,17 @@ impl ArenaPhysics {
                 else {
                     continue;
                 };
+                state.press = player.tank.scenery_push_direction()
+                    * player.tank.scenery_push_load(seconds, false);
+                state.pivot_press = player.tank.scenery_push_load(seconds, true);
+                if can_damage && player.entry.is_some() && player.tank.health > 0 {
+                    state.break_approaching_scenery(
+                        &mut self.world,
+                        &mut self.scenery,
+                        chassis,
+                        scenery,
+                    );
+                }
                 let supported = tracks::drive(
                     &mut self.world,
                     &self.scenery,
@@ -213,9 +230,6 @@ impl ArenaPhysics {
                     state.angular_velocity = body.angvel();
                     state.mass_center = body.center_of_mass();
                 }
-                state.press = player.tank.scenery_push_direction()
-                    * player.tank.scenery_push_load(seconds, false);
-                state.pivot_press = player.tank.scenery_push_load(seconds, true);
             }
             self.world.step();
             let quarantine = self.world.quarantine();
@@ -280,6 +294,16 @@ impl ArenaPhysics {
                 state.motion.fall = state.damage.fall;
                 state.motion.scenery_speed_scale = state.damage.speed_scale;
                 state.motion.vehicle_contacts = state.motion.contact_peers.len() as u32;
+                if let Some(body) = self
+                    .chassis
+                    .get(&state.motion.client.0)
+                    .and_then(|chassis| self.world.bodies.get(chassis.body))
+                    .filter(|body| body.is_dynamic() && body.is_enabled())
+                {
+                    state.motion.lateral_speed_mps =
+                        Some(body.linvel().dot(*body.rotation() * Vector::X));
+                    state.motion.vertical_speed_mps = Some(body.linvel().y);
+                }
                 state.motion
             })
             .collect()
@@ -391,6 +415,11 @@ impl Chassis {
         Self {
             body,
             collider,
+            contact_hull: RoundCuboid {
+                inner_shape: Cuboid::new(physics_vec(half)),
+                border_radius: tank.parameters.contact_skin_metres,
+            },
+            hull_center: center,
             track_half_width: track_extent(track_width, half.x),
             track_half_length: track_extent(track_length, half.z),
             supported_by: [None; tracks::SUPPORT_POINTS],
@@ -414,6 +443,8 @@ impl StepState {
                 broken: Vec::new(),
                 fall: damage.fall,
                 scenery_speed_scale: 1.0,
+                lateral_speed_mps: None,
+                vertical_speed_mps: None,
                 substeps,
             },
             damage,
@@ -422,6 +453,7 @@ impl StepState {
             mass_center: Vector::ZERO,
             press: Vec2::ZERO,
             pivot_press: 0.0,
+            track_contact: None,
         }
     }
 }

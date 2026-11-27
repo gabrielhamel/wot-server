@@ -154,27 +154,47 @@ pub(super) fn drive(
             (contact, (spring - damping * velocity.dot(normal)).max(0.0))
         })
     });
-    let normal_load = (loads.iter().flatten().map(|(_, load)| load).sum::<f32>()
-        / SUPPORT_POINTS as f32)
-        .max(parameters.gravity_mps2)
-        .max(f32::EPSILON);
+    let average_load =
+        loads.iter().flatten().map(|(_, load)| load).sum::<f32>() / SUPPORT_POINTS as f32;
+    let drive_reference_load = average_load.max(parameters.gravity_mps2).max(f32::EPSILON);
+    let lateral_response = if driven.track_locked {
+        parameters.track_lock_heading_response
+    } else {
+        parameters.lateral_grip_response_seconds.recip()
+    };
+    let hold_grade = !driven.requests_travel && !driven.track_locked;
     for (contact, normal_acceleration) in loads.into_iter().flatten() {
         let normal = contact.terrain_normal;
         let tangent = (forward - normal * normal.dot(forward)).normalize_or_zero();
         let right = normal.cross(tangent);
-        let lateral_response = if driven.track_locked {
-            parameters.track_lock_heading_response
+        let gravity = Vec2::new(world.gravity.dot(right), world.gravity.dot(tangent));
+        let normal_gravity = -world.gravity.dot(normal);
+        let load_share = normal_acceleration / average_load.max(normal_gravity).max(f32::EPSILON);
+        let cornering = if driven.track_locked {
+            0.0
         } else {
-            parameters.lateral_grip_response_seconds.recip()
+            angular.dot(normal) * linear.dot(tangent)
         };
-        let lateral_acceleration = (-linear.dot(right) * lateral_response)
-            .clamp(-grip * normal_acceleration, grip * normal_acceleration);
-        let longitudinal_acceleration = driven.longitudinal_acceleration
-            - contact.side * driven.yaw_acceleration * chassis.yaw_inertia_per_kg
-                / chassis.track_half_width;
+        let lateral = cornering - gravity.x - linear.dot(right) * lateral_response;
+        let mut requested_grip = Vec2::new(lateral, 0.0) * load_share;
+        let drive_load_share = normal_acceleration / drive_reference_load;
+        let steering = -contact.side * driven.yaw_acceleration * chassis.yaw_inertia_per_kg
+            / chassis.track_half_width
+            * drive_load_share;
+        let mut drive_acceleration = driven.longitudinal_acceleration * drive_load_share;
+        if hold_grade {
+            requested_grip.y -= gravity.y * load_share;
+            // Service brakes keep their level-ground response. On a grade, holding
+            // against gravity uses part of the same grip that can slow the hull.
+            let grade_share =
+                (gravity.length() / (grip * normal_gravity).max(f32::EPSILON)).min(1.0);
+            requested_grip.y += drive_acceleration * grade_share;
+            drive_acceleration *= 1.0 - grade_share;
+        }
+        let friction = requested_grip.clamp_length_max(grip * normal_acceleration);
         let impulse = (normal * normal_acceleration
-            + tangent * (longitudinal_acceleration * normal_acceleration / normal_load)
-            + right * lateral_acceleration)
+            + right * friction.x
+            + tangent * (friction.y + drive_acceleration + steering))
             * (STEP_SECONDS * mass_per_point);
         body.apply_impulse_at_point(impulse, contact.position, false);
     }

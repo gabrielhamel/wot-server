@@ -32,6 +32,7 @@ pub(crate) struct DriveDemand {
     pub longitudinal_acceleration: f32,
     pub yaw_acceleration: f32,
     pub track_locked: bool,
+    pub requests_travel: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -180,7 +181,10 @@ impl Drive {
             / (resistance * mobility.turning_resistance);
         let traverse = ground_traverse.min(mobility.traverse_limit.unwrap_or(f32::INFINITY));
         let turn_target = if mobility.turns_in_place {
-            let direction = if speed < 0.0 || (speed == 0.0 && throttle < 0.0) {
+            let pivot_at_rest = gravity_integration == GravityIntegration::World
+                && throttle == 0.0
+                && speed.abs() <= parameters.moving_turn_min_speed_mps;
+            let direction = if (speed < 0.0 && !pivot_at_rest) || (speed == 0.0 && throttle < 0.0) {
                 -1.0
             } else {
                 1.0
@@ -252,6 +256,7 @@ impl Drive {
             measured,
             GravityIntegration::World,
         );
+        let moving_pivot = response.single_track_pivot && self.has_steering();
         let next_speed = if self.flags == 0 {
             // Releasing powered movement coasts to a stop. A parked hull pushed
             // by another vehicle only opposes its new motion with rolling resistance.
@@ -270,7 +275,7 @@ impl Drive {
                 parameters.coast_deceleration_mps2 * seconds,
             );
             approach(speed, 0.0, coast.max(rolling * seconds))
-        } else if response.single_track_pivot && self.has_steering() {
+        } else if moving_pivot {
             let target = response.yaw_rate.abs() * performance.mobility.track_half_width;
             let acceleration = if speed > target {
                 parameters.coast_deceleration_mps2
@@ -286,6 +291,7 @@ impl Drive {
             longitudinal_acceleration: (next_speed - speed) / seconds,
             yaw_acceleration: (response.yaw_rate - yaw_rate) / seconds,
             track_locked: response.track_locked,
+            requests_travel: self.target_speed != 0.0 || moving_pivot,
         }
     }
 
