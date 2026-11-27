@@ -82,6 +82,7 @@ pub struct Peer {
     pub positions: BTreeMap<u32, glam::Vec3>,
     pub vehicle_position_frames: BTreeMap<u32, usize>,
     pub arena_tick: Option<u8>,
+    arena_tick_gaps: usize,
     pub avatar_position_frames: usize,
     avatar_locally_controlled: Option<bool>,
     pub nrl_updates: Vec<Vec<u8>>,
@@ -96,6 +97,11 @@ pub struct Peer {
     pub vehicle_directions: BTreeMap<u32, glam::Vec3>,
     selected_entity: Option<u32>,
     player_type: Option<u16>,
+}
+
+pub struct ArenaPoseCounts {
+    pub avatar: usize,
+    pub vehicles: BTreeMap<u32, usize>,
 }
 
 impl Peer {
@@ -136,6 +142,7 @@ impl Peer {
             positions: BTreeMap::new(),
             vehicle_position_frames: BTreeMap::new(),
             arena_tick: None,
+            arena_tick_gaps: 0,
             avatar_position_frames: 0,
             avatar_locally_controlled: None,
             nrl_updates: Vec::new(),
@@ -349,8 +356,38 @@ impl Peer {
             .unwrap();
         self.send(bundle);
     }
+
     #[track_caller]
-    pub fn until(&mut self, dispatch: &ScriptDispatch, condition: impl Fn(&Self) -> bool) {
+    pub fn observe_consecutive_arena_ticks(
+        &mut self,
+        dispatch: &ScriptDispatch,
+        ticks: u8,
+    ) -> ArenaPoseCounts {
+        let mut start = self.arena_tick.unwrap();
+        let mut gaps = self.arena_tick_gaps;
+        let mut counts = self.arena_pose_counts();
+        self.until(dispatch, |peer| {
+            let tick = peer.arena_tick.unwrap();
+            if peer.arena_tick_gaps != gaps {
+                start = tick;
+                gaps = peer.arena_tick_gaps;
+                counts = peer.arena_pose_counts();
+            }
+            tick.wrapping_sub(start) >= ticks
+        });
+        assert_eq!(self.arena_tick.unwrap().wrapping_sub(start), ticks);
+        counts
+    }
+
+    fn arena_pose_counts(&self) -> ArenaPoseCounts {
+        ArenaPoseCounts {
+            avatar: self.avatar_position_frames,
+            vehicles: self.vehicle_position_frames.clone(),
+        }
+    }
+
+    #[track_caller]
+    pub fn until(&mut self, dispatch: &ScriptDispatch, mut condition: impl FnMut(&Self) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(15);
         while !condition(self) {
             assert!(
@@ -552,6 +589,7 @@ impl Peer {
                             self.positions.clear();
                             self.vehicle_position_frames.clear();
                             self.arena_tick = None;
+                            self.arena_tick_gaps = 0;
                             self.snapshot_ack_through = None;
                             self.avatar_locally_controlled = None;
                             self.avatar_position_frames = 0;
@@ -682,7 +720,9 @@ impl Peer {
                                 .element
                                 .tick;
                             if let Some(last) = self.arena_tick {
-                                assert!((1..=127).contains(&tick.wrapping_sub(last)));
+                                let elapsed = tick.wrapping_sub(last);
+                                assert!((1..=127).contains(&elapsed));
+                                self.arena_tick_gaps += usize::from(elapsed > 1);
                             }
                             self.arena_tick = Some(tick);
                             self.snapshot_ack_through = config.cumulative_ack();
