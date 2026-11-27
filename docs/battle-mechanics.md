@@ -262,6 +262,10 @@ around the swept hulls in 32 m pages, across all elevations.
 Fixed scenery meshes preserve bridges, underpasses, arena visibility and
 vehicle-pass flags. Destroyed fragments affect subsequent physical contacts
 in the same arena. Armor intersections and HP decisions use the Battles rules.
+Hulls collide with other vehicles and wrecks. A tank perched entirely on
+another hull needs to regain contact with map geometry before its tracks
+can propel it. The suspension treats support entirely on scenery as hard
+ground.
 
 | Rapier setting | Default | Range |
 | --- | --- | --- |
