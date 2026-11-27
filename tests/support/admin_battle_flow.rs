@@ -384,26 +384,20 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             matches!(wot_platform::client_formats::pickle::from_reader(flate2::read::ZlibDecoder::new(data.as_slice())),
                 Ok(super::Pickle::Tuple(fields)) if fields.first() == Some(&super::Pickle::I64(3)))
         }) && p.arena_tick.is_some());
-        let tick = peer.arena_tick.unwrap();
-        let avatar_frames = peer.avatar_position_frames;
-        let position_frames = peer.vehicle_position_frames.clone();
         let ready_ack = peer.last_sent_reliable + 1;
-        peer.until(&script, |p| p.arena_tick.is_some_and(|later| (15..=127).contains(&later.wrapping_sub(tick))));
-        assert_eq!(peer.arena_tick.unwrap().wrapping_sub(tick), 15);
-        assert_eq!(peer.avatar_position_frames - avatar_frames, 15);
-        assert_eq!(peer.vehicle_position_frames[&own] - position_frames[&own], 15);
+        let pose_frames = peer.observe_consecutive_arena_ticks(&script, 15);
+        assert_eq!(peer.avatar_position_frames - pose_frames.avatar, 15);
+        assert_eq!(peer.vehicle_position_frames[&own] - pose_frames.vehicles[&own], 15);
         assert!(peer.snapshot_ack_through.is_some_and(|ack| ack.wrapping_cmp(ready_ack).is_ge()));
         for (id, position) in dummies {
             assert!(peer.positions[&id].distance(position) < 0.01);
-            assert_eq!(peer.vehicle_position_frames[&id] - position_frames[&id], 3);
+            assert_eq!(peer.vehicle_position_frames[&id] - pose_frames.vehicles[&id], 3);
         }
         let own_position = peer.positions[&own];
         peer.cell_command(&script, "vehicle_moveWith", vec![Value::UInt8(1)]);
         peer.until(&script, |p| p.positions[&own].distance(own_position) > 0.2);
-        let tick = peer.arena_tick.unwrap();
-        let movement_frames = peer.vehicle_position_frames[&own];
-        peer.until(&script, |p| p.arena_tick.is_some_and(|later| (5..=127).contains(&later.wrapping_sub(tick))));
-        assert_eq!(peer.vehicle_position_frames[&own] - movement_frames, 5);
+        let movement_frames = peer.observe_consecutive_arena_ticks(&script, 5);
+        assert_eq!(peer.vehicle_position_frames[&own] - movement_frames.vehicles[&own], 5);
         peer.cell_command(&script, "vehicle_shoot", vec![]);
         peer.until(&script, |p| p.vehicle_methods.iter().any(|(entity, name, _)| {
             *entity == own && name == "showShooting"
@@ -463,9 +457,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(outfit.as_bytes(), &[4, 16, 111]);
         assert_eq!(public["maxHealth"].as_i64(), Some(811));
         peer.until(&script, |p| p.arena_tick.is_some());
-        let tick = peer.arena_tick.unwrap();
-        let counts = peer.vehicle_position_frames.clone();
-        peer.until(&script, |p| p.arena_tick.is_some_and(|later| (5..=127).contains(&later.wrapping_sub(tick))));
+        let counts = peer.observe_consecutive_arena_ticks(&script, 5).vehicles;
         assert_eq!(counts.len(), 3);
         for (id, count) in counts {
             assert_eq!(peer.vehicle_position_frames[&id] - count, 5);
