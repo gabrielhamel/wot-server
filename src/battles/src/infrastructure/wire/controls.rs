@@ -533,7 +533,15 @@ impl ArenaWire {
             dict(
                 ty,
                 [
-                    ("circularVisionRadius", WireValue::UInt16(350)),
+                    (
+                        "circularVisionRadius",
+                        WireValue::UInt16(
+                            tank.performance
+                                .as_ref()
+                                .and_then(|profile| profile.spotting)
+                                .map_or(0, |profile| profile.view_range as u16),
+                        ),
+                    ),
                     ("gunPiercing", WireValue::Float32(1.0)),
                     ("gunShotsSpeed", WireValue::Float32(1.0)),
                 ],

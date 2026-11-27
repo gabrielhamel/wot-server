@@ -11,6 +11,21 @@ pub struct VehiclePerformance {
     pub gun: GunPerformance,
     pub armor: [Option<MountedArmor>; 4],
     pub device_health: BTreeMap<Device, DeviceHealth>,
+    pub spotting: Option<VehicleSpotting>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct VehicleSpotting {
+    pub view_range: f32,
+    pub radio_range: f32,
+    pub still_concealment: f32,
+    pub moving_concealment: f32,
+    pub firing_multiplier: f32,
+    pub hull_bounds: [Vec3; 2],
+    pub hull_offset: Vec3,
+    pub turret_offset: Vec3,
+    pub turret_top: f32,
+    pub gun_mount: Vec3,
 }
 
 #[derive(Clone, Debug)]

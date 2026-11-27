@@ -76,7 +76,13 @@ fn projectile_battle(teams: &[u8]) -> (u32, Battle, Arc<ArenaWire>) {
     battle.round.phase = RoundPhase::Battle;
     battle.ground = Arc::new(terrain::Terrain::flat());
     battle.obstacles = obstacles::Scenery::default();
+    let visible = battle
+        .players
+        .values()
+        .map(|participant| participant.vehicle.entity_id)
+        .collect::<HashSet<_>>();
     for (&id, participant) in &mut battle.players {
+        participant.visible_vehicles = visible.clone();
         participant.ready = true;
         participant.entered = true;
         participant.tank.position = if id == SHOOTER {
@@ -165,7 +171,12 @@ impl ArenaDelivery for ImpactDelivery {
     ) -> std::io::Result<()> {
         if matches!(
             E::ID,
-            NrlData::ID | ArenaEntityProperties::ID | NrlCreateNode::ID | ApplyNrlUnlink::ID
+            NrlData::ID
+                | ArenaEntityProperties::ID
+                | NrlCreateNode::ID
+                | ApplyNrlUnlink::ID
+                | CreateArenaEntity::ID
+                | LeaveArenaEntity::ID
         ) {
             let mut payload = Vec::new();
             element.write(&mut payload, &())?;
@@ -766,6 +777,7 @@ fn profile() -> VehiclePerformance {
             None,
             None,
         ],
+        spotting: None,
         device_health: Default::default(),
         gun: GunPerformance {
             turret_traverse: 1.0,
@@ -1742,4 +1754,93 @@ fn engine_and_fuel_damage_update_only_the_driver_and_show_repairs() {
         assert!(has(repair, "output.outcome", "repaired_critical"));
         assert!(has(repair, "output.recipients", "1"));
     }
+}
+
+#[test]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
+fn spotting_delivers_vehicle_transitions_and_preserves_the_movement_trace() {
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let tracer = provider.tracer("spotting-test");
+    let subscriber =
+        tracing_subscriber::registry().with(tracing_opentelemetry::layer().with_tracer(tracer));
+    tracing::subscriber::with_default(subscriber, || {
+        let (id, mut battle, wire) = projectile_battle(&[1, 2]);
+        for player in battle.players.values_mut() {
+            player.visible_vehicles = HashSet::from([player.vehicle.entity_id]);
+        }
+        let enemy = battle.players[&VICTIM].vehicle.entity_id;
+        let observer = battle.players[&SHOOTER].vehicle.entity_id;
+        let start = battle.started_at;
+        let mut delivery = ImpactDelivery::default();
+        let drive = tracing::info_span!("test.spotting_drive");
+        battle.advance_spotting(
+            &mut delivery,
+            &wire,
+            id,
+            start,
+            &[(observer, drive.clone())],
+        );
+        assert!(delivery.track_updates.iter().any(|(peer, kind, body)| {
+            *peer == SHOOTER
+                && *kind == CreateArenaEntity::ID
+                && body.get(1..5) == Some(enemy.to_le_bytes().as_slice())
+        }));
+        battle.advance_spotting(
+            &mut delivery,
+            &wire,
+            id,
+            start + Duration::from_secs(3),
+            &[],
+        );
+        assert!(
+            delivery
+                .track_updates
+                .iter()
+                .any(|(peer, kind, _)| *peer == VICTIM && *kind == NrlData::ID)
+        );
+        let target = battle.players.get_mut(&VICTIM).unwrap();
+        target.tank.position = Vec3::Z * 600.0;
+        target.vehicle.position = target.tank.position;
+        battle.advance_spotting(
+            &mut delivery,
+            &wire,
+            id,
+            start + Duration::from_secs(4),
+            &[],
+        );
+        assert!(delivery.track_updates.iter().any(|(peer, kind, body)| {
+            *peer == SHOOTER && *kind == LeaveArenaEntity::ID && body == &enemy.to_le_bytes()
+        }));
+        assert!(!battle.players[&SHOOTER].visible_vehicles.contains(&enemy));
+    });
+    let spans = exporter.get_finished_spans().unwrap();
+    let drive = spans
+        .iter()
+        .find(|span| span.name == "test.spotting_drive")
+        .unwrap();
+    let visibility = spans
+        .iter()
+        .find(|span| {
+            span.name == "battles.spotting" && span.parent_span_id == drive.span_context.span_id()
+        })
+        .unwrap();
+    assert!(
+        visibility
+            .attributes
+            .iter()
+            .any(|field| field.key.as_str() == "output.vehicles.entered"
+                && field.value.to_string() == "2")
+    );
+    assert!(spans.iter().any(|span| span.name == "test.track_delivery"
+        && span.parent_span_id == visibility.span_context.span_id()));
+    assert!(spans.iter().any(|span| {
+        span.name == "battles.sixth_sense"
+            && span.parent_span_id == visibility.span_context.span_id()
+            && span.attributes.iter().any(|field| {
+                field.key.as_str() == "output.outcome" && field.value.to_string() == "enqueued"
+            })
+    }));
 }

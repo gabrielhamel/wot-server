@@ -185,17 +185,14 @@ datagrams and ignores stale unreliable sequences. The test checks that both
 clients' cell creation and control handoff deliveries share the original host
 request trace. It also checks that a rejected drive command retains its Mercury
 request parent and that battle entry, decoded controls, shots and removal use
-the participant ID assigned to the corresponding session. The same peers
-check that both initial Vehicle poses agree with their corresponding cell
-creation on both clients. They verify that steering right in reverse swings
-the tail to the right. They drive both vehicles and require their position
-messages to share a bundle with an advancing tick before and after combat starts.
-They exercise vehicle-targeted aiming, reject cross-player targeting, and
-fire a shot. Both connections receive a tracer with a matching endpoint,
-the impact and health updates, and the shooter and victim each receive their
-own feedback. The impact check verifies the penetrating hull segment, its
-direction in the victim's local frame, the damage fraction, the projectile's
-world travel yaw and the received damage-log AP type. The test
+the participant ID assigned to the corresponding session. Each peer checks its own initial Vehicle pose against its cell creation and
+confirms that the distant enemy sends no Vehicle creation or live poses.
+The test verifies reverse steering, client acknowledgements and tick advancement.
+It exercises vehicle-targeted aiming, rejects cross-player targeting, and
+fires a blind shot. The shooter receives tracer and shot-result feedback,
+and the victim receives impact, health and hit-direction updates. The impact check verifies the victim's penetrating hull segment, its direction in the local frame,
+the damage fraction, the projectile's world travel yaw and the received
+damage-log AP type. The test
 checks the recipient count and exported parent span for these deliveries,
 verifies the stop is sent after the shot's scheduled flight time and verifies
 that an immediate second shot is rejected during reload. With the extracted

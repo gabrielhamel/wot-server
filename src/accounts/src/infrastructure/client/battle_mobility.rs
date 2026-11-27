@@ -410,6 +410,39 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
+    fn spotting_uses_the_mounted_su_152_gun_and_client_geometry() {
+        let root = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
+        let resources = ResourceBundle::open(Path::new(&root)).unwrap();
+        let catalog = super::super::GarageCatalog::load(resources, &[]).unwrap();
+        let vehicle = catalog.vehicle("ussr:R18_SU-152").unwrap();
+        let spotting = vehicle
+            .modules
+            .battle_performance(&vehicle.modules.rules.stock)
+            .unwrap()
+            .spotting
+            .unwrap();
+        assert!(spotting.view_range > 0.0 && spotting.radio_range > 0.0);
+        assert!(spotting.hull_bounds[0].cmplt(spotting.hull_bounds[1]).all());
+        let mut multipliers = Vec::new();
+        for (&id, module) in &vehicle.modules.rules.modules {
+            if module.kind == crate::ModuleKind::Gun {
+                let mut loadout = vehicle.modules.rules.stock.clone();
+                loadout.insert(crate::ModuleKind::Gun, id);
+                let equipped = vehicle
+                    .modules
+                    .battle_performance(&loadout)
+                    .unwrap()
+                    .spotting
+                    .unwrap();
+                multipliers.push(equipped.firing_multiplier);
+            }
+        }
+        multipliers.sort_by(f32::total_cmp);
+        assert_eq!(multipliers, [0.143, 0.19, 0.2]);
+    }
+
+    #[test]
     #[ignore = "Requires WOT_RESOURCE_DIR with extracted AMX 30 B contact bounds"]
     fn amx_30_b_contact_footprint_includes_the_rear_overhang() {
         let root = std::env::var_os("WOT_RESOURCE_DIR").unwrap();

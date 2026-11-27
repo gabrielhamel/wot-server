@@ -164,12 +164,12 @@ impl Battle {
         wire: &ArenaWire,
         now: Instant,
     ) -> Vec<(u32, tracing::Span)> {
-        let peers: Vec<_> = self
-            .players
-            .iter()
-            .filter(|(_, p)| p.entered)
-            .map(|(&key, _)| key)
-            .collect();
+        let mut viewers = HashMap::<u32, Vec<ParticipantId>>::new();
+        for (&peer, player) in self.players.iter().filter(|(_, player)| player.entered) {
+            for &entity in &player.visible_vehicles {
+                viewers.entry(entity).or_default().push(peer);
+            }
+        }
         let mut movement = Vec::new();
         let time = now.saturating_duration_since(self.started_at).as_secs_f32();
         let seconds = TICK.as_secs_f32();
@@ -221,7 +221,10 @@ impl Battle {
                     },
                 );
             }
-            player.publish_chassis_motion(delivery, wire, &peers, movement_parent);
+            let peers = viewers
+                .get(&player.vehicle.entity_id)
+                .map_or(&[][..], Vec::as_slice);
+            player.publish_chassis_motion(delivery, wire, peers, movement_parent);
             if player.tank.health <= 0 || self.round.phase == RoundPhase::Finished {
                 continue;
             }
@@ -237,7 +240,7 @@ impl Battle {
             let parent = aim.or(drive);
             if player.last_gun_angles != gun {
                 player.last_gun_angles = gun;
-                deliver_state(parent.clone(), "gun_angles", entity_id, &peers, |client| {
+                deliver_state(parent.clone(), "gun_angles", entity_id, peers, |client| {
                     wire.publish_gun_angles(delivery, client, entity_id, gun)
                 });
             }

@@ -11,6 +11,46 @@ impl ArenaWire {
         row: usize,
         ready: bool,
     ) -> Result<()> {
+        self.roster_fields(
+            delivery,
+            client,
+            count,
+            row,
+            [
+                ("isAvatarReady", WireValue::UInt8(u8::from(ready))),
+                ("__generation", WireValue::UInt32(if ready { 1 } else { 2 })),
+            ],
+        )
+    }
+
+    pub(in super::super) fn roster_position(
+        &self,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
+        count: usize,
+        row: usize,
+        position: [i16; 2],
+    ) -> Result<()> {
+        self.roster_fields(
+            delivery,
+            client,
+            count,
+            row,
+            [(
+                "position",
+                WireValue::Seq(position.into_iter().map(WireValue::Int16).collect()),
+            )],
+        )
+    }
+
+    fn roster_fields(
+        &self,
+        delivery: &mut impl ArenaDelivery,
+        client: ParticipantId,
+        count: usize,
+        row: usize,
+        values: impl IntoIterator<Item = (&'static str, WireValue)>,
+    ) -> Result<()> {
         let schema = self
             .dispatch
             .entity_from_id(self.roster_component)
@@ -30,10 +70,7 @@ impl ArenaWire {
         anyhow::ensure!(row < count, "Invalid roster row");
         let node = ROSTER_ENTITY_NODE + 2 + u16::try_from(index)?;
         let mut records = Vec::new();
-        for (name, value) in [
-            ("isAvatarReady", WireValue::UInt8(u8::from(ready))),
-            ("__generation", WireValue::UInt32(if ready { 1 } else { 2 })),
-        ] {
+        for (name, value) in values {
             let (field, def) = fields
                 .properties
                 .iter()

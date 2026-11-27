@@ -51,6 +51,7 @@ mod preparation;
 mod projectile_tests;
 mod projectiles;
 mod scenery;
+mod spotting;
 mod terrain;
 mod vehicle_damage;
 mod wire;
@@ -135,6 +136,8 @@ struct Battle {
     ground: Arc<terrain::Terrain>,
     obstacles: obstacles::Scenery,
     areas: scenery::SceneryAreas,
+    spotting: crate::domain::spotting::Spotting,
+    pending_spotting_alerts: HashMap<u32, tracing::Span>,
     arena_type: i32,
     players: HashMap<ParticipantId, Participant>,
     started_at: Instant,
@@ -152,6 +155,9 @@ struct Battle {
 struct Participant {
     vehicle: CreateArenaEntity,
     pose_cadence: PoseCadence,
+    visible_vehicles: HashSet<u32>,
+    minimap_positions: HashMap<u32, spotting::MinimapContact>,
+    last_spotting_pose: Option<(Vec3, Vec3)>,
     avatar_id: u32,
     roster_row: usize,
     team: u8,
@@ -168,6 +174,7 @@ struct Participant {
     server_marker: bool,
     pending_marker: Option<tracing::Span>,
     pending_drive: Option<tracing::Span>,
+    spotting_shot: Option<tracing::Span>,
     pending_aim: Option<tracing::Span>,
     pending_reload: Option<tracing::Span>,
     pending_stun: Option<(Instant, tracing::Span)>,
@@ -535,6 +542,9 @@ impl BattleRuntime {
                     Participant {
                         vehicle: wire.vehicle(player)?,
                         pose_cadence: PoseCadence::default(),
+                        visible_vehicles: HashSet::new(),
+                        minimap_positions: HashMap::new(),
+                        last_spotting_pose: None,
                         avatar_id: player.avatar_id,
                         roster_row,
                         team: player.team,
@@ -555,6 +565,7 @@ impl BattleRuntime {
                         server_marker: false,
                         pending_marker: None,
                         pending_drive: None,
+                        spotting_shot: None,
                         pending_aim: None,
                         pending_reload: None,
                         pending_stun: None,
@@ -578,6 +589,8 @@ impl BattleRuntime {
                 ground,
                 obstacles: obstacles::Scenery::new(obstacles),
                 areas: scenery::SceneryAreas::default(),
+                spotting: Default::default(),
+                pending_spotting_alerts: HashMap::new(),
                 arena_type,
                 players,
                 started_at: now,
@@ -662,14 +675,14 @@ impl BattleSimulation {
                 delivery,
                 client,
                 &battle.map,
-                battle.players.values().map(|other| other.vehicle.clone()),
+                std::iter::once(player.vehicle.clone()),
                 battle.ticks(Instant::now()),
             )?;
             span.record("output.avatar_control", "server");
             if let Some(wire) = &self.wire {
                 let scenery_chunks = battle.areas.snapshot(delivery, wire, client)?;
                 span.record("output.scenery.snapshot_chunks.count", scenery_chunks);
-                for (&other_peer, other) in &battle.players {
+                for (&other_peer, other) in battle.players.iter().filter(|(id, _)| **id == client) {
                     if other.tank.health != other.tank.max_health {
                         wire.vehicle_properties(
                             delivery,
@@ -720,6 +733,7 @@ impl BattleSimulation {
             Ok(()) => {
                 if let Some(player) = battle.players.get_mut(&client) {
                     player.entered = true;
+                    player.visible_vehicles.insert(player.vehicle.entity_id);
                     player.fire_roots = fire_roots;
                     span.record("output.fire.snapshot_count", fires);
                     battle.full_snapshot_pending = true;
@@ -847,6 +861,9 @@ impl BattleSimulation {
             {
                 movement = battle.advance_vehicles(delivery, wire, now);
             }
+            if let Some(wire) = &self.wire {
+                battle.advance_spotting(delivery, wire, battle_id, now, &movement);
+            }
             let movement: Vec<_> = movement
                 .into_iter()
                 .map(|(entity_id, command)| {
@@ -877,7 +894,7 @@ impl BattleSimulation {
                 };
                 if player.entered {
                     let own_vehicle = (!include && !player.observer).then(|| position.clone());
-                    recipients.push((id, own_vehicle));
+                    recipients.push((id, own_vehicle, player.visible_vehicles.clone()));
                 } else if player.entry.is_some()
                     && now >= battle.started_at + battle.round.load_timeout
                 {
@@ -921,8 +938,9 @@ impl BattleSimulation {
             {
                 battle.publish_roster_ready(delivery, wire, id, removed.roster_row, false);
             }
-            for (&peer, player) in &battle.players {
+            for (&peer, player) in &mut battle.players {
                 if player.entered
+                    && player.visible_vehicles.remove(&removed.vehicle.entity_id)
                     && let Err(error) = delivery.send_arena_element(
                         peer,
                         LeaveArenaEntity {

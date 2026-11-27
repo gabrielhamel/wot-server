@@ -17,6 +17,7 @@ use wot_platform::mercury::{
 mod controls;
 mod fire;
 mod roster;
+mod spotting;
 
 pub(super) use controls::{DamageStickers, ShotImpact, pack_wheel_speed, pack_wheel_steering};
 
@@ -124,6 +125,7 @@ impl ArenaWire {
         let sample = Entrant::sample();
         schema.vehicle(&sample)?;
         schema.validate_controls()?;
+        schema.sixth_sense_message()?;
         schema.validate_scenery()?;
         schema.entry(1, 1, BattleMode::Training, &sample, &[&sample])?;
         Ok(schema)

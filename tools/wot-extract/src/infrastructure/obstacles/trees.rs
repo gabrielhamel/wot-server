@@ -12,6 +12,7 @@ pub(super) fn extract(space: &Space<'_>, catalog: &Catalog, path: &Path) -> Resu
         .trees
         .iter()
         .filter_map(|tree| {
+            let native = tree.native?;
             let definition = catalog.tree(space.paths.get(&tree.resource)?)?;
             let scale = tree.transform.matrix3.y_axis.length();
             let height = definition.height * scale;
@@ -19,13 +20,7 @@ pub(super) fn extract(space: &Space<'_>, catalog: &Catalog, path: &Path) -> Resu
                 return None;
             }
             let health = ((definition.health as f32 * scale * scale - 0.001).ceil() as u32).max(1);
-            Some((
-                tree.native,
-                tree.transform.translation,
-                scale,
-                height,
-                health,
-            ))
+            Some((native, tree.transform.translation, scale, height, health))
         })
         .peekable();
     if trees.peek().is_none() {

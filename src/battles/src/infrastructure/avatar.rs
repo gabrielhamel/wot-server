@@ -88,6 +88,7 @@ entity_schema! {
             fn stopTracer(shot: i32, endpoint: glam::Vec3);
             fn showShotResults(results: Vec<ShotResult>);
             fn onBattleEvents(events: Vec<BattleEvent>);
+            fn onVehicleHealthChanged(vehicle: EntityId, health: i16, attacker: EntityId, reason: u8, death_reason: i8);
         }
         base {
             fn setClientReady();
@@ -139,6 +140,10 @@ pub(crate) enum AvatarUpdate {
     },
     ShotResults(ShotResult),
     BattleEvents(BattleEvent),
+    ContactHealth {
+        vehicle: u32,
+        health: i16,
+    },
 }
 
 impl AvatarUpdate {
@@ -211,6 +216,9 @@ impl AvatarUpdate {
             Self::StopTracer { id, endpoint } => avatar.stopTracer(id, endpoint),
             Self::ShotResults(result) => avatar.showShotResults(vec![result]),
             Self::BattleEvents(event) => avatar.onBattleEvents(vec![event]),
+            Self::ContactHealth { vehicle, health } => {
+                avatar.onVehicleHealthChanged(EntityId(vehicle), health, EntityId(0), 0, -1)
+            }
         }
     }
 }

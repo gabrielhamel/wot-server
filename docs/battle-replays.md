@@ -189,12 +189,12 @@ Both EU replays show 100 ms as the usual recorder cadence, with more gaps
 in the other vehicles' position streams. The reason for individual gaps
 cannot be determined from playback records. The
 [battle simulation](../src/battles/src/infrastructure/mod.rs) produces a
-snapshot for each 100 ms tick. It sends each driver's own pose and all moving
-poses every tick. Other parked poses use the configured interval.
+snapshot for each 100 ms tick. It sends each driver's own pose and each visible
+moving pose every tick. Other visible parked poses use the configured interval.
 [Mercury](../src/shared-infrastructure/src/mercury/app/base/mod.rs) packs
 the clock, Avatar pose and selected vehicle poses into one unreliable bundle.
-The gateway encodes that payload once per snapshot and applies channel
-sequencing, pending ACKs and encryption for each recipient. The archived
+The gateway encodes each recipient's positions and applies channel sequencing,
+pending ACKs and encryption. The archived
 Battle Mechanics page gives historical intervals for spotting checks and
 flags them as outdated after 9.16. It gives no position replication or ACK
 frequency. A bidirectional wire capture is needed to compare datagram
@@ -682,3 +682,29 @@ uses component lifetime for the world effect and `set_fireInfo` for driver
 notifications. Replay records establish visible state and damage cadence.
 A bidirectional capture would be needed to establish client extinguisher
 commands and production wire ordering.
+
+## Mines visibility lifecycle from 2026-11-27
+
+The user-supplied EU1 replay
+`20261127_0901_china-Ch52_WZ_122_6_F3_10_hills.wotreplay` has SHA-256
+`a0088ae4d967b627ca018aea716af75d0bd740baccffd8bce5df3a9f7a3e5c74`.
+Its metadata reports `2.4.2.0 #1007` and map `10_hills`. The matching
+local `win64/WorldOfTanks.exe` has SHA-256
+`a13b2bac5f76e5399f399f8421630730da4b02ff35f9d866f0bc36d10f8cae80`.
+
+The playback stream has 345 type-`0x05` creation records and 217
+four-byte type-`0x04` removal records. The first little-endian 32-bit
+field identifies the entity in both. Entity `9028` appears at 48.17 s
+(offset 709192), leaves at 61.78 s (offset 1006608), and appears again
+at 74.68 s (offset 1211030). The two create payloads are 187 bytes.
+These records establish observable entity lifetime. They do not expose
+the reason for an individual exit, the radio graph, or raw UDP framing.
+
+The installed bundle declares `OwnVehicle.onObservedByEnemy(INT16)`.
+`OwnVehicleBase.pyc` forwards it to `Avatar.pyc`, which triggers Sixth
+Sense. `constants.pyc` assigns 0 to ordinary ray detection. The roster
+`position` is an X/Z pair of signed 16-bit integers. The client
+`AvatarVehiclesInfoBase.pyc` forwards position updates to the
+`ClientArena` minimap state. The bundle and replay together guide the
+current encoders. A bidirectional client capture is still needed for
+Sixth Sense delivery and minimap transitions on the wire.

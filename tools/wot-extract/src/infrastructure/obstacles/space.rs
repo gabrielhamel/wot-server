@@ -13,7 +13,7 @@ pub(super) struct Placement {
 pub(super) const TREE_INSTANCE: u32 = 1 << 31;
 
 pub(super) struct PlacedTree {
-    pub native: u32,
+    pub native: Option<u32>,
     pub resource: u32,
     pub transform: Affine3A,
 }
@@ -130,9 +130,9 @@ fn placed_trees(mut section: &[u8], numbers: &HashMap<u32, u32>) -> Result<Vec<P
     let placements = vector(&mut section, Some(80))?.as_chunks::<80>().0;
     let mut trees = Vec::new();
     for (index, row) in placements.iter().enumerate() {
-        let Some(&native) = numbers.get(&(TREE_INSTANCE | u32::try_from(index)?)) else {
-            continue;
-        };
+        let native = numbers
+            .get(&(TREE_INSTANCE | u32::try_from(index)?))
+            .copied();
         let mut row = row.as_slice();
         let mut values = [0.0; 16];
         row.read_f32_into::<LE>(&mut values)?;

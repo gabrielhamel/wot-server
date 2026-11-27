@@ -38,7 +38,11 @@ impl Battle {
         let vehicle = target.vehicle.entity_id;
         let row = target.roster_row;
         let mut recipients = 0;
-        for (&peer, witness) in self.players.iter_mut().filter(|(_, player)| player.entered) {
+        for (&peer, witness) in self
+            .players
+            .iter_mut()
+            .filter(|(_, player)| player.entered && player.visible_vehicles.contains(&vehicle))
+        {
             let own = peer == victim;
             let missing_root = !own && !witness.fire_roots.contains(&row);
             let result = wire.publish_fire_start(
@@ -87,7 +91,9 @@ impl Battle {
                 output.recipients = tracing::field::Empty, otel.status_code = tracing::field::Empty);
             span.in_scope(|| {
                 let mut recipients = 0;
-                for (&peer, _) in self.players.iter().filter(|(_, player)| player.entered) {
+                for (&peer, _) in self.players.iter().filter(|(_, player)| {
+                    player.entered && player.visible_vehicles.contains(&vehicle)
+                }) {
                     match wire.publish_fire_stop(delivery, peer, row) {
                         Ok(()) => recipients += 1,
                         Err(error) => {
@@ -180,7 +186,9 @@ impl Battle {
             span.in_scope(|| {
                 let mut recipients = 0;
                 for (&recipient, _) in self.players.iter().filter(|(recipient, player)| {
-                    player.entered && (is_track || **recipient == peer)
+                    player.entered
+                        && ((is_track && player.visible_vehicles.contains(&id))
+                            || **recipient == peer)
                 }) {
                     let result = (|| -> Result<()> {
                         if is_track {
@@ -225,24 +233,26 @@ impl Battle {
                 let mut recipients = 0;
                 for (&peer, player) in self.players.iter().filter(|(_, player)| player.entered) {
                     let result = (|| -> Result<()> {
-                        wire.vehicle_properties(
-                            delivery,
-                            peer,
-                            id,
-                            [("health", WireValue::Int16(health))],
-                        )?;
-                        delivery.arena_vehicle_method(
-                            peer,
-                            id,
-                            "onHealthChanged",
-                            vec![
-                                WireValue::Int16(health),
-                                WireValue::Int16(previous),
-                                WireValue::Int32(source.attacker as i32),
-                                WireValue::UInt8(FIRE_ATTACK_REASON),
-                                WireValue::Int8(-1),
-                            ],
-                        )?;
+                        if player.visible_vehicles.contains(&id) {
+                            wire.vehicle_properties(
+                                delivery,
+                                peer,
+                                id,
+                                [("health", WireValue::Int16(health))],
+                            )?;
+                            delivery.arena_vehicle_method(
+                                peer,
+                                id,
+                                "onHealthChanged",
+                                vec![
+                                    WireValue::Int16(health),
+                                    WireValue::Int16(previous),
+                                    WireValue::Int32(source.attacker as i32),
+                                    WireValue::UInt8(FIRE_ATTACK_REASON),
+                                    WireValue::Int8(-1),
+                                ],
+                            )?;
+                        }
                         let own = peer == victim;
                         if own {
                             wire.publish_own_health(
@@ -263,7 +273,7 @@ impl Battle {
                                 )),
                             )?;
                         }
-                        if ended {
+                        if ended && player.visible_vehicles.contains(&id) {
                             wire.publish_fire_stop(delivery, peer, row)?;
                         }
                         Ok(())

@@ -5,6 +5,7 @@ use glam::Affine3A;
 use std::io::{BufReader, Read};
 use wot_platform::client_formats::pxml;
 
+mod foliage;
 mod trees;
 pub(super) use trees::TREE_PART;
 
@@ -14,6 +15,7 @@ pub(super) struct Obstacles {
     instances: Vec<Instance>,
     index: Option<Box<CollisionIndex>>,
     trees: trees::Trees,
+    foliage: foliage::Foliage,
 }
 
 #[derive(Clone, Copy)]
@@ -78,6 +80,7 @@ impl Damage {
 pub(super) struct Scenery {
     geometry: Arc<Obstacles>,
     damage: Damage,
+    fallen_crowns: HashMap<u32, glam::Quat>,
 }
 
 impl Scenery {
@@ -85,12 +88,28 @@ impl Scenery {
         Self {
             geometry,
             damage: Damage::default(),
+            fallen_crowns: HashMap::new(),
         }
     }
 
     pub fn intersect(&self, origin: Vec3, direction: Vec3, range: f32) -> Option<ObstacleHit> {
         self.geometry
             .intersect(origin, direction, range, &self.damage)
+    }
+
+    pub fn blocks_sight(&self, origin: Vec3, direction: Vec3, range: f32) -> bool {
+        let mut nearest = None;
+        if let Some(index) = &self.geometry.index {
+            index.intersect(
+                &self.geometry.instances,
+                (&self.geometry.meshes, &self.damage, false),
+                origin,
+                direction,
+                range,
+                &mut nearest,
+            );
+        }
+        nearest.is_some()
     }
 
     pub fn sweep_hull(&self, hull: Hull, travel: Vec2) -> Option<HullHit> {
@@ -257,6 +276,7 @@ impl Obstacles {
         ddd.bounded_context.name = "battles", input.geometry = geometry,
         input.arena_type_id = arena_type, output.obstacles.instances = tracing::field::Empty,
         output.obstacles.trees = tracing::field::Empty,
+        output.obstacles.foliage = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
     ), err)]
     pub(super) fn load(
@@ -345,6 +365,7 @@ impl Obstacles {
             instances,
             index,
             trees,
+            foliage: foliage::Foliage::load(resources, geometry)?,
         })
     }
 
@@ -358,7 +379,7 @@ impl Obstacles {
         let mut nearest = None;
         self.index.as_ref()?.intersect(
             &self.instances,
-            (&self.meshes, damage),
+            (&self.meshes, damage, true),
             origin,
             direction,
             range,
@@ -562,7 +583,7 @@ impl CollisionIndex {
     fn intersect(
         &self,
         instances: &[Instance],
-        geometry: (&[Mesh], &Damage),
+        geometry: (&[Mesh], &Damage, bool),
         origin: Vec3,
         direction: Vec3,
         range: f32,
@@ -581,14 +602,21 @@ impl CollisionIndex {
 
         for instance in instances {
             let limit = nearest.map_or(range, |hit| hit.distance);
-            if instance.shells_pass || !instance.bounds.intersects(origin, direction, limit) {
+            if (geometry.2 && instance.shells_pass)
+                || !instance.bounds.intersects(origin, direction, limit)
+            {
                 continue;
             }
             let local_origin = instance.world_to_model.transform_point3(origin);
             let local_direction = instance.world_to_model.transform_vector3(direction);
-            let (meshes, damage) = geometry;
+            let (meshes, damage, projectile) = geometry;
             for triangle in &meshes[instance.mesh].triangles {
-                if triangle.pass_flags & SHELLS_PASS != 0 {
+                let pass_mask = if projectile {
+                    SHELLS_PASS
+                } else {
+                    SHELLS_PASS | VEHICLES_PASS
+                };
+                if triangle.pass_flags & pass_mask == pass_mask {
                     continue;
                 }
                 let fragment = triangle.fragment(instance);
@@ -741,6 +769,7 @@ impl Scenery {
             instances,
             index: Some(index),
             trees: Default::default(),
+            foliage: Default::default(),
         }))
     }
 
@@ -1153,6 +1182,7 @@ mod tests {
             instances,
             index: Some(index),
             trees: Default::default(),
+            foliage: Default::default(),
         }));
         let origin = Vec3::new(2.5, 0.5, 0.0);
         let hit = obstacles.intersect(origin, Vec3::Z, 30.0).unwrap();

@@ -5,8 +5,8 @@ mod domain;
 pub use domain::vehicle_performance::{
     ArmorDevice, ArmorMesh, ArmorPlate, ArmorTriangle, Device, DeviceHealth, EngineCompartment,
     ExplosiveShell, GunLoading, GunPerformance, Mobility, MountedArmor, ShellBallistics,
-    ShellEffects, ShellKind, ShellStun, TrackDamageProfile, VehiclePerformance, Wheel,
-    shell_value_at_distance, shell_zero_distance,
+    ShellEffects, ShellKind, ShellStun, TrackDamageProfile, VehiclePerformance, VehicleSpotting,
+    Wheel, shell_value_at_distance, shell_zero_distance,
 };
 pub use domain::{
     AccountId,

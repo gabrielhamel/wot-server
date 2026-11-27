@@ -172,7 +172,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.aim.kind`](../src/battles/src/infrastructure/controls.rs) | Aim representation on an aim command, `world_point` or `hull_angles`. |
 | [`input.aim.server_marker`](../src/battles/src/infrastructure/controls.rs) | Boolean supplied by the Avatar's server reticle setting command. |
 | [`input.replication.kind`](../src/battles/src/infrastructure/controls.rs) | Arena delivery kind, including `position`, `hull_aim` (driver orientation and track motion), `engine_mode`, `wheels_scroll`, `steering_angles`, `gun_angles`, `gun_marker` and `ammunition`. |
-| [`input.arena.tick`](../src/battles/src/infrastructure/mod.rs) | Full arena tick count for the first position snapshot carrying a drive command's change. One unit is 100 ms. |
+| [`input.arena.tick`](../src/battles/src/infrastructure/mod.rs) | Full arena tick count for a drive replication, spotting pass or Sixth Sense alert. One unit is 100 ms. |
 | [`input.arena.tick`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Low 8 bits of the arena tick written into the snapshot's TickSync element. One unit is 100 ms. |
 | [`output.snapshot.age_ms`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Milliseconds since the arena snapshot was enqueued, recorded after this recipient's send attempt or session validation failure on `mercury.arena_snapshot`. |
 | [`input.vehicles.count`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Number of vehicle pose records included in the arena snapshot. The Avatar pose is separate. A snapshot can carry zero vehicle poses. |
@@ -626,3 +626,18 @@ HTTP response. It omits browser span contents, origins and collector URLs.
 | `http.response.status_code` | HTTP status returned to the browser. |
 | `upstream.http.response.status_code` | HTTP status returned by the collector, when available. |
 | `output.outcome` | `forwarded`, `origin_rejected`, `content_type_rejected`, `body_rejected`, `concurrency_limited`, `rate_limited`, `batch_rejected`, `collector_rejected`, `collector_timeout`, or `collector_unreachable`. Collector failures set span status to Error and emit a warning. |
+
+
+## Spotting
+
+| Attribute | Meaning |
+| --- | --- |
+| [`input.vehicles.count`](../src/battles/src/infrastructure/spotting.rs) | Number of living combat vehicles in the arena's current spotting pass. |
+| [`output.pairs.count`](../src/battles/src/infrastructure/spotting.rs) | Number of directed enemy pairs due for a direct detection check in the tick. |
+| [`output.rays.count`](../src/battles/src/infrastructure/spotting.rs) | Number of sight segments queried during those checks. Proximity detections contribute zero. |
+| [`output.radio_groups.count`](../src/battles/src/infrastructure/spotting.rs) | Number of connected living allied radio groups, including isolated vehicles. |
+| [`output.vehicles.entered`](../src/battles/src/infrastructure/spotting.rs) | Number of viewer-specific Vehicle creations enqueued during the tick. |
+| [`output.vehicles.left`](../src/battles/src/infrastructure/spotting.rs) | Number of viewer-specific Vehicle removals enqueued during the tick. |
+| [`output.alerts.count`](../src/battles/src/infrastructure/spotting.rs) | Number of owner Sixth Sense alerts enqueued during the tick. |
+| [`output.outcome`](../src/battles/src/infrastructure/spotting.rs) | Sixth Sense delivery enqueue result, `enqueued` or `delivery_failed`. |
+| [`output.obstacles.foliage`](../src/battles/src/infrastructure/obstacles/foliage.rs) | Number of foliage placements loaded during arena preparation when the foliage file exists. |
