@@ -1,31 +1,25 @@
-use super::*;
-use crate::infrastructure::obstacles::{Fragment, HullHit};
-use std::f32::consts::{PI, TAU};
+use crate::infrastructure::obstacles::{Breakage, Fragment, Scenery};
+use crate::infrastructure::scenery::BreakageCause;
+use glam::Vec2;
 
 const MAX_CONTACTS_PER_STEP: usize = 4;
 const SCENERY_BREAK_ENERGY_LOSS: f32 = 0.30;
-const MAX_TURN_SAMPLE_RADIANS: f32 = 0.035;
-pub(super) const PRESS_REACH: f32 = 0.05;
 
-pub(super) struct SceneryMotion {
+pub(in crate::infrastructure) struct SceneryMotion {
     inverse_mass: f32,
-    seconds: f32,
-    pub(super) broken: Vec<Breakage>,
+    pub(in crate::infrastructure) broken: Vec<Breakage>,
     attempted: Vec<Fragment>,
-    pub(super) speed_scale: f32,
-    pub(super) turn_contact: bool,
-    pub(super) fall: BreakageCause,
+    pub(in crate::infrastructure) speed_scale: f32,
+    pub(in crate::infrastructure) fall: BreakageCause,
 }
 
 impl SceneryMotion {
-    pub(super) fn new(inverse_mass: f32, seconds: f32) -> Self {
+    pub(in crate::infrastructure) fn new(inverse_mass: f32) -> Self {
         Self {
             inverse_mass,
-            seconds,
             broken: Vec::new(),
             attempted: Vec::new(),
             speed_scale: 1.0,
-            turn_contact: false,
             fall: BreakageCause::Contact {
                 yaw: 0.0,
                 speed: 0.0,
@@ -33,71 +27,36 @@ impl SceneryMotion {
         }
     }
 
-    pub(super) fn turn(
+    pub(in crate::infrastructure) fn damage_contact(
         &mut self,
         scenery: &mut Scenery,
-        mut hull: Hull,
-        requested_yaw: f32,
-        pressure: f32,
-        can_damage: bool,
-    ) -> (Hull, Option<Vec2>) {
-        let delta = (requested_yaw - hull.yaw + PI).rem_euclid(TAU) - PI;
-        if delta.abs() < 1e-6 {
-            return (hull, None);
-        }
-        let from = hull.yaw;
-        let samples = ((delta.abs() / MAX_TURN_SAMPLE_RADIANS).ceil() as u8).clamp(1, 32);
-        for step in 1..=samples {
-            let candidate = Hull {
-                yaw: (from + delta * (f32::from(step) / f32::from(samples)) + PI).rem_euclid(TAU)
-                    - PI,
-                ..hull
-            };
-            while let Some((hit, closing)) = scenery.turn_contact(hull, candidate) {
-                self.turn_contact = true;
-                let normal = hit.contact.normal;
-                let speed = (closing * f32::from(samples) / self.seconds).clamp(0.0, 25.0);
-                if !can_damage || !self.damage(scenery, hit, speed, pressure, false) {
-                    return (hull, Some(normal));
-                }
-            }
-            hull = candidate;
-        }
-        (hull, None)
-    }
-
-    pub(super) fn push(
-        &mut self,
-        scenery: &mut Scenery,
-        hull: Hull,
-        reachable: Vec2,
-        actual_travel: Vec2,
-        pressing: Vec2,
-    ) {
-        if reachable.length_squared() < 1e-8 {
-            return;
-        }
-        while let Some(hit) = scenery.sweep_hull(hull, reachable) {
-            let normal = hit.contact.normal;
-            let speed = (-actual_travel.dot(normal) / self.seconds).clamp(0.0, 25.0);
-            let pressure = -pressing.dot(normal);
-            if !self.damage(scenery, hit, speed, pressure.max(0.0), true) {
-                break;
-            }
-        }
-    }
-
-    fn damage(
-        &mut self,
-        scenery: &mut Scenery,
-        hit: HullHit,
+        fragment: Fragment,
+        normal: Vec2,
         speed: f32,
         pressure: f32,
-        moving: bool,
     ) -> bool {
-        let Some(fragment) = hit.fragment else {
-            return false;
-        };
+        self.damage_fragment(scenery, fragment, normal, speed, pressure)
+    }
+
+    pub(in crate::infrastructure) fn remaining_contact_budget(&self) -> usize {
+        MAX_CONTACTS_PER_STEP.saturating_sub(self.attempted.len())
+    }
+
+    pub(in crate::infrastructure) fn impact_damage(&self, speed: f32, pressure: f32) -> (f32, u32) {
+        // The client predicts instantaneous scenery damage from a fraction of kinetic energy.
+        let kinetic = 0.000075 * speed * speed / self.inverse_mass;
+        let damage = (kinetic + pressure).clamp(1.0, 250.0) as u32;
+        (kinetic, damage)
+    }
+
+    fn damage_fragment(
+        &mut self,
+        scenery: &mut Scenery,
+        fragment: Fragment,
+        normal: Vec2,
+        speed: f32,
+        pressure: f32,
+    ) -> bool {
         if self.attempted.len() >= MAX_CONTACTS_PER_STEP
             || self.attempted.iter().any(|part| part.same_part(fragment))
             || (speed <= 0.02 && pressure <= 0.0)
@@ -106,21 +65,20 @@ impl SceneryMotion {
         }
         self.attempted.push(fragment);
 
-        // The client predicts instantaneous scenery damage from a fraction of kinetic energy.
-        let kinetic = 0.000075 * speed * speed / self.inverse_mass;
+        let (kinetic, damage) = self.impact_damage(speed, pressure);
         let health = scenery.remaining_health(fragment) as f32;
-        let broken = scenery.damage(fragment, (kinetic + pressure).clamp(1.0, 250.0) as u32);
+        let broken = scenery.damage(fragment, damage);
         if broken.is_empty() {
             return false;
         }
         self.broken.extend(broken);
-        let direction = -hit.contact.normal;
+        let direction = -normal;
         self.fall = BreakageCause::Contact {
             yaw: direction.x.atan2(direction.y),
             speed,
         };
 
-        if moving && kinetic > 0.0 {
+        if kinetic > 0.0 {
             let energy_share = ((health - pressure) / kinetic).clamp(0.0, 1.0);
             self.speed_scale *= (1.0 - SCENERY_BREAK_ENERGY_LOSS * energy_share).sqrt();
         }

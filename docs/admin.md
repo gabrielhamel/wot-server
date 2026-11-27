@@ -134,6 +134,8 @@ invalid. **Reset parameters to defaults** clears all overrides. Edits apply to
 the battle started from this setup. Training launched from the native room
 uses server defaults.
 
+All battles use Rapier. Adjust suspension and lateral grip under **Hull physics**. See [battle physics and tuning](battle-mechanics.md#rapier-hull-physics).
+
 A player's seat starts with their owned vehicles. Select **Customize tank**
 to open the selected vehicle's equipped modules, equipment, consumables,
 crew perks, perk efficiency, hit points and ammunition. Edits apply to one

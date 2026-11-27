@@ -1,6 +1,7 @@
 use super::{
     Peer, Pickle, ScriptDispatch, Value, ammunition_flow::pickle_value, dict, telemetry_capture,
 };
+use glam::Vec3Swizzles;
 use opentelemetry_sdk::trace::SpanData;
 use std::time::Duration;
 use wot_platform::mercury::script::StringValue;
@@ -1572,7 +1573,7 @@ pub fn exercise_battle(
         let Value::UInt64(aux) = properties["ownVehicleAuxPhysicsData"] else {
             panic!("expected packed hull orientation");
         };
-        assert_aux_orientation(aux, cell.direction);
+        assert!(aux_orientation_matches(aux, cell.direction));
         assert_eq!(
             properties["playerVehicleID"].as_i64(),
             Some(i64::from(cell.vehicle_id))
@@ -1655,21 +1656,24 @@ pub fn exercise_battle(
             p.arena_tick
                 .is_some_and(|tick| (3..=127).contains(&tick.wrapping_sub(first_tick)))
         });
-        assert_eq!(peer.positions[&first], initial_host);
-        assert_eq!(peer.positions[&second], initial_guest);
+        // The suspension settles during countdown. Both hulls must stay at their spawns.
+        assert!(peer.positions[&first].distance(initial_host) < 0.10);
+        assert!(peer.positions[&second].distance(initial_guest) < 0.10);
     }
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(0x80)]);
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     guest.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     for peer in [&mut *host, &mut *guest] {
         let drive_ack = peer.last_sent_reliable + 1;
+        let before = [peer.positions[&first], peer.positions[&second]];
         peer.until(script, |p| {
             p.snapshot_ack_through
                 .is_some_and(|ack| ack.wrapping_cmp(drive_ack).is_ge())
-                && p.positions.get(&first).is_some_and(|p| *p != initial_host)
-                && p.positions
-                    .get(&second)
-                    .is_some_and(|p| *p != initial_guest)
+                && [first, second].into_iter().zip(before).all(|(id, start)| {
+                    p.positions
+                        .get(&id)
+                        .is_some_and(|position| position.xz().distance(start.xz()) > 0.15)
+                })
         });
         assert!(peer.positions[&first].y > 1.0 && peer.positions[&second].y > 1.0);
     }
@@ -1965,7 +1969,7 @@ pub fn exercise_battle(
             .any(|(target, name, _)| *target == first && name == "showShooting")
     );
     let facing = host.cell.as_ref().unwrap().direction.z;
-    assert_gun_marker(host, guest, script, first, facing, fixture.shell_speed);
+    assert_gun_marker(host, guest, script, first, fixture.shell_speed);
     let reload_count = reload_times(host).len();
     assert_ground_impact(host, guest, script);
     if fixture.has_obstacles {
@@ -2019,9 +2023,10 @@ pub fn exercise_battle(
     let stopped = host.positions[&first];
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(2)]);
     host.until(script, |p| {
-        (p.positions[&first] - stopped).dot(forward) < -0.1 && p.hull_aim.is_some()
+        (p.positions[&first] - stopped).dot(forward) < -0.1
+            && p.hull_aim
+                .is_some_and(|aux| aux_orientation_matches(aux, p.vehicle_directions[&first]))
     });
-    assert_aux_orientation(host.hull_aim.unwrap(), host.vehicle_directions[&first]);
     let before_reverse_turn = host.vehicle_directions[&first].z;
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(2 | 8)]);
     host.until(script, |p| {
@@ -2217,14 +2222,14 @@ fn assert_scene_impact(
     }
 }
 
-fn assert_aux_orientation(aux: u64, direction: glam::Vec3) {
+fn aux_orientation_matches(aux: u64, direction: glam::Vec3) -> bool {
     use std::f32::consts::{PI, TAU};
     let yaw = ((aux & 32767) as f32 / 32768.0) * TAU - PI;
     let pitch = (((aux >> 15) & 4095) as f32 / 4095.0) * PI - PI * 0.5;
     let roll = (((aux >> 27) & 8191) as f32 / 8192.0) * TAU - PI;
-    assert!((yaw - direction.z).cos() > 0.999_999);
-    assert!((pitch - direction.y).abs() < 0.002);
-    assert!((roll - direction.x).cos() > 0.999_999);
+    (yaw - direction.z).cos() > 0.999_999
+        && (pitch - direction.y).abs() < 0.002
+        && (roll - direction.x).cos() > 0.999_999
 }
 
 fn assert_gun_marker(
@@ -2232,7 +2237,6 @@ fn assert_gun_marker(
     guest: &mut Peer,
     script: &ScriptDispatch,
     vehicle: u32,
-    facing: f32,
     speed: f32,
 ) {
     use std::f32::consts::{PI, TAU};
@@ -2266,10 +2270,13 @@ fn assert_gun_marker(
         reached(p)
             && markers(p).last().is_some_and(|(_, velocity, _)| {
                 let direction = p.vehicle_directions[&vehicle];
-                let expected =
-                    glam::Quat::from_euler(glam::EulerRot::YXZ, facing, direction.y, direction.x)
-                        * glam::Quat::from_rotation_y(yaw)
-                        * glam::Vec3::Z;
+                let expected = glam::Quat::from_euler(
+                    glam::EulerRot::YXZ,
+                    direction.z,
+                    direction.y,
+                    direction.x,
+                ) * glam::Quat::from_rotation_y(yaw)
+                    * glam::Vec3::Z;
                 velocity.normalize().dot(expected) > 0.999_999
             })
     });
@@ -2395,6 +2402,13 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         child.parent_span_id == parent.span_context.span_id()
             && child.span_context.trace_id() == parent.span_context.trace_id()
     };
+    let follows_world_motion = |update: &SpanData, cause: &SpanData| {
+        traces.iter().any(|motion| {
+            motion.name == "battles.world_motion"
+                && child_of(motion, cause)
+                && child_of(update, motion)
+        })
+    };
     assert!(traces.iter().any(|mobility| {
         mobility.name == "accounts.battle_mobility"
             && has(mobility, "ddd.bounded_context.name", "accounts")
@@ -2424,7 +2438,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         has(update, "input.replication.kind", "hull_aim")
             && has(update, "output.delivered.count", "1")
             && traces.iter().any(|drive| {
-                has(drive, "rpc.method", "vehicle_moveWith") && child_of(update, drive)
+                has(drive, "rpc.method", "vehicle_moveWith") && follows_world_motion(update, drive)
             })
             && traces.iter().any(|delivery| {
                 delivery.name == "mercury.arena_delivery"
@@ -2436,21 +2450,12 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         drive.name == "battles.control"
             && has(drive, "input.drive.flags", "1")
             && traces.iter().any(|step| {
-                step.name == "battles.drive_vehicle"
+                step.name == "battles.hull_physics"
                     && child_of(step, drive)
-                    && has(step, "input.drive.airborne", "false")
-                    && has(step, "output.drive.track_locked", "false")
-                    && step
-                        .attributes
-                        .iter()
-                        .any(|attr| attr.key.as_str() == "output.drive.speed_mps")
-                    && step
-                        .attributes
-                        .iter()
-                        .any(|attr| attr.key.as_str() == "input.ground.medium_contacts")
+                    && has(step, "output.physics.substeps", "6")
             })
             && traces.iter().any(|update| {
-                child_of(update, drive)
+                follows_world_motion(update, drive)
                     && has(update, "input.replication.kind", "engine_mode")
                     && has(update, "output.delivered.count", "2")
                     && traces.iter().any(|delivery| {
@@ -2718,7 +2723,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
                         control.name == "battles.control"
                             && has(control, "rpc.method", "vehicle_moveWith")
                             && has(control, "input.drive.flags", flags)
-                            && child_of(movement, control)
+                            && follows_world_motion(movement, control)
                     })
             }),
             "missing movement replication from drive flags {flags} to both Training clients"
@@ -2824,7 +2829,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
             && has(s, "output.delivery", "sent")));
     }
     assert!(traces.iter().any(|s| s.name == "battles.replication"
-        && child_of(s, finished)
+        && follows_world_motion(s, finished)
         && has(s, "input.replication.kind", "position")
         && has(s, "output.delivered.count", "1")));
     assert!(

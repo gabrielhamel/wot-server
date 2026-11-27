@@ -5,7 +5,10 @@ use crate::domain::movement::GroundContact;
 use byteorder::{LittleEndian, ReadBytesExt};
 use flate2::read::ZlibDecoder;
 use glam::Vec3Swizzles;
+use rapier3d::parry::shape::{HeightFieldCellStatus, HeightFieldFlags};
+use rapier3d::prelude::{Array2, ColliderBuilder, ColliderSet, HeightField, SharedShape, Vector};
 use std::io::{BufReader, Read};
+use std::sync::OnceLock;
 use wot_platform::client_formats::pxml;
 
 const CHUNK_LIMIT: usize = 1024;
@@ -19,6 +22,7 @@ pub(super) struct Terrain {
     metres: f32,
     tiles: HashMap<(i16, i16), Tile>,
     surfaces: HashMap<(i16, i16), SurfaceTile>,
+    physics_tiles: OnceLock<Vec<(Vector, SharedShape)>>,
 }
 
 struct Tile {
@@ -50,11 +54,29 @@ impl Terrain {
     }
 
     #[cfg(test)]
+    pub(super) fn flat_with_material(surface_kind: u8) -> Self {
+        assert!(surface_kind <= 2);
+        let mut terrain = Self::flat();
+        for &coordinates in terrain.tiles.keys() {
+            terrain.surfaces.insert(
+                coordinates,
+                SurfaceTile {
+                    width: 1,
+                    depth: 1,
+                    cells: vec![(surface_kind + 1) << 4],
+                },
+            );
+        }
+        terrain
+    }
+
+    #[cfg(test)]
     pub(super) fn empty() -> Self {
         Self {
             metres: DEFAULT_CHUNK_METRES,
             tiles: HashMap::new(),
             surfaces: HashMap::new(),
+            physics_tiles: OnceLock::new(),
         }
     }
 
@@ -110,7 +132,26 @@ impl Terrain {
             metres,
             tiles,
             surfaces,
+            physics_tiles: OnceLock::new(),
         })
+    }
+
+    pub(super) fn insert_physics_colliders(&self, colliders: &mut ColliderSet) {
+        let tiles = self.physics_tiles.get_or_init(|| {
+            let mut tiles: Vec<_> = self.tiles.iter().collect();
+            tiles.sort_unstable_by_key(|(coordinates, _)| **coordinates);
+            tiles
+                .into_iter()
+                .map(|(&(x, z), tile)| {
+                    let center =
+                        Vector::new(f32::from(x) + 0.5, 0.0, f32::from(z) + 0.5) * self.metres;
+                    (center, SharedShape::new(tile.heightfield(self.metres)))
+                })
+                .collect()
+        });
+        for (center, shape) in tiles {
+            colliders.insert(ColliderBuilder::new(shape.clone()).translation(*center));
+        }
     }
 
     fn tile_at(&self, point: Vec2) -> Option<((i16, i16), Vec2)> {
@@ -310,6 +351,28 @@ impl SurfaceTile {
 }
 
 impl Tile {
+    fn heightfield(&self, metres: f32) -> HeightField {
+        let samples = Array2::from_fn(
+            self.depth - 2 * SAMPLE_MARGIN,
+            self.width - 2 * SAMPLE_MARGIN,
+            |z, x| {
+                self.millimetres[(z + SAMPLE_MARGIN) * self.width + x + SAMPLE_MARGIN] as f32
+                    * 0.001
+            },
+        );
+        let mut shape = HeightField::with_flags(
+            samples,
+            Vector::new(metres, 1.0, metres),
+            HeightFieldFlags::FIX_INTERNAL_EDGES,
+        );
+        for z in 0..shape.nrows() {
+            for x in ((z % 2)..shape.ncols()).step_by(2) {
+                shape.set_cell_status(z, x, HeightFieldCellStatus::ZIGZAG_SUBDIVISION);
+            }
+        }
+        shape
+    }
+
     fn decode(mut input: impl Read) -> Result<Self> {
         let mut magic = [0; 4];
         input.read_exact(&mut magic)?;
@@ -392,6 +455,75 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_moving_hull_crosses_a_physical_tile_seam_without_a_vertical_impulse() {
+        use rapier3d::prelude::{CoefficientCombineRule, PhysicsWorld, RigidBodyBuilder};
+
+        let mut world = PhysicsWorld::default();
+        Terrain::flat().insert_physics_colliders(&mut world.colliders);
+        let (body, _) = world.insert(
+            RigidBodyBuilder::dynamic()
+                .translation(Vector::new(-6.0, 0.5, 5.0))
+                .linvel(Vector::X * 6.0),
+            ColliderBuilder::cuboid(1.0, 0.5, 2.0)
+                .mass(30_000.0)
+                .friction(0.0)
+                .friction_combine_rule(CoefficientCombineRule::Min),
+        );
+        for _ in 0..120 {
+            world.step();
+            assert!((world.bodies[body].translation().y - 0.5).abs() < 0.025);
+        }
+        assert!(world.bodies[body].translation().x > 5.9);
+    }
+
+    #[test]
+    fn physics_heightfields_match_both_diagonals_and_shared_tile_edges() {
+        use rapier3d::prelude::Ray;
+
+        let mut ground = Terrain::empty();
+        ground.metres = 3.0;
+        for chunk in -1..=0 {
+            let millimetres = (0_i32..7)
+                .flat_map(|z| {
+                    (0_i32..8).map(move |x| {
+                        let world_x = 3 * chunk + x - SAMPLE_MARGIN as i32;
+                        1000 * (world_x * z + (world_x + z).rem_euclid(3))
+                    })
+                })
+                .collect();
+            ground.tiles.insert(
+                (chunk as i16, 0),
+                Tile {
+                    width: 8,
+                    depth: 7,
+                    millimetres,
+                },
+            );
+        }
+        let mut colliders = ColliderSet::new();
+        ground.insert_physics_colliders(&mut colliders);
+        for x in [-2.8, -2.2, -1.7, -0.001, 0.0, 0.001, 0.4, 1.6] {
+            for z in [0.1, 0.9, 1.65, 2.35] {
+                let ray = Ray::new(Vector::new(x, 100.0, z), -Vector::Y);
+                let distance = colliders
+                    .iter()
+                    .filter_map(|(_, collider)| {
+                        collider
+                            .shape()
+                            .cast_ray(collider.position(), &ray, 200.0, false)
+                    })
+                    .min_by(f32::total_cmp)
+                    .unwrap();
+                let expected = ground.height_at(Vec2::new(x, z)).unwrap();
+                assert!(
+                    (100.0 - distance - expected).abs() < 0.0001,
+                    "({x}, {z}): {distance}, {expected}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn surface_tiles_use_the_ground_nibble_and_blend_across_signed_chunks() {
         use flate2::{Compression, write::ZlibEncoder};
         use std::io::Write;
@@ -417,6 +549,7 @@ mod tests {
             metres: 100.0,
             tiles: HashMap::new(),
             surfaces: HashMap::from([((-1, 0), surface)]),
+            physics_tiles: OnceLock::new(),
         };
         let contact = terrain.ground_contact(Vec2::new(0.0, 75.0), 0.0, 1.25, 0.0);
         assert_eq!(contact.surfaces, [0, 2, 2]);
@@ -430,6 +563,7 @@ mod tests {
         let ground = Terrain {
             metres: 100.0,
             surfaces: HashMap::new(),
+            physics_tiles: OnceLock::new(),
             tiles: HashMap::from([(
                 (-1, 0),
                 Tile {

@@ -191,6 +191,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let countdown = parameters.iter().find(|p| p["key"] == "countdown_seconds").unwrap();
         assert_eq!(countdown["default"], 10.0);
         assert_eq!(countdown["integer"], true);
+        assert!(parameters.iter().all(|p| p["key"] != "hull_physics" && p["key"] != "max_passive_speed_mps"));
         let track_repair = parameters.iter().find(|p| p["key"] == "track_repair_time_scale").unwrap();
         assert_eq!(track_repair["group"], "Tracks");
         assert_eq!(track_repair["default"], 1.0);
@@ -265,6 +266,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             json!({"countdown_seconds": 1.5}),
             json!({"parked_vehicle_pose_interval_ticks": 6}),
             json!({"max_flight_segments": 10000}),
+            json!({"hull_physics": 0}),
             json!({"track_repair_time_scale": 0.0}),
         ] {
             let mut invalid = battle.clone();
@@ -701,6 +703,10 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         .iter()
         .find(|s| s.name == "battles.prepare" && s.parent_span_id == launch.span_context.span_id())
         .unwrap();
+    assert!(spans.iter().any(|step| step.name == "battles.hull_physics"
+        && get(step, "output.physics.substeps").as_deref() == Some("6")
+        && spans.iter().any(|command| command.name == "battles.control"
+            && step.parent_span_id == command.span_context.span_id())));
     assert_eq!(
         get(preparation, "input.battle.countdown.seconds").as_deref(),
         Some("2")

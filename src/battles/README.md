@@ -63,16 +63,13 @@ vehicles coast to a stop before the scheduled garage return. Each Avatar receive
 its player’s customization display preference at entry. Battles selects each
 vehicle’s encoded garage outfit using the arena definition’s camouflage season.
 
-The server advances hull speed and yaw every 100 ms. It reads engine power,
-vehicle mass, chassis resistance and supported garage modifiers from the
-loadout, and samples the terrain at four points beneath the chassis. The
-height map supplies pitch and
-roll, while the surface map supplies hard, medium and soft ground. The driver
-receives independent track speeds in the Avatar's auxiliary physics property.
-Battle peers receive the Vehicle's engine mode and, where the chassis
-defines them, its wheel scroll and steering properties. See the
-[replay and resource evidence](../../docs/battle-replays.md#vehicle-movement-and-chassis-animation)
-and [movement coverage](../../docs/battle-mechanics.md#training-movement-coverage).
+[Rapier hull physics](../../docs/battle-mechanics.md#rapier-hull-physics)
+owns one rigid-body world per arena. The domain supplies drive demands from
+the fitted mobility profile and the terrain sampled under the chassis. The
+physics adapter applies them at track contacts and returns the solved pose
+and chassis state. The driver receives independent track speeds in the Avatar
+auxiliary physics property. Peers receive engine mode and, on compatible
+chassis, wheel scroll and steering properties.
 
 Projectile launch and contact are separate. The simulation queues contact
 until the tracer has travelled the distance to the selected intersection. The

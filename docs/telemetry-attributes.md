@@ -132,14 +132,13 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.force`](../src/player-sessions/src/infrastructure/gateway/training/start.rs) | Native team-ready flag supplied with command `411`. Values `0` and `1` are accepted. |
 | [`input.ready`](../src/battles/src/infrastructure/mod.rs) | True for a team confirmation and false for a team unlock. On arena roster updates, true once the Avatar is ready and false on departure. |
 | [`input.element_id`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | One-byte Mercury element ID on arena delivery and incoming cell commands. |
-| [`input.drive.flags`](../src/battles/src/infrastructure/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. The accepted mask is also recorded on the drive step. |
-| [`input.drive.airborne`](../src/battles/src/domain/vehicle.rs) | Whether the drive step starts with airborne motion. |
-| [`output.drive.immobilized`](../src/battles/src/domain/vehicle.rs) | True when a ground drive step is stopped by a broken track or disabled engine. |
-| [`output.drive.track_locked`](../src/battles/src/domain/vehicle.rs) | Whether the completed step uses track-lock steering. |
+| [`input.drive.flags`](../src/battles/src/infrastructure/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. The accepted mask is also recorded on Rapier hull readback. |
+| [`input.physics.tick_seconds`](../src/battles/src/infrastructure/motion.rs) | Duration in simulation seconds requested from the Rapier arena for this tick. |
+| [`output.physics.substeps`](../src/battles/src/infrastructure/motion.rs) | Number of fixed 1/60 s steps for participating hulls in this Rapier arena tick. |
+| [`output.world.grounded`](../src/battles/src/infrastructure/motion.rs) | Whether a suspension probe found support on the last Rapier step for this hull. |
 | [`output.world.scenery_contact`](../src/battles/src/infrastructure/motion.rs) | Whether scenery constrained this vehicle's movement or rotation on a world-motion event. |
 | [`output.world.scenery_support`](../src/battles/src/infrastructure/motion.rs) | Whether the hull's destination support comes from scenery geometry on a world-motion event. |
 | [`output.world.fragments_destroyed`](../src/battles/src/infrastructure/motion.rs) | Number of scenery fragments destroyed by this hull during the tick, including impacts and pressure transmitted from another tank. |
-| [`output.world.turn_contact`](../src/battles/src/infrastructure/motion.rs) | Whether a sampled turn increased the hull’s horizontal penetration of a scenery contact surface enough to require contact resolution. |
 | [`output.world.scenery_speed_scale`](../src/battles/src/infrastructure/motion.rs) | Unitless retained longitudinal speed multiplier after breaking scenery during this tick. One indicates full retention. |
 | [`output.obstacle.fragment_destroyed`](../src/battles/src/infrastructure/projectiles.rs) | Whether a projectile impact depleted a scenery fragment's health. Omitted for static scenery and terrain. |
 | [`input.scenery.source`](../src/battles/src/infrastructure/scenery/mod.rs) | Cause of the fracture batch, `contact` or `shot`. |
@@ -153,6 +152,9 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.world.vehicle_contacts`](../src/battles/src/infrastructure/motion.rs) | Distinct tank pairs that applied a correction to this vehicle during the tick. |
 | [`output.world.displacement_metres`](../src/battles/src/infrastructure/motion.rs) | Horizontal distance after contact resolution, in metres, on a world-motion event. |
 | [`output.world.roll_radians`](../src/battles/src/infrastructure/motion.rs) | Resulting hull roll, in radians, on a world-motion event. |
+| [`output.world.pitch_radians`](../src/battles/src/infrastructure/motion.rs) | Final replicated hull pitch in radians on a Rapier world-motion span. Positive points the nose down. |
+| [`output.world.lateral_speed_mps`](../src/battles/src/infrastructure/physics.rs) | Signed centre-of-mass speed along the hull's local right axis, in m/s, at the end of a Rapier tick for an enabled dynamic hull. |
+| [`output.world.vertical_speed_mps`](../src/battles/src/infrastructure/physics.rs) | Signed centre-of-mass speed along the world's up axis, in m/s, at the end of a Rapier tick for an enabled dynamic hull. |
 | [`input.mobility.equipment_count`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Number of mounted optional devices in the projected Training loadout. |
 | [`input.mobility.consumable_count`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Number of mounted consumables in the projected Training loadout. |
 | [`input.mobility.directive_id`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Installed directive compact descriptor, when present. |
@@ -162,8 +164,6 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.mobility.forward_speed_mps`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Effective forward powered speed limit in metres per second before downhill movement. |
 | [`output.mobility.reverse_speed_mps`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Effective reverse powered speed limit as a positive magnitude in metres per second. |
 | [`output.mobility.hull_traverse_rad_per_second`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Loadout-adjusted nominal hull traverse before ground resistance and the chassis ceiling, in radians per second. |
-| [`input.ground.hard_contacts`](../src/battles/src/domain/vehicle.rs), `input.ground.medium_contacts`, `input.ground.soft_contacts` | Number of chassis surface samples of each class in the drive step, out of four. Unpainted or unavailable surface samples count as medium. |
-| [`input.ground.pitch_radians`](../src/battles/src/domain/vehicle.rs) | Starting hull pitch in radians for the drive step. Positive values descend along the forward axis. |
 | [`input.ammunition.setting`](../src/battles/src/infrastructure/controls.rs) | Native ammunition setting code `0`, `1`, `17` or `18` on a decoded shell selection or reload command. |
 | [`input.ammunition.shell`](../src/battles/src/infrastructure/controls.rs) | Requested signed shell compact descriptor on shell selection, or current shell compact descriptor on a [shot attempt](../src/battles/src/infrastructure/projectiles.rs). |
 | [`input.shell.kind`](../src/battles/src/infrastructure/projectiles.rs) | Client shell kind index of a fired shell. |
@@ -365,13 +365,13 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.obstacles.instances`](../src/battles/src/infrastructure/obstacles.rs) | Number of collision instances loaded for the selected gameplay mode, including numbered tree trunks. Zero when the bundle has no obstacle collision for the map. |
 | [`output.obstacles.trees`](../src/battles/src/infrastructure/obstacles/trees.rs) | Number of numbered tree trunks loaded from the map tree file. Omitted when the map has no tree file. |
 | [`output.terrain.tiles`](../src/battles/src/infrastructure/terrain.rs), `output.terrain.surface_tiles` | Number of decoded outdoor height tiles and driving surface tiles for the selected arena. |
-| [`output.drive.speed_mps`](../src/battles/src/domain/vehicle.rs) | Signed speed in metres per second after the simulation step. Negative means reverse. |
-| [`output.drive.yaw_rate_rad_per_second`](../src/battles/src/domain/vehicle.rs) | Signed yaw rate in radians per second after the simulation step. Positive turns right. |
+| [`output.drive.speed_mps`](../src/battles/src/infrastructure/motion.rs) | Signed speed in metres per second at the end of the arena tick. Negative means reverse. |
+| [`output.drive.yaw_rate_rad_per_second`](../src/battles/src/infrastructure/motion.rs) | Signed yaw rate in radians per second at the end of the arena tick. Positive turns right. |
 | [`output.battle.winner_team`](../src/battles/src/infrastructure/mod.rs) | Team 1 or 2, or 0 for a draw, when publishing the finished phase. |
 | [`output.battle.finish_reason`](../src/battles/src/infrastructure/mod.rs) | Client finish reason at the finished phase. Training emits 1 for elimination, 3 for time limit or 5 for technical end. |
 | [`output.phase`](../src/battles/src/infrastructure/mod.rs) | New round phase when publishing a transition. Values are `countdown`, `battle` and `finished`. |
 | [`output.crew.count`](../src/accounts/src/infrastructure/client/mod.rs) | Number of crew seats in the catalog vehicle prepared for the arena. |
-| [`output.outcome`](../src/battles/src/infrastructure/motion.rs) | World motion records `contact`, `slide`, `overturned`, `righted`, `pileup_held`, `scenery_destroyed` or `supported` on a meaningful physics step. |
+| [`output.outcome`](../src/battles/src/infrastructure/motion.rs) | World motion records `contact`, `scenery_destroyed`, `supported`, or `airborne` on the hull world-motion span. |
 | [`output.outcome`](../src/battles/src/infrastructure/scenery/mod.rs) | Scenery replication records `published`, `no_native_identity` or `delivery_failed`. |
 | [`output.outcome`](../src/player-sessions/src/infrastructure/gateway/training/start.rs) | Team commands record `team_ready`, `team_unlocked`, `launched`, `invalid_arguments`, `room_unavailable`, `not_host`, `battle_in_progress`, `team_not_ready`, `roster_or_map_unavailable`, `preparation_in_progress` (a pending launch or the pending launch limit), `preparation_stale` (the roster, settings or readiness changed), `preparation_failed` or `battle_queue_unavailable`. |
 | [`output.outcome`](../src/battles/src/infrastructure/mod.rs) | Loadout projection can reject with `vehicle_unavailable`, `health_unavailable` or `performance_unavailable`. Preparation records `arena_unavailable`, `invalid_roster` or `prepared`. The worker records `activated` after registering the prepared arena. Entry records `entered` or `delivery_failed`. Avatar readiness records `ready` or `already_ready`. |
