@@ -1969,7 +1969,7 @@ pub fn exercise_battle(
             .any(|(target, name, _)| *target == first && name == "showShooting")
     );
     let facing = host.cell.as_ref().unwrap().direction.z;
-    assert_gun_marker(host, guest, script, first, facing, fixture.shell_speed);
+    assert_gun_marker(host, guest, script, first, fixture.shell_speed);
     let reload_count = reload_times(host).len();
     assert_ground_impact(host, guest, script);
     if fixture.has_obstacles {
@@ -2236,7 +2236,6 @@ fn assert_gun_marker(
     guest: &mut Peer,
     script: &ScriptDispatch,
     vehicle: u32,
-    facing: f32,
     speed: f32,
 ) {
     use std::f32::consts::{PI, TAU};
@@ -2270,10 +2269,13 @@ fn assert_gun_marker(
         reached(p)
             && markers(p).last().is_some_and(|(_, velocity, _)| {
                 let direction = p.vehicle_directions[&vehicle];
-                let expected =
-                    glam::Quat::from_euler(glam::EulerRot::YXZ, facing, direction.y, direction.x)
-                        * glam::Quat::from_rotation_y(yaw)
-                        * glam::Vec3::Z;
+                let expected = glam::Quat::from_euler(
+                    glam::EulerRot::YXZ,
+                    direction.z,
+                    direction.y,
+                    direction.x,
+                ) * glam::Quat::from_rotation_y(yaw)
+                    * glam::Vec3::Z;
                 velocity.normalize().dot(expected) > 0.999_999
             })
     });
