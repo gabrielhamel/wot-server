@@ -105,6 +105,10 @@ the overridden countdown in a decoded native period update, the garage
 return, and the exported HTTP-to-arena trace, including rejected loadouts and
 battle parameter overrides.
 
+Pose cadence assertions count frames across consecutive received arena ticks.
+If an unreliable snapshot is skipped, the peer restarts the window within its
+receive deadline and still checks the exact frame counts.
+
 The database-dependent tests are opt-in when running Cargo locally.
 
 The default suite does not require PostgreSQL or proprietary resources. To exercise
