@@ -1610,6 +1610,11 @@ pub fn exercise_battle(
     guest.command(script, "setClientReady", vec![]);
     host.until(script, period);
     guest.until(script, period);
+    host.cell_command(
+        script,
+        "vehicle_changeSetting",
+        vec![Value::UInt8(2), Value::Int32(1)],
+    );
     guest.until(script, |p| p.avatar_position_frames >= 2);
     for peer in [&*host, &*guest] {
         assert_roster_ready(script, &peer.nrl_updates);
@@ -2700,6 +2705,17 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         && has(span, "input.ammunition.setting", "1")
         && has(span, "input.ammunition.shell", "-1")
         && has(span, "output.outcome", "shell_unavailable")));
+    assert!(traces.iter().any(|span| {
+        span.name == "battles.control"
+            && has(span, "input.vehicle.setting", "2")
+            && has(span, "output.outcome", "autorotation_not_applicable")
+            && traces.iter().any(|request| {
+                request.name == "game.cell_command"
+                    && child_of(span, request)
+                    && has(request, "rpc.method", "vehicle_changeSetting")
+                    && has(request, "output.outcome", "autorotation_not_applicable")
+            })
+    }));
     // The shared exporter also receives movement from the single-player Admin battle.
     for flags in ["1", "10"] {
         assert!(

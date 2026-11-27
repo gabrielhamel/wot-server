@@ -408,6 +408,13 @@ unit and enforces its interval between shots. An autoreloader inserts rounds
 one at a time with the configured duration for each empty slot. Ammo and
 reload timers are local to the round.
 
+The installed `Avatar.pyc` sends `vehicle_changeSetting` with code 2 and
+an enable flag during input initialization or control-mode changes. The
+installed `constants.pyc` names it `AUTOROTATION_ENABLED`. The request has
+no effect for a fully traversing turret. Automatic hull rotation for guns
+with limited traverse remains open. The server records the setting code
+for every well-formed call, including unimplemented settings.
+
 A shot casts a ray from the server-side gun position. The closest live opponent
 intersecting the ray takes the loaded shell's nominal damage, capped at its
 remaining health. Accounts reads `damage/armor` from the nation's

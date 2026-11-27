@@ -130,6 +130,10 @@ impl SeqAlloc {
         Self { next }
     }
 
+    pub(super) fn last_allocated(&self) -> Seq {
+        self.next - 1
+    }
+
     #[inline]
     pub fn alloc(&mut self, count: u32) -> Seq {
         let ret = self.next;

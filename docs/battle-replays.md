@@ -705,6 +705,34 @@ The installed bundle declares `OwnVehicle.onObservedByEnemy(INT16)`.
 Sense. `constants.pyc` assigns 0 to ordinary ray detection. The roster
 `position` is an X/Z pair of signed 16-bit integers. The client
 `AvatarVehiclesInfoBase.pyc` forwards position updates to the
-`ClientArena` minimap state. The bundle and replay together guide the
-current encoders. A bidirectional client capture is still needed for
-Sixth Sense delivery and minimap transitions on the wire.
+`ClientArena` minimap state. A bidirectional client capture would show
+minimap transitions on the wire.
+
+### Training client crash and Sixth Sense
+
+The unfinished Training recording `temp.wotreplay` from 2026-11-27 (SHA-256
+`13f12ce4983087f441b2edcd935381998fb935ad7204a9947dc7faaf893a7210`)
+contains the raw playback stream and ends mid-record. It has 9,559 complete
+records. At 128.34 s a remote ELC EVEN 90 is created. At 131.34 s the
+`0x37` record at offset 346205 contains the six-byte NRL payload
+`04 1e 00 02 00 00`. The client's log reports `ClientHub::processUpdateNode:
+Can't find nodeID 0` in four Training runs on the same installed executable
+(`2.4.2.1580 #2671428` in `game.log`).
+
+In the official Mines replay above, the `OwnVehicle` creation at stream
+offset 14961 registers method index 5 (`onObservedByEnemy`) as node `0x0303`.
+The first corresponding `0x37` record is at 150.675 s (offset 2562126).
+It contains four NRL bytes, `03 03 00 00`, and is followed by the `0x36`
+apply record. The six subsequent calls use the same bytes. The big-endian
+node ID is followed immediately by the little-endian detection reason.
+An NRL method reads its declared arguments directly, as shown in the
+[Toolkit NRL decoder](references/wg-toolkit-rs/wg-toolkit/src/app/nrl.rs).
+The old Training payload used property framing between the node and the
+arguments. It therefore supplies a reason of 512 and leaves `00 00` in
+the stream for a later update to consume as node 0.
+
+The client also logged `No such entity` for a volatile pose immediately
+before a revealed vehicle's appearance became ready. The server now sends
+pending reliable lifecycle messages before its unreliable poses. The
+snapshot names the latest reliable sequence in its Mercury footer so a
+receiver drops a pose that arrives ahead of creation or trails removal.

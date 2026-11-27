@@ -165,6 +165,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.ground.hard_contacts`](../src/battles/src/domain/vehicle.rs), `input.ground.medium_contacts`, `input.ground.soft_contacts` | Number of chassis surface samples of each class in the drive step, out of four. Unpainted or unavailable surface samples count as medium. |
 | [`input.ground.pitch_radians`](../src/battles/src/domain/vehicle.rs) | Starting hull pitch in radians for the drive step. Positive values descend along the forward axis. |
 | [`input.ammunition.setting`](../src/battles/src/infrastructure/controls.rs) | Native ammunition setting code `0`, `1`, `17` or `18` on a decoded shell selection or reload command. |
+| [`input.vehicle.setting`](../src/battles/src/infrastructure/controls.rs) | Unsigned native setting code on a decoded `vehicle_changeSetting` call, including unsupported codes. |
 | [`input.ammunition.shell`](../src/battles/src/infrastructure/controls.rs) | Requested signed shell compact descriptor on shell selection, or current shell compact descriptor on a [shot attempt](../src/battles/src/infrastructure/projectiles.rs). |
 | [`input.shell.kind`](../src/battles/src/infrastructure/projectiles.rs) | Client shell kind index of a fired shell. |
 | [`input.shell.caliber_mm`](../src/battles/src/infrastructure/projectiles.rs) | Effect caliber in millimetres on the shot span, or physical shell caliber on the armor resolution span. |
@@ -399,7 +400,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.session_count`](../src/accounts/src/infrastructure/player_access.rs) | Number of sessions removed by a sign-out request with a well-formed cookie. |
 | [`output.delivery`](../src/player-sessions/src/infrastructure/gateway/progression.rs) | Garage completion reports response enqueue (`queued`), absent session or entity (`unavailable`), or failure to enqueue (`failed`). XMPP enqueue reports `queued`, `offline` or `enqueue_failed`. |
 | [`output.delivery`](../src/shared-infrastructure/src/mercury/app/outbox.rs) | Mercury transport records `sent` on a successful socket write, `send_failed` on write failure, `enqueue_failed` on method encoding or enqueue failure, or `discarded` on removal of an unsent bundle. Login responses record `sent` or `send_failed`. |
-| [`output.delivery`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | `mercury.arena_snapshot` records `sent` after the socket write or `failed` if session lookup, encoding or delivery fails. |
+| [`output.delivery`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | `mercury.arena_snapshot` records `sent` after the socket write, `backpressured` when the pending reliable bundle must wait for send capacity, or `failed` when session lookup or delivery fails. |
 | [`output.packet.sequence`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | First 28-bit unreliable Mercury sequence number of a sent arena snapshot. |
 | [`output.response_code`](../src/shared-infrastructure/src/mercury/app/entity.rs) | On-wire result from `onCmdResponse`, `onCmdResponseExt`, or the LoginApp reply. |
 | [`output.players.online`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Number of current gateway sessions returned as cluster and region CCU by command 501. |

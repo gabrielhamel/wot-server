@@ -125,7 +125,9 @@ impl BattlePositions {
                     replication.in_scope(|| {
                         error!(%error, battle_id = self.battle_id, "Could not send battle tick");
                     });
-                    adapter.disconnect(*participant);
+                    if error.kind() != io::ErrorKind::WouldBlock {
+                        adapter.disconnect(*participant);
+                    }
                 }
             }
         }

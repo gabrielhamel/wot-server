@@ -1,4 +1,5 @@
 use super::*;
+use wot_platform::mercury::net::element::ElementLength;
 
 const DIRECT_RAYTRACE: i16 = 0;
 
@@ -60,18 +61,16 @@ impl ArenaWire {
             .context("Missing OwnVehicle.onObservedByEnemy")?;
         let argument = WireValue::Int16(DIRECT_RAYTRACE);
         anyhow::ensure!(
-            matches!(method.args.as_slice(), [ty] if ty.is_instance(&argument)),
-            "Invalid OwnVehicle.onObservedByEnemy argument"
+            method.length == ElementLength::Fixed(2)
+                && matches!(method.args.as_slice(), [ty] if ty.is_instance(&argument)),
+            "Invalid OwnVehicle.onObservedByEnemy schema"
         );
         let offset = u16::try_from(2 + component.properties.len() + method_index)?;
         let node = controls::OWN_ENTITY_NODE
             .checked_add(offset)
             .context("OwnVehicle method node overflow")?;
-        let mut body = Vec::new();
-        method.write_args(&mut body, &[argument])?;
         let mut message = node.to_be_bytes().to_vec();
-        message.push(0);
-        message.write_blob_variable(&body)?;
+        method.write_args(&mut message, &[argument])?;
         Ok(NrlData(message))
     }
 

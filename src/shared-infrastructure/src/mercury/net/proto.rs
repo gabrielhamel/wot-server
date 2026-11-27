@@ -623,6 +623,9 @@ impl Channel<'_> {
         if let Some(on) = self.inner.on.as_deref_mut() {
             packet_config.set_on_channel(true);
             packet_config.set_cumulative_ack(on.in_reliable_expected_seq);
+            if !reliable {
+                packet_config.set_last_reliable_sequence_num(on.seq_alloc.last_allocated());
+            }
             if let Some(index) = on.index {
                 packet_config.set_indexed_channel(index.index, index.version);
                 trace!("Is on-channel: {} v{}", index.index, index.version);
