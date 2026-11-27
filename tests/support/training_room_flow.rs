@@ -1,6 +1,7 @@
 use super::{
     Peer, Pickle, ScriptDispatch, Value, ammunition_flow::pickle_value, dict, telemetry_capture,
 };
+use glam::Vec3Swizzles;
 use opentelemetry_sdk::trace::SpanData;
 use std::time::Duration;
 use wot_platform::mercury::script::StringValue;
@@ -1655,21 +1656,24 @@ pub fn exercise_battle(
             p.arena_tick
                 .is_some_and(|tick| (3..=127).contains(&tick.wrapping_sub(first_tick)))
         });
-        assert_eq!(peer.positions[&first], initial_host);
-        assert_eq!(peer.positions[&second], initial_guest);
+        // The suspension settles during countdown. Both hulls must stay at their spawns.
+        assert!(peer.positions[&first].distance(initial_host) < 0.10);
+        assert!(peer.positions[&second].distance(initial_guest) < 0.10);
     }
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(0x80)]);
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     guest.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     for peer in [&mut *host, &mut *guest] {
         let drive_ack = peer.last_sent_reliable + 1;
+        let before = [peer.positions[&first], peer.positions[&second]];
         peer.until(script, |p| {
             p.snapshot_ack_through
                 .is_some_and(|ack| ack.wrapping_cmp(drive_ack).is_ge())
-                && p.positions.get(&first).is_some_and(|p| *p != initial_host)
-                && p.positions
-                    .get(&second)
-                    .is_some_and(|p| *p != initial_guest)
+                && [first, second].into_iter().zip(before).all(|(id, start)| {
+                    p.positions
+                        .get(&id)
+                        .is_some_and(|position| position.xz().distance(start.xz()) > 0.15)
+                })
         });
         assert!(peer.positions[&first].y > 1.0 && peer.positions[&second].y > 1.0);
     }
