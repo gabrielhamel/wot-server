@@ -183,27 +183,32 @@ mod acceptance {
         let along = Vec2::new(0.411799, 0.911274);
         let across = Vec2::new(along.y, -along.x);
         let deck = -5.46838;
+        // The west riverbank slopes into the channel. Fit the whole starting footprint
+        // to its support so the rear of the hull starts above the bank.
         for (id, start, heading, on_deck) in [
             (1, center - along * 25.0 - across * 1.35, along, true),
-            (2, center + along * 4.0 - across * 6.5, across, false),
+            (2, center + along * 4.0 - across * 7.5, across, false),
         ] {
-            let floor = battle.ground.height_at(start).unwrap();
-            let y = if on_deck {
+            let yaw = heading.x.atan2(heading.y);
+            let player = battle.players.get_mut(&ParticipantId(id)).unwrap();
+            let support = |point| {
+                let floor = battle.ground.height_at(point).unwrap();
+                let ceiling = if on_deck { deck + 0.5 } else { deck - 1.5 };
                 battle
                     .obstacles
-                    .support_height(start, floor - 1.0, deck + 0.5)
-                    .unwrap()
-            } else {
-                battle
-                    .obstacles
-                    .support_height(start, floor, floor + 2.0)
+                    .support_height(point, floor, ceiling)
                     .unwrap_or(floor)
             };
-            place(
-                battle.players.get_mut(&ParticipantId(id)).unwrap(),
-                Vec3::new(start.x, y, start.y),
-                heading.x.atan2(heading.y),
+            let (spawn, direction) = terrain::pose_from_samples(
+                start,
+                yaw,
+                player.tank.collision_hull().half_size,
+                support(start),
+                support,
             );
+            place(player, spawn, yaw);
+            player.tank.set_hull_tilt(direction);
+            player.vehicle.direction = direction;
         }
         let start = battle.started_at;
         let (outbox, mut rx) = tokio::sync::mpsc::channel(512);
