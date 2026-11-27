@@ -6,7 +6,9 @@ use glam::Vec3Swizzles;
 use tracing::Span;
 
 mod scenery;
-use scenery::{PRESS_REACH, SceneryMotion};
+mod update;
+use scenery::PRESS_REACH;
+pub(super) use scenery::SceneryMotion;
 
 const CONTACT_PASSES: usize = 12;
 const PILEUP_TOLERANCE_METRES: f32 = 0.005;
@@ -35,6 +37,7 @@ pub(super) struct VehicleMotion {
 }
 
 impl VehicleMotion {
+    #[cfg(test)]
     pub(super) fn breakages(&self) -> (&[Breakage], BreakageCause) {
         (&self.scenery.broken, self.scenery.fall)
     }
@@ -84,7 +87,7 @@ impl VehicleMotion {
 }
 
 impl Battle {
-    pub(super) fn advance_world(&mut self, seconds: f32) -> Vec<VehicleMotion> {
+    fn advance_standard_world(&mut self, seconds: f32) -> Vec<VehicleMotion> {
         let mut ids: Vec<_> = self
             .players
             .iter()

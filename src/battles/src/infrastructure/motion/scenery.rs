@@ -7,18 +7,18 @@ const SCENERY_BREAK_ENERGY_LOSS: f32 = 0.30;
 const MAX_TURN_SAMPLE_RADIANS: f32 = 0.035;
 pub(super) const PRESS_REACH: f32 = 0.05;
 
-pub(super) struct SceneryMotion {
+pub(in crate::infrastructure) struct SceneryMotion {
     inverse_mass: f32,
     seconds: f32,
-    pub(super) broken: Vec<Breakage>,
+    pub(in crate::infrastructure) broken: Vec<Breakage>,
     attempted: Vec<Fragment>,
-    pub(super) speed_scale: f32,
+    pub(in crate::infrastructure) speed_scale: f32,
     pub(super) turn_contact: bool,
-    pub(super) fall: BreakageCause,
+    pub(in crate::infrastructure) fall: BreakageCause,
 }
 
 impl SceneryMotion {
-    pub(super) fn new(inverse_mass: f32, seconds: f32) -> Self {
+    pub(in crate::infrastructure) fn new(inverse_mass: f32, seconds: f32) -> Self {
         Self {
             inverse_mass,
             seconds,
@@ -98,6 +98,36 @@ impl SceneryMotion {
         let Some(fragment) = hit.fragment else {
             return false;
         };
+        self.damage_fragment(
+            scenery,
+            fragment,
+            hit.contact.normal,
+            speed,
+            pressure,
+            moving,
+        )
+    }
+
+    pub(in crate::infrastructure) fn damage_contact(
+        &mut self,
+        scenery: &mut Scenery,
+        fragment: Fragment,
+        normal: Vec2,
+        speed: f32,
+        pressure: f32,
+    ) -> bool {
+        self.damage_fragment(scenery, fragment, normal, speed, pressure, true)
+    }
+
+    fn damage_fragment(
+        &mut self,
+        scenery: &mut Scenery,
+        fragment: Fragment,
+        normal: Vec2,
+        speed: f32,
+        pressure: f32,
+        moving: bool,
+    ) -> bool {
         if self.attempted.len() >= MAX_CONTACTS_PER_STEP
             || self.attempted.iter().any(|part| part.same_part(fragment))
             || (speed <= 0.02 && pressure <= 0.0)
@@ -114,7 +144,7 @@ impl SceneryMotion {
             return false;
         }
         self.broken.extend(broken);
-        let direction = -hit.contact.normal;
+        let direction = -normal;
         self.fall = BreakageCause::Contact {
             yaw: direction.x.atan2(direction.y),
             speed,

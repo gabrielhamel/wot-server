@@ -5,6 +5,8 @@ use glam::Affine3A;
 use std::io::{BufReader, Read};
 use wot_platform::client_formats::pxml;
 
+mod physics;
+pub(super) use physics::SceneryColliders;
 mod trees;
 pub(super) use trees::TREE_PART;
 
@@ -14,6 +16,7 @@ pub(super) struct Obstacles {
     instances: Vec<Instance>,
     index: Option<Box<CollisionIndex>>,
     trees: trees::Trees,
+    physics: std::sync::OnceLock<Result<Arc<physics::PhysicsGeometry>, String>>,
 }
 
 #[derive(Clone, Copy)]
@@ -78,6 +81,7 @@ impl Damage {
 pub(super) struct Scenery {
     geometry: Arc<Obstacles>,
     damage: Damage,
+    broken_count: usize,
 }
 
 impl Scenery {
@@ -85,6 +89,7 @@ impl Scenery {
         Self {
             geometry,
             damage: Damage::default(),
+            broken_count: 0,
         }
     }
 
@@ -179,6 +184,7 @@ impl Scenery {
                 broken.push(Breakage { native, part });
             }
         }
+        self.broken_count += broken.len();
         broken
     }
 
@@ -345,6 +351,7 @@ impl Obstacles {
             instances,
             index,
             trees,
+            physics: Default::default(),
         })
     }
 
@@ -516,20 +523,32 @@ impl Mesh {
 
 impl CollisionIndex {
     fn visit(&self, instances: &[Instance], query: Bounds, visitor: &mut impl FnMut(&Instance)) {
+        self.visit_indexed(instances, query, 0, &mut |_, instance| visitor(instance));
+    }
+
+    fn visit_indexed(
+        &self,
+        instances: &[Instance],
+        query: Bounds,
+        offset: usize,
+        visitor: &mut impl FnMut(usize, &Instance),
+    ) {
         if !self.bounds.overlaps(query) {
             return;
         }
         if let Some([left, right]) = &self.children {
             let (left_instances, right_instances) = instances.split_at(left.count);
-            left.visit(left_instances, query, visitor);
-            right.visit(right_instances, query, visitor);
+            left.visit_indexed(left_instances, query, offset, visitor);
+            right.visit_indexed(right_instances, query, offset + left.count, visitor);
         } else {
-            instances
-                .iter()
-                .filter(|instance| instance.bounds.overlaps(query))
-                .for_each(visitor);
+            for (i, instance) in instances.iter().enumerate() {
+                if instance.bounds.overlaps(query) {
+                    visitor(offset + i, instance);
+                }
+            }
         }
     }
+
     fn build(instances: &mut [Instance]) -> Self {
         let bounds = instances
             .iter()
@@ -612,16 +631,24 @@ impl CollisionIndex {
 
 impl Triangle {
     fn fragment(&self, instance: &Instance) -> Option<Fragment> {
-        self.fragment.map(|(part, health, cascade)| Fragment {
-            object: instance
-                .native
-                .map_or(Object::Placement(instance.id), Object::Native),
-            part,
-            health: ((health as f32 * instance.health_scale - 0.001).ceil() as u32).max(1),
-            cascade,
-        })
+        self.fragment.map(|part| instance.fragment(part))
     }
+}
 
+impl Instance {
+    fn fragment(&self, (part, health, cascade): (u32, u32, u32)) -> Fragment {
+        Fragment {
+            object: self
+                .native
+                .map_or(Object::Placement(self.id), Object::Native),
+            part,
+            health: ((health as f32 * self.health_scale - 0.001).ceil() as u32).max(1),
+            cascade,
+        }
+    }
+}
+
+impl Triangle {
     fn intersect(&self, origin: Vec3, direction: Vec3) -> Option<f32> {
         let [a, b, c] = self.vertices;
         let ab = b - a;
@@ -741,6 +768,7 @@ impl Scenery {
             instances,
             index: Some(index),
             trees: Default::default(),
+            physics: Default::default(),
         }))
     }
 
@@ -1153,6 +1181,7 @@ mod tests {
             instances,
             index: Some(index),
             trees: Default::default(),
+            physics: Default::default(),
         }));
         let origin = Vec3::new(2.5, 0.5, 0.0);
         let hit = obstacles.intersect(origin, Vec3::Z, 30.0).unwrap();

@@ -114,6 +114,7 @@ jobs:
           WOT_TEST_DATABASE_URL: postgresql://wot_test:ci-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/wot_test
         run: |
           cargo +stable test --locked -p wot-battles projectile_tests -- --ignored
+          cargo +stable test --locked -p wot-battles rapier_scenarios::acceptance -- --ignored --test-threads=1
           cargo +stable test --locked -p wot-server-runtime --lib initializes_context_storage -- --ignored
           # The access lifecycle test installs a process-wide tracing subscriber.
           cargo +stable test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored

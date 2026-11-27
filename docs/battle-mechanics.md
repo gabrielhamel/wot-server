@@ -239,6 +239,72 @@ simulation bound. It still needs a measured EU downhill curve. See
 [replay evidence](battle-replays.md#vehicle-movement-and-chassis-animation)
 and [Wargaming's movement physics notes][eu-movement].
 
+#### Rapier hull physics prototype
+
+**Admin → Battles → Battle parameters → Hull physics** selects the solver at
+arena launch. **Standard** is the default for admin battles and native Training
+Rooms. **Rapier prototype** creates a rigid-body world on the arena preparation
+worker. Each 100 ms arena tick runs six 1/60 s physics steps. The server sends
+the solved pose and chassis animation through the existing snapshot and
+property updates.
+
+The movement rules request longitudinal acceleration and yaw acceleration from
+the equipped power-to-weight ratio, material resistance, speed limits, steering
+and brake inputs. Three suspension probes on each track apply impulses where
+they find support. A hull crossing a crest can lose contact one end at a time.
+Gravity, external pushes, attitude and landing velocity come from the
+[rigid-body world](../src/battles/src/infrastructure/physics.rs). The simplified
+hull collider uses the loaded chassis and hull bounds and preserves the native
+vehicle origin. Fixed heightfields reproduce the terrain tile triangles.
+Scenery collision shapes are shared across arenas. The preparation worker
+loads the spawn neighborhoods. Each physics step keeps the map placements
+around the swept hulls in 32 m pages, across all elevations.
+Fixed scenery meshes preserve bridges, underpasses, arena visibility and
+vehicle-pass flags. Destroyed fragments affect subsequent physical contacts
+in the same arena. Armor intersections and HP decisions use the Battles rules.
+
+| Rapier setting | Default | Range |
+| --- | --- | --- |
+| Suspension travel | 0.30 m | 0.05–0.8 m |
+| Suspension frequency | 3 Hz | 1–5 Hz |
+| Suspension damping ratio | 0.8 | 0.1–1.5 |
+| Lateral grip response | 0.20 s | 0.05–2 s |
+
+These are server tuning values. Capture comparisons with a native EU driver
+are still needed to calibrate lateral grip, suspension and rollover feel.
+
+##### Validation on 2026-11-27
+
+The extracted EU client resources reported `v.2.4.2.0 #1007`. The installed
+`WorldOfTanks.exe` SHA-256 was
+`0d7d61866dfe8f884a76f31a6c91308662b27e0ff09f14f08647234048c939f6`.
+For the same test loadout, two seconds of forward input followed by a full
+brake and a one-second stationary turn produced the following results.
+
+| Ground | Solver | Acceleration distance | Braking distance | Turn |
+| --- | --- | ---: | ---: | ---: |
+| Hard | Standard | 8.63 m | 1.04 m | 0.900 rad |
+| Hard | Rapier | 8.54 m | 0.95 m | 0.908 rad |
+| Soft | Standard | 3.94 m | 0.35 m | 0.450 rad |
+| Soft | Rapier | 3.95 m | 0.29 m | 0.451 rad |
+
+The Serene Coast regression drives one hull across the bridge and another
+underneath. It checks the replicated positions on both levels and traces
+each drive command to its position update. A separate fixture drives off a
+finite deck, compares two sets of controls in free fall, and lands on a bank.
+Another powers a parked tank through a destructible wall and checks the
+native fracture delivery, the adjacent fragment and both tanks' HP.
+
+On an Apple M1 Max, a release build with 30 dispersed drivers on Serene
+Coast measured 21.5 ms at p95 and 56.0 ms maximum over 300 timed arena
+ticks while other builds ran. The test process peaked at 113.5 MiB RSS.
+It updates the arena and queues snapshots for all 30 drivers. Gateway UDP
+encoding, network transport and competition between active arenas need
+separate measurements. To reproduce, set `WOT_RESOURCE_DIR` and run
+`cargo test --release -p wot-battles measure_thirty -- --ignored --nocapture --test-threads=1`.
+The [scenario fixtures](../src/battles/src/infrastructure/rapier_scenarios.rs)
+use 20 warm-up ticks and check the queued snapshots for every recipient.
+
 #### Scenery contact, pushing and recovery
 
 Training sweeps an oriented hull footprint against wall-like triangles in the

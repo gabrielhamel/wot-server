@@ -11,6 +11,8 @@ pub struct BattleParameterDefinition {
     pub min: f64,
     pub max: f64,
     pub integer: bool,
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub choices: &'static [&'static str],
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -18,7 +20,7 @@ pub struct BattleParameterDefinition {
 pub struct InvalidBattleParameters;
 
 macro_rules! battle_parameters {
-    ($($group:literal { $($field:ident: $kind:ty = $default:literal, $min:literal ..= $max:expr, $integer:literal, $label:literal;)* })*) => {
+    ($($group:literal { $($field:ident: $kind:ty = $default:literal, $min:literal ..= $max:expr, $integer:literal, $label:literal $(, [$($choice:literal),+])?;)* })*) => {
         #[derive(Clone, Copy, Debug)]
         pub struct BattleParameters {
             $($(pub(crate) $field: $kind,)*)*
@@ -40,6 +42,7 @@ macro_rules! battle_parameters {
                     min: $min as f64,
                     max: $max as f64,
                     integer: $integer,
+                    choices: &[$($($choice),+)?],
                 },)*)*]
             }
 
@@ -89,6 +92,13 @@ battle_parameters! {
         moving_turn_multiplier: f32 = 0.85, 0.0..=2.0, false, "Moving turn multiplier";
         track_lock_heading_response: f32 = 2.0, 0.0..=20.0, false, "Track-lock heading response (per second)";
         terrain_contact_tolerance_metres: f32 = 0.35, 0.0..=2.0, false, "Terrain contact tolerance (metres)";
+    }
+    "Hull physics" {
+        hull_physics: u8 = 0, 0..=1, true, "Hull physics model", ["Standard", "Rapier prototype"];
+        suspension_travel_metres: f32 = 0.3, 0.05..=0.8, false, "Rapier suspension travel (metres)";
+        suspension_frequency_hz: f32 = 3.0, 1.0..=5.0, false, "Rapier suspension frequency (Hz)";
+        suspension_damping_ratio: f32 = 0.8, 0.1..=1.5, false, "Rapier suspension damping ratio";
+        lateral_grip_response_seconds: f32 = 0.2, 0.05..=2.0, false, "Rapier lateral grip response (seconds)";
     }
     "World contacts" {
         contact_skin_metres: f32 = 0.025, 0.0..=0.25, false, "Collision clearance (metres)";

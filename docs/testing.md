@@ -117,6 +117,7 @@ export WOT_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WOT_RESOURCE_DIR='/path/to/resources'
 cargo test --locked -p wot-battles projectile_tests -- --ignored
+cargo test --locked -p wot-battles rapier_scenarios::acceptance -- --ignored --test-threads=1
 cargo test --locked -p wot-server-runtime --lib initializes_context_storage -- --ignored
 cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored
 cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_access_lifecycle -- --ignored

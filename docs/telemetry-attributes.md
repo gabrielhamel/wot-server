@@ -132,10 +132,14 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.force`](../src/player-sessions/src/infrastructure/gateway/training/start.rs) | Native team-ready flag supplied with command `411`. Values `0` and `1` are accepted. |
 | [`input.ready`](../src/battles/src/infrastructure/mod.rs) | True for a team confirmation and false for a team unlock. On arena roster updates, true once the Avatar is ready and false on departure. |
 | [`input.element_id`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | One-byte Mercury element ID on arena delivery and incoming cell commands. |
-| [`input.drive.flags`](../src/battles/src/infrastructure/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. The accepted mask is also recorded on the drive step. |
+| [`input.drive.flags`](../src/battles/src/infrastructure/controls.rs) | Native movement bitmask supplied by the player. The high bit is reserved and rejected. The accepted mask is also recorded on the drive step and Rapier hull readback. |
 | [`input.drive.airborne`](../src/battles/src/domain/vehicle.rs) | Whether the drive step starts with airborne motion. |
 | [`output.drive.immobilized`](../src/battles/src/domain/vehicle.rs) | True when a ground drive step is stopped by a broken track or disabled engine. |
 | [`output.drive.track_locked`](../src/battles/src/domain/vehicle.rs) | Whether the completed step uses track-lock steering. |
+| [`input.battle.hull_physics`](../src/battles/src/infrastructure/mod.rs) | Selected Training hull model on arena preparation, either `standard` or `rapier`. |
+| [`input.physics.tick_seconds`](../src/battles/src/infrastructure/motion/update.rs) | Duration in simulation seconds requested from the Rapier arena for this tick. |
+| [`output.physics.substeps`](../src/battles/src/infrastructure/motion/update.rs) | Number of fixed 1/60 s steps for participating hulls in this Rapier arena tick. |
+| [`output.world.grounded`](../src/battles/src/infrastructure/motion/update.rs) | Whether a suspension probe found support on the last Rapier step for this hull. |
 | [`output.world.scenery_contact`](../src/battles/src/infrastructure/motion.rs) | Whether scenery constrained this vehicle's movement or rotation on a world-motion event. |
 | [`output.world.scenery_support`](../src/battles/src/infrastructure/motion.rs) | Whether the hull's destination support comes from scenery geometry on a world-motion event. |
 | [`output.world.fragments_destroyed`](../src/battles/src/infrastructure/motion.rs) | Number of scenery fragments destroyed by this hull during the tick, including impacts and pressure transmitted from another tank. |
@@ -365,8 +369,8 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.obstacles.instances`](../src/battles/src/infrastructure/obstacles.rs) | Number of collision instances loaded for the selected gameplay mode, including numbered tree trunks. Zero when the bundle has no obstacle collision for the map. |
 | [`output.obstacles.trees`](../src/battles/src/infrastructure/obstacles/trees.rs) | Number of numbered tree trunks loaded from the map tree file. Omitted when the map has no tree file. |
 | [`output.terrain.tiles`](../src/battles/src/infrastructure/terrain.rs), `output.terrain.surface_tiles` | Number of decoded outdoor height tiles and driving surface tiles for the selected arena. |
-| [`output.drive.speed_mps`](../src/battles/src/domain/vehicle.rs) | Signed speed in metres per second after the simulation step. Negative means reverse. |
-| [`output.drive.yaw_rate_rad_per_second`](../src/battles/src/domain/vehicle.rs) | Signed yaw rate in radians per second after the simulation step. Positive turns right. |
+| [`output.drive.speed_mps`](../src/battles/src/domain/vehicle.rs) | Signed speed in metres per second after the simulation step, including [Rapier hull readback](../src/battles/src/infrastructure/motion/update.rs). Negative means reverse. |
+| [`output.drive.yaw_rate_rad_per_second`](../src/battles/src/domain/vehicle.rs) | Signed yaw rate in radians per second after the simulation step, including [Rapier hull readback](../src/battles/src/infrastructure/motion/update.rs). Positive turns right. |
 | [`output.battle.winner_team`](../src/battles/src/infrastructure/mod.rs) | Team 1 or 2, or 0 for a draw, when publishing the finished phase. |
 | [`output.battle.finish_reason`](../src/battles/src/infrastructure/mod.rs) | Client finish reason at the finished phase. Training emits 1 for elimination, 3 for time limit or 5 for technical end. |
 | [`output.phase`](../src/battles/src/infrastructure/mod.rs) | New round phase when publishing a transition. Values are `countdown`, `battle` and `finished`. |

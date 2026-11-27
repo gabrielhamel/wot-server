@@ -397,6 +397,7 @@ mod tests {
                 },
                 ground: Arc::new(Terrain::empty()),
                 obstacles: Scenery::default(),
+                physics: None,
                 areas: Default::default(),
                 arena_type: 1,
                 players: Default::default(),

@@ -722,7 +722,7 @@ fn ground_explosion_damages_and_stuns_vehicles_only_for_artillery() {
     );
 }
 
-fn profile() -> VehiclePerformance {
+pub(super) fn profile() -> VehiclePerformance {
     let plate = ArmorPlate {
         thickness_mm: 10.0,
         damage_factor: 1.0,

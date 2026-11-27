@@ -46,10 +46,13 @@ mod maps;
 pub(crate) mod mercury;
 mod motion;
 mod obstacles;
+mod physics;
 mod preparation;
 #[cfg(test)]
 mod projectile_tests;
 mod projectiles;
+#[cfg(test)]
+mod rapier_scenarios;
 mod scenery;
 mod terrain;
 mod vehicle_damage;
@@ -134,6 +137,7 @@ struct Battle {
     map: ArenaMap,
     ground: Arc<terrain::Terrain>,
     obstacles: obstacles::Scenery,
+    physics: Option<physics::ArenaPhysics>,
     areas: scenery::SceneryAreas,
     arena_type: i32,
     players: HashMap<ParticipantId, Participant>,
@@ -168,6 +172,7 @@ struct Participant {
     server_marker: bool,
     pending_marker: Option<tracing::Span>,
     pending_drive: Option<tracing::Span>,
+    held_drive: Option<tracing::Span>,
     pending_aim: Option<tracing::Span>,
     pending_reload: Option<tracing::Span>,
     pending_stun: Option<(Instant, tracing::Span)>,
@@ -413,6 +418,7 @@ impl BattleRuntime {
         input.battle.load_timeout.seconds = launch.parameters.load_timeout_seconds,
         input.battle.countdown.seconds = launch.parameters.countdown_seconds,
         input.battle.results.seconds = launch.parameters.results_seconds,
+        input.battle.hull_physics = if launch.parameters.hull_physics == 1 { "rapier" } else { "standard" },
         input.outfits.count = tracing::field::Empty,
         output.battle.id = tracing::field::Empty, output.players.count = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
@@ -500,6 +506,10 @@ impl BattleRuntime {
             let (position, direction) = ground
                 .vehicle_pose(position, forward.x.atan2(forward.y))
                 .context("Arena spawn has no terrain height")?;
+            anyhow::ensure!(
+                position.is_finite() && direction.is_finite(),
+                "Arena spawn pose must be finite"
+            );
             counts[side] += 1;
             entrants.push((
                 player.id,
@@ -555,6 +565,7 @@ impl BattleRuntime {
                         server_marker: false,
                         pending_marker: None,
                         pending_drive: None,
+                        held_drive: None,
                         pending_aim: None,
                         pending_reload: None,
                         pending_stun: None,
@@ -567,6 +578,20 @@ impl BattleRuntime {
                 ))
             })
             .collect::<Result<HashMap<_, _>>>()?;
+        let obstacles = obstacles::Scenery::new(obstacles);
+        let physics = if launch.parameters.hull_physics == 1 {
+            let mut physics =
+                physics::ArenaPhysics::new(&ground, &obstacles, map.bounds, launch.parameters)
+                    .inspect_err(|error| {
+                        span.record("output.outcome", "physics_unavailable");
+                        span.record("otel.status_code", "ERROR");
+                        error!(%error, arena_type, "Could not prepare arena hull physics");
+                    })?;
+            physics.warm_spawns(&obstacles, &players);
+            Some(physics)
+        } else {
+            None
+        };
         span.record("output.players.count", players.len());
         span.record("output.outcome", "prepared");
         let now = Instant::now();
@@ -576,7 +601,8 @@ impl BattleRuntime {
                 parameters: launch.parameters,
                 map: map.clone(),
                 ground,
-                obstacles: obstacles::Scenery::new(obstacles),
+                obstacles,
+                physics,
                 areas: scenery::SceneryAreas::default(),
                 arena_type,
                 players,

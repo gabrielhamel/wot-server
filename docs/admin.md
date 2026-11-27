@@ -134,6 +134,11 @@ invalid. **Reset parameters to defaults** clears all overrides. Edits apply to
 the battle started from this setup. Training launched from the native room
 uses server defaults.
 
+To try rigid-body handling, choose **Hull physics → Hull physics model →
+Rapier prototype** before starting a battle. Suspension travel, frequency,
+damping and lateral grip response can be adjusted in the same section.
+**Standard** is the default. See [Training hull physics](battle-mechanics.md#rapier-hull-physics-prototype).
+
 A player's seat starts with their owned vehicles. Select **Customize tank**
 to open the selected vehicle's equipped modules, equipment, consumables,
 crew perks, perk efficiency, hit points and ammunition. Edits apply to one

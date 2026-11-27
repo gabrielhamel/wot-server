@@ -191,6 +191,9 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let countdown = parameters.iter().find(|p| p["key"] == "countdown_seconds").unwrap();
         assert_eq!(countdown["default"], 10.0);
         assert_eq!(countdown["integer"], true);
+        let hull = parameters.iter().find(|p| p["key"] == "hull_physics").unwrap();
+        assert_eq!(hull["choices"], json!(["Standard", "Rapier prototype"]));
+        assert_eq!(hull["default"], 0.0);
         let track_repair = parameters.iter().find(|p| p["key"] == "track_repair_time_scale").unwrap();
         assert_eq!(track_repair["group"], "Tracks");
         assert_eq!(track_repair["default"], 1.0);
@@ -265,6 +268,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             json!({"countdown_seconds": 1.5}),
             json!({"parked_vehicle_pose_interval_ticks": 6}),
             json!({"max_flight_segments": 10000}),
+            json!({"hull_physics": 2}),
             json!({"track_repair_time_scale": 0.0}),
         ] {
             let mut invalid = battle.clone();
@@ -277,6 +281,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             "countdown_seconds": 2,
             "parked_vehicle_pose_interval_ticks": 5,
             "track_repair_time_scale": 1.5,
+            "hull_physics": 1,
         });
         let mut unready = battle.clone();
         unready["players"][0]["inventory_id"] = json!(2);
@@ -430,6 +435,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         invalid["players"][0]["owned_overrides"]["vehicle"] = json!(custom_tank);
         assert_eq!(request("POST", "/battles", &cookie, invalid).0, 400);
         battle["parameters"]["parked_vehicle_pose_interval_ticks"] = json!(1);
+        battle["parameters"]["hull_physics"] = json!(0);
         let (status, owned_battle) = request("POST", "/battles", &cookie, battle);
         assert_eq!(status, 200, "{owned_battle}");
         peer.until(&script, |p| p.resets == 3);
@@ -592,7 +598,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     for span in [launch, handler] {
         assert_eq!(
             get(span, "input.battle.parameters.count").as_deref(),
-            Some("3")
+            Some("4")
         );
     }
     assert!(spans.iter().any(|span| {
@@ -709,6 +715,14 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         .iter()
         .find(|s| s.name == "battles.prepare" && s.parent_span_id == launch.span_context.span_id())
         .unwrap();
+    assert_eq!(
+        get(preparation, "input.battle.hull_physics").as_deref(),
+        Some("rapier")
+    );
+    assert!(spans.iter().any(|step| step.name == "battles.hull_physics"
+        && get(step, "output.physics.substeps").as_deref() == Some("6")
+        && spans.iter().any(|command| command.name == "battles.control"
+            && step.parent_span_id == command.span_context.span_id())));
     assert_eq!(
         get(preparation, "input.battle.countdown.seconds").as_deref(),
         Some("2")

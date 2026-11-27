@@ -3,7 +3,7 @@ use super::{
     armor::roll,
     ballistics::elevation,
     devices::{Condition, Criticals, DeviceStrike},
-    movement::{Drive, GroundContact, approach},
+    movement::{Drive, DriveDemand, GroundContact, approach},
     parameters::BattleParameters,
     world::{Hull, VehicleBody, WorldMotion},
 };
@@ -16,6 +16,9 @@ pub(crate) struct Tank {
     pub yaw: f32,
     hull_tilt: Vec2,
     vertical_speed: Option<f32>,
+    physics_grounded: bool,
+    physics_tipped: bool,
+    physics_settled_seconds: f32,
     world: WorldMotion,
     pub health: i16,
     pub max_health: i16,
@@ -82,6 +85,9 @@ impl Tank {
             yaw: direction.z,
             hull_tilt: direction.xy(),
             vertical_speed: None,
+            physics_grounded: true,
+            physics_tipped: false,
+            physics_settled_seconds: 0.0,
             world: WorldMotion::default(),
             health,
             performance,
@@ -103,7 +109,7 @@ impl Tank {
         if flags & 0x80 != 0 {
             return false;
         }
-        self.drive.flags = flags;
+        self.drive.set_flags(flags);
         true
     }
 
@@ -201,6 +207,7 @@ impl Tank {
         };
         if !powered
             || self.vertical_speed.is_some()
+            || !self.physics_grounded
             || self.is_tipped()
             || self.condition.immobilized()
         {
@@ -260,7 +267,7 @@ impl Tank {
     }
 
     pub fn is_tipped(&self) -> bool {
-        self.world.is_tipped()
+        self.physics_tipped || self.world.is_tipped()
     }
 
     pub fn settle_hull(
@@ -291,6 +298,10 @@ impl Tank {
         }
         self.set_hull_tilt(direction);
         direction
+    }
+
+    pub fn drive_readback(&self) -> (u8, f32, f32) {
+        (self.drive.flags, self.drive.speed, self.drive.yaw_rate)
     }
 
     pub fn track_speeds(&self) -> [f32; 2] {
@@ -390,6 +401,69 @@ impl Tank {
             self.vertical_speed.is_none() && self.drive.is_track_locked(),
         );
         self.vertical_speed.is_some() || before != (self.position, self.yaw)
+    }
+
+    pub fn drive_demand(
+        &mut self,
+        seconds: f32,
+        ground: GroundContact,
+        forward_speed: f32,
+        yaw_rate: f32,
+    ) -> DriveDemand {
+        let Some(performance) = &self.performance else {
+            return DriveDemand::default();
+        };
+        if self.health <= 0
+            || self.is_tipped()
+            || self.condition.immobilized()
+            || seconds <= 0.0
+            || !seconds.is_finite()
+            || !forward_speed.is_finite()
+            || !yaw_rate.is_finite()
+            || !ground.pitch.is_finite()
+            || ground.surfaces == [0; 3]
+        {
+            return DriveDemand::default();
+        }
+        self.drive.demand(
+            performance,
+            ground,
+            seconds,
+            &self.parameters,
+            [forward_speed, yaw_rate],
+        )
+    }
+
+    pub fn sync_physics(
+        &mut self,
+        position: Vec3,
+        direction: Vec3,
+        forward_speed: f32,
+        yaw_rate: f32,
+        grounded: bool,
+    ) {
+        self.position = position;
+        self.yaw = direction.z;
+        self.set_hull_tilt(direction);
+        self.drive.speed = forward_speed;
+        self.drive.yaw_rate = yaw_rate;
+        self.physics_grounded = grounded;
+        self.physics_tipped =
+            direction.x.cos() * direction.y.cos() <= self.parameters.tip_terrain_roll_radians.cos();
+    }
+
+    pub fn physical_recovery_due(
+        &mut self,
+        stationary_on_stable_ground: bool,
+        seconds: f32,
+    ) -> bool {
+        if !self.physics_tipped || self.health <= 0 || !stationary_on_stable_ground {
+            self.physics_settled_seconds = 0.0;
+            return false;
+        }
+        self.physics_settled_seconds += seconds;
+        self.physics_settled_seconds
+            >= self.parameters.settle_time_seconds + self.parameters.recovery_time_seconds
     }
 
     pub fn set_stun_traverse(&mut self, factor: Option<f32>) {
@@ -631,7 +705,7 @@ impl Tank {
         self.health = previous.saturating_sub_unsigned(damage).max(0);
         if self.health == 0 {
             self.condition.extinguish();
-            self.drive.flags = 0;
+            self.drive.set_flags(0);
         }
         (previous, self.health)
     }
@@ -974,6 +1048,136 @@ mod tests {
         capable.drive(FORWARD);
         assert!(!limited.step(0.1, bounds, uphill));
         assert!(capable.step(0.1, bounds, uphill));
+    }
+
+    #[test]
+    fn physical_drive_uses_equipped_power_and_surface_without_integrating_gravity_or_pose() {
+        let mut tank = tank(vec![]);
+        tank.drive(FORWARD);
+        let demand = tank.drive_demand(0.1, HARD, 2.0, 0.0);
+        let downhill = GroundContact { pitch: 0.2, ..HARD };
+        let soft = GroundContact {
+            surfaces: [0, 0, 4],
+            ..HARD
+        };
+        assert_eq!(
+            demand.longitudinal_acceleration,
+            tank.drive_demand(0.1, downhill, 2.0, 0.0)
+                .longitudinal_acceleration
+        );
+        assert!(
+            demand.longitudinal_acceleration
+                > tank
+                    .drive_demand(0.1, soft, 2.0, 0.0)
+                    .longitudinal_acceleration
+        );
+        let standard = tank.drive_demand(0.1, HARD, 8.0, 0.0);
+        let mobility = &mut tank.performance.as_mut().unwrap().mobility;
+        mobility.power_per_kg *= 2.0;
+        mobility.max_climb_angle = Some(0.1);
+        assert!(
+            tank.drive_demand(0.1, HARD, 8.0, 0.0)
+                .longitudinal_acceleration
+                > standard.longitudinal_acceleration
+        );
+        let uphill = GroundContact {
+            pitch: -0.2,
+            ..HARD
+        };
+        assert_eq!(
+            tank.drive_demand(0.1, uphill, 0.0, 0.0)
+                .longitudinal_acceleration,
+            0.0
+        );
+        assert_eq!(tank.position, Vec3::ZERO);
+        assert_eq!(tank.track_speeds(), [0.0, 0.0]);
+    }
+
+    #[test]
+    fn physical_governor_preserves_coasting_braking_and_powered_downhill_limit() {
+        let mut tank = tank(vec![]);
+        let downhill = GroundContact { pitch: 0.2, ..HARD };
+        let seconds = 1.0 / 60.0;
+        for (flags, ground, expected) in [
+            (FORWARD, HARD, 12.0),
+            (REVERSE, HARD, -4.0),
+            (FORWARD | HALF_SPEED, downhill, 6.0),
+            (FORWARD, downhill, 18.0),
+        ] {
+            tank.drive(flags);
+            let mut speed = 0.0;
+            for _ in 0..2400 {
+                let command = tank.drive_demand(seconds, ground, speed, 0.0);
+                let gravity = tank.parameters.gravity_mps2 * ground.pitch.sin();
+                speed += (command.longitudinal_acceleration + gravity) * seconds;
+            }
+            assert!(
+                (speed - expected).abs() < 0.001,
+                "flags {flags}, speed {speed}"
+            );
+        }
+        tank.sync_physics(Vec3::ZERO, Vec3::ZERO, 8.0, 0.0, true);
+        tank.drive(0);
+        let coast = tank
+            .drive_demand(seconds, HARD, 8.0, 0.0)
+            .longitudinal_acceleration;
+        tank.drive(BRAKE);
+        let brake = tank
+            .drive_demand(seconds, HARD, 8.0, 0.0)
+            .longitudinal_acceleration;
+        assert!((coast + tank.parameters.coast_deceleration_mps2).abs() < 0.001);
+        assert!(brake < coast && coast < 0.0);
+    }
+
+    #[test]
+    fn physical_pivots_and_chassis_animation_use_track_geometry_and_solved_velocity() {
+        let mut tank = tank(vec![]);
+        tank.drive(LEFT);
+        let demand = tank.drive_demand(0.1, HARD, 0.0, 0.0);
+        assert!(demand.yaw_acceleration < 0.0);
+        assert_eq!(demand.longitudinal_acceleration, 0.0);
+        tank.performance
+            .as_mut()
+            .unwrap()
+            .mobility
+            .rotation_around_center = false;
+        let demand = tank.drive_demand(0.1, HARD, 0.0, 0.0);
+        assert!(demand.longitudinal_acceleration > 0.0);
+        let forward_speed = demand.longitudinal_acceleration * 0.1;
+        let yaw_rate = demand.yaw_acceleration * 0.1;
+        tank.sync_physics(Vec3::Z, Vec3::ZERO, forward_speed, yaw_rate, true);
+        let [left, right] = tank.track_speeds();
+        assert!(left.abs() < 0.001 && right > 0.0);
+        tank.performance.as_mut().unwrap().mobility.track_lock = true;
+        tank.drive(BRAKE | LEFT);
+        assert!(tank.drive_demand(0.1, HARD, 8.0, 0.0).track_locked);
+    }
+
+    #[test]
+    fn overturned_physical_body_gates_drive_fire_and_restarts_recovery_after_motion() {
+        let mut tank = tank(vec![]);
+        tank.drive(FORWARD);
+        let roof_down = Vec3::X * std::f32::consts::PI;
+        tank.sync_physics(Vec3::Y, roof_down, 0.0, 0.0, false);
+        assert_eq!(tank.scenery_push_load(0.1, false), 0.0);
+        assert_eq!(
+            tank.drive_demand(0.1, HARD, 0.0, 0.0)
+                .longitudinal_acceleration,
+            0.0
+        );
+        assert_eq!(tank.fire(Instant::now()).err(), Some("vehicle_overturned"));
+        assert!(!tank.physical_recovery_due(true, 10.0));
+        assert!(!tank.physical_recovery_due(false, 1.0));
+        assert!(!tank.physical_recovery_due(true, 17.0));
+        assert!(tank.physical_recovery_due(true, 1.0));
+        tank.sync_physics(Vec3::ZERO, Vec3::ZERO, 0.0, 0.0, true);
+        assert!(!tank.is_tipped());
+        assert!(!tank.physical_recovery_due(true, 1.0));
+        assert!(
+            tank.drive_demand(0.1, HARD, 0.0, 0.0)
+                .longitudinal_acceleration
+                > 0.0
+        );
     }
 
     #[test]

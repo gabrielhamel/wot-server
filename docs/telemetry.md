@@ -387,6 +387,13 @@ scenery fragment's health. A pushed vehicle without its own drive span uses the 
 vehicle's available drive parent. The world span then parents pose and chassis
 replication and any scenery updates from the pushed hull's contact.
 
+With the Rapier hull model selected, `battles.hull_physics` times the shared
+arena step and records the requested simulation interval, participating hulls
+and fixed step count. A pending or held drive parents the shared step. Each hull's
+`battles.world_motion` follows its own command or the available command of a
+tank that pushed it. It records support, contact, displacement and fracture
+before pose and scenery delivery.
+
 `battles.scenery` follows the world-motion or shot span for each nonempty batch
 of newly broken fragments. It counts fragments with native identities, changed
 chunks, numbered tree falls, projectile references and queued peer deliveries.
