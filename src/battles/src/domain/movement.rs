@@ -1,5 +1,4 @@
 use super::parameters::BattleParameters;
-use glam::{Vec2, Vec3};
 use wot_shared_kernel::VehiclePerformance;
 
 const FORWARD: u8 = 1;
@@ -35,12 +34,6 @@ pub(crate) struct DriveDemand {
     pub requests_travel: bool,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum GravityIntegration {
-    Drive,
-    World,
-}
-
 struct DriveResponse {
     speed: f32,
     yaw_rate: f32,
@@ -56,8 +49,6 @@ pub(super) struct Drive {
     curvature: f32,
     target_speed: f32,
     released_speed: f32,
-    pivot_speed: f32,
-    movement_heading: Option<f32>,
 }
 
 impl Drive {
@@ -89,7 +80,6 @@ impl Drive {
         seconds: f32,
         parameters: &BattleParameters,
         [old_speed, old_yaw_rate]: [f32; 2],
-        gravity_integration: GravityIntegration,
     ) -> DriveResponse {
         let mobility = &performance.mobility;
         let resistance = ground.average(mobility.terrain_resistance);
@@ -142,38 +132,21 @@ impl Drive {
             } else {
                 traction.min(parameters.traction_acceleration_mps2 / resistance)
             };
-            let speed = if gravity_integration == GravityIntegration::World {
-                // Gravity acts on the body independently. Predict its contribution only
-                // to decide when the engine or the speed governor needs to act.
-                let gravity_dv = slope * seconds;
-                let speed = old_speed.abs();
-                let limit = if cruise == 1.0 && slope > rolling_drag {
-                    target * parameters.downhill_speed_limit_ratio
-                } else {
-                    target
-                };
-                let drag = rolling_drag.min(speed / seconds + drive_force);
-                let requested_acceleration = (target - speed - gravity_dv) / seconds + drag;
-                let propulsion = requested_acceleration.max(0.0).min(drive_force);
-                let governor = ((speed + (propulsion - drag) * seconds + gravity_dv - limit)
-                    / seconds)
-                    .clamp(0.0, parameters.coast_deceleration_mps2);
-                speed + (propulsion - drag - governor) * seconds
-            } else if old_speed.abs() < target {
-                (old_speed.abs() + (drive_force - rolling_drag + slope) * seconds)
-                    .clamp(0.0, target)
-            } else if cruise == 1.0 && slope > rolling_drag {
-                (old_speed.abs() + (slope - rolling_drag) * seconds)
-                    .min(target * parameters.downhill_speed_limit_ratio)
-            } else if old_speed.abs() == target {
-                (target + (drive_force - rolling_drag + slope).min(0.0) * seconds).max(0.0)
+            // Gravity acts on the body independently. Predict its contribution only
+            // to decide when the engine or the speed governor needs to act.
+            let gravity_dv = slope * seconds;
+            let speed = old_speed.abs();
+            let limit = if cruise == 1.0 && slope > rolling_drag {
+                target * parameters.downhill_speed_limit_ratio
             } else {
-                approach(
-                    old_speed.abs(),
-                    target,
-                    parameters.coast_deceleration_mps2 * seconds,
-                )
+                target
             };
+            let drag = rolling_drag.min(speed / seconds + drive_force);
+            let requested_acceleration = (target - speed - gravity_dv) / seconds + drag;
+            let propulsion = requested_acceleration.max(0.0).min(drive_force);
+            let governor = ((speed + (propulsion - drag) * seconds + gravity_dv - limit) / seconds)
+                .clamp(0.0, parameters.coast_deceleration_mps2);
+            let speed = speed + (propulsion - drag - governor) * seconds;
             speed * self.target_speed.signum()
         };
 
@@ -181,9 +154,8 @@ impl Drive {
             / (resistance * mobility.turning_resistance);
         let traverse = ground_traverse.min(mobility.traverse_limit.unwrap_or(f32::INFINITY));
         let turn_target = if mobility.turns_in_place {
-            let pivot_at_rest = gravity_integration == GravityIntegration::World
-                && throttle == 0.0
-                && speed.abs() <= parameters.moving_turn_min_speed_mps;
+            let pivot_at_rest =
+                throttle == 0.0 && speed.abs() <= parameters.moving_turn_min_speed_mps;
             let direction = if (speed < 0.0 && !pivot_at_rest) || (speed == 0.0 && throttle < 0.0) {
                 -1.0
             } else {
@@ -248,14 +220,7 @@ impl Drive {
         measured: [f32; 2],
     ) -> DriveDemand {
         let [speed, yaw_rate] = measured;
-        let response = self.response(
-            performance,
-            ground,
-            seconds,
-            parameters,
-            measured,
-            GravityIntegration::World,
-        );
+        let response = self.response(performance, ground, seconds, parameters, measured);
         let moving_pivot = response.single_track_pivot && self.has_steering();
         let next_speed = if self.flags == 0 {
             // Releasing powered movement coasts to a stop. A parked hull pushed
@@ -295,89 +260,8 @@ impl Drive {
         }
     }
 
-    pub fn step(
-        &mut self,
-        performance: &VehiclePerformance,
-        ground: GroundContact,
-        (position, yaw): (&mut Vec3, &mut f32),
-        seconds: f32,
-        [min, max]: [Vec2; 2],
-        parameters: &BattleParameters,
-    ) {
-        let old_speed = self.speed;
-        let old_yaw_rate = self.yaw_rate;
-        let response = self.response(
-            performance,
-            ground,
-            seconds,
-            parameters,
-            [old_speed, old_yaw_rate],
-            GravityIntegration::Drive,
-        );
-        self.speed = response.speed;
-        self.yaw_rate = response.yaw_rate;
-        let mobility = &performance.mobility;
-        let turn = (old_yaw_rate + self.yaw_rate) * 0.5 * seconds;
-        let heading = *yaw + turn * 0.5;
-        let movement_heading = if response.track_locked {
-            let previous = self.movement_heading.unwrap_or(*yaw);
-            let delta = super::vehicle::angle(heading - previous);
-            let heading = previous
-                + delta * (parameters.track_lock_heading_response * seconds).clamp(0.0, 1.0);
-            self.movement_heading = Some(heading);
-            heading
-        } else {
-            self.movement_heading = None;
-            heading
-        };
-        let forward = Vec2::new(movement_heading.sin(), movement_heading.cos());
-        let start = Vec2::new(position.x, position.z);
-        let pivoting = response.single_track_pivot && old_speed == 0.0 && self.speed == 0.0;
-        self.pivot_speed = if pivoting {
-            self.yaw_rate.abs() * mobility.track_half_width
-        } else {
-            0.0
-        };
-        let pivot_distance = if pivoting {
-            turn.abs() * mobility.track_half_width
-        } else {
-            0.0
-        };
-        let next = start + forward * ((old_speed + self.speed) * 0.5 * seconds + pivot_distance);
-        let bounded = next.clamp(min, max);
-        if bounded != next {
-            self.speed *=
-                forward.dot(bounded - start).abs() / next.distance(start).max(f32::EPSILON);
-        }
-        if turn != 0.0 {
-            *yaw = super::vehicle::angle(*yaw + turn);
-        }
-        position.x = bounded.x;
-        position.z = bounded.y;
-    }
-
-    pub fn coast_in_air(
-        &mut self,
-        position: &mut Vec3,
-        yaw: f32,
-        seconds: f32,
-        [min, max]: [Vec2; 2],
-    ) {
-        let heading = self.movement_heading.unwrap_or(yaw);
-        self.yaw_rate = 0.0;
-        self.pivot_speed = 0.0;
-        let offset = Vec2::new(heading.sin(), heading.cos()) * self.speed * seconds;
-        let next = Vec2::new(position.x, position.z) + offset;
-        let bounded = next.clamp(min, max);
-        if bounded != next {
-            self.speed = 0.0;
-        }
-        position.x = bounded.x;
-        position.z = bounded.y;
-    }
-
     pub fn track_speeds(&self, half_width: f32) -> [f32; 2] {
-        let speed = self.speed + self.pivot_speed;
+        let speed = self.speed;
         [
             speed + self.yaw_rate * half_width,
             speed - self.yaw_rate * half_width,
@@ -432,17 +316,11 @@ impl Drive {
         self.flags != 0 || self.speed != 0.0 || self.yaw_rate != 0.0 || self.curvature != 0.0
     }
 
-    pub fn is_track_locked(&self) -> bool {
-        self.movement_heading.is_some()
-    }
-
     pub fn stop(&mut self) {
         self.speed = 0.0;
         self.yaw_rate = 0.0;
         self.curvature = 0.0;
         self.released_speed = 0.0;
-        self.pivot_speed = 0.0;
-        self.movement_heading = None;
     }
 }
 

@@ -12,8 +12,6 @@ import {
 import { useId } from "react";
 import type { BattleParameterDefinition } from "../../application/admin-contracts";
 
-import { ChoiceSelect } from "./battle-select";
-
 export type BattleParameterField = BattleParameterDefinition & {
   value: string;
   invalid: boolean;
@@ -62,32 +60,22 @@ export function BattleParameterEditor({
                   pt: 1,
                 }}
               >
-                {entries.map(({ key, label, min, max, integer, choices, value, invalid }) =>
-                  choices ? (
-                    <ChoiceSelect
-                      key={key}
-                      label={label}
-                      value={Number(value)}
-                      choices={choices.map((name, id) => ({ id, name }))}
-                      onChange={(selected) => onChange(key, String(selected))}
-                    />
-                  ) : (
-                    <TextField
-                      key={key}
-                      label={label}
-                      type="number"
-                      value={value}
-                      error={invalid}
-                      helperText={
-                        invalid
-                          ? `Enter ${integer ? "a whole number" : "a number"} from ${min} to ${max}.`
-                          : undefined
-                      }
-                      slotProps={{ htmlInput: { min, max, step: integer ? 1 : "any" } }}
-                      onChange={(event) => onChange(key, event.target.value)}
-                    />
-                  ),
-                )}
+                {entries.map(({ key, label, min, max, integer, value, invalid }) => (
+                  <TextField
+                    key={key}
+                    label={label}
+                    type="number"
+                    value={value}
+                    error={invalid}
+                    helperText={
+                      invalid
+                        ? `Enter ${integer ? "a whole number" : "a number"} from ${min} to ${max}.`
+                        : undefined
+                    }
+                    slotProps={{ htmlInput: { min, max, step: integer ? 1 : "any" } }}
+                    onChange={(event) => onChange(key, event.target.value)}
+                  />
+                ))}
               </Box>
             </Stack>
           ))}

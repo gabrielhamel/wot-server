@@ -835,7 +835,6 @@ fn owner_device_updates(
 #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
 fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
     use crate::domain::{devices::TRACKS, movement::GroundContact, vehicle::Aim};
-    use glam::Vec2;
     use wot_shared_kernel::{ArmorDevice, DeviceHealth};
 
     let (id, mut battle, wire) = projectile_battle(&[1, 2]);
@@ -1011,13 +1010,17 @@ fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
             surfaces: [4, 0, 0],
             pitch: 0.0,
         };
-        let bounds = [Vec2::splat(-100.0), Vec2::splat(100.0)];
         let target = &mut battle.players.get_mut(&VICTIM).unwrap().tank;
         assert!(target.drive(1 | 4));
         assert_eq!(target.engine_mode(), [1, 0]);
         assert_eq!(target.scenery_push_load(0.1, false), 0.0);
         assert_eq!(target.scenery_push_load(0.1, true), 0.0);
-        assert!(!target.step(0.1, bounds, ground));
+        assert_eq!(
+            target
+                .drive_demand(0.1, ground, 0.0, 0.0)
+                .longitudinal_acceleration,
+            0.0
+        );
 
         // Stop the follow-up shot at the hull after it strikes the near track.
         let hull = target.performance.as_mut().unwrap().armor[1]
@@ -1075,7 +1078,9 @@ fn shot_breaks_both_tracks_and_repair_restores_drive_with_client_feedback() {
                     .get_mut(&VICTIM)
                     .unwrap()
                     .tank
-                    .step(0.1, bounds, ground),
+                    .drive_demand(0.1, ground, 0.0, 0.0)
+                    .longitudinal_acceleration
+                    > 0.0,
                 side == 1
             );
         }

@@ -40,7 +40,7 @@ fn approach(walls: &[Wall], speed: f32, on_deck: bool) -> (Fixture, Scenery, Ste
     scene.physics.world.detect_collisions(&(), &());
     scene.physics.world.bodies[scene.chassis.body].set_linvel(Vector::Z * speed, true);
     scene.physics.world.bodies[scene.chassis.body].set_angvel(Vector::Y * 0.1, true);
-    let mut state = StepState::new(ParticipantId(1), &scene.tank, 0.1, 6);
+    let mut state = StepState::new(ParticipantId(1), &scene.tank, 6);
     state.break_approaching_scenery(
         &mut scene.physics.world,
         &mut scene.physics.scenery,

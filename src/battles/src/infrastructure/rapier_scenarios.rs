@@ -4,11 +4,11 @@ use delivery::QueuedDelivery;
 use glam::Vec3Swizzles;
 use projectile_tests::profile;
 
-fn prepare(count: u32, model: u8) -> (u32, BattleSimulation) {
-    prepare_on("47_canada_a", count, model)
+fn prepare(count: u32) -> (u32, BattleSimulation) {
+    prepare_on("47_canada_a", count)
 }
 
-fn prepare_on(geometry: &str, count: u32, model: u8) -> (u32, BattleSimulation) {
+fn prepare_on(geometry: &str, count: u32) -> (u32, BattleSimulation) {
     let resources = ResourceBundle::open(std::path::Path::new(
         &std::env::var_os("WOT_RESOURCE_DIR").expect("extracted resources"),
     ))
@@ -17,9 +17,6 @@ fn prepare_on(geometry: &str, count: u32, model: u8) -> (u32, BattleSimulation) 
         wot_platform::mercury::script::load(&resources).unwrap(),
     ));
     let mut runtime = BattleRuntime::load(dispatch, &resources, true).unwrap();
-    let parameters =
-        BattleParameters::from_overrides(&[("hull_physics".to_owned(), f64::from(model))].into())
-            .unwrap();
     let arena = runtime
         .maps
         .iter()
@@ -34,7 +31,7 @@ fn prepare_on(geometry: &str, count: u32, model: u8) -> (u32, BattleSimulation) 
         .prepare(
             BattleLaunch {
                 arena_type: arena,
-                parameters,
+                parameters: BattleParameters::default(),
                 duration: Duration::from_secs(600),
                 mode: BattleMode::Training,
                 participants: (1..=count)
@@ -115,75 +112,69 @@ mod acceptance {
 
     #[test]
     #[ignore = "Requires WOT_RESOURCE_DIR"]
-    fn flat_ground_acceleration_braking_and_pivots_match_standard_controls() {
-        let (id, mut simulation) = prepare(2, 0);
-        let mut results = Vec::new();
+    fn flat_ground_retains_acceleration_braking_and_pivots() {
+        let (id, mut simulation) = prepare(2);
+        let mut acceleration_distances = Vec::new();
         for material in [0, 2] {
-            for model in [0, 1] {
-                let battle = simulation.active.get_mut(&id).unwrap();
-                battle.ground = Arc::new(terrain::Terrain::flat_with_material(material));
-                battle.obstacles = obstacles::Scenery::default();
-                battle.physics = (model == 1).then(|| {
-                    physics::ArenaPhysics::new(
-                        &battle.ground,
-                        &battle.obstacles,
-                        battle.map.bounds,
-                        battle.parameters,
-                    )
-                    .unwrap()
-                });
-                let id = ParticipantId(1);
-                battle.players.get_mut(&ParticipantId(2)).unwrap().observer = true;
-                let driver = battle.players.get_mut(&id).unwrap();
-                let mut entrant = Entrant::sample();
-                entrant.vehicle.performance = Some(profile());
-                driver.tank = entrant.tank();
-                place(driver, Vec3::ZERO, 0.0);
-                for _ in 0..10 {
-                    battle.advance_world(0.1);
-                }
-                battle.players.get_mut(&id).unwrap().tank.drive(1);
-                for _ in 0..20 {
-                    battle.advance_world(0.1);
-                }
-                let at_speed = battle.players[&id].vehicle.position.z;
-                battle.players.get_mut(&id).unwrap().tank.drive(64);
-                for _ in 0..10 {
-                    battle.advance_world(0.1);
-                }
-                let stopped = battle.players[&id].vehicle.position;
-                battle.players.get_mut(&id).unwrap().tank.drive(8);
-                for _ in 0..10 {
-                    battle.advance_world(0.1);
-                }
-                let player = &battle.players[&id];
-                let braking = stopped.z - at_speed;
-                let rotation = player.vehicle.direction.z;
-                eprintln!(
-                    "material={material} model={model} acceleration distance={at_speed:.3} metres, braking distance={braking:.3} metres, pivot={rotation:.3} radians"
-                );
-                assert!(at_speed > 1.0 && braking >= 0.0 && rotation > 0.1);
-                assert!(stopped.xz().distance(player.vehicle.position.xz()) < 0.35);
-                results.push([at_speed, braking, rotation]);
+            let battle = simulation.active.get_mut(&id).unwrap();
+            battle.ground = Arc::new(terrain::Terrain::flat_with_material(material));
+            battle.obstacles = obstacles::Scenery::default();
+            battle.physics = physics::ArenaPhysics::new(
+                &battle.ground,
+                &battle.obstacles,
+                battle.map.bounds,
+                battle.parameters,
+            )
+            .unwrap();
+            let id = ParticipantId(1);
+            battle.players.get_mut(&ParticipantId(2)).unwrap().observer = true;
+            let driver = battle.players.get_mut(&id).unwrap();
+            let mut entrant = Entrant::sample();
+            entrant.vehicle.performance = Some(profile());
+            driver.tank = entrant.tank();
+            place(driver, Vec3::ZERO, 0.0);
+            for _ in 0..10 {
+                battle.advance_world(0.1);
             }
-        }
-        for pair in results.as_chunks::<2>().0 {
-            for (regular, rapier) in pair[0].into_iter().zip(pair[1]) {
-                assert!(
-                    (regular - rapier).abs() < 0.2 * regular + 0.10,
-                    "{regular} vs {rapier}"
-                );
+            battle.players.get_mut(&id).unwrap().tank.drive(1);
+            for _ in 0..20 {
+                battle.advance_world(0.1);
             }
+            let at_speed = battle.players[&id].vehicle.position.z;
+            battle.players.get_mut(&id).unwrap().tank.drive(64);
+            for _ in 0..10 {
+                battle.advance_world(0.1);
+            }
+            let stopped = battle.players[&id].vehicle.position;
+            battle.players.get_mut(&id).unwrap().tank.drive(8);
+            for _ in 0..10 {
+                battle.advance_world(0.1);
+            }
+            let player = &battle.players[&id];
+            let braking = stopped.z - at_speed;
+            let rotation = player.vehicle.direction.z;
+            eprintln!(
+                "material={material} acceleration distance={at_speed:.3} metres, braking distance={braking:.3} metres, pivot={rotation:.3} radians"
+            );
+            assert!(at_speed > 1.0 && braking >= 0.0 && rotation > 0.1);
+            assert!(stopped.xz().distance(player.vehicle.position.xz()) < 0.35);
+            let (expected_distance, expected_braking, expected_rotation) = if material == 0 {
+                (8.54_f32, 0.95_f32, 0.91_f32)
+            } else {
+                (3.95, 0.29, 0.45)
+            };
+            assert!((at_speed - expected_distance).abs() < 0.25);
+            assert!((braking - expected_braking).abs() < 0.15);
+            assert!((rotation - expected_rotation).abs() < 0.10);
+            acceleration_distances.push(at_speed);
         }
-        for i in 0..2 {
-            assert!(results[i][0] > results[i + 2][0]);
-        }
+        assert!(acceleration_distances[0] > acceleration_distances[1]);
     }
 
     #[test]
     #[ignore = "Requires WOT_RESOURCE_DIR with Serene Coast collision data"]
     fn serene_coast_bridge_and_underpass_replicate_the_solved_hulls() {
-        let (id, mut simulation) = prepare(2, 1);
+        let (id, mut simulation) = prepare(2);
         let battle = simulation.active.get_mut(&id).unwrap();
         // This bridge has a level channel and an opening between its piers 8 m from its midpoint.
         let center = Vec2::new(269.27103, -124.133965);
@@ -207,7 +198,7 @@ mod acceptance {
             let (spawn, direction) = terrain::pose_from_samples(
                 start,
                 yaw,
-                player.tank.collision_hull().half_size,
+                player.tank.collision_extents().0.xz(),
                 support(start),
                 support,
             );
@@ -328,19 +319,17 @@ mod acceptance {
 #[test]
 #[ignore = "Local release benchmark with WOT_RESOURCE_DIR"]
 fn measure_thirty_driver_arena_ticks() {
-    for model in [0, 1] {
-        benchmark_arena_ticks(model, false);
-    }
+    benchmark_arena_ticks(false);
 }
 
 #[test]
 #[ignore = "Local release benchmark with WOT_RESOURCE_DIR"]
 fn measure_thirty_dispersed_driver_arena_ticks() {
-    benchmark_arena_ticks(1, true);
+    benchmark_arena_ticks(true);
 }
 
-fn benchmark_arena_ticks(model: u8, dispersed: bool) {
-    let (id, mut simulation) = prepare(30, model);
+fn benchmark_arena_ticks(dispersed: bool) {
+    let (id, mut simulation) = prepare(30);
     if dispersed {
         let battle = simulation.active.get_mut(&id).unwrap();
         for i in 0..30 {
@@ -396,7 +385,7 @@ fn benchmark_arena_ticks(model: u8, dispersed: bool) {
     assert_eq!(drops.load(std::sync::atomic::Ordering::Relaxed), 0);
     samples.sort_unstable();
     eprintln!(
-        "30 drivers, model {model}, dispersed={dispersed}, {} arena ticks: p50 {:?}, p95 {:?}, max {:?}",
+        "30 drivers, dispersed={dispersed}, {} arena ticks: p50 {:?}, p95 {:?}, max {:?}",
         samples.len(),
         samples[150],
         samples[284],

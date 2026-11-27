@@ -176,7 +176,7 @@ impl ArenaPhysics {
             .filter_map(|&id| {
                 let client = ParticipantId(id);
                 let tank = &players.get(&client)?.tank;
-                Some(StepState::new(client, tank, seconds, substeps))
+                Some(StepState::new(client, tank, substeps))
             })
             .collect();
         for _ in 0..substeps {
@@ -368,16 +368,12 @@ impl Chassis {
             tank.parameters.hull_height_metres * 0.5,
             tank.parameters.fallback_hull_half_length_metres,
         );
-        tank.collision_hull()
-            .body
-            .filter(|hull| {
-                hull.center.is_finite()
-                    && hull.half_size.is_finite()
-                    && hull.half_size.min_element() >= 0.001
-            })
-            .map_or((fallback_half, Vector::Y * fallback_half.y), |hull| {
-                (hull.half_size, physics_vec(hull.center))
-            })
+        let (half, center) = tank.collision_extents();
+        if center.is_finite() && half.is_finite() && half.min_element() >= 0.001 {
+            (half, physics_vec(center))
+        } else {
+            (fallback_half, Vector::Y * fallback_half.y)
+        }
     }
 
     fn insert(
@@ -430,8 +426,8 @@ impl Chassis {
 }
 
 impl StepState {
-    fn new(client: ParticipantId, tank: &Tank, seconds: f32, substeps: u32) -> Self {
-        let damage = SceneryMotion::new(tank.collision_inverse_mass(), seconds);
+    fn new(client: ParticipantId, tank: &Tank, substeps: u32) -> Self {
+        let damage = SceneryMotion::new(tank.collision_inverse_mass());
         Self {
             motion: PhysicsMotion {
                 client,

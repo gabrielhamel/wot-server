@@ -1,111 +1,30 @@
-use super::*;
-use crate::infrastructure::obstacles::{Fragment, HullHit};
-use std::f32::consts::{PI, TAU};
+use crate::infrastructure::obstacles::{Breakage, Fragment, Scenery};
+use crate::infrastructure::scenery::BreakageCause;
+use glam::Vec2;
 
 const MAX_CONTACTS_PER_STEP: usize = 4;
 const SCENERY_BREAK_ENERGY_LOSS: f32 = 0.30;
-const MAX_TURN_SAMPLE_RADIANS: f32 = 0.035;
-pub(super) const PRESS_REACH: f32 = 0.05;
 
 pub(in crate::infrastructure) struct SceneryMotion {
     inverse_mass: f32,
-    seconds: f32,
     pub(in crate::infrastructure) broken: Vec<Breakage>,
     attempted: Vec<Fragment>,
     pub(in crate::infrastructure) speed_scale: f32,
-    pub(super) turn_contact: bool,
     pub(in crate::infrastructure) fall: BreakageCause,
 }
 
 impl SceneryMotion {
-    pub(in crate::infrastructure) fn new(inverse_mass: f32, seconds: f32) -> Self {
+    pub(in crate::infrastructure) fn new(inverse_mass: f32) -> Self {
         Self {
             inverse_mass,
-            seconds,
             broken: Vec::new(),
             attempted: Vec::new(),
             speed_scale: 1.0,
-            turn_contact: false,
             fall: BreakageCause::Contact {
                 yaw: 0.0,
                 speed: 0.0,
             },
         }
-    }
-
-    pub(super) fn turn(
-        &mut self,
-        scenery: &mut Scenery,
-        mut hull: Hull,
-        requested_yaw: f32,
-        pressure: f32,
-        can_damage: bool,
-    ) -> (Hull, Option<Vec2>) {
-        let delta = (requested_yaw - hull.yaw + PI).rem_euclid(TAU) - PI;
-        if delta.abs() < 1e-6 {
-            return (hull, None);
-        }
-        let from = hull.yaw;
-        let samples = ((delta.abs() / MAX_TURN_SAMPLE_RADIANS).ceil() as u8).clamp(1, 32);
-        for step in 1..=samples {
-            let candidate = Hull {
-                yaw: (from + delta * (f32::from(step) / f32::from(samples)) + PI).rem_euclid(TAU)
-                    - PI,
-                ..hull
-            };
-            while let Some((hit, closing)) = scenery.turn_contact(hull, candidate) {
-                self.turn_contact = true;
-                let normal = hit.contact.normal;
-                let speed = (closing * f32::from(samples) / self.seconds).clamp(0.0, 25.0);
-                if !can_damage || !self.damage(scenery, hit, speed, pressure, false) {
-                    return (hull, Some(normal));
-                }
-            }
-            hull = candidate;
-        }
-        (hull, None)
-    }
-
-    pub(super) fn push(
-        &mut self,
-        scenery: &mut Scenery,
-        hull: Hull,
-        reachable: Vec2,
-        actual_travel: Vec2,
-        pressing: Vec2,
-    ) {
-        if reachable.length_squared() < 1e-8 {
-            return;
-        }
-        while let Some(hit) = scenery.sweep_hull(hull, reachable) {
-            let normal = hit.contact.normal;
-            let speed = (-actual_travel.dot(normal) / self.seconds).clamp(0.0, 25.0);
-            let pressure = -pressing.dot(normal);
-            if !self.damage(scenery, hit, speed, pressure.max(0.0), true) {
-                break;
-            }
-        }
-    }
-
-    fn damage(
-        &mut self,
-        scenery: &mut Scenery,
-        hit: HullHit,
-        speed: f32,
-        pressure: f32,
-        moving: bool,
-    ) -> bool {
-        let Some(fragment) = hit.fragment else {
-            return false;
-        };
-        self.damage_fragment(
-            scenery,
-            fragment,
-            hit.contact.normal,
-            speed,
-            pressure,
-            moving,
-        )
     }
 
     pub(in crate::infrastructure) fn damage_contact(
@@ -116,7 +35,7 @@ impl SceneryMotion {
         speed: f32,
         pressure: f32,
     ) -> bool {
-        self.damage_fragment(scenery, fragment, normal, speed, pressure, true)
+        self.damage_fragment(scenery, fragment, normal, speed, pressure)
     }
 
     pub(in crate::infrastructure) fn remaining_contact_budget(&self) -> usize {
@@ -137,7 +56,6 @@ impl SceneryMotion {
         normal: Vec2,
         speed: f32,
         pressure: f32,
-        moving: bool,
     ) -> bool {
         if self.attempted.len() >= MAX_CONTACTS_PER_STEP
             || self.attempted.iter().any(|part| part.same_part(fragment))
@@ -160,7 +78,7 @@ impl SceneryMotion {
             speed,
         };
 
-        if moving && kinetic > 0.0 {
+        if kinetic > 0.0 {
             let energy_share = ((health - pressure) / kinetic).clamp(0.0, 1.0);
             self.speed_scale *= (1.0 - SCENERY_BREAK_ENERGY_LOSS * energy_share).sqrt();
         }

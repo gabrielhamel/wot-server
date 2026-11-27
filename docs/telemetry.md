@@ -372,23 +372,11 @@ records the peer, wire tick, vehicle pose count, sequence number, elapsed time
 since enqueue, and delivery result. Successful sends record the datagram count
 and final UDP payload bytes, including the Mercury framing, pending ACKs and
 encryption. Parked pose refresh can reduce the bytes while the snapshot
-and the recipient's own hull remain on the 100 ms tick. The driving command also
-parents `battles.drive_vehicle` for the first simulation step, the driver's
-`hull_aim` update, and any changed `engine_mode`, `wheels_scroll` and
-`steering_angles` deliveries to battle peers. The step records the sampled
-surface counts, hull pitch, airborne state at entry, resulting longitudinal
-speed and yaw rate, and whether track-lock steering was used.
-When the world step detects contact, elevated support, scenery destruction,
-a held pileup, slope sliding, tipping or recovery,
-`battles.world_motion` records the surviving displacement, contact counts and
-hull roll. It also records whether turning contacted scenery and the retained
-speed multiplier after a break. Projectile impact additionally records whether a hit exhausted a
-scenery fragment's health. A pushed vehicle without its own drive span uses the initiating
-vehicle's available drive parent. The world span then parents pose and chassis
-replication and any scenery updates from the pushed hull's contact.
+and the recipient's own hull remain on the 100 ms tick. The driving command
+also parents the driver's `hull_aim` update and any changed `engine_mode`,
+`wheels_scroll` and `steering_angles` deliveries to battle peers.
 
-With the Rapier hull model selected, `battles.hull_physics` times the shared
-arena step and records the requested simulation interval, participating hulls
+`battles.hull_physics` times the shared arena step and records the requested simulation interval, participating hulls
 and fixed step count. A pending or held drive parents the shared step. Each hull's
 `battles.world_motion` follows its own command or the available command of a
 tank that pushed it. It records support, contact, displacement, pitch, roll

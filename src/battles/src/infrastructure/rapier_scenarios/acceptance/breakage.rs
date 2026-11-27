@@ -3,7 +3,7 @@ use super::*;
 #[test]
 #[ignore = "Requires WOT_RESOURCE_DIR with current EU entity definitions"]
 fn fracturing_tall_and_low_props_preserves_flat_ground_pitch_and_vertical_speed() {
-    let (id, mut simulation) = prepare(2, 0);
+    let (id, mut simulation) = prepare(2);
     let battle = simulation.active.get_mut(&id).unwrap();
     let driver = ParticipantId(1);
     battle.players.get_mut(&ParticipantId(2)).unwrap().observer = true;
@@ -32,15 +32,13 @@ fn fracturing_tall_and_low_props_preserves_flat_ground_pitch_and_vertical_speed(
                     .to_vec(),
             )
         };
-        battle.physics = Some(
-            physics::ArenaPhysics::new(
-                &battle.ground,
-                &battle.obstacles,
-                battle.map.bounds,
-                battle.parameters,
-            )
-            .unwrap(),
-        );
+        battle.physics = physics::ArenaPhysics::new(
+            &battle.ground,
+            &battle.obstacles,
+            battle.map.bounds,
+            battle.parameters,
+        )
+        .unwrap();
         battle.players.get_mut(&driver).unwrap().tank.drive(1);
         let mut broken = 0;
         let mut samples = Vec::new();

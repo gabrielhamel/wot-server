@@ -137,7 +137,7 @@ struct Battle {
     map: ArenaMap,
     ground: Arc<terrain::Terrain>,
     obstacles: obstacles::Scenery,
-    physics: Option<physics::ArenaPhysics>,
+    physics: physics::ArenaPhysics,
     areas: scenery::SceneryAreas,
     arena_type: i32,
     players: HashMap<ParticipantId, Participant>,
@@ -418,7 +418,6 @@ impl BattleRuntime {
         input.battle.load_timeout.seconds = launch.parameters.load_timeout_seconds,
         input.battle.countdown.seconds = launch.parameters.countdown_seconds,
         input.battle.results.seconds = launch.parameters.results_seconds,
-        input.battle.hull_physics = if launch.parameters.hull_physics == 1 { "rapier" } else { "standard" },
         input.outfits.count = tracing::field::Empty,
         output.battle.id = tracing::field::Empty, output.players.count = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
@@ -579,19 +578,14 @@ impl BattleRuntime {
             })
             .collect::<Result<HashMap<_, _>>>()?;
         let obstacles = obstacles::Scenery::new(obstacles);
-        let physics = if launch.parameters.hull_physics == 1 {
-            let mut physics =
-                physics::ArenaPhysics::new(&ground, &obstacles, map.bounds, launch.parameters)
-                    .inspect_err(|error| {
-                        span.record("output.outcome", "physics_unavailable");
-                        span.record("otel.status_code", "ERROR");
-                        error!(%error, arena_type, "Could not prepare arena hull physics");
-                    })?;
-            physics.warm_spawns(&obstacles, &players);
-            Some(physics)
-        } else {
-            None
-        };
+        let mut physics =
+            physics::ArenaPhysics::new(&ground, &obstacles, map.bounds, launch.parameters)
+                .inspect_err(|error| {
+                    span.record("output.outcome", "physics_unavailable");
+                    span.record("otel.status_code", "ERROR");
+                    error!(%error, arena_type, "Could not prepare arena hull physics");
+                })?;
+        physics.warm_spawns(&obstacles, &players);
         span.record("output.players.count", players.len());
         span.record("output.outcome", "prepared");
         let now = Instant::now();

@@ -8,7 +8,7 @@ fn recorded_tree_break_keeps_the_hull_on_its_downhill_course() {
     let yaw = -2.563;
     let driver = ParticipantId(1);
     let run_approach = |intact: bool| {
-        let (id, mut simulation) = prepare_on("29_el_hallouf", 2, 1);
+        let (id, mut simulation) = prepare_on("29_el_hallouf", 2);
         let battle = simulation.active.get_mut(&id).unwrap();
         if !intact {
             let removed = battle.obstacles.blast_trees(tree, 0.5, 100.0);
@@ -20,7 +20,7 @@ fn recorded_tree_break_keeps_the_hull_on_its_downhill_course() {
         let (position, direction) = terrain::pose_from_samples(
             start,
             yaw,
-            player.tank.collision_hull().half_size,
+            player.tank.collision_extents().0.xz(),
             height(start),
             height,
         );

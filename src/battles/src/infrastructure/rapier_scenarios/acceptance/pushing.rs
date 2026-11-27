@@ -15,12 +15,12 @@ fn has(span: &SpanData, key: &str, value: &str) -> bool {
 #[test]
 #[ignore = "Requires WOT_RESOURCE_DIR with current EU entity definitions"]
 fn powered_push_replicates_the_parked_hull_and_only_the_broken_wall_part() {
-    let (arena_id, mut simulation) = prepare(2, 0);
+    let (arena_id, mut simulation) = prepare(2);
     let pusher = ParticipantId(1);
     let pushed = ParticipantId(2);
     let battle = simulation.active.get_mut(&arena_id).unwrap();
     let skin = battle.parameters.contact_skin_metres;
-    let half_length = battle.players[&pushed].tank.collision_hull().half_size.y;
+    let half_length = battle.players[&pushed].tank.collision_extents().0.z;
     let pushed_z = half_length * 2.0 + 2.0 * skin;
     let wall_z = pushed_z + half_length + skin;
     let face = |x| {
@@ -46,16 +46,13 @@ fn powered_push_replicates_the_parked_hull_and_only_the_broken_wall_part() {
         vec![(face(0.0), Some((1, 2))), (face(10.0), Some((2, 2)))],
     );
     battle.areas.assign(&battle.obstacles, || 100);
-    battle.parameters.hull_physics = 1;
-    battle.physics = Some(
-        physics::ArenaPhysics::new(
-            &battle.ground,
-            &battle.obstacles,
-            battle.map.bounds,
-            battle.parameters,
-        )
-        .unwrap(),
-    );
+    battle.physics = physics::ArenaPhysics::new(
+        &battle.ground,
+        &battle.obstacles,
+        battle.map.bounds,
+        battle.parameters,
+    )
+    .unwrap();
     for _ in 0..10 {
         battle.advance_world(0.1);
     }

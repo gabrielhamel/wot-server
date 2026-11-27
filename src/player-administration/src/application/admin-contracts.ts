@@ -110,7 +110,6 @@ export type BattleParameterDefinition = {
   min: number;
   max: number;
   integer: boolean;
-  choices?: string[];
 };
 
 export type BattleOptions = {

@@ -87,8 +87,7 @@ projected onto the middle sample's horizontal heading and right axis.
 | 22.52 s | On the downhill approach under forward-only input, an `AreaDestructibles` property update at offset 78360 added tree 36 to `fallenTrees` in chunk `0x8181`. Its extracted trunk is at (217.73, 54.59, 237.37). The hull descended throughout the contact and changed heading by about 17° between 22.32 and 23.02 s. Position offsets 77548, 78236 and 80066. |
 | 35.12 s | The hull first rolled beyond 90° on a later descent. The terrain beneath its centre had steepened from 3° at 32.02 s to 53° here. |
 
-The recording documents handling on the development server. It contains no
-solver selection. The [Rapier driving scenarios](battle-mechanics.md#rapier-hull-physics-prototype)
+The recording documents handling on the development server. The [Rapier driving scenarios](battle-mechanics.md#rapier-hull-physics)
 use the numbered tree and approach to check the server's response to a break.
 
 ## Widepark Training capture from 2026-11-23
@@ -297,8 +296,8 @@ yaw rate and integrates speed through throttle release, braking, and reversal.
 The acceleration curve and its low-speed cap are approximations informed by
 the replay and the Toolkit's
 [capture comparisons](references/wg-toolkit-rs/wg-toolkit-wot/src/base/physics/drive.rs).
-Ground following still uses the height map. Suspension dynamics, lateral slip
-and handbrake drifts require separate work.
+The server now uses [Rapier hull physics](battle-mechanics.md#rapier-hull-physics)
+for terrain and scenery contact, suspension, and track grip.
 
 For the driver, `Avatar.ownVehicleAuxPhysicsData` carries separate left and
 right track scroll speeds in bits 40–47 and 48–55, from −15 to 30 m/s.

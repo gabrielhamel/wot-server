@@ -2395,6 +2395,13 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         child.parent_span_id == parent.span_context.span_id()
             && child.span_context.trace_id() == parent.span_context.trace_id()
     };
+    let follows_drive = |update: &SpanData, drive: &SpanData| {
+        traces.iter().any(|motion| {
+            motion.name == "battles.world_motion"
+                && child_of(motion, drive)
+                && child_of(update, motion)
+        })
+    };
     assert!(traces.iter().any(|mobility| {
         mobility.name == "accounts.battle_mobility"
             && has(mobility, "ddd.bounded_context.name", "accounts")
@@ -2424,7 +2431,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         has(update, "input.replication.kind", "hull_aim")
             && has(update, "output.delivered.count", "1")
             && traces.iter().any(|drive| {
-                has(drive, "rpc.method", "vehicle_moveWith") && child_of(update, drive)
+                has(drive, "rpc.method", "vehicle_moveWith") && follows_drive(update, drive)
             })
             && traces.iter().any(|delivery| {
                 delivery.name == "mercury.arena_delivery"
@@ -2436,21 +2443,12 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         drive.name == "battles.control"
             && has(drive, "input.drive.flags", "1")
             && traces.iter().any(|step| {
-                step.name == "battles.drive_vehicle"
+                step.name == "battles.hull_physics"
                     && child_of(step, drive)
-                    && has(step, "input.drive.airborne", "false")
-                    && has(step, "output.drive.track_locked", "false")
-                    && step
-                        .attributes
-                        .iter()
-                        .any(|attr| attr.key.as_str() == "output.drive.speed_mps")
-                    && step
-                        .attributes
-                        .iter()
-                        .any(|attr| attr.key.as_str() == "input.ground.medium_contacts")
+                    && has(step, "output.physics.substeps", "6")
             })
             && traces.iter().any(|update| {
-                child_of(update, drive)
+                follows_drive(update, drive)
                     && has(update, "input.replication.kind", "engine_mode")
                     && has(update, "output.delivered.count", "2")
                     && traces.iter().any(|delivery| {
@@ -2718,7 +2716,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
                         control.name == "battles.control"
                             && has(control, "rpc.method", "vehicle_moveWith")
                             && has(control, "input.drive.flags", flags)
-                            && child_of(movement, control)
+                            && follows_drive(movement, control)
                     })
             }),
             "missing movement replication from drive flags {flags} to both Training clients"
