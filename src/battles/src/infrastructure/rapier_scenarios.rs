@@ -179,15 +179,14 @@ mod acceptance {
     fn serene_coast_bridge_and_underpass_replicate_the_solved_hulls() {
         let (id, mut simulation) = prepare(2, 1);
         let battle = simulation.active.get_mut(&id).unwrap();
-        let center = Vec2::new(-146.6378, 93.1646);
-        let along = Vec2::new(0.411799, 0.911274);
+        // This bridge has a level channel and an opening between its piers 8 m from its midpoint.
+        let center = Vec2::new(269.27103, -124.133965);
+        let along = Vec2::new(0.57964814, 0.81486684);
         let across = Vec2::new(along.y, -along.x);
-        let deck = -5.46838;
-        // The west riverbank slopes into the channel. Fit the whole starting footprint
-        // to its support so the rear of the hull starts above the bank.
+        let deck = -10.53;
         for (id, start, heading, on_deck) in [
-            (1, center - along * 25.0 - across * 1.35, along, true),
-            (2, center + along * 4.0 - across * 7.5, across, false),
+            (1, center - along * 25.0, along, true),
+            (2, center - along * 8.0 - across * 10.0, across, false),
         ] {
             let yaw = heading.x.atan2(heading.y);
             let player = battle.players.get_mut(&ParticipantId(id)).unwrap();
@@ -252,7 +251,7 @@ mod acceptance {
         assert!((top.xz() - center).dot(along) > 25.0);
         assert!((below.xz() - center).dot(across) > 6.5);
         for (entity, upper) in [(12, true), (22, false)] {
-            let center = if upper { center } else { center + along * 4.0 };
+            let center = if upper { center } else { center - along * 8.0 };
             let pose = delivered
                 .iter()
                 .flat_map(|snap| &snap.vehicles)
