@@ -736,3 +736,39 @@ before a revealed vehicle's appearance became ready. The server now sends
 pending reliable lifecycle messages before its unreliable poses. The
 snapshot names the latest reliable sequence in its Mercury footer so a
 receiver drops a pose that arrives ahead of creation or trails removal.
+
+### Prokhorovka visibility follow-up
+
+The local Training recording `replay_last_battle.wotreplay` from 2026-11-27
+reports EU `2.4.2.0 #1007` and `05_prohorovka`. Its SHA-256 is
+`67c8b4697f48fdd8667ead159c833fd0d538197f624c212cd903d095a2e95650`.
+The installed x64 executable has the same SHA-256 as the Mines test above.
+
+The AMX 12 t recorder and the ELC EVEN 90 are stationary about 305 m apart
+near the end. The client's ELC entity leaves at 572.425 s (stream offset
+3312770). The ELC fires at 573.925 s and reappears at 574.425 s. It leaves
+again at 592.425 s, fires at 597.825 s and reappears at 598.425 s. Its last
+removal at 614.425 s is about 16.6 seconds after its last shot. The timing
+fits a 5 s firing penalty followed by the far visibility check and 10 s
+retention. The installed vehicle definitions give the recorder 360 m base
+view range and the ELC 0.388 stationary concealment and a 0.25 firing
+multiplier. Under the server's formula its uncovered detection threshold
+changes from about 300 m to 345 m when firing. These observations cover
+the recorder's view of the ELC.
+
+The `0x06` records contain 28 distinct native tree falls. All 28 identities
+are present in the older local `#1000` extraction, including
+`0x7c7a008e` at 522.825 s. Only five are present in the fresh `#1007` trunk
+catalog. This points to the older bundle, whose Prokhorovka geometry has no
+`foliage.bin`. Its trees can fall visually while providing zero concealment.
+The fresh `#1007` extraction has 5,393 foliage placements on this map,
+including the late high-crown tree `0x7c7a0019` that fell at 543.425 s.
+
+All five ELC creations start at the same hull pose as the next recorded
+position sample. The reveal at 94.915 s (offset 544987) initializes
+the gun angle to `0x8025`, then a separate property sets it to `0x552a`
+(offset 545148). At 598.425 s (offset 3457834), creation again uses
+`0x8025` and full health before publishing `0x87ec` and 668 HP. The first
+parked pose follows about 0.4 s later. Vehicle creation now carries live
+angles, health and chassis state, and a reveal refreshes pose cadence
+immediately. Native rendering of that change still needs verification.

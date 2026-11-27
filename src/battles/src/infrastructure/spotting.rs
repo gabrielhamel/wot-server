@@ -101,6 +101,7 @@ impl Battle {
             let mut entered = 0;
             let mut left = 0;
             let mut alerts = 0;
+            let mut revealed = HashSet::new();
             let mut projections = Vec::new();
             for (&peer, viewer) in self.players.iter().filter(|(_, player)| player.entered) {
                 let own = viewer.vehicle.entity_id;
@@ -207,6 +208,7 @@ impl Battle {
                         visible.contains(&id) && !viewer.visible_vehicles.contains(&id)
                     }) {
                         wire.publish_visible_vehicle(delivery, peer, target, self.started_at)?;
+                        revealed.insert(target.vehicle.entity_id);
                         if let Some(fire) = &target.active_fire {
                             wire.publish_fire_start(
                                 delivery,
@@ -253,6 +255,11 @@ impl Battle {
                     player.visible_vehicles = visible;
                     player.minimap_positions = minimap;
                     player.fire_roots = fire_roots;
+                }
+            }
+            for player in self.players.values_mut() {
+                if revealed.contains(&player.vehicle.entity_id) {
+                    player.pose_cadence.refresh(tick);
                 }
             }
             span.record("output.vehicles.entered", entered);

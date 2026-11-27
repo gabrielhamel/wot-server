@@ -277,6 +277,7 @@ impl Obstacles {
         input.arena_type_id = arena_type, output.obstacles.instances = tracing::field::Empty,
         output.obstacles.trees = tracing::field::Empty,
         output.obstacles.foliage = tracing::field::Empty,
+        output.obstacles.foliage.available = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
     ), err)]
     pub(super) fn load(

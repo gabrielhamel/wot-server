@@ -641,4 +641,5 @@ HTTP response. It omits browser span contents, origins and collector URLs.
 | [`output.vehicles.left`](../src/battles/src/infrastructure/spotting.rs) | Number of viewer-specific Vehicle removals enqueued during the tick. |
 | [`output.alerts.count`](../src/battles/src/infrastructure/spotting.rs) | Number of owner Sixth Sense alerts enqueued during the tick. |
 | [`output.outcome`](../src/battles/src/infrastructure/spotting.rs) | Sixth Sense delivery enqueue result, `enqueued` or `delivery_failed`. |
-| [`output.obstacles.foliage`](../src/battles/src/infrastructure/obstacles/foliage.rs) | Number of foliage placements loaded during arena preparation when the foliage file exists. |
+| [`output.obstacles.foliage`](../src/battles/src/infrastructure/obstacles/foliage.rs) | Number of foliage placements loaded during arena preparation. Zero when the file is missing or has no placements. |
+| [`output.obstacles.foliage.available`](../src/battles/src/infrastructure/obstacles/foliage.rs) | Whether the extracted map has a foliage file. |

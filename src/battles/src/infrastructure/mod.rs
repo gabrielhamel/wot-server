@@ -192,13 +192,17 @@ struct PoseCadence {
 }
 
 impl PoseCadence {
+    fn refresh(&mut self, tick: u32) {
+        self.changed_at = tick;
+    }
+
     fn includes(&mut self, pose: (Vec3, Vec3), entity_id: u32, tick: u32, interval: u32) -> bool {
         if interval <= 1 {
             return true;
         }
         if self.previous != Some(pose) {
             self.previous = Some(pose);
-            self.changed_at = tick;
+            self.refresh(tick);
         }
         tick.saturating_sub(self.changed_at) < interval || tick % interval == entity_id % interval
     }

@@ -1773,6 +1773,18 @@ fn spotting_delivers_vehicle_transitions_and_preserves_the_movement_trace() {
         }
         let enemy = battle.players[&VICTIM].vehicle.entity_id;
         let observer = battle.players[&SHOOTER].vehicle.entity_id;
+        let target = battle.players.get_mut(&VICTIM).unwrap();
+        target.tank.health = 47;
+        target.tank.aim_at(crate::domain::vehicle::Aim::HullAngles {
+            yaw: 0.75,
+            pitch: -0.1,
+        });
+        target.tank.advance_gun(1.0);
+        target.last_engine_mode = [3, 1];
+        let gun_angles = target.tank.packed_gun_angles();
+        let pose = (target.vehicle.position, target.vehicle.direction);
+        assert!(target.pose_cadence.includes(pose, enemy, 0, 5));
+        assert!(!target.pose_cadence.includes(pose, enemy, 10, 5));
         let (_, own_vehicle) = wire.dispatch.entity_from_name("OwnVehicle").unwrap();
         let method = own_vehicle
             .client_methods
@@ -1785,7 +1797,7 @@ fn spotting_delivers_vehicle_transitions_and_preserves_the_movement_trace() {
         let is_alert = |(_, kind, body): &(ParticipantId, u8, Vec<u8>)| {
             *kind == NrlData::ID && body.as_slice() == alert
         };
-        let start = battle.started_at;
+        let start = battle.started_at + Duration::from_secs(1);
         let mut delivery = ImpactDelivery::default();
         let drive = tracing::info_span!("test.spotting_drive");
         battle.advance_spotting(
@@ -1795,11 +1807,43 @@ fn spotting_delivers_vehicle_transitions_and_preserves_the_movement_trace() {
             start,
             &[(observer, drive.clone())],
         );
-        assert!(delivery.track_updates.iter().any(|(peer, kind, body)| {
-            *peer == SHOOTER
-                && *kind == CreateArenaEntity::ID
-                && body.get(1..5) == Some(enemy.to_le_bytes().as_slice())
-        }));
+        let (_, _, creation) = delivery
+            .track_updates
+            .iter()
+            .find(|(peer, kind, body)| {
+                *peer == SHOOTER
+                    && *kind == CreateArenaEntity::ID
+                    && body.get(1..5) == Some(enemy.to_le_bytes().as_slice())
+            })
+            .unwrap();
+        let entity = <CreateArenaEntity as Codec<()>>::read(&mut creation.as_slice(), &()).unwrap();
+        let (_, vehicle) = wire.dispatch.entity_from_name("Vehicle").unwrap();
+        let (&count, mut payload) = entity.properties.split_first().unwrap();
+        let mut state = BTreeMap::new();
+        for _ in 0..count {
+            let (&index, rest) = payload.split_first().unwrap();
+            payload = rest;
+            let property = &vehicle.properties[usize::from(index)];
+            state.insert(
+                property.name.as_ref(),
+                ScriptValue::read(&mut payload, &property.ty).unwrap(),
+            );
+        }
+        assert!(payload.is_empty());
+        assert_eq!(state["health"], ScriptValue::Int16(47));
+        assert_eq!(state["gunAnglesPacked"], ScriptValue::UInt16(gun_angles));
+        assert_eq!(
+            state["engineMode"],
+            ScriptValue::Seq(vec![ScriptValue::UInt8(3), ScriptValue::UInt8(1)])
+        );
+        assert!(
+            battle
+                .players
+                .get_mut(&VICTIM)
+                .unwrap()
+                .pose_cadence
+                .includes(pose, enemy, 10, 5)
+        );
         assert!(!delivery.track_updates.iter().any(is_alert));
         battle.advance_spotting(
             &mut delivery,

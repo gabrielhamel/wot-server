@@ -74,7 +74,8 @@ server. Older manifests without the field remain supported.
   catalogs and model names distinguish cover, leafless vegetation and low
   crowns. Tall crowns use a tunable fraction of model height and follow
   the replicated fall angle. These are approximations for sight rays.
-  Bundles without this file provide terrain and solid cover only.
+  Bundles without this file provide terrain and solid cover only. Arena
+  preparation logs a warning when foliage data is missing.
   Battles uses
   `system/data/material_kinds.xml` to resolve the client effect index.
   **Accounts** reads the legacy and prefab shot effect tables and the common

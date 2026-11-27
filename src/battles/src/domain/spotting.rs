@@ -283,6 +283,35 @@ mod tests {
     }
 
     #[test]
+    fn a_stationary_vehicle_can_be_revealed_by_firing_and_then_go_dark() {
+        let mut state = Spotting::default();
+        let parameters = BattleParameters::default();
+        let mut vehicles = [vehicle(1, 1, Vec3::ZERO), vehicle(2, 2, Vec3::X * 305.0)];
+        vehicles[0].view_range = 360.0;
+        let still = 0.388 * 0.5;
+        vehicles[1].concealment = still;
+        let uncovered = |_: &Combatant, _: &Combatant, _, _| Some(0.0);
+        state.update(&parameters, 0, &vehicles, uncovered);
+        assert!(!state.knows_enemy(1, 2));
+
+        vehicles[1].concealment = still * 0.25;
+        state.update(&parameters, 20, &vehicles, uncovered);
+        assert!(state.knows_enemy(1, 2));
+
+        vehicles[1].concealment = still;
+        state.update(&parameters, 70, &vehicles, uncovered);
+        state.update(&parameters, 169, &vehicles, uncovered);
+        assert!(state.knows_enemy(1, 2));
+        assert_eq!(
+            state
+                .update(&parameters, 170, &vehicles, uncovered)
+                .went_dark,
+            [2]
+        );
+        assert!(!state.knows_enemy(1, 2));
+    }
+
+    #[test]
     fn radio_chain_can_split_and_rejoin_during_target_retention() {
         let mut state = Spotting::default();
         let parameters = BattleParameters::default();

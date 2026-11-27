@@ -1,4 +1,5 @@
 use super::*;
+use byteorder::ReadBytesExt;
 use wot_platform::mercury::net::element::ElementLength;
 
 const DIRECT_RAYTRACE: i16 = 0;
@@ -11,40 +12,69 @@ impl ArenaWire {
         player: &Participant,
         started_at: Instant,
     ) -> Result<()> {
-        let id = player.vehicle.entity_id;
-        publish_entity(delivery, peer, player.vehicle.clone())?;
-        self.vehicle_properties(
-            delivery,
-            peer,
-            id,
-            [
-                ("health", WireValue::Int16(player.tank.health)),
-                (
-                    "isCrewActive",
-                    WireValue::UInt8(u8::from(player.tank.health > 0)),
+        let schema = self
+            .dispatch
+            .entity_from_id(self.vehicle_type)
+            .context("Missing Vehicle")?;
+        let mut vehicle = player.vehicle.clone();
+        let mut encoded = vehicle.properties.as_slice();
+        let mut state = BTreeMap::new();
+        let count = encoded.read_u8()?;
+        for _ in 0..count {
+            let property = schema
+                .properties
+                .get(usize::from(encoded.read_u8()?))
+                .context("Invalid Vehicle creation property")?;
+            state.insert(
+                property.name.as_ref(),
+                WireValue::read(&mut encoded, &property.ty)?,
+            );
+        }
+        state.extend([
+            ("health", WireValue::Int16(player.tank.health)),
+            (
+                "isCrewActive",
+                WireValue::UInt8(u8::from(player.tank.health > 0)),
+            ),
+            (
+                "gunAnglesPacked",
+                WireValue::UInt16(player.tank.packed_gun_angles()),
+            ),
+            (
+                "engineMode",
+                WireValue::Seq(
+                    player
+                        .last_engine_mode
+                        .into_iter()
+                        .map(WireValue::UInt8)
+                        .collect(),
                 ),
-            ],
-        )?;
-        self.publish_gun_angles(delivery, peer, id, player.tank.packed_gun_angles())?;
-        self.publish_engine_mode(delivery, peer, id, player.last_engine_mode)?;
-        for (steering, values) in [false, true].into_iter().zip(&player.last_wheels) {
+            ),
+            (
+                "publicStateModifiers",
+                self.broken_tracks_state(&player.tank),
+            ),
+        ]);
+        for (name, values) in ["wheelsScroll", "steeringAngles"]
+            .into_iter()
+            .zip(&player.last_wheels)
+        {
             if !values.is_empty() {
-                self.publish_wheels(delivery, peer, id, steering, values)?;
+                state.insert(
+                    name,
+                    WireValue::Seq(values.iter().copied().map(WireValue::UInt8).collect()),
+                );
             }
         }
         if let Some((end, _)) = player.pending_stun.as_ref() {
             let expiration = end.saturating_duration_since(started_at).as_secs_f64();
-            self.vehicle_properties(
-                delivery,
-                peer,
-                id,
-                [("stunInfo", WireValue::Float64(expiration))],
-            )?;
+            state.insert("stunInfo", WireValue::Float64(expiration));
         }
-        self.publish_broken_tracks(delivery, peer, id, &player.tank)?;
         if !player.damage_stickers.is_empty() {
-            self.publish_damage_stickers(delivery, peer, id, &player.damage_stickers)?;
+            state.insert("damageStickers", player.damage_stickers.value());
         }
+        vehicle.properties = properties_by_id(schema, state)?;
+        publish_entity(delivery, peer, vehicle)?;
         Ok(())
     }
 

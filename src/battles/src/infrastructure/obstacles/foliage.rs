@@ -22,7 +22,11 @@ pub(super) struct Foliage {
 impl Foliage {
     pub(super) fn load(resources: &ResourceBundle, geometry: &str) -> Result<Self> {
         let path = format!("{geometry}/foliage.bin");
-        if !resources.has_file(&path) {
+        let available = resources.has_file(&path);
+        tracing::Span::current().record("output.obstacles.foliage.available", available);
+        if !available {
+            tracing::Span::current().record("output.obstacles.foliage", 0);
+            tracing::warn!(%geometry, "Foliage data is missing from the resource bundle. Re-extract client resources to enable vegetation concealment");
             return Ok(Self::default());
         }
         let (header, input) = record_input(resources, &path)?;
@@ -195,6 +199,51 @@ fn cell(position: Vec3) -> (i32, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fallen_crown_adds_cover_at_its_new_position() {
+        let native = 0x7c7a0019;
+        let transform = Affine3A::from_translation(Vec3::new(94.0, 0.0, -8.0));
+        let foliage = Foliage {
+            plants: vec![Plant {
+                native: Some(native),
+                bounds: Bounds {
+                    min: Vec3::new(-2.0, 0.0, -2.0),
+                    max: Vec3::new(2.0, 12.0, 2.0),
+                },
+                model_to_world: transform,
+                world_to_model: transform.inverse(),
+                bare: false,
+                low_crown: false,
+            }],
+            cells: HashMap::from([(cell(Vec3::X * 94.0), vec![0])]),
+        };
+        let mut scene = Scenery::new(Arc::new(Obstacles {
+            foliage,
+            ..Default::default()
+        }));
+        let combatant = |position| Combatant {
+            entity: 0,
+            team: 0,
+            position,
+            geometry: None,
+            view_range: 0.0,
+            radio_range: 0.0,
+            concealment: 0.0,
+            firing: false,
+        };
+        let observer = combatant(Vec3::ZERO);
+        let mut target = combatant(Vec3::X * 100.0);
+        let parameters = BattleParameters::default();
+        let cover = |scene: &Scenery, target: &Combatant| {
+            scene.foliage_cover(&parameters, &observer, target, Vec3::Y, Vec3::X, 100.0)
+        };
+        assert_eq!(cover(&scene, &target), 0.0);
+        scene.record_fallen_crown(native, 0.0, std::f32::consts::FRAC_PI_2);
+        assert_eq!(cover(&scene, &target), 0.5);
+        target.firing = true;
+        assert_eq!(cover(&scene, &target), 0.15);
+    }
 
     #[test]
     fn firing_uses_only_the_strongest_nearby_plant_and_preserves_distant_cover() {
