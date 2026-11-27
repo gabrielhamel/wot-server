@@ -115,28 +115,25 @@ battle_parameters! {
         moving_turn_min_speed_mps: f32 = 0.5, 0.0..=10.0, false, "Moving turn minimum speed (m/s)";
         moving_turn_multiplier: f32 = 0.85, 0.0..=2.0, false, "Moving turn multiplier";
         track_lock_heading_response: f32 = 2.0, 0.0..=20.0, false, "Track-lock heading response (per second)";
-        terrain_contact_tolerance_metres: f32 = 0.35, 0.0..=2.0, false, "Terrain contact tolerance (metres)";
+    }
+    "Hull physics" {
+        suspension_travel_metres: f32 = 0.3, 0.05..=0.8, false, "Suspension travel (metres)";
+        suspension_frequency_hz: f32 = 3.0, 1.0..=5.0, false, "Suspension frequency (Hz)";
+        suspension_damping_ratio: f32 = 0.8, 0.1..=1.5, false, "Suspension damping ratio";
+        lateral_grip_response_seconds: f32 = 0.08, 0.05..=2.0, false, "Lateral grip response (seconds)";
     }
     "World contacts" {
         contact_skin_metres: f32 = 0.025, 0.0..=0.25, false, "Collision clearance (metres)";
-        hull_height_metres: f32 = 2.0, 0.25..=6.0, false, "Scenery and fallback hull height (metres)";
+        hull_height_metres: f32 = 2.0, 0.25..=6.0, false, "Fallback hull height (metres)";
         fallback_hull_half_width_metres: f32 = 1.25, 0.25..=5.0, false, "Fallback hull half-width (metres)";
         fallback_hull_half_length_metres: f32 = 2.5, 0.25..=8.0, false, "Fallback hull half-length (metres)";
         fallback_mass_kg: f32 = 30_000.0, 100.0..=200_000.0, false, "Fallback vehicle mass (kg)";
         fallback_engine_power_watts: f32 = 300_000.0, 100.0..=1_000_000.0, false, "Fallback engine power (watts)";
-        tipped_hull_clearance_metres: f32 = 0.35, 0.0..=2.0, false, "Overturned hull clearance (metres)";
-        scenery_wall_normal_y_limit: f32 = 0.65, 0.0..=1.0, false, "Scenery wall vertical normal limit";
         scenery_push_force_scale: f32 = 0.0002, 0.0..=0.002, false, "Scenery push force scale";
-        max_passive_speed_mps: f32 = 12.0, 0.0..=30.0, false, "Maximum passive speed (m/s)";
-        contact_drag_mps2: f32 = 4.0, 0.0..=30.0, false, "Passive contact drag (m/s²)";
         hard_surface_grip: f32 = 0.58, 0.0..=2.0, false, "Hard surface grip";
         medium_surface_grip: f32 = 0.50, 0.0..=2.0, false, "Medium surface grip";
         soft_surface_grip: f32 = 0.42, 0.0..=2.0, false, "Soft surface grip";
         tip_terrain_roll_radians: f32 = 1.0, 0.05..=1.57, false, "Tip roll threshold (radians)";
-        tip_min_support_roll_radians: f32 = 0.3, 0.0..=1.57, false, "Minimum support roll for tipping (radians)";
-        tip_side_speed_mps: f32 = 5.5, 0.1..=20.0, false, "Tipping side speed (m/s)";
-        tip_turning_factor: f32 = 0.28, 0.0..=2.0, false, "Turning contribution to tipping";
-        righting_side_speed_mps: f32 = 1.5, 0.0..=20.0, false, "Righting side speed (m/s)";
         settle_time_seconds: f32 = 3.0, 0.0..=60.0, false, "Overturned settling time (seconds)";
         recovery_time_seconds: f32 = 15.0, 0.0..=120.0, false, "Overturned recovery time (seconds)";
     }

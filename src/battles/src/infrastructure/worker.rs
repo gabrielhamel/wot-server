@@ -397,6 +397,13 @@ mod tests {
                 },
                 ground: Arc::new(Terrain::empty()),
                 obstacles: Scenery::default(),
+                physics: crate::infrastructure::physics::ArenaPhysics::new(
+                    &Terrain::empty(),
+                    &Scenery::default(),
+                    [Vec2::splat(-1.0), Vec2::ONE],
+                    Default::default(),
+                )
+                .unwrap(),
                 areas: Default::default(),
                 spotting: Default::default(),
                 pending_spotting_alerts: Default::default(),

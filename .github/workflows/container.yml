@@ -143,6 +143,7 @@ jobs:
           BUNDLE_VERSION: ${{ steps.image.outputs.bundle_version }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
+          chmod -R a+rX resources
           docker build --provenance=false --tag "$IMAGE" \
             --build-arg WOT_SERVER_VERSION="$RELEASE_TAG" \
             --build-arg WOT_GAME_VERSION="$GAME_VERSION" \

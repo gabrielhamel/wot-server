@@ -95,7 +95,7 @@ Discord notification.
 
 The admin battle E2E case drives an authenticated dashboard launch through
 PostgreSQL, the gateway and an encrypted Mercury peer. It checks stationary
-dummy replication, equipped and overridden HP, perk scaling at partial
+dummy replication, the default Rapier solver, equipped and overridden HP, perk scaling at partial
 efficiency, and ammunition projected into the arena loadout. The player
 enters in a catalog tank they do not own, drives and fires it, then returns
 to their existing garage. A second launch changes the modules and HP of an
@@ -104,6 +104,10 @@ The garage still reports the original modules and ammunition afterward. It also 
 the overridden countdown in a decoded native period update, the garage
 return, and the exported HTTP-to-arena trace, including rejected loadouts and
 battle parameter overrides.
+
+Pose cadence assertions count frames across consecutive received arena ticks.
+If an unreliable snapshot is skipped, the peer restarts the window within its
+receive deadline and still checks the exact frame counts.
 
 The database-dependent tests are opt-in when running Cargo locally.
 
@@ -117,6 +121,7 @@ export WOT_TEST_DATABASE_URL='postgresql://wot_server:local-development@127.0.0.
 cargo run -p wot-extract -- /path/to/game --output /path/to/resources
 export WOT_RESOURCE_DIR='/path/to/resources'
 cargo test --locked -p wot-battles projectile_tests -- --ignored
+cargo test --locked -p wot-battles rapier_scenarios::acceptance -- --ignored --test-threads=1
 cargo test --locked -p wot-server-runtime --lib initializes_context_storage -- --ignored
 cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored
 cargo test --locked --features integration-test-support --test admin_traces exports_admin_http_access_lifecycle -- --ignored

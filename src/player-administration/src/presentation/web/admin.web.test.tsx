@@ -1207,6 +1207,15 @@ it("launches a Training battle with selected players and a customized stationary
             integer: true,
           },
           {
+            key: "suspension_frequency_hz",
+            label: "Suspension frequency (Hz)",
+            group: "Hull physics",
+            default: 3,
+            min: 1,
+            max: 5,
+            integer: false,
+          },
+          {
             key: "countdown_seconds",
             label: "Countdown (seconds)",
             group: "Round timing",
@@ -1456,6 +1465,11 @@ it("launches a Training battle with selected players and a customized stationary
     await user.type(countdown, "2");
     await user.clear(retention);
     await user.type(retention, "80");
+    expect(screen.queryByRole("combobox", { name: "Hull physics model" })).not.toBeInTheDocument();
+    const suspension = screen.getByRole("spinbutton", { name: "Suspension frequency (Hz)" });
+    expect(suspension).toHaveValue(3);
+    await user.clear(suspension);
+    await user.type(suspension, "4");
     await user.click(parameters);
     expect(parameters).toHaveAttribute("aria-expanded", "false");
     await user.click(start);
@@ -1473,7 +1487,11 @@ it("launches a Training battle with selected players and a customized stationary
     expect(posts[1]?.body).toEqual({
       arena_type: 5,
       duration_seconds: 600,
-      parameters: { countdown_seconds: 2, spotting_retention_ticks: 80 },
+      parameters: {
+        countdown_seconds: 2,
+        spotting_retention_ticks: 80,
+        suspension_frequency_hz: 4,
+      },
       players: [
         {
           account_id: 123,
@@ -1550,7 +1568,7 @@ it("launches a Training battle with selected players and a customized stationary
       "ddd.bounded_context.name": "player_administration",
       "input.arena_type_id": 5,
       "input.round_length.seconds": 600,
-      "input.battle.parameters.count": 2,
+      "input.battle.parameters.count": 3,
       "input.players.count": 2,
       "input.players.custom_loadout_count": 1,
       "input.players.owned_override_count": 1,

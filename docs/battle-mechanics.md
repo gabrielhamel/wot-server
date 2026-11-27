@@ -233,33 +233,121 @@ Battles combines the fitted engine and mass ratios with the chassis traverse
 rate and terrain resistance. It applies the chassis grade limit to uphill
 traction and supports centered rotation, single-track
 pivots, wheel steering, downhill overspeed, track-lock steering on eligible
-tracked classes, and airborne motion and landing against the terrain height
-map. The drive model uses approximate traction, braking, track-lock and
-takeoff responses. The client speedometer admits up to 1.5 times the listed
+tracked classes. Rapier resolves airborne motion and landings against terrain
+and scenery. The track forces approximate traction, braking and track lock. The client speedometer admits up to 1.5 times the listed
 speed in the supplied client reference. Training uses that ratio as a downhill
 simulation bound. It still needs a measured EU downhill curve. See
 [movement simulation](../src/battles/src/domain/movement.rs),
-[terrain pose](../src/battles/src/domain/vehicle.rs),
+[hull physics](../src/battles/src/infrastructure/physics.rs),
 [replay evidence](battle-replays.md#vehicle-movement-and-chassis-animation)
 and [Wargaming's movement physics notes][eu-movement].
 
+#### Rapier hull physics
+
+Every arena creates a Rapier rigid-body world on the preparation worker.
+Each 100 ms arena tick runs six 1/60 s physics steps. The server sends
+the solved pose and chassis animation through the existing snapshot and
+property updates.
+
+The movement rules request longitudinal acceleration and yaw acceleration from
+the equipped power-to-weight ratio, material resistance, speed limits, steering
+and brake inputs. Three suspension probes on each track apply impulses where
+they find support. A hull crossing a crest can lose contact one end at a time.
+Gravity, external pushes, attitude and landing velocity come from the
+[rigid-body world](../src/battles/src/infrastructure/physics.rs). The simplified
+hull collider uses the loaded chassis and hull bounds and preserves the native
+vehicle origin. Fixed heightfields reproduce the terrain tile triangles.
+Scenery collision shapes are shared across arenas. The preparation worker
+loads the spawn neighborhoods. Each physics step keeps the map placements
+around the swept hulls in 32 m pages, across all elevations.
+Fixed scenery meshes preserve bridges, underpasses, arena visibility and
+vehicle-pass flags. Destroyed fragments affect subsequent physical contacts
+in the same arena. Before each step the server sweeps the hull and tracks
+along their approach to nearby obstacles. When a fragment gives way under
+the impact, the tank pays its horizontal speed cost and the suspension can
+reach the ground beneath it. Solid surfaces and surviving fragments still
+support or deflect the hull. Armor intersections and HP decisions use the Battles rules.
+Hulls collide with other vehicles and wrecks. A tank perched entirely on
+another hull needs to regain contact with map geometry before its tracks
+can propel it. The suspension treats support entirely on scenery as hard
+ground.
+
+During a turn, the tracks supply the sideways force needed to follow the
+hull's heading. On a bank they also oppose gravity along the surface.
+Neutral and braked tracks can hold a parked hull across, along or diagonally
+to the slope. The available grip depends on surface material and the load on
+each track contact. Once gravity exceeds that grip the hull slides downhill.
+Track-lock steering keeps its own skid response.
+
+| Rapier setting | Default | Range |
+| --- | --- | --- |
+| Suspension travel | 0.30 m | 0.05–0.8 m |
+| Suspension frequency | 3 Hz | 1–5 Hz |
+| Suspension damping ratio | 0.8 | 0.1–1.5 |
+| Lateral grip response | 0.08 s | 0.05–2 s |
+
+These are server tuning values. The [El Halluf playtest](battle-replays.md#el-halluf-training-capture-from-2026-11-27)
+informed the handling changes. Retail grip limits and suspension response
+still need calibration.
+
+##### Validation on 2026-11-27
+
+The extracted EU client resources reported `v.2.4.2.0 #1007`. The installed
+`WorldOfTanks.exe` SHA-256 was
+`0d7d61866dfe8f884a76f31a6c91308662b27e0ff09f14f08647234048c939f6`.
+For the same test loadout, two seconds of forward input followed by a full
+brake and a one-second stationary turn produced the following results.
+
+| Ground | Acceleration distance | Braking distance | Turn |
+| --- | ---: | ---: | ---: |
+| Hard | 8.54 m | 0.95 m | 0.908 rad |
+| Soft | 3.95 m | 0.29 m | 0.451 rad |
+
+The Serene Coast regression drives one hull across the bridge and another
+underneath. It checks the replicated positions on both levels and traces
+each drive command to its position update. A separate fixture drives off a
+finite deck, compares two sets of controls in free fall, and lands on a bank.
+Another powers a parked tank through a destructible wall and checks the
+native fracture delivery, the adjacent fragment and both tanks' HP.
+
+In a 5 m/s powered turn on flat hard ground, sideways speed after one
+second fell from 0.93 m/s to less than 0.01 m/s. The heading change was
+0.78 rad in both runs. A separate fixture starts with a 2 m/s sideways
+push. The tracks brought that below 0.1 m/s in 0.40 s, down from 0.65 s.
+Across an 11.5° hard bank, a parked hull moved 0.009 m in four seconds,
+compared with 1.41 m before the change. On a 37.2° hard bank, all three
+tested headings slid downhill with the brake applied as well as in neutral.
+At 26° the same hull held on hard ground and slid 1.07 m on soft ground
+in two seconds. Driving across the 11.5° bank for 1.67 s produced
+6.24 m of forward travel and 0.02 m of sideways drift. On the 37.2°
+bank the hull still moved 5.40 m forward while sliding 1.56 m downhill
+in the map plane and losing 1.18 m in height.
+
+The El Halluf regression uses the approach to tree 36 in chunk `0x8181`
+from the playtest. It drives a test hull on the extracted map twice, first
+with the trunk cleared, then with it standing. Over the 0.30 s after the
+tree broke, the second run added less than 0.01° of pitch or yaw and
+less than 2 mm of hull rise. On a separate flat course, an off-centre
+4 m tree proxy previously added 13.86° of pitch. The same impact now adds
+less than 0.02°. A 24 cm breakable prop also fractures as the track reaches it.
+
+On an Apple M1 Max, a release build with 30 dispersed drivers on Serene
+Coast measured 14.0 ms at p95 and 26.1 ms maximum over 300 timed arena
+ticks. The test process peaked at 115.6 MiB RSS.
+It updates the arena and queues snapshots for all 30 drivers. Gateway UDP
+encoding, network transport and competition between active arenas need
+separate measurements. To reproduce, set `WOT_RESOURCE_DIR` and run
+`cargo test --release -p wot-battles measure_thirty -- --ignored --nocapture --test-threads=1`.
+The [scenario fixtures](../src/battles/src/infrastructure/rapier_scenarios.rs)
+use 20 warm-up ticks and check the queued snapshots for every recipient.
+
 #### Scenery contact, pushing and recovery
 
-Training sweeps an oriented hull footprint against wall-like triangles in the
-arena collision bundle. It stops the component of motion into the obstruction
-and allows glancing movement along the surface. Arena variants use their
-configured collision visibility mask. Within the chassis's local step range,
-upward scenery triangles can support the hull and affect pitch and roll.
-Bridges and ramps can carry vehicles above the terrain while a vehicle below
-a deck can continue on the underlying surface. Bundles without collision
-placements still support terrain and tank contact.
-
-Hull sweeps use the loaded Havok chassis and mounted hull bounds on the X/Z
-plane, including rear overhang and any offset from the vehicle origin. Track
-dimensions remain the fallback when the bundle lacks those bounds. The tank
-keeps its own movement and replication origin. The AMX 30 B in the recorded EU
-resources has a track half-length of about 2.04 m and its chassis reaches about
-3.33 m behind the origin.
+The hull collider uses three-dimensional chassis and mounted hull bounds,
+including rear overhang and offsets from the vehicle origin. Track dimensions
+provide fallback extents when collision bounds are unavailable. Arena variants
+use their collision visibility mask. Tracks can find support on a raised deck
+while a separate vehicle travels on the terrain underneath.
 
 The extractor joins placed Havok models to the destruction definitions and
 uses the compiled map's `WGDE` section to identify each object by chunk and
@@ -276,12 +364,8 @@ after destruction. The [Widepark capture](battle-replays.md#widepark-training-ca
 locates the stock Leopard 1 stop beside a flat carriage.
 Numbered placements scale base fragment
 health by the square of the model scale. Drive contact estimates scenery damage
-from mass and contact speed. At each angular sample, the solver compares
-horizontal penetration of the same surface before and after rotation.
-This detects a corner entering a fence panel even when the overall hull
-projection toward the contact normal decreases. Steering alone can damage
-such a wall, and a turn that clears an existing contact can continue.
-Powered input adds sustained pressure at contact even while the hull is
+from mass and contact speed, including the motion at the point where a turning
+hull reaches an obstacle. Powered input adds sustained pressure at contact even while the hull is
 stationary. Breaking scenery consumes a bounded share of the assumed impact
 energy, so a light vehicle can lose more speed than a heavier one at the same
 approach speed. The server deducts 30% of the share of impact energy required
@@ -327,28 +411,9 @@ The extractor reads Havok collision data for placed models through its
 data. Server contact tests run in Rust. The native client runs its own
 destruction effects.
 
-Tank contact sweeps the full chassis and mounted hull bounds in three
-dimensions, using each tank's current pitch, roll, and yaw. Contact starts
-at the bounds without extra tank-to-tank clearance. Translation during the
-sweep is horizontal. The server alternates pair order across bounded solver
-passes. Installed vehicle and equipment mass determines how much each tank
-moves. An unattended tank can be pushed, while a wreck acts as an immovable
-hull. The pushed hull can damage scenery with its resulting motion and engine
-pressure transmitted along the contact normal. The solver checks the proposed
-displacement against the remaining scenery and arena bounds in the same tick.
-If a pileup still overlaps after the solver budget, the affected group holds
-its previous horizontal pose for that tick. Other groups can continue moving.
-
-The [solver](../src/battles/src/infrastructure/motion.rs) computes oriented
-contact boxes once for the proposed poses and reuses them across passes.
-Each pair test still receives the current travels, including corrections
-from earlier pairs. A pass is unnecessary when every tank holds its pose.
-In a November 26, 2026 microbenchmark on an Apple M1 Max, one sweep of all
-435 pairs of 30 moving hulls went from 22.9 to 1.4 µs at 30 m spacing and
-from 48.4 to 23.4 µs at 3.3 m spacing. The two implementations found the
-same contacts in both layouts. These timings cover the pair tests and
-contact-box construction for one pass. A full tick also includes scenery
-queries, contact corrections and replication.
+Rapier resolves contact between live tanks, immovable wrecks and arena
+boundaries. Installed mass determines the response to an impact. Forces from
+a moving tank can reach a breakable through an unattended tank it pushes.
 
 On steep surfaces, gravity can overcome material-dependent grip. The vehicle
 then slides downhill even without a drive command. Side slopes, hard turns
@@ -359,43 +424,14 @@ automatic recovery countdown on stable ground. Movement restarts the wait.
 This is Training server policy modeled on Wargaming's published recovery
 rules, which introduced auto-flipping in Random Battles. [EU recovery notes][eu-recovery]
 
-The Lakeville bundle regression starts two tanks facing each other and runs
-a drive command through the arena tick. It pushes the parked tank through a
-numbered wall and verifies that both tanks advance and retain their health.
-Both viewers are queued the updated positions and fracture under the
-initiating drive trace. The same regression checks a separate steering
-fracture and resulting tree fall. The Serene Coast
-bundle regression samples the `hd_env_UNI_036_Bridge` deck near
-`(-143.73, 102.71)` in world X/Z and checks that the ground below stays a
-separate driving surface. Synthetic regressions cover ramp traversal,
-partial structure damage, independent rounds, a ten-tank pileup, and AMX 30 B
-bounds meeting on a slope. The powered push test covers repeated pressure
-against a breakable wall and a solid wall that holds both tanks.
-The fresh bundle from the recorded executable produced 806 collision models
-with destructible triangles, including 25 with cascade dependencies. The
-Ensk regression traces a ray into a real numbered fragment, confirms its
-dependants disappear from arena collision state, and verifies a fresh arena
-keeps the geometry intact. The wire regression decodes live fracture arrays
-with the installed EU client's `AreaDestructibles.def`. A fresh extraction
-from that executable found 269,309 numbered trees across 70 layouts,
-including 4,739 in Malinovka. The Malinovka regression checks a standing
-trunk's hull contact and shell passthrough, native ID, loss of collision on
-breakage, and fresh-arena reset. The wire regression checks the five-byte
-tree fall record, including the captured pitch bytes documented in the
-Toolkit's `wg-toolkit-wot/src/base/battle/areas.rs`. The Lakeville
-regression checks that the scenery update is queued for both peers
-under the command that caused it, and that arena entry queues the broken
-state. The exported trace also records a closed delivery queue as an error.
+The resource-backed driving scenarios verify that a pushed tank breaks
+one numbered wall fragment while an adjacent fragment remains intact.
+Both tanks retain their health. The fracture and replicated hull pose retain
+the initiating drive trace. The El Halluf scenario verifies a numbered tree
+falls on contact. Serene Coast verifies hull support across a bridge and
+passage on the terrain underneath. The Ensk regression checks cascaded
+destruction and per-arena fracture state.
 
-The EU executable launched on macOS through Wargaming.net Game Center, which
-reported build `2.4.1.5514` as current. The Wine game window was unavailable to
-the automation. Live observation of tree falls, debris, model changes and entry snapshots
-in a native Training battle remains pending. A Training player confirmed
-placed object destruction and tree falls, then reported passing through
-Widepark street lamps and the center train and backing partly into a wall
-with the AMX 30 B. The refreshed bundle regression checks the numbered
-Widepark lamp and locomotive, and the AMX 30 B contact envelope and reverse
-sweep have dedicated tests. Those three fixes still need a native retest.
 The protocol evidence comes
 from the extracted EU entity definitions, the supplied
 `AreaDestructibles.py`, `DestructiblesCache.py` and `Avatar.py` references, and
@@ -404,9 +440,9 @@ the Toolkit's matching captured battle in its `WGDE` decoder and
 
 | Remaining gap | What is missing |
 | --- | --- |
-| Scenery and ground contact fidelity | The solver uses chassis and hull envelopes for tank contact, an estimated height for the scenery sweep and upward triangles for support. Dedicated movement materials, exact suspension contact, continuous angular sweeps, airborne collision and fully coupled 3D pileups remain open. |
+| Scenery and ground contact fidelity | The convex hull and six suspension probes approximate the full track footprint and chassis shape. Native suspension tuning and grip at mixed-material contacts still need calibration. |
 | Destruction coverage and fidelity | Unnumbered scenery lacks native synchronization. Trunk shapes, contact loads, pitch limits and foliage volumes are estimates. Fall collisions with tanks and other trees, authoritative debris motion, exact shell damage, shell continuation through broken cover and splash destruction remain open. |
-| Rollover fidelity and feedback | The current model tips onto a side. Full rotational dynamics, tumbles onto the roof, rollover destruction rules and native recovery HUD messages remain open. Ramming damage is outside this work. |
+| Rollover fidelity and feedback | Rigid bodies can tip and roll onto the roof. Rollover destruction rules and native recovery HUD messages remain open. Ramming damage is outside this work. |
 | Environmental hazards | Airborne motion lands on the height map or a supporting surface. Landing and fall damage, water volumes and depth, drowning warnings and timers, and their battle outcomes remain open. |
 | Damage and vehicle abilities | Damaged-engine power loss, reserve tracks, crew incapacitation, emergency and active repair interactions, wheeled mode switching, and vehicle-specific boosts still need implementation or further wire evidence. |
 | Full modifier fidelity | Situational perks, crew directive effects beyond the implemented equipment directives, progression slot overrides and field modifications, special equipment/vehicle overrides, and exact crew and perk stacking need further work. |

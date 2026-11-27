@@ -1,11 +1,12 @@
 use super::*;
-use crate::domain::world::{Contact, Hull};
 use byteorder::{LE, ReadBytesExt};
 use glam::Affine3A;
 use std::io::{BufReader, Read};
 use wot_platform::client_formats::pxml;
 
 mod foliage;
+mod physics;
+pub(super) use physics::SceneryColliders;
 mod trees;
 pub(super) use trees::TREE_PART;
 
@@ -16,6 +17,7 @@ pub(super) struct Obstacles {
     index: Option<Box<CollisionIndex>>,
     trees: trees::Trees,
     foliage: foliage::Foliage,
+    physics: std::sync::OnceLock<Result<Arc<physics::PhysicsGeometry>, String>>,
 }
 
 #[derive(Clone, Copy)]
@@ -34,10 +36,6 @@ pub(super) struct Fragment {
 }
 
 impl Fragment {
-    #[cfg(test)]
-    fn is_tree(self) -> bool {
-        self.part == TREE_PART && matches!(self.object, Object::Native(_))
-    }
     pub(super) fn same_part(self, other: Self) -> bool {
         self.object == other.object && self.part == other.part
     }
@@ -61,12 +59,6 @@ const SHELLS_PASS: u32 = 2;
 const RETAIN_VEHICLE_WALL: u32 = 4;
 const CASCADE_MASK: u32 = (1 << 13) - 1;
 
-#[derive(Clone, Copy)]
-pub(super) struct HullHit {
-    pub contact: Contact,
-    pub fragment: Option<Fragment>,
-}
-
 #[derive(Default)]
 struct Damage(HashMap<(Object, u32), u32>);
 
@@ -81,6 +73,7 @@ pub(super) struct Scenery {
     geometry: Arc<Obstacles>,
     damage: Damage,
     fallen_crowns: HashMap<u32, glam::Quat>,
+    broken_count: usize,
 }
 
 impl Scenery {
@@ -89,6 +82,7 @@ impl Scenery {
             geometry,
             damage: Damage::default(),
             fallen_crowns: HashMap::new(),
+            broken_count: 0,
         }
     }
 
@@ -110,43 +104,6 @@ impl Scenery {
             );
         }
         nearest.is_some()
-    }
-
-    pub fn sweep_hull(&self, hull: Hull, travel: Vec2) -> Option<HullHit> {
-        self.geometry.sweep_hull(hull, travel, &self.damage)
-    }
-
-    pub fn turn_contact(&self, current: Hull, candidate: Hull) -> Option<(HullHit, f32)> {
-        let (min, max) = candidate.bounds();
-        let mut blocking = None;
-        self.geometry.visit_hull_triangles(
-            Bounds { min, max },
-            &self.damage,
-            |vertices, fragment| {
-                if let Some((normal, depth)) = candidate.triangle_overlap(vertices)
-                    && depth > candidate.parameters.contact_skin_metres
-                {
-                    let before = current
-                        .triangle_overlap(vertices)
-                        .map_or(0.0, |(_, depth)| depth);
-                    let closing = depth - before;
-                    if closing > 0.0001 && blocking.is_none_or(|(_, best)| closing > best) {
-                        blocking = Some((
-                            HullHit {
-                                contact: Contact {
-                                    fraction: 0.0,
-                                    normal,
-                                },
-                                fragment,
-                            },
-                            closing,
-                        ));
-                    }
-                }
-                true
-            },
-        );
-        blocking
     }
 
     pub fn chunks(&self) -> impl Iterator<Item = u16> + '_ {
@@ -198,9 +155,11 @@ impl Scenery {
                 broken.push(Breakage { native, part });
             }
         }
+        self.broken_count += broken.len();
         broken
     }
 
+    #[cfg(test)]
     pub fn support_height(&self, point: Vec2, low: f32, high: f32) -> Option<f32> {
         let index = self.geometry.index.as_ref()?;
         if low >= high {
@@ -367,6 +326,7 @@ impl Obstacles {
             index,
             trees,
             foliage: foliage::Foliage::load(resources, geometry)?,
+            physics: Default::default(),
         })
     }
 
@@ -387,69 +347,6 @@ impl Obstacles {
             &mut nearest,
         );
         nearest
-    }
-
-    fn sweep_hull(&self, hull: Hull, travel: Vec2, damage: &Damage) -> Option<HullHit> {
-        let (min, max) = hull.bounds();
-        let offset = Vec3::new(travel.x, 0.0, travel.y);
-        let swept = Bounds {
-            min: min.min(min + offset),
-            max: max.max(max + offset),
-        };
-        let mut closest: Option<HullHit> = None;
-        self.visit_hull_triangles(swept, damage, |vertices, fragment| {
-            if let Some(hit) = hull.sweep_triangle(vertices, travel)
-                && closest.is_none_or(|closest| hit.fraction < closest.contact.fraction)
-            {
-                closest = Some(HullHit {
-                    contact: hit,
-                    fragment,
-                });
-                return hit.fraction != 0.0;
-            }
-            true
-        });
-        closest
-    }
-
-    fn visit_hull_triangles(
-        &self,
-        area: Bounds,
-        damage: &Damage,
-        mut visit: impl FnMut([Vec3; 3], Option<Fragment>) -> bool,
-    ) {
-        let Some(index) = &self.index else { return };
-        index.visit(&self.instances, area, &mut |instance| {
-            let model_to_world = instance.world_to_model.inverse();
-            let local_bounds = area.transform(instance.world_to_model);
-            for triangle in &self.meshes[instance.mesh].triangles {
-                if triangle.pass_flags & VEHICLES_PASS != 0 {
-                    continue;
-                }
-                let mut fragment = triangle.fragment(instance);
-                if damage.destroyed(fragment) {
-                    if triangle.pass_flags & RETAIN_VEHICLE_WALL == 0 {
-                        continue;
-                    }
-                    fragment = None;
-                }
-                let [a, b, c] = triangle.vertices;
-                let triangle_bounds = Bounds {
-                    min: a.min(b).min(c),
-                    max: a.max(b).max(c),
-                };
-                if local_bounds.overlaps(triangle_bounds)
-                    && !visit(
-                        triangle
-                            .vertices
-                            .map(|vertex| model_to_world.transform_point3(vertex)),
-                        fragment,
-                    )
-                {
-                    break;
-                }
-            }
-        });
     }
 }
 
@@ -538,20 +435,32 @@ impl Mesh {
 
 impl CollisionIndex {
     fn visit(&self, instances: &[Instance], query: Bounds, visitor: &mut impl FnMut(&Instance)) {
+        self.visit_indexed(instances, query, 0, &mut |_, instance| visitor(instance));
+    }
+
+    fn visit_indexed(
+        &self,
+        instances: &[Instance],
+        query: Bounds,
+        offset: usize,
+        visitor: &mut impl FnMut(usize, &Instance),
+    ) {
         if !self.bounds.overlaps(query) {
             return;
         }
         if let Some([left, right]) = &self.children {
             let (left_instances, right_instances) = instances.split_at(left.count);
-            left.visit(left_instances, query, visitor);
-            right.visit(right_instances, query, visitor);
+            left.visit_indexed(left_instances, query, offset, visitor);
+            right.visit_indexed(right_instances, query, offset + left.count, visitor);
         } else {
-            instances
-                .iter()
-                .filter(|instance| instance.bounds.overlaps(query))
-                .for_each(visitor);
+            for (i, instance) in instances.iter().enumerate() {
+                if instance.bounds.overlaps(query) {
+                    visitor(offset + i, instance);
+                }
+            }
         }
     }
+
     fn build(instances: &mut [Instance]) -> Self {
         let bounds = instances
             .iter()
@@ -641,16 +550,24 @@ impl CollisionIndex {
 
 impl Triangle {
     fn fragment(&self, instance: &Instance) -> Option<Fragment> {
-        self.fragment.map(|(part, health, cascade)| Fragment {
-            object: instance
-                .native
-                .map_or(Object::Placement(instance.id), Object::Native),
-            part,
-            health: ((health as f32 * instance.health_scale - 0.001).ceil() as u32).max(1),
-            cascade,
-        })
+        self.fragment.map(|part| instance.fragment(part))
     }
+}
 
+impl Instance {
+    fn fragment(&self, (part, health, cascade): (u32, u32, u32)) -> Fragment {
+        Fragment {
+            object: self
+                .native
+                .map_or(Object::Placement(self.id), Object::Native),
+            part,
+            health: ((health as f32 * self.health_scale - 0.001).ceil() as u32).max(1),
+            cascade,
+        }
+    }
+}
+
+impl Triangle {
     fn intersect(&self, origin: Vec3, direction: Vec3) -> Option<f32> {
         let [a, b, c] = self.vertices;
         let ab = b - a;
@@ -771,6 +688,7 @@ impl Scenery {
             index: Some(index),
             trees: Default::default(),
             foliage: Default::default(),
+            physics: Default::default(),
         }))
     }
 
@@ -828,269 +746,6 @@ fn visibility_mask(resources: &ResourceBundle, geometry: &str, arena_type: i32) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use glam::Vec3Swizzles;
-
-    #[test]
-    #[ignore = "Requires WOT_RESOURCE_DIR with Widepark scenery"]
-    fn widepark_replay_detects_the_next_fence_panel_during_a_pivot() {
-        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
-        let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
-        let geometry = Arc::new(Obstacles::load(&resources, "spaces/17_munchen", 17).unwrap());
-        let mut scene = Scenery::new(geometry);
-        for index in [0x28, 0x2e] {
-            scene
-                .damage
-                .0
-                .insert((Object::Native(0x817e_0000 | index), 1), 0);
-        }
-        // Position in the LAN replay at 132.91 s, after two nearby panels broke.
-        let current = Hull {
-            parameters: Default::default(),
-            position: Vec3::new(246.39528, 7.9981, -33.58478),
-            yaw: 0.756306,
-            half_size: Vec2::new(1.5504, 3.264),
-            offset: Vec2::new(0.002, -0.064),
-            body: None,
-        };
-        let candidate = Hull {
-            yaw: current.yaw + 0.04,
-            ..current
-        };
-        let (contact, closing) = scene.turn_contact(current, candidate).unwrap();
-        let fragment = contact.fragment.unwrap();
-        assert!(matches!(fragment.object, Object::Native(0x817e_002d)));
-        assert!(closing > 0.0);
-        assert_eq!(scene.damage(fragment, 10).len(), 1);
-        assert!(scene.turn_contact(current, candidate).is_none());
-    }
-
-    #[test]
-    #[ignore = "Requires freshly extracted EU Widepark railway geometry"]
-    fn replay_leopard_approach_stops_at_the_flat_car_even_after_visual_destruction() {
-        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
-        let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
-        let geometry = Arc::new(Obstacles::load(&resources, "spaces/17_munchen", 17).unwrap());
-        let mut scene = Scenery::new(geometry);
-        // Replay clock 55.92 s and the preceding approach direction.
-        let hull = Hull {
-            parameters: Default::default(),
-            position: Vec3::new(125.017, 8.349, -35.483),
-            yaw: -2.691,
-            half_size: Vec2::new(1.625, 3.356),
-            offset: Vec2::new(0.0, -0.0406),
-            body: None,
-        };
-        let travel = Vec2::new(-0.445, -0.919);
-        let intact = scene.sweep_hull(hull, travel).unwrap();
-        let fragment = intact.fragment.unwrap();
-        assert!(matches!(fragment.object, Object::Native(0x807e_002e)));
-        let result = scene.damage(fragment, fragment.health);
-        assert_eq!(result[0].native, Some(0x807e_002e));
-        let damaged = scene.sweep_hull(hull, travel).unwrap();
-        assert!(damaged.fragment.is_none());
-        assert!((damaged.contact.fraction - intact.contact.fraction).abs() < 0.15);
-    }
-
-    #[test]
-    #[ignore = "Requires WOT_RESOURCE_DIR with freshly extracted EU Widepark WCM4 geometry"]
-    fn widepark_lamps_and_train_use_their_native_vehicle_contact_bodies() {
-        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
-        let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
-        let name = "spaces/17_munchen";
-        let geometry = Arc::new(Obstacles::load(&resources, name, 17).unwrap());
-        let ground = terrain::Terrain::load(&resources, name).unwrap();
-
-        for (native, helper_material) in [(0x7e7e_001a, 73), (0x7f7f_0011, 112)] {
-            let mut scene = Scenery::new(geometry.clone());
-            let (body, direction, part) = geometry
-                .instances
-                .iter()
-                .filter(|item| item.native == Some(native))
-                .find_map(|instance| {
-                    let world = instance.world_to_model.inverse();
-                    geometry.meshes[instance.mesh]
-                        .triangles
-                        .iter()
-                        .filter(|triangle| {
-                            triangle.material == helper_material
-                                && triangle.pass_flags & SHELLS_PASS != 0
-                        })
-                        .find_map(|triangle| {
-                            let part = triangle.fragment(instance)?;
-                            let [a, b, c] = triangle
-                                .vertices
-                                .map(|vertex| world.transform_point3(vertex));
-                            let center = (a + b + c) / 3.0;
-                            let low = [a, b, c]
-                                .into_iter()
-                                .min_by(|left, right| left.y.total_cmp(&right.y))?;
-                            let low_contact = center.lerp(low, 0.85);
-                            let direction = (b - a).cross(c - a).xz().try_normalize()?;
-                            for (sample, forward) in [center, low_contact]
-                                .into_iter()
-                                .flat_map(|sample| [(sample, direction), (sample, -direction)])
-                            {
-                                let start = sample.xz() - forward * 1.75;
-                                let Some(y) = ground.height_at(start) else {
-                                    continue;
-                                };
-                                if !(y..y + 1.8).contains(&sample.y) {
-                                    continue;
-                                }
-                                let body = Hull {
-                                    parameters: Default::default(),
-                                    position: Vec3::new(start.x, y, start.y),
-                                    yaw: forward.x.atan2(forward.y),
-                                    half_size: Vec2::splat(0.4),
-                                    offset: Vec2::ZERO,
-                                    body: None,
-                                };
-                                if scene
-                                    .sweep_hull(body, forward * 2.0)
-                                    .and_then(|hit| hit.fragment)
-                                    .is_some_and(|hit| {
-                                        hit.object == part.object && hit.part == part.part
-                                    })
-                                {
-                                    return Some((body, forward, part));
-                                }
-                            }
-                            None
-                        })
-                })
-                .unwrap_or_else(|| {
-                    panic!("Widepark object {native:#x} did not block the hull at ground height")
-                });
-            let broken = scene.damage(part, part.health);
-            assert_eq!(broken[0].native, Some(native));
-            assert!(
-                !scene
-                    .sweep_hull(body, direction * 2.0)
-                    .and_then(|hit| hit.fragment)
-                    .is_some_and(|hit| hit.object == part.object && hit.part == part.part)
-            );
-
-            let fresh = Scenery::new(geometry.clone());
-            if helper_material == 73 {
-                assert_eq!(part.part, 2);
-                let origin = body.position + Vec3::Y;
-                let ray = Vec3::new(direction.x, 0.0, direction.y);
-                assert!(
-                    !fresh
-                        .intersect(origin, ray, 2.0)
-                        .and_then(|hit| hit.fragment)
-                        .is_some_and(|hit| hit.object == part.object)
-                );
-            } else {
-                assert!(part.part >= FIRST_MODULE);
-                let hits = geometry
-                    .instances
-                    .iter()
-                    .filter(|item| item.native == Some(native))
-                    .flat_map(|instance| {
-                        geometry.meshes[instance.mesh]
-                            .triangles
-                            .iter()
-                            .filter(|triangle| triangle.pass_flags == 0)
-                            .map(move |triangle| (instance, triangle))
-                    });
-                assert!(hits.into_iter().any(|(instance, triangle)| {
-                    let world = instance.world_to_model.inverse();
-                    let [a, b, c] = triangle
-                        .vertices
-                        .map(|vertex| world.transform_point3(vertex));
-                    let Some(normal) = (b - a).cross(c - a).try_normalize() else {
-                        return false;
-                    };
-                    let origin = (a + b + c) / 3.0 + normal * 0.015;
-                    fresh
-                        .intersect(origin, -normal, 0.03)
-                        .and_then(|hit| hit.fragment)
-                        .is_some_and(|hit| hit.object == part.object)
-                }));
-            }
-        }
-    }
-    #[test]
-    #[ignore = "Requires WOT_RESOURCE_DIR with extracted EU Malinovka trees and terrain"]
-    fn malinovka_tree_blocks_the_hull_until_felled_without_stopping_shells() {
-        let path = std::env::var_os("WOT_RESOURCE_DIR").unwrap();
-        let resources = ResourceBundle::open(std::path::Path::new(&path)).unwrap();
-        let geometry = "spaces/02_malinovka";
-        let ground = terrain::Terrain::load(&resources, geometry).unwrap();
-        let obstacles = Arc::new(Obstacles::load(&resources, geometry, 2).unwrap());
-        let mut scene = Scenery::new(obstacles.clone());
-        let (hull, travel, fragment) = obstacles
-            .instances
-            .iter()
-            .filter(|tree| tree.shells_pass)
-            .find_map(|tree| {
-                let foot = tree.world_to_model.inverse().transform_point3(Vec3::ZERO);
-                ground.height_at(Vec2::new(foot.x, foot.z))?;
-                let hull = Hull {
-                    parameters: Default::default(),
-                    position: foot - Vec3::Z * 3.0,
-                    yaw: 0.0,
-                    half_size: Vec2::splat(0.6),
-                    offset: Vec2::ZERO,
-                    body: None,
-                };
-                let travel = Vec2::Y * 3.5;
-                let fragment = scene.sweep_hull(hull, travel)?.fragment?;
-                let origin = hull.position + Vec3::Y;
-                (fragment.is_tree()
-                    && Some(fragment.object) == tree.native.map(Object::Native)
-                    && scene.intersect(origin, Vec3::Z, 3.5).is_none())
-                .then_some((hull, travel, fragment))
-            })
-            .expect("open EU tree with native contact and shell passthrough");
-        let Object::Native(native) = fragment.object else {
-            panic!("expected native tree")
-        };
-        assert!(scene.chunks().any(|chunk| chunk == (native >> 16) as u16));
-        assert!(scene.damage(fragment, fragment.health / 2).is_empty());
-        assert!(scene.sweep_hull(hull, travel).is_some());
-        let broken = scene.damage(fragment, fragment.health);
-        assert_eq!(broken.len(), 1);
-        assert_eq!(broken[0].native, Some(native));
-        assert_eq!(broken[0].part, TREE_PART);
-        let angle = scene.tree_fall_pitch(&ground, native, 0.0).unwrap();
-        assert!(angle > 0.0 && angle < std::f32::consts::PI);
-        assert!(
-            scene
-                .sweep_hull(hull, travel)
-                .and_then(|hit| hit.fragment)
-                .is_none_or(|hit| hit.object != fragment.object)
-        );
-        assert!(scene.damage(fragment, fragment.health).is_empty());
-        let mut fresh = scene.test_new_round();
-        assert_eq!(
-            fresh
-                .sweep_hull(hull, travel)
-                .unwrap()
-                .fragment
-                .unwrap()
-                .part,
-            TREE_PART
-        );
-        let foot = hull.position + Vec3::Z * 3.0;
-        assert!(
-            fresh
-                .blast_trees(foot + Vec3::X * 2.0, 0.5, fragment.health as f32)
-                .is_empty()
-        );
-        let blasted = fresh.blast_trees(foot + Vec3::X * 0.25, 0.75, fragment.health as f32 * 2.0);
-        assert!(
-            blasted
-                .iter()
-                .any(|hit| hit.native == Some(native) && hit.part == TREE_PART)
-        );
-        assert!(
-            fresh
-                .blast_trees(foot, 0.3, fragment.health as f32)
-                .is_empty()
-        );
-    }
 
     #[test]
     #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
@@ -1184,6 +839,7 @@ mod tests {
             index: Some(index),
             trees: Default::default(),
             foliage: Default::default(),
+            physics: Default::default(),
         }));
         let origin = Vec3::new(2.5, 0.5, 0.0);
         let hit = obstacles.intersect(origin, Vec3::Z, 30.0).unwrap();
@@ -1195,17 +851,5 @@ mod tests {
                 .intersect(origin + Vec3::Y * 3.0, Vec3::Z, 30.0)
                 .is_none()
         );
-        let hull = Hull {
-            parameters: Default::default(),
-            position: Vec3::new(2.5, 0.0, 0.0),
-            yaw: 0.0,
-            half_size: Vec2::new(1.0, 2.0),
-            offset: Vec2::ZERO,
-            body: None,
-        };
-        let hit = obstacles.sweep_hull(hull, Vec2::Y * 10.0).unwrap().contact;
-        assert!((hit.fraction - 0.3).abs() < 0.0001);
-        assert_eq!(hit.normal, -Vec2::Y);
-        assert!(obstacles.sweep_hull(hull, Vec2::Y * 2.0).is_none());
     }
 }

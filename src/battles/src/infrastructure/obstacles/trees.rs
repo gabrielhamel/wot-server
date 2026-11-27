@@ -75,15 +75,6 @@ impl Trees {
 }
 
 impl Scenery {
-    #[cfg(test)]
-    pub(in crate::infrastructure) fn test_register_tree(&mut self, native: u32, foot: Vec3) {
-        Arc::get_mut(&mut self.geometry)
-            .unwrap()
-            .trees
-            .0
-            .insert(native, Tree { foot, height: 10.0 });
-    }
-
     pub(in crate::infrastructure) fn tree_fall_pitch(
         &self,
         ground: &terrain::Terrain,
