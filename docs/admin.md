@@ -127,6 +127,13 @@ Players already in battle or in a Training Room appear disabled. **Refresh
 players** updates availability after a crew change, login, disconnect or
 garage return. The server checks readiness again when starting the battle.
 
+Copy the address from **Battles** to reopen the setup or share it with another
+administrator on the same server. The link restores the map, duration, battle
+parameter overrides, teams, vehicle choices and applied player and dummy
+loadouts. Select **Apply loadout** before copying the link. The setup stays in
+the address after launch, and the dashboard refreshes player availability.
+Replace any selections that are unavailable when you reopen the link.
+
 Expand **Battle parameters** to tune the arena's round timing, movement,
 contacts, projectile and damage simulation, and tracer visibility. Each field
 starts at the server default and shows its supported range when the entry is
@@ -172,7 +179,9 @@ in place when pushed, take hits, and have no player controls to fire or activate
 a consumable.
 
 Start with at least one connected player and a combat vehicle on each team.
-A single player can face a team of dummies. The roster holds up to 30 entrants.
+A single player can face a team of dummies. A battle accepts up to 30 entrants
+total. You can add players to a draft already filled with dummies. Remove the
+number of surplus entrants shown by the dashboard before starting the battle.
 The selected game clients transition directly from the garage to the Training
 arena. Players already in a Training Room or battle become available once
 they return to the garage and leave their room.

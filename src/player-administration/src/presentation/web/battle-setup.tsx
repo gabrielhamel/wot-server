@@ -9,9 +9,9 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Title } from "react-admin";
+import { Title, useLocation, useNavigate } from "react-admin";
 import type {
   AdminBattleSetup,
   BattleOptions,
@@ -23,25 +23,17 @@ import { errorMessage } from "../../../../shared-infrastructure/src/infrastructu
 import { BattleParameterEditor } from "./battle-parameters";
 import { ChoiceSelect } from "./battle-select";
 import { BattleLoadoutConfiguration } from "./battle-loadout-configuration";
+import { MAX_ENTRANTS, readBattleDraft, updateBattleQuery } from "./battle-setup-query";
+import type { BattleDraft, Dummy, Player } from "./battle-setup-query";
 
-const MAX_ENTRANTS = 30;
 const TEAM_OPTIONS = [
   { id: 1, name: "Team 1" },
   { id: 2, name: "Team 2" },
 ];
 const MIN_DURATION_MINUTES = 5;
 const MAX_DURATION_MINUTES = 30;
-
 const OBSERVER = 0;
-type Player = {
-  account_id: number;
-  team: number;
-  vehicle: number | "";
-  vehicleSource: "owned" | "custom";
-  customLoadout: CustomBattleLoadout;
-  ownedEdits: Record<number, CustomBattleLoadout>;
-};
-type Dummy = { key: number; team: number; loadout: CustomBattleLoadout };
+
 type ConfigureTarget = { kind: "owned" | "custom" | "dummy"; id: number };
 
 function RosterCard({
@@ -131,20 +123,20 @@ function isReady(options: BattleOptions, map: number | "", players: Player[], du
 }
 
 export function BattleSetup() {
+  const { search } = useLocation();
+  const navigate = useNavigate();
+  const { map, duration, parameterDrafts, players, dummies } = useMemo(
+    () => readBattleDraft(search),
+    [search],
+  );
   const [options, setOptions] = useState<BattleOptions>();
-  const [map, setMap] = useState<number | "">("");
-  const [duration, setDuration] = useState("15");
-  const [parameterDrafts, setParameterDrafts] = useState<Record<string, string>>({});
-  const [players, setPlayers] = useState<Player[]>([]);
   const [playerSearch, setPlayerSearch] = useState("");
-  const [dummies, setDummies] = useState<Dummy[]>([]);
   const [configuring, setConfiguring] = useState<ConfigureTarget>();
   const [attempt, setAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [receipt, setReceipt] = useState<{ joined: number; requested: number }>();
-  const nextDummy = useRef(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -169,16 +161,29 @@ export function BattleSetup() {
     setAttempt((value) => value + 1);
   }
 
+  function updateDraft(changes: Partial<BattleDraft>) {
+    const nextSearch = updateBattleQuery(search, changes);
+    if (nextSearch !== search) navigate({ search: nextSearch }, { replace: true });
+  }
+
   function updatePlayer(id: number, edit: Partial<Player>) {
-    setPlayers((roster) =>
-      roster.map((player) => (player.account_id === id ? { ...player, ...edit } : player)),
-    );
+    updateDraft({
+      players: players.map((player) =>
+        player.account_id === id ? { ...player, ...edit } : player,
+      ),
+    });
   }
 
   function updateDummy(key: number, edit: Partial<Dummy>) {
-    setDummies((roster) =>
-      roster.map((dummy) => (dummy.key === key ? { ...dummy, ...edit } : dummy)),
-    );
+    updateDraft({
+      dummies: dummies.map((dummy) => (dummy.key === key ? { ...dummy, ...edit } : dummy)),
+    });
+  }
+
+  function addDummy() {
+    let key = 1;
+    while (dummies.some((dummy) => dummy.key === key)) key++;
+    updateDraft({ dummies: [...dummies, { key, team: 2, loadout: emptyLoadout() }] });
   }
 
   const parameterFields = (options?.parameters ?? []).map((definition) => {
@@ -195,9 +200,12 @@ export function BattleSetup() {
   const minutes = Number(duration);
   const validDuration =
     Number.isInteger(minutes) && minutes >= MIN_DURATION_MINUTES && minutes <= MAX_DURATION_MINUTES;
+  const entrantCount = players.length + dummies.length;
+  const excessEntrants = entrantCount - MAX_ENTRANTS;
   const canLaunch =
     map !== "" &&
     validDuration &&
+    excessEntrants <= 0 &&
     !parameterFields.some(({ invalid }) => invalid) &&
     !saving &&
     !loading &&
@@ -235,7 +243,6 @@ export function BattleSetup() {
         dummies: dummies.map(({ team, loadout }) => ({ team, loadout })),
       });
       setReceipt({ joined: started.players_handed_off, requested: players.length });
-      setPlayers([]);
       refresh();
     } catch (failure) {
       setError(errorMessage(failure, "The battle could not be started."));
@@ -267,7 +274,6 @@ export function BattleSetup() {
   const selectedName = selectedPlayer
     ? (options?.players.find(({ id }) => id === selectedPlayer.account_id)?.name ?? "Player tank")
     : `Dummy ${selectedDummyIndex + 1}`;
-  const full = players.length + dummies.length >= MAX_ENTRANTS;
   return (
     <Stack spacing={2}>
       <Title title="Start battle" />
@@ -295,10 +301,10 @@ export function BattleSetup() {
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <ChoiceSelect
                 label="Map and battle type"
-                value={map}
+                value={options.maps.some(({ id }) => id === map) ? map : ""}
                 choices={options.maps}
                 placeholder="Select a map"
-                onChange={setMap}
+                onChange={(map) => updateDraft({ map })}
               />
               <TextField
                 fullWidth
@@ -310,16 +316,16 @@ export function BattleSetup() {
                 slotProps={{
                   htmlInput: { min: MIN_DURATION_MINUTES, max: MAX_DURATION_MINUTES, step: 1 },
                 }}
-                onChange={(event) => setDuration(event.target.value)}
+                onChange={(event) => updateDraft({ duration: event.target.value })}
               />
             </Stack>
             {parameterFields.length > 0 && (
               <BattleParameterEditor
                 fields={parameterFields}
                 onChange={(key, value) =>
-                  setParameterDrafts((drafts) => ({ ...drafts, [key]: value }))
+                  updateDraft({ parameterDrafts: { ...parameterDrafts, [key]: value } })
                 }
-                onReset={() => setParameterDrafts({})}
+                onReset={() => updateDraft({ parameterDrafts: {} })}
               />
             )}
             <Stack spacing={2}>
@@ -334,8 +340,14 @@ export function BattleSetup() {
                   Players appear here when connected and available in the garage.
                 </Alert>
               )}
+              {excessEntrants > 0 && (
+                <Alert severity="warning">
+                  Remove {excessEntrants} {excessEntrants === 1 ? "entrant" : "entrants"} before
+                  starting the battle. The server allows up to {MAX_ENTRANTS}.
+                </Alert>
+              )}
               <Autocomplete
-                disabled={full || loading || saving}
+                disabled={players.length >= MAX_ENTRANTS || loading || saving}
                 value={null}
                 inputValue={playerSearch}
                 onInputChange={(_, value, reason) => {
@@ -352,18 +364,21 @@ export function BattleSetup() {
                 onChange={(_, player) => {
                   if (player) {
                     setPlayerSearch("");
-                    setPlayers([
-                      ...players,
-                      {
-                        account_id: player.id,
-                        team: 1,
-                        vehicleSource: "owned",
-                        customLoadout: emptyLoadout(),
-                        ownedEdits: {},
-                        vehicle:
-                          player.vehicles.find((vehicle) => !vehicle.unavailable_reason)?.id ?? "",
-                      },
-                    ]);
+                    updateDraft({
+                      players: [
+                        ...players,
+                        {
+                          account_id: player.id,
+                          team: 1,
+                          vehicleSource: "owned",
+                          customLoadout: emptyLoadout(),
+                          ownedEdits: {},
+                          vehicle:
+                            player.vehicles.find((vehicle) => !vehicle.unavailable_reason)?.id ??
+                            "",
+                        },
+                      ],
+                    });
                   }
                 }}
                 renderInput={(params) => <TextField {...params} label="Add connected player" />}
@@ -388,7 +403,9 @@ export function BattleSetup() {
                   <RosterCard
                     key={player.account_id}
                     title={name}
-                    remove={() => setPlayers(players.filter((entry) => entry !== player))}
+                    remove={() =>
+                      updateDraft({ players: players.filter((entry) => entry !== player) })
+                    }
                   >
                     {playerUnavailable && <Alert severity="warning">{playerUnavailable}</Alert>}
                     <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
@@ -467,15 +484,7 @@ export function BattleSetup() {
                 <Typography component="h3" variant="h6">
                   Stationary dummies
                 </Typography>
-                <Button
-                  disabled={full}
-                  onClick={() =>
-                    setDummies([
-                      ...dummies,
-                      { key: ++nextDummy.current, team: 2, loadout: emptyLoadout() },
-                    ])
-                  }
-                >
+                <Button disabled={entrantCount >= MAX_ENTRANTS} onClick={addDummy}>
                   Add dummy
                 </Button>
               </Stack>
@@ -483,7 +492,9 @@ export function BattleSetup() {
                 <RosterCard
                   key={key}
                   title={`Dummy ${index + 1}`}
-                  remove={() => setDummies(dummies.filter((dummy) => dummy.key !== key))}
+                  remove={() =>
+                    updateDraft({ dummies: dummies.filter((dummy) => dummy.key !== key) })
+                  }
                 >
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                     <ChoiceSelect
@@ -503,7 +514,7 @@ export function BattleSetup() {
                   </Stack>
                   <Button
                     variant="outlined"
-                    disabled={!loadout.vehicle}
+                    disabled={!options.dummy_vehicles.some(({ id }) => id === loadout.vehicle)}
                     onClick={() => setConfiguring({ kind: "dummy", id: key })}
                   >
                     Customize Dummy {index + 1}

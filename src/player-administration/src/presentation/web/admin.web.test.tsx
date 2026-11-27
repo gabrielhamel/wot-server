@@ -53,8 +53,8 @@ const garage: Garage = {
   ],
 };
 
-function openAdmin(signedIn = false) {
-  window.history.replaceState(null, "", "/dashboard/");
+function openAdmin(signedIn = false, hash = "") {
+  window.history.replaceState(null, "", `/dashboard/${hash}`);
   if (signedIn)
     httpServer.use(
       http.get(`${origin}/session`, () => HttpResponse.json(authenticated)),
@@ -1109,10 +1109,152 @@ describe("Server Administration", () => {
   });
 });
 
-it("launches a Training battle with selected players and a customized stationary dummy", async () => {
+it("restores a shared battle setup after sign-in and allows unavailable selections to be replaced", async () => {
+  let session: AdminSession = { status: "signed_out", registration_open: false };
+  httpServer.use(
+    http.get(`${origin}/session`, () => HttpResponse.json(session)),
+    http.post(`${origin}/session`, () => {
+      session = authenticated;
+      return new HttpResponse(null, { status: 204 });
+    }),
+    http.get(`${origin}/battles`, () =>
+      HttpResponse.json({
+        maps: [{ id: 5, name: "Prokhorovka · Standard Battle" }],
+        players: [],
+        observer_available: true,
+        dummy_vehicles: [],
+        parameters: [],
+      }),
+    ),
+  );
+  const unavailablePlayer = JSON.stringify({
+    account_id: 123,
+    team: 1,
+    vehicle: 0,
+    vehicleSource: "owned",
+    customLoadout: { vehicle: 0 },
+    ownedEdits: {},
+  });
+  const query = new URLSearchParams([
+    ["map", "999"],
+    ["duration", "0xf"],
+    ["player", "{"],
+    ["player", unavailablePlayer],
+    ["player", unavailablePlayer],
+    ["dummy", JSON.stringify({ key: 1, team: 2, loadout: { vehicle: 81, ammunition: [null] } })],
+    ["dummy", JSON.stringify({ key: 2, team: 2, loadout: { vehicle: 81 } })],
+  ]);
+  const { user } = openAdmin(false, `#/battles?${query}`);
+  await user.type(await screen.findByRole("textbox", { name: "Email" }), admin.username);
+  await user.type(passwordInput(), password);
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+  const map = await screen.findByLabelText("Map and battle type");
+  const duration = screen.getByRole("spinbutton", { name: "Battle duration (minutes)" });
+  expect(map).toHaveValue("");
+  expect(duration).toHaveValue(null);
+  expect(screen.getByText("Enter a whole number from 5 to 30.")).toBeVisible();
+  expect(screen.getByText("This player is no longer available.")).toBeVisible();
+  expect(screen.getAllByRole("heading", { name: /^Dummy/ })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Customize Dummy 1" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Start battle" })).toBeDisabled();
+
+  await user.selectOptions(map, "Prokhorovka · Standard Battle");
+  await user.type(duration, "15");
+  await user.click(screen.getByRole("button", { name: "Remove Unavailable player" }));
+  await user.click(screen.getByRole("button", { name: "Remove Dummy 1" }));
+  expect(window.location.hash).toBe("#/battles?map=5");
+  await user.click(screen.getByRole("link", { name: "Battles" }));
+  expect(screen.getByLabelText("Map and battle type")).toHaveValue("5");
+  expect(window.location.hash).toBe("#/battles?map=5");
+});
+
+it("adds connected players to a full dummy draft and launches once there is room", async () => {
+  const telemetry = captureTraces();
+  const launches: { trace: string | null; body: unknown }[] = [];
+  httpServer.use(
+    http.get(`${origin}/battles`, () =>
+      HttpResponse.json({
+        maps: [{ id: 202, name: "Training map" }],
+        players: [
+          { id: 123, name: "Commander", vehicles: [{ id: 209, name: "T1 Cunningham" }] },
+          { id: 124, name: "Wingmate", vehicles: [{ id: 210, name: "T-34" }] },
+        ],
+        observer_available: true,
+        dummy_vehicles: [{ id: 81, key: "ussr:R04_T-34", name: "T-34", tier: 5 }],
+        parameters: [],
+      }),
+    ),
+    http.post(`${origin}/battles`, async ({ request }) => {
+      launches.push({ trace: request.headers.get("traceparent"), body: await request.json() });
+      return HttpResponse.json({ battle_id: 7, players_handed_off: 2 });
+    }),
+  );
+  const query = new URLSearchParams({ map: "202" });
+  const loadout = { vehicle: 81 };
+  for (let key = 1; key <= 30; key++)
+    query.append("dummy", JSON.stringify({ key, team: 2, loadout }));
+
+  try {
+    const initial = openAdmin(true, `#/battles?${query}`);
+    const picker = await screen.findByRole("combobox", { name: "Add connected player" });
+    expect(picker).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Add dummy" })).toBeDisabled();
+    for (const name of ["Commander", "Wingmate"]) {
+      await initial.user.click(picker);
+      await initial.user.click(await screen.findByRole("option", { name }));
+    }
+    expect(screen.getByText(/Remove 2 entrants before starting/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Start battle" })).toBeDisabled();
+    expect(launches).toHaveLength(0);
+
+    const draft = window.location.hash;
+    initial.unmount();
+    const { user } = openAdmin(true, draft);
+    expect(await screen.findByRole("heading", { name: "Wingmate" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Commander" })).toBeVisible();
+    expect(screen.getAllByRole("heading", { name: /^Dummy \d+$/ })).toHaveLength(30);
+    await user.click(screen.getByRole("button", { name: "Remove Dummy 30" }));
+    expect(screen.getByText(/Remove 1 entrant before starting/)).toBeVisible();
+    const start = screen.getByRole("button", { name: "Start battle" });
+    expect(start).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Remove Dummy 29" }));
+    expect(start).toBeEnabled();
+
+    await user.click(start);
+    expect(await screen.findByText("Battle started.")).toBeVisible();
+    expect(launches).toHaveLength(1);
+    expect(launches[0]?.body).toEqual({
+      arena_type: 202,
+      duration_seconds: 900,
+      parameters: {},
+      players: [
+        { account_id: 123, team: 1, inventory_id: 209 },
+        { account_id: 124, team: 1, inventory_id: 210 },
+      ],
+      dummies: Array.from({ length: 28 }, () => ({ team: 2, loadout })),
+    });
+    const { parent } = telemetry.expectRequest(
+      launches[0]?.trace ?? null,
+      "web.admin.start_battle",
+      "/api/admin/battles",
+      200,
+    );
+    expect(parent?.attributes).toMatchObject({
+      "ddd.bounded_context.name": "player_administration",
+      "input.players.count": 2,
+      "input.dummies.count": 28,
+      "output.battle.id": 7,
+    });
+  } finally {
+    await telemetry.stop();
+  }
+});
+
+it("shares and launches a Training battle with selected players and customized loadouts", async () => {
   const telemetry = captureTraces();
   const posts: { trace: string | null; body: unknown }[] = [];
-  let optionsTrace: string | null = null;
+  const optionsTraces: (string | null)[] = [];
   const loadoutTraces: (string | null)[] = [];
   let wingmateBusy = false;
   let ownedTrace: string | null = null;
@@ -1174,7 +1316,7 @@ it("launches a Training battle with selected players and a customized stationary
   httpServer.use(
     players(),
     http.get(`${origin}/battles`, ({ request }) => {
-      optionsTrace = request.headers.get("traceparent");
+      optionsTraces.push(request.headers.get("traceparent"));
       return HttpResponse.json({
         maps: [{ id: 5, name: "Prokhorovka · Standard Battle" }],
         players: [
@@ -1260,11 +1402,13 @@ it("launches a Training battle with selected players and a customized stationary
           { status: 409 },
         );
       }
+      wingmateBusy = true;
       return HttpResponse.json({ battle_id: 7, players_handed_off: 2 });
     }),
   );
   try {
-    const { user } = openAdmin(true);
+    const initial = openAdmin(true);
+    const { user } = initial;
     await user.click(await screen.findByRole("tab", { name: "Admin" }));
     await user.click(await screen.findByRole("link", { name: "Battles" }));
     await user.selectOptions(
@@ -1347,6 +1491,7 @@ it("launches a Training battle with selected players and a customized stationary
     await user.click(applyPlayer);
     await user.click(screen.getByRole("button", { name: "Show owned tanks for Commander" }));
     expect(screen.getByLabelText("Vehicle for Commander")).toHaveValue("209");
+    await user.selectOptions(screen.getByLabelText("Vehicle for Commander"), "Observer");
     await chooseCustom();
     expect(screen.getByRole("combobox", { name: "Custom vehicle for Commander" })).toHaveValue(
       "T-34",
@@ -1377,11 +1522,14 @@ it("launches a Training battle with selected players and a customized stationary
       "Upgraded engine",
     );
     await user.click(ownedDialog.getByRole("button", { name: "Apply loadout" }));
+    await user.selectOptions(screen.getByLabelText("Team for Wingmate"), "Team 2");
     await user.click(screen.getByRole("button", { name: "Add dummy" }));
+    await user.selectOptions(screen.getByLabelText("Team for Dummy 1"), "Team 1");
     await user.click(screen.getByRole("combobox", { name: "Vehicle for Dummy 1" }));
     await user.click(
       within(await screen.findByRole("listbox")).getByRole("option", { name: "T-34" }),
     );
+    const beforeDummyLoadout = window.location.hash;
     await user.click(screen.getByRole("button", { name: "Customize Dummy 1" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Customize Dummy 1" }));
     await user.selectOptions(
@@ -1419,15 +1567,8 @@ it("launches a Training battle with selected players and a customized stationary
     await user.type(he, "0");
     await user.click(dialog.getByRole("combobox", { name: "Commander perks (seat 1)" }));
     await user.click(await screen.findByRole("option", { name: "Brothers in Arms" }));
+    expect(window.location.hash).toBe(beforeDummyLoadout);
     await user.click(apply);
-    await user.click(screen.getByRole("button", { name: "Customize Dummy 1" }));
-    const saved = within(await screen.findByRole("dialog", { name: "Customize Dummy 1" }));
-    expect(await saved.findByRole("spinbutton", { name: "Hit points" })).toHaveValue(650);
-    expect(
-      saved.getByRole("slider", { name: "Commander perk efficiency (seat 1)" }),
-    ).toHaveAttribute("aria-valuetext", "0%");
-    expect(saved.getByRole("spinbutton", { name: "UBR-354A rounds" })).toHaveValue(25);
-    await user.click(saved.getByRole("button", { name: "Cancel" }));
     const start = screen.getByRole("button", { name: "Start battle" });
     for (const value of ["4", "31", "15.5"]) {
       await user.clear(duration);
@@ -1442,9 +1583,11 @@ it("launches a Training battle with selected players and a customized stationary
     await user.clear(countdown);
     await user.type(countdown, "61");
     expect(start).toBeDisabled();
+    expect(window.location.hash).toContain("param.countdown_seconds=61");
     await user.click(screen.getByRole("button", { name: "Reset parameters to defaults" }));
     expect(countdown).toHaveValue(10);
     expect(start).toBeEnabled();
+    expect(window.location.hash).not.toContain("param.countdown_seconds");
     await user.clear(countdown);
     await user.type(countdown, "2");
     expect(screen.queryByRole("combobox", { name: "Hull physics model" })).not.toBeInTheDocument();
@@ -1454,17 +1597,56 @@ it("launches a Training battle with selected players and a customized stationary
     await user.type(suspension, "4");
     await user.click(parameters);
     expect(parameters).toHaveAttribute("aria-expanded", "false");
-    await user.click(start);
+    const sharedHash = window.location.hash;
+    const query = new URLSearchParams(sharedHash.split("?")[1]);
+    expect(query.get("map")).toBe("5");
+    expect(query.get("duration")).toBe("10");
+    expect(query.get("param.countdown_seconds")).toBe("2");
+    expect(query.get("param.suspension_frequency_hz")).toBe("4");
+    expect(query.getAll("player")).toHaveLength(2);
+    expect(query.getAll("dummy")).toHaveLength(1);
+    expect(optionsTraces).toHaveLength(1);
+
+    initial.unmount();
+    const { user: restored } = openAdmin(true, sharedHash);
+    expect(await screen.findByLabelText("Map and battle type")).toHaveValue("5");
+    expect(screen.getByRole("spinbutton", { name: "Battle duration (minutes)" })).toHaveValue(10);
+    expect(screen.getByLabelText("Team for Wingmate")).toHaveValue("2");
+    expect(screen.getByLabelText("Vehicle for Wingmate")).toHaveValue("210");
+    expect(screen.getByLabelText("Team for Dummy 1")).toHaveValue("1");
+    await restored.click(screen.getByRole("button", { name: "Battle parameters" }));
+    expect(screen.getByRole("spinbutton", { name: "Countdown (seconds)" })).toHaveValue(2);
+    expect(screen.getByRole("spinbutton", { name: "Suspension frequency (Hz)" })).toHaveValue(4);
+    await restored.click(screen.getByRole("button", { name: "Show owned tanks for Commander" }));
+    expect(screen.getByLabelText("Vehicle for Commander")).toHaveValue("0");
+    await restored.click(screen.getByRole("button", { name: "Choose custom tank for Commander" }));
+    expect(screen.getByRole("combobox", { name: "Custom vehicle for Commander" })).toHaveValue(
+      "T-34",
+    );
+    await restored.click(screen.getByRole("button", { name: "Customize Dummy 1" }));
+    const saved = within(await screen.findByRole("dialog", { name: "Customize Dummy 1" }));
+    expect(await saved.findByRole("spinbutton", { name: "Hit points" })).toHaveValue(650);
+    expect(
+      saved.getByRole("slider", { name: "Commander perk efficiency (seat 1)" }),
+    ).toHaveAttribute("aria-valuetext", "0%");
+    expect(saved.getByRole("spinbutton", { name: "UBR-354A rounds" })).toHaveValue(25);
+    await restored.click(saved.getByRole("button", { name: "Cancel" }));
+
+    await restored.click(screen.getByRole("button", { name: "Start battle" }));
     expect(await screen.findByText("A selected player is no longer available.")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Refresh players" }));
+    await restored.click(screen.getByRole("button", { name: "Refresh players" }));
     expect(await screen.findByText("In battle", { exact: true })).toBeVisible();
     expect(screen.getByLabelText("Vehicle for Wingmate")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Start battle" })).toBeDisabled();
     wingmateBusy = false;
-    await user.click(screen.getByRole("button", { name: "Refresh players" }));
+    await restored.click(screen.getByRole("button", { name: "Refresh players" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Start battle" })).toBeEnabled());
-    await user.click(screen.getByRole("button", { name: "Start battle" }));
+    const launchHash = window.location.hash;
+    await restored.click(screen.getByRole("button", { name: "Start battle" }));
     expect(await screen.findByText("Battle started.")).toBeVisible();
+    expect(await screen.findByText("In battle", { exact: true })).toBeVisible();
+    expect(window.location.hash).toBe(launchHash);
+    expect(screen.getByRole("button", { name: "Start battle" })).toBeDisabled();
     expect(posts).toHaveLength(2);
     expect(posts[1]?.body).toEqual({
       arena_type: 5,
@@ -1486,7 +1668,7 @@ it("launches a Training battle with selected players and a customized stationary
         },
         {
           account_id: 124,
-          team: 1,
+          team: 2,
           inventory_id: 210,
           owned_overrides: {
             vehicle: 81,
@@ -1496,7 +1678,7 @@ it("launches a Training battle with selected players and a customized stationary
       ],
       dummies: [
         {
-          team: 2,
+          team: 1,
           loadout: {
             vehicle: 81,
             equipment: [120],
@@ -1513,7 +1695,10 @@ it("launches a Training battle with selected players and a customized stationary
         },
       ],
     });
-    telemetry.expectRequest(optionsTrace, "web.admin.battle_options", "/api/admin/battles", 200);
+    expect(optionsTraces).toHaveLength(5);
+    for (const trace of optionsTraces) {
+      telemetry.expectRequest(trace, "web.admin.battle_options", "/api/admin/battles", 200);
+    }
     expect(loadoutTraces).toHaveLength(3);
     telemetry.expectRequest(
       ownedTrace,
@@ -1529,12 +1714,13 @@ it("launches a Training battle with selected players and a customized stationary
         200,
       );
     }
-    telemetry.expectRequest(
+    const rejected = telemetry.expectRequest(
       posts[0]?.trace ?? null,
       "web.admin.start_battle",
       "/api/admin/battles",
       409,
     );
+    expect(rejected.http?.attributes["output.outcome"]).toBe("conflict");
     const { http, parent } = telemetry.expectRequest(
       posts[1]?.trace ?? null,
       "web.admin.start_battle",
@@ -1553,6 +1739,7 @@ it("launches a Training battle with selected players and a customized stationary
       "input.dummies.count": 1,
       "output.battle.id": 7,
     });
+    expect(telemetry.serializedSpanData()).not.toContain("param.countdown_seconds");
   } finally {
     await telemetry.stop();
   }

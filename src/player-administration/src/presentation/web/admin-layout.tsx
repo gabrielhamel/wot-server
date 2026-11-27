@@ -47,7 +47,11 @@ export function ServerLayout({ children }: LayoutProps) {
         <Button component={Link} to="/players" variant={battleRoute ? "text" : "outlined"}>
           Player accounts
         </Button>
-        <Button component={Link} to="/battles" variant={battleRoute ? "outlined" : "text"}>
+        <Button
+          component={Link}
+          to={battleRoute ? { pathname, search } : "/battles"}
+          variant={battleRoute ? "outlined" : "text"}
+        >
           Battles
         </Button>
       </Stack>

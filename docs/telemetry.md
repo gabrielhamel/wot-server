@@ -184,7 +184,9 @@ The browser, HTTP handler and gateway record the count of requested battle
 parameter overrides. Arena preparation records the effective loading,
 countdown and results durations and shares the launch trace with native
 client entry. The launch response records the allocated battle ID and count
-of client handoffs queued.
+of client handoffs queued. The shared battle setup is restored from the URL
+fragment in the browser. The address and its draft configuration are omitted
+from traces. Requests from a restored setup emit the same allowlisted fields.
 
 Managed player creation traces the input lengths and validation outcome
 through `admin.players.create` and `accounts.registration.validate`. An accepted
