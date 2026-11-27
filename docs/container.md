@@ -23,8 +23,9 @@ the runner. For a tag-triggered run, the extractor and server build use the same
 checkout. After a successful daily E2E run, the publisher selects the highest
 numeric server release Git tag and checks GHCR for that release paired with the
 tested client version. If the tag exists, the run skips publication. Otherwise it
-builds that server release using the resource artifact from the E2E run. The
-publisher verifies that the final image contains the expected manifest version.
+builds that server release using the resource artifact from the E2E run. Before
+building, the publisher makes the staged bundle readable by the image's
+non-root user. It verifies the manifest version as that user in the final image.
 Production Flux image automation follows the digest of `latest`.
 
 The extractor and server builds share BuildKit caches for the Cargo registry
