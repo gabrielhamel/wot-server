@@ -188,6 +188,10 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(status, 200, "{options}");
         assert_eq!(options["players"][0]["id"], account);
         let parameters = options["parameters"].as_array().unwrap();
+        let duration = parameters.iter().find(|p| p["key"] == "spotting_retention_ticks").unwrap();
+        assert_eq!(duration["group"], "Spotting");
+        assert_eq!(duration["default"], 100.0);
+        assert_eq!(duration["max"], 600.0);
         let countdown = parameters.iter().find(|p| p["key"] == "countdown_seconds").unwrap();
         assert_eq!(countdown["default"], 10.0);
         assert_eq!(countdown["integer"], true);
@@ -232,7 +236,8 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             "arena_type": arena, "duration_seconds": 300,
             "players": [{"account_id": account, "team": 1, "inventory_id": 1}],
             "dummies": [
-                {"team": 2, "loadout": {"vehicle": dummy, "equipment": [hardening.clone(), hardening]}},
+                {"team": 1, "loadout": {"vehicle": dummy, "equipment": [hardening.clone(), hardening]}},
+                {"team": 1, "loadout": {"vehicle": dummy}},
                 {"team": 2, "loadout": {"vehicle": dummy}},
             ],
         });
@@ -268,6 +273,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             json!({"max_flight_segments": 10000}),
             json!({"hull_physics": 0}),
             json!({"track_repair_time_scale": 0.0}),
+            json!({"spotting_near_metres": 30}),
         ] {
             let mut invalid = battle.clone();
             invalid["parameters"] = parameters;
@@ -279,6 +285,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             "countdown_seconds": 2,
             "parked_vehicle_pose_interval_ticks": 5,
             "track_repair_time_scale": 1.5,
+            "spotting_retention_ticks": 80,
         });
         let mut unready = battle.clone();
         unready["players"][0]["inventory_id"] = json!(2);
@@ -322,6 +329,8 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         peer.until(&script, |p| p.arena_roster.is_some());
         assert_eq!(peer.entered_arena, Some((battle_id, arena)));
         let (vehicle_type, schema) = script.entity_from_name("Vehicle").unwrap();
+        peer.until(&script, |p| p.arena_entities.iter()
+            .filter(|entity| entity.type_id == vehicle_type).count() == 3);
         use wot_platform::mercury::net::codec::Codec;
         let own = peer.cell.as_ref().unwrap().vehicle_id;
         let mut dummy_health = peer.arena_entities.iter()
@@ -452,7 +461,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         };
         assert_eq!(outfit.as_bytes(), &[4, 16, 111]);
         assert_eq!(public["maxHealth"].as_i64(), Some(811));
-        peer.until(&script, |p| p.arena_tick.is_some());
+        peer.until(&script, |p| p.arena_tick.is_some() && p.vehicle_position_frames.len() == 3);
         let counts = peer.observe_consecutive_arena_ticks(&script, 5).vehicles;
         assert_eq!(counts.len(), 3);
         for (id, count) in counts {
@@ -560,7 +569,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         http.parent_span_id,
         SpanId::from_hex("2a70f170c9056666").unwrap()
     );
-    assert_eq!(get(launch, "input.dummies.count").as_deref(), Some("2"));
+    assert_eq!(get(launch, "input.dummies.count").as_deref(), Some("3"));
     for span in [launch, handler] {
         assert_eq!(
             get(span, "input.players.custom_loadout_count").as_deref(),
@@ -586,7 +595,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     for span in [launch, handler] {
         assert_eq!(
             get(span, "input.battle.parameters.count").as_deref(),
-            Some("3")
+            Some("4")
         );
     }
     assert!(spans.iter().any(|span| {

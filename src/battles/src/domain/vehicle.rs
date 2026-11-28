@@ -5,6 +5,7 @@ use super::{
     devices::{Condition, Criticals, DeviceStrike},
     movement::{Drive, DriveDemand, GroundContact, approach},
     parameters::BattleParameters,
+    spotting::{Combatant, SightGeometry, local_checkpoints},
 };
 use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
 use std::time::Instant;
@@ -26,6 +27,7 @@ pub(crate) struct Tank {
     gun_yaw: f32,
     gun_pitch: f32,
     stun_traverse: Option<f32>,
+    last_shot: Option<Instant>,
     pub(crate) condition: Condition,
     pub(crate) parameters: BattleParameters,
 }
@@ -93,6 +95,7 @@ impl Tank {
             gun_yaw: 0.0,
             gun_pitch: 0.0,
             stun_traverse: None,
+            last_shot: None,
             condition: Condition::default(),
             parameters,
         };
@@ -416,6 +419,7 @@ impl Tank {
         self.ammunition.fire(&performance.gun.loading, now)?;
         let ballistics = ballistics.ok_or("shell_ballistics_unavailable")?;
         let ray = self.gun_ray();
+        self.last_shot = Some(now);
         Ok(Shot {
             origin: ray.origin,
             travelled: 0.0,
@@ -438,6 +442,52 @@ impl Tank {
                 &self.parameters,
             ),
         })
+    }
+
+    pub fn spotting_state(&self, entity: u32, team: u8, moving: bool, now: Instant) -> Combatant {
+        let profile = self
+            .performance
+            .as_ref()
+            .and_then(|vehicle| vehicle.spotting);
+        let firing = self.last_shot.is_some_and(|shot| {
+            now.saturating_duration_since(shot)
+                < std::time::Duration::from_millis(
+                    u64::from(self.parameters.spotting_shot_ticks) * 100,
+                )
+        });
+        let geometry = profile.map(|profile| {
+            let hull = self.hull_rotation();
+            let checkpoints = local_checkpoints(&profile).map(|point| self.position + hull * point);
+            let turret = Quat::from_rotation_y(self.gun_yaw);
+            let mount = profile.hull_offset + profile.turret_offset + turret * profile.gun_mount;
+            SightGeometry {
+                checkpoints,
+                ports: [checkpoints[0], self.position + hull * mount],
+            }
+        });
+        let concealment = profile.map_or(0.0, |profile| {
+            let base = if moving {
+                profile.moving_concealment
+            } else {
+                profile.still_concealment
+            };
+            base * 0.5
+                * if firing {
+                    profile.firing_multiplier
+                } else {
+                    1.0
+                }
+        });
+        Combatant {
+            entity,
+            team,
+            position: self.position,
+            geometry,
+            view_range: profile.map_or(0.0, |profile| profile.view_range),
+            radio_range: profile.map_or(0.0, |profile| profile.radio_range),
+            concealment,
+            firing,
+        }
     }
 
     pub fn gun_ray(&self) -> GunRay {
@@ -612,6 +662,7 @@ mod tests {
                 mobility: Default::default(),
                 turret_pivot: None,
                 armor: Default::default(),
+                spotting: None,
                 device_health: Default::default(),
                 gun: GunPerformance {
                     turret_traverse: 0.5,

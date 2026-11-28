@@ -185,6 +185,12 @@ impl Battle {
             .iter()
             .any(Option::is_some)
             .then(|| span.clone());
+        shooter.spotting_shot = shooter
+            .tank
+            .performance
+            .as_ref()
+            .and_then(|profile| profile.spotting)
+            .map(|_| span.clone());
         let entity_id = shooter.vehicle.entity_id;
         let team = shooter.team;
         self.shot_sequence = self.shot_sequence.wrapping_add(1);
@@ -203,20 +209,22 @@ impl Battle {
                 continue;
             }
             let result = (|| -> Result<()> {
-                if participant.sees_tracer(&shot) {
+                if participant.sees_tracer(&shot, entity_id) {
                     wire.show_tracer(delivery, peer, entity_id, shot_id, &shot)?;
                     tracer_peers.push(peer);
                 }
-                delivery.arena_vehicle_method(
-                    peer,
-                    entity_id,
-                    "showShooting",
-                    vec![
-                        WireValue::UInt8(1),
-                        WireValue::Int8(0),
-                        WireValue::UInt8(shot.effects.kind),
-                    ],
-                )?;
+                if participant.visible_vehicles.contains(&entity_id) {
+                    delivery.arena_vehicle_method(
+                        peer,
+                        entity_id,
+                        "showShooting",
+                        vec![
+                            WireValue::UInt8(1),
+                            WireValue::Int8(0),
+                            WireValue::UInt8(shot.effects.kind),
+                        ],
+                    )?;
+                }
                 if peer == client {
                     wire.publish_own_state(
                         delivery,
@@ -678,9 +686,12 @@ impl Battle {
                         }),
                     )?;
                 }
-                wire.show_shot_impact(delivery, peer, id, effect)?;
+                let visible = participant.visible_vehicles.contains(&id);
+                if visible {
+                    wire.show_shot_impact(delivery, peer, id, effect)?;
+                }
                 if let Some(target) = self.players.get(&victim) {
-                    if device_events[..2].contains(&Some(DeviceEvent::Broken)) {
+                    if visible && device_events[..2].contains(&Some(DeviceEvent::Broken)) {
                         wire.publish_broken_tracks(delivery, peer, id, &target.tank)?;
                     }
                     if peer == victim && device_events.iter().any(Option::is_some) {
@@ -695,7 +706,10 @@ impl Battle {
                         )?;
                     }
                 }
-                if sticker_added && let Some(target) = self.players.get(&victim) {
+                if visible
+                    && sticker_added
+                    && let Some(target) = self.players.get(&victim)
+                {
                     wire.publish_damage_stickers(delivery, peer, id, &target.damage_stickers)?;
                 }
                 let blocked = damage == 0
@@ -725,7 +739,7 @@ impl Battle {
                     span.record("output.hit_direction.critical_flags", critical_flags);
                     span.record("output.hit_direction.damage", indicator_damage);
                 }
-                if detonated {
+                if visible && detonated {
                     delivery.arena_vehicle_method(
                         peer,
                         id,
@@ -737,7 +751,7 @@ impl Battle {
                         ],
                     )?;
                 }
-                if damage > 0 {
+                if visible && damage > 0 {
                     wire.vehicle_properties(
                         delivery,
                         peer,
@@ -757,7 +771,10 @@ impl Battle {
                         ],
                     )?;
                 }
-                if fire_stopped && let Some(target) = self.players.get(&victim) {
+                if visible
+                    && fire_stopped
+                    && let Some(target) = self.players.get(&victim)
+                {
                     wire.publish_fire_stop(delivery, peer, target.roster_row)?;
                 }
                 if damage > 0 && (peer == shooter || peer == victim) {
@@ -798,7 +815,7 @@ impl Battle {
                 for (&peer, _) in self
                     .players
                     .iter()
-                    .filter(|(_, player)| player.entered && player.sees_tracer(&shot))
+                    .filter(|(_, player)| player.entered && player.sees_tracer(&shot, attacker))
                 {
                     if let Err(error) = wire.show_tracer(delivery, peer, attacker, id, &shot) {
                         span.record("otel.status_code", "ERROR");
@@ -888,16 +905,14 @@ impl Battle {
 }
 
 impl Participant {
-    fn sees_tracer(&self, shot: &Shot) -> bool {
-        // Training supplies known sources for every viewer until a spotting service exists.
-        // The strategic camera will supply viewport containment when it is wired.
+    fn sees_tracer(&self, shot: &Shot, source: u32) -> bool {
         let view = TracerView::Direct {
             direction: self.tank.gun_ray().direction,
         };
         tracer::visible(
             shot.origin,
             self.tank.position,
-            true,
+            self.visible_vehicles.contains(&source),
             view,
             &self.tank.parameters,
         )

@@ -1586,33 +1586,14 @@ pub fn exercise_battle(
             .filter(|entity| entity.type_id == vehicle_type)
             .map(|entity| entity.entity_id)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(
-            ids,
-            [host_cell.vehicle_id, guest_cell.vehicle_id]
-                .into_iter()
-                .collect()
-        );
-        for cell in [host_cell, guest_cell] {
-            let vehicle = peer
-                .arena_entities
-                .iter()
-                .find(|entity| entity.entity_id == cell.vehicle_id)
-                .unwrap();
-            assert_eq!(vehicle.position, cell.position);
-            assert_eq!(vehicle.direction, cell.direction);
-        }
-    }
-
-    for cell in [host_cell, guest_cell] {
-        let vehicle_properties = |peer: &Peer| {
-            peer.arena_entities
-                .iter()
-                .find(|entity| entity.entity_id == cell.vehicle_id)
-                .unwrap()
-                .properties
-                .clone()
-        };
-        assert_eq!(vehicle_properties(host), vehicle_properties(guest));
+        assert_eq!(ids, [cell.vehicle_id].into_iter().collect());
+        let vehicle = peer
+            .arena_entities
+            .iter()
+            .find(|entity| entity.entity_id == cell.vehicle_id)
+            .unwrap();
+        assert_eq!(vehicle.position, cell.position);
+        assert_eq!(vehicle.direction, cell.direction);
     }
 
     let period = |p: &Peer| {
@@ -1630,6 +1611,11 @@ pub fn exercise_battle(
     guest.command(script, "setClientReady", vec![]);
     host.until(script, period);
     guest.until(script, period);
+    host.cell_command(
+        script,
+        "vehicle_changeSetting",
+        vec![Value::UInt8(2), Value::Int32(1)],
+    );
     guest.until(script, |p| p.avatar_position_frames >= 2);
     for peer in [&*host, &*guest] {
         assert_roster_ready(script, &peer.nrl_updates);
@@ -1650,34 +1636,36 @@ pub fn exercise_battle(
     };
     host.until(script, in_battle);
     guest.until(script, in_battle);
-    for peer in [&mut *host, &mut *guest] {
+    for (peer, own, enemy, spawn) in [
+        (&mut *host, first, second, initial_host),
+        (&mut *guest, second, first, initial_guest),
+    ] {
         let first_tick = peer.arena_tick.unwrap();
         peer.until(script, |p| {
             p.arena_tick
                 .is_some_and(|tick| (3..=127).contains(&tick.wrapping_sub(first_tick)))
         });
-        // The suspension settles during countdown. Both hulls must stay at their spawns.
-        assert!(peer.positions[&first].distance(initial_host) < 0.10);
-        assert!(peer.positions[&second].distance(initial_guest) < 0.10);
+        // The suspension can settle during countdown while the enemy remains hidden.
+        assert!(peer.positions[&own].distance(spawn) < 0.10);
+        assert!(!peer.positions.contains_key(&enemy));
     }
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(0x80)]);
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     guest.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
-    for peer in [&mut *host, &mut *guest] {
+    for (peer, own, enemy) in [(&mut *host, first, second), (&mut *guest, second, first)] {
         let drive_ack = peer.last_sent_reliable + 1;
-        let before = [peer.positions[&first], peer.positions[&second]];
+        let before = peer.positions[&own];
         peer.until(script, |p| {
             p.snapshot_ack_through
                 .is_some_and(|ack| ack.wrapping_cmp(drive_ack).is_ge())
-                && [first, second].into_iter().zip(before).all(|(id, start)| {
-                    p.positions
-                        .get(&id)
-                        .is_some_and(|position| position.xz().distance(start.xz()) > 0.15)
-                })
+                && p.positions
+                    .get(&own)
+                    .is_some_and(|position| position.xz().distance(before.xz()) > 0.15)
         });
-        assert!(peer.positions[&first].y > 1.0 && peer.positions[&second].y > 1.0);
+        assert!(peer.positions[&own].y > 1.0);
+        assert!(!peer.positions.contains_key(&enemy));
     }
-    guest.until(script, |p| p.engine_modes.get(&first) == Some(&[3, 1]));
+    guest.until(script, |p| p.engine_modes.get(&second) == Some(&[3, 1]));
     host.until(script, |p| {
         p.hull_aim
             .is_some_and(|aux| (aux >> 40) as u8 > 85 && (aux >> 48) as u8 > 85)
@@ -1690,7 +1678,12 @@ pub fn exercise_battle(
         "trackRelativePointWithGun",
         vec![Value::Vector3(glam::Vec3::Y)],
     );
-    let centered = host.positions[&second] + glam::Vec3::Y * 1.35;
+    let brake_tick = guest.arena_tick.unwrap();
+    guest.until(script, |p| {
+        p.arena_tick
+            .is_some_and(|tick| (8..=127).contains(&tick.wrapping_sub(brake_tick)))
+    });
+    let centered = guest.positions[&second] + glam::Vec3::Y * 1.35;
     let across = (centered - host.positions[&first])
         .cross(glam::Vec3::Y)
         .normalize();
@@ -1739,7 +1732,18 @@ pub fn exercise_battle(
                     && args[0].as_i64() < args[1].as_i64()
             })
     };
-    host.until(script, received_shot);
+    host.until(script, |peer| {
+        peer.methods
+            .iter()
+            .any(|(name, _)| name == "onBattleEvents")
+    });
+    assert!(
+        !host
+            .vehicle_methods
+            .iter()
+            .any(|(id, name, _)| *id == second
+                && matches!(name.as_str(), "onHealthChanged" | "showDamageFromShot"))
+    );
     guest.until(script, received_shot);
     let (_, shot_results) = host
         .methods
@@ -1810,7 +1814,8 @@ pub fn exercise_battle(
             .iter()
             .any(|(name, _)| matches!(name.as_str(), "showTracer" | "stopTracer"))
     );
-    for peer in [&*host, &*guest] {
+    {
+        let peer = &*guest;
         let (_, _, impact) = peer
             .vehicle_methods
             .iter()
@@ -1919,7 +1924,7 @@ pub fn exercise_battle(
     let Value::Float32(yaw) = direction[0] else {
         panic!("Expected hit bearing in radians");
     };
-    let towards_target = guest.positions[&second] - guest.positions[&first];
+    let towards_target = guest.positions[&second] - host.positions[&first];
     let expected_yaw = towards_target.x.atan2(towards_target.z);
     assert!((yaw - expected_yaw).cos() > 0.95);
     assert!(
@@ -1963,7 +1968,7 @@ pub fn exercise_battle(
     });
 
     assert!(
-        guest
+        !guest
             .vehicle_methods
             .iter()
             .any(|(target, name, _)| *target == first && name == "showShooting")
@@ -2034,16 +2039,13 @@ pub fn exercise_battle(
             && p.hull_aim
                 .is_some_and(|aux| (aux >> 40) as u8 != (aux >> 48) as u8)
     });
-    guest.until(script, |p| {
-        (p.vehicle_directions[&first].z - before_reverse_turn).sin() < -0.05
-            && p.engine_modes.get(&first) == Some(&[3, 10])
-    });
+    host.until(script, |p| p.engine_modes.get(&first) == Some(&[3, 10]));
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(0)]);
     host.until(script, |p| {
         p.hull_aim
             .is_some_and(|aux| (aux >> 40) as u8 == 85 && (aux >> 48) as u8 == 85)
     });
-    guest.until(script, |p| p.engine_modes.get(&first) == Some(&[1, 0]));
+    host.until(script, |p| p.engine_modes.get(&first) == Some(&[1, 0]));
     host.cell_command(script, "vehicle_moveWith", vec![Value::UInt8(1)]);
     let stationary = host.positions[&first];
     host.until(script, |p| p.positions[&first].distance(stationary) > 0.5);
@@ -2280,8 +2282,9 @@ fn assert_gun_marker(
                 velocity.normalize().dot(expected) > 0.999_999
             })
     });
-    guest.until(script, reached);
-    assert_eq!(host.gun_angles[&vehicle], guest.gun_angles[&vehicle]);
+    let tick = guest.arena_tick.unwrap();
+    guest.until(script, |p| p.arena_tick.is_some_and(|t| t != tick));
+    assert!(!guest.gun_angles.contains_key(&vehicle));
     let (origin, velocity, dispersion) = *markers(host).last().unwrap();
     assert!(origin.distance(host.positions[&vehicle]) < 5.0);
     assert!((velocity.length() - speed).abs() < 0.01 && dispersion > 0.0);
@@ -2291,7 +2294,6 @@ fn assert_gun_marker(
     host.cell_command(script, "setServerMarker", vec![Value::UInt8(0)]);
     let reached = aim(host, -yaw);
     host.until(script, reached);
-    guest.until(script, reached);
     assert_eq!(markers(host).len(), marker_count);
 }
 
@@ -2457,7 +2459,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
             && traces.iter().any(|update| {
                 follows_world_motion(update, drive)
                     && has(update, "input.replication.kind", "engine_mode")
-                    && has(update, "output.delivered.count", "2")
+                    && has(update, "output.delivered.count", "1")
                     && traces.iter().any(|delivery| {
                         delivery.name == "mercury.arena_delivery"
                             && child_of(delivery, update)
@@ -2594,7 +2596,7 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
             .iter()
             .filter(|span| child_of(span, hit) && span.name == "battles.damage_stickers")
             .collect();
-        assert_eq!(sticker_updates.len(), 2);
+        assert_eq!(sticker_updates.len(), 1);
         for update in sticker_updates {
             assert!(has(update, "input.damage_stickers.count", "1"));
             assert!(update.start_time >= earliest_impact);
@@ -2613,10 +2615,10 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
                 && has(s, "rpc.method", "onHealthChanged")
                 && has(s, "output.delivery", "sent"))
             .count(),
-        2
+        1
     );
     for (span_name, method, recipients) in [
-        ("mercury.arena_vehicle_method", "showDamageFromShot", 2),
+        ("mercury.arena_vehicle_method", "showDamageFromShot", 1),
         ("mercury.response", "showTracer", 1),
         ("mercury.response", "stopTracer", 1),
         ("mercury.response", "showShotResults", 1),
@@ -2706,6 +2708,17 @@ pub fn assert_battle_traces(host: i64, guest: i64, fixture: BattleFixture) {
         && has(span, "input.ammunition.setting", "1")
         && has(span, "input.ammunition.shell", "-1")
         && has(span, "output.outcome", "shell_unavailable")));
+    assert!(traces.iter().any(|span| {
+        span.name == "battles.control"
+            && has(span, "input.vehicle.setting", "2")
+            && has(span, "output.outcome", "autorotation_not_applicable")
+            && traces.iter().any(|request| {
+                request.name == "game.cell_command"
+                    && child_of(span, request)
+                    && has(request, "rpc.method", "vehicle_changeSetting")
+                    && has(request, "output.outcome", "autorotation_not_applicable")
+            })
+    }));
     // The shared exporter also receives movement from the single-player Admin battle.
     for flags in ["1", "10"] {
         assert!(

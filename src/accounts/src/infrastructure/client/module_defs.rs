@@ -20,6 +20,7 @@ use wot_platform::client_formats::pxml::Element;
 use wot_resources::ResourceBundle;
 use wot_shared_kernel::{
     ArmorMesh, Device, DeviceHealth, GunPerformance, Mobility, MountedArmor, VehiclePerformance,
+    VehicleSpotting,
 };
 
 const METRIC_HORSEPOWER_TO_WATTS: f32 = 735.5;
@@ -44,6 +45,11 @@ pub(super) struct VehicleModules {
     turret_armor: BTreeMap<i32, Arc<ArmorMesh>>,
     gun_armor: BTreeMap<(i32, i32), MountedArmor>,
     pub(super) training_health: BTreeMap<i32, i16>,
+    hull_bounds: Option<[Vec3; 2]>,
+    concealment: Option<[f32; 2]>,
+    turret_vision: BTreeMap<i32, (f32, f32, Vec3)>,
+    radio_ranges: BTreeMap<i32, f32>,
+    firing_concealment: BTreeMap<(i32, i32), f32>,
 }
 
 struct ChassisExterior {
@@ -138,6 +144,28 @@ impl VehicleModules {
             gun,
             armor,
             device_health,
+            spotting: self.spotting(modules),
+        })
+    }
+
+    fn spotting(&self, modules: &ModuleLoadout) -> Option<VehicleSpotting> {
+        let [still_concealment, moving_concealment] = self.concealment?;
+        let turret = *modules.get(&ModuleKind::Turret)?;
+        let gun = *modules.get(&ModuleKind::Gun)?;
+        let &(view_range, turret_top, gun_mount) = self.turret_vision.get(&turret)?;
+        Some(VehicleSpotting {
+            view_range,
+            radio_range: *self.radio_ranges.get(modules.get(&ModuleKind::Radio)?)?,
+            still_concealment,
+            moving_concealment,
+            firing_multiplier: *self.firing_concealment.get(&(turret, gun))?,
+            hull_bounds: self.hull_bounds?,
+            hull_offset: *self
+                .hull_positions
+                .get(modules.get(&ModuleKind::Chassis)?)?,
+            turret_offset: self.turret_position?,
+            turret_top,
+            gun_mount,
         })
     }
 
@@ -307,6 +335,19 @@ impl VehicleModules {
             .filter(|position| position.is_finite());
         let mut gun_performance = BTreeMap::new();
         let mut training_health = BTreeMap::new();
+        let mut turret_vision = BTreeMap::new();
+        let mut radio_ranges = BTreeMap::new();
+        let mut firing_concealment = BTreeMap::new();
+        let concealment = vehicle
+            .get_child_element("invisibility")
+            .and_then(|values| {
+                let read = |key| {
+                    values
+                        .get_child_float(key)
+                        .filter(|value| (0.0..=1.0).contains(value))
+                };
+                Some([read("still")?, read("moving")?])
+            });
         let mut module_name_keys = BTreeMap::new();
         let mut shell_name_keys = BTreeMap::new();
         let shells = item_defs::read_xml(fs, &format!("{dir}/components/shells.xml"))?;
@@ -418,11 +459,25 @@ impl VehicleModules {
                         },
                     );
                 }
+                if kind == 7
+                    && let Some(range) =
+                        number("distance").filter(|range| range.is_finite() && *range >= 0.0)
+                {
+                    radio_ranges.insert(id, range);
+                }
                 if kind == 3 {
                     if let Some(mesh) = armor.mesh(fs, local, base)? {
                         turret_armor.insert(id, mesh);
                     }
                     let gun_position = battle_performance::vector(local, base, "gunPosition");
+                    if let (Some(range), Some([_, top]), Some(mount)) = (
+                        number("circularVisionRadius")
+                            .filter(|range| range.is_finite() && *range >= 0.0),
+                        battle_performance::collision_bounds(fs, local, base)?,
+                        gun_position,
+                    ) {
+                        turret_vision.insert(id, (range, top.y, mount));
+                    }
                     if let Some(health) = hull_health
                         .zip(number("maxHealth"))
                         .map(|(hull, turret)| hull as f32 + turret)
@@ -554,6 +609,11 @@ impl VehicleModules {
                                 max_weight: None,
                             },
                         );
+                        if let Some(multiplier) = gun_number("invisibilityFactorAtShot")
+                            .filter(|value| (0.0..=1.0).contains(value))
+                        {
+                            firing_concealment.insert((id, gun), multiplier);
+                        }
                         if let Some(health) = read_device_health(gun_local, gun_base) {
                             devices.insert(gun, health);
                         }
@@ -708,6 +768,11 @@ impl VehicleModules {
             hull_positions,
             turret_position,
             gun_performance,
+            hull_bounds,
+            concealment,
+            turret_vision,
+            radio_ranges,
+            firing_concealment,
         })
     }
 

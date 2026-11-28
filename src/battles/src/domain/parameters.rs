@@ -56,6 +56,12 @@ macro_rules! battle_parameters {
                         _ => return Err(InvalidBattleParameters),
                     }
                 }
+                if !(parameters.spotting_proximity_metres < parameters.spotting_near_metres
+                    && parameters.spotting_near_metres < parameters.spotting_middle_metres
+                    && parameters.spotting_middle_metres < parameters.spotting_max_metres)
+                {
+                    return Err(InvalidBattleParameters);
+                }
                 Ok(parameters)
             }
         }
@@ -67,6 +73,27 @@ battle_parameters! {
         load_timeout_seconds: u64 = 60, 1..=180, true, "Loading timeout (seconds)";
         countdown_seconds: u64 = 10, 0..=60, true, "Countdown (seconds)";
         results_seconds: u64 = 6, 0..=60, true, "Results before garage return (seconds)";
+    }
+    "Spotting" {
+        spotting_proximity_metres: f32 = 50.0, 0.0..=100.0, false, "Proximity spotting range (metres)";
+        spotting_near_metres: f32 = 150.0, 1.0..=300.0, false, "Near spotting check range (metres)";
+        spotting_middle_metres: f32 = 270.0, 1.0..=444.0, false, "Middle spotting check range (metres)";
+        spotting_max_metres: f32 = 445.0, 1.0..=445.0, false, "Maximum direct spotting range (metres)";
+        spotting_proximity_ticks: u32 = 1, 1..=20, true, "Proximity check interval (100 ms ticks)";
+        spotting_near_ticks: u32 = 5, 1..=20, true, "Near check interval (100 ms ticks)";
+        spotting_middle_ticks: u32 = 10, 1..=20, true, "Middle check interval (100 ms ticks)";
+        spotting_far_ticks: u32 = 20, 1..=50, true, "Far check interval (100 ms ticks)";
+        spotting_port_ticks: u32 = 20, 1..=100, true, "View port alternation interval (100 ms ticks)";
+        spotting_retention_ticks: u32 = 100, 0..=600, true, "Spotted retention (100 ms ticks)";
+        spotting_sixth_sense_ticks: u32 = 30, 0..=300, true, "Sixth Sense delay (100 ms ticks)";
+        spotting_shot_ticks: u32 = 50, 0..=300, true, "Firing concealment penalty duration (100 ms ticks)";
+        spotting_foliage_near_metres: f32 = 15.0, 0.0..=100.0, false, "Nearby foliage distance (metres)";
+        spotting_leafy_cover: f32 = 0.5, 0.0..=1.0, false, "Leafy vegetation concealment";
+        spotting_leafless_cover: f32 = 0.25, 0.0..=1.0, false, "Leafless vegetation concealment";
+        spotting_foliage_cap: f32 = 0.8, 0.0..=1.0, false, "Maximum vegetation concealment";
+        spotting_foliage_shot_fraction: f32 = 0.3, 0.0..=1.0, false, "Nearby foliage concealment retained after firing";
+        spotting_crown_base_fraction: f32 = 0.4, 0.0..=1.0, false, "High tree crown base (fraction of height)";
+        spotting_draw_metres: f32 = 565.0, 0.0..=1500.0, false, "Vehicle draw range (metres)";
     }
     "Network replication" {
         parked_vehicle_pose_interval_ticks: u32 = 5, 1..=5, true, "Other parked vehicle pose interval (100 ms ticks)";

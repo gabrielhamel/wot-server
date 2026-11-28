@@ -165,6 +165,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.mobility.reverse_speed_mps`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Effective reverse powered speed limit as a positive magnitude in metres per second. |
 | [`output.mobility.hull_traverse_rad_per_second`](../src/accounts/src/infrastructure/client/battle_mobility.rs) | Loadout-adjusted nominal hull traverse before ground resistance and the chassis ceiling, in radians per second. |
 | [`input.ammunition.setting`](../src/battles/src/infrastructure/controls.rs) | Native ammunition setting code `0`, `1`, `17` or `18` on a decoded shell selection or reload command. |
+| [`input.vehicle.setting`](../src/battles/src/infrastructure/controls.rs) | Unsigned native setting code on a decoded `vehicle_changeSetting` call, including unsupported codes. |
 | [`input.ammunition.shell`](../src/battles/src/infrastructure/controls.rs) | Requested signed shell compact descriptor on shell selection, or current shell compact descriptor on a [shot attempt](../src/battles/src/infrastructure/projectiles.rs). |
 | [`input.shell.kind`](../src/battles/src/infrastructure/projectiles.rs) | Client shell kind index of a fired shell. |
 | [`input.shell.caliber_mm`](../src/battles/src/infrastructure/projectiles.rs) | Effect caliber in millimetres on the shot span, or physical shell caliber on the armor resolution span. |
@@ -172,7 +173,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`input.aim.kind`](../src/battles/src/infrastructure/controls.rs) | Aim representation on an aim command, `world_point` or `hull_angles`. |
 | [`input.aim.server_marker`](../src/battles/src/infrastructure/controls.rs) | Boolean supplied by the Avatar's server reticle setting command. |
 | [`input.replication.kind`](../src/battles/src/infrastructure/controls.rs) | Arena delivery kind, including `position`, `hull_aim` (driver orientation and track motion), `engine_mode`, `wheels_scroll`, `steering_angles`, `gun_angles`, `gun_marker` and `ammunition`. |
-| [`input.arena.tick`](../src/battles/src/infrastructure/mod.rs) | Full arena tick count for the first position snapshot carrying a drive command's change. One unit is 100 ms. |
+| [`input.arena.tick`](../src/battles/src/infrastructure/mod.rs) | Full arena tick count for a drive replication, spotting pass or Sixth Sense alert. One unit is 100 ms. |
 | [`input.arena.tick`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Low 8 bits of the arena tick written into the snapshot's TickSync element. One unit is 100 ms. |
 | [`output.snapshot.age_ms`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Milliseconds since the arena snapshot was enqueued, recorded after this recipient's send attempt or session validation failure on `mercury.arena_snapshot`. |
 | [`input.vehicles.count`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | Number of vehicle pose records included in the arena snapshot. The Avatar pose is separate. A snapshot can carry zero vehicle poses. |
@@ -399,7 +400,7 @@ meanings on different operations; those differences are listed explicitly.
 | [`output.session_count`](../src/accounts/src/infrastructure/player_access.rs) | Number of sessions removed by a sign-out request with a well-formed cookie. |
 | [`output.delivery`](../src/player-sessions/src/infrastructure/gateway/progression.rs) | Garage completion reports response enqueue (`queued`), absent session or entity (`unavailable`), or failure to enqueue (`failed`). XMPP enqueue reports `queued`, `offline` or `enqueue_failed`. |
 | [`output.delivery`](../src/shared-infrastructure/src/mercury/app/outbox.rs) | Mercury transport records `sent` on a successful socket write, `send_failed` on write failure, `enqueue_failed` on method encoding or enqueue failure, or `discarded` on removal of an unsent bundle. Login responses record `sent` or `send_failed`. |
-| [`output.delivery`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | `mercury.arena_snapshot` records `sent` after the socket write or `failed` if session lookup, encoding or delivery fails. |
+| [`output.delivery`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | `mercury.arena_snapshot` records `sent` after the socket write, `backpressured` when the pending reliable bundle must wait for send capacity, or `failed` when session lookup or delivery fails. |
 | [`output.packet.sequence`](../src/shared-infrastructure/src/mercury/app/base/mod.rs) | First 28-bit unreliable Mercury sequence number of a sent arena snapshot. |
 | [`output.response_code`](../src/shared-infrastructure/src/mercury/app/entity.rs) | On-wire result from `onCmdResponse`, `onCmdResponseExt`, or the LoginApp reply. |
 | [`output.players.online`](../src/player-sessions/src/infrastructure/gateway/commands.rs) | Number of current gateway sessions returned as cluster and region CCU by command 501. |
@@ -626,3 +627,19 @@ HTTP response. It omits browser span contents, origins and collector URLs.
 | `http.response.status_code` | HTTP status returned to the browser. |
 | `upstream.http.response.status_code` | HTTP status returned by the collector, when available. |
 | `output.outcome` | `forwarded`, `origin_rejected`, `content_type_rejected`, `body_rejected`, `concurrency_limited`, `rate_limited`, `batch_rejected`, `collector_rejected`, `collector_timeout`, or `collector_unreachable`. Collector failures set span status to Error and emit a warning. |
+
+
+## Spotting
+
+| Attribute | Meaning |
+| --- | --- |
+| [`input.vehicles.count`](../src/battles/src/infrastructure/spotting.rs) | Number of living combat vehicles in the arena's current spotting pass. |
+| [`output.pairs.count`](../src/battles/src/infrastructure/spotting.rs) | Number of directed enemy pairs due for a direct detection check in the tick. |
+| [`output.rays.count`](../src/battles/src/infrastructure/spotting.rs) | Number of sight segments queried during those checks. Proximity detections contribute zero. |
+| [`output.radio_groups.count`](../src/battles/src/infrastructure/spotting.rs) | Number of connected living allied radio groups, including isolated vehicles. |
+| [`output.vehicles.entered`](../src/battles/src/infrastructure/spotting.rs) | Number of viewer-specific Vehicle creations enqueued during the tick. |
+| [`output.vehicles.left`](../src/battles/src/infrastructure/spotting.rs) | Number of viewer-specific Vehicle removals enqueued during the tick. |
+| [`output.alerts.count`](../src/battles/src/infrastructure/spotting.rs) | Number of owner Sixth Sense alerts enqueued during the tick. |
+| [`output.outcome`](../src/battles/src/infrastructure/spotting.rs) | Sixth Sense delivery enqueue result, `enqueued` or `delivery_failed`. |
+| [`output.obstacles.foliage`](../src/battles/src/infrastructure/obstacles/foliage.rs) | Number of foliage placements loaded during arena preparation. Zero when the file is missing or has no placements. |
+| [`output.obstacles.foliage.available`](../src/battles/src/infrastructure/obstacles/foliage.rs) | Whether the extracted map has a foliage file. |

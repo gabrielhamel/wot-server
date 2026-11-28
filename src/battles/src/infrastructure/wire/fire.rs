@@ -135,6 +135,18 @@ impl ArenaWire {
         Ok(())
     }
 
+    pub(in super::super) fn unlink_remote_fire(
+        &self,
+        delivery: &mut impl ArenaDelivery,
+        peer: ParticipantId,
+        row: usize,
+    ) -> Result<()> {
+        let (root, _) = nodes(row)?;
+        delivery.send_arena_element(peer, NrlData(root.to_be_bytes().to_vec()))?;
+        delivery.send_arena_element(peer, ApplyNrlUnlink {})?;
+        Ok(())
+    }
+
     pub(in super::super) fn publish_fire_stop(
         &self,
         delivery: &mut impl ArenaDelivery,

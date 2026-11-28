@@ -15,8 +15,9 @@ read the Toolkit's own proxy format.
 
 ## Inspect a capture
 
-The repository includes two raw Random Battle samples under
-`docs/replay-samples/`. For additional captures, download an individual replay
+The repository includes raw Random Battle samples under
+`docs/replay-samples/`, including the [Mines spotting sample](#mines-visibility-lifecycle-from-2026-11-27).
+For additional captures, download an individual replay
 from the [Wotlytics replay archive](https://wotlytics.com/replays/) or copy a
 recording from the official client's `replays/` directory. Save working
 downloads in the checkout's ignored `.local/replays/` directory. Track
@@ -208,12 +209,12 @@ Both EU replays show 100 ms as the usual recorder cadence, with more gaps
 in the other vehicles' position streams. The reason for individual gaps
 cannot be determined from playback records. The
 [battle simulation](../src/battles/src/infrastructure/mod.rs) produces a
-snapshot for each 100 ms tick. It sends each driver's own pose and all moving
-poses every tick. Other parked poses use the configured interval.
+snapshot for each 100 ms tick. It sends each driver's own pose and each visible
+moving pose every tick. Other visible parked poses use the configured interval.
 [Mercury](../src/shared-infrastructure/src/mercury/app/base/mod.rs) packs
 the clock, Avatar pose and selected vehicle poses into one unreliable bundle.
-The gateway encodes that payload once per snapshot and applies channel
-sequencing, pending ACKs and encryption for each recipient. The archived
+The gateway encodes each recipient's positions and applies channel sequencing,
+pending ACKs and encryption. The archived
 Battle Mechanics page gives historical intervals for spotting checks and
 flags them as outdated after 9.16. It gives no position replication or ACK
 frequency. A bidirectional wire capture is needed to compare datagram
@@ -701,3 +702,94 @@ uses component lifetime for the world effect and `set_fireInfo` for driver
 notifications. Replay records establish visible state and damage cadence.
 A bidirectional capture would be needed to establish client extinguisher
 commands and production wire ordering.
+
+## Mines visibility lifecycle from 2026-11-27
+
+The [Mines replay](replay-samples/mines-2026-11-27.wotreplay) is the
+user-supplied EU1 recording `20261127_0901_china-Ch52_WZ_122_6_F3_10_hills.wotreplay`.
+Its SHA-256 is
+`a0088ae4d967b627ca018aea716af75d0bd740baccffd8bce5df3a9f7a3e5c74`.
+Its metadata reports `2.4.2.0 #1007` and map `10_hills`. The matching
+local `win64/WorldOfTanks.exe` has SHA-256
+`a13b2bac5f76e5399f399f8421630730da4b02ff35f9d866f0bc36d10f8cae80`.
+
+The playback stream has 345 type-`0x05` creation records and 217
+four-byte type-`0x04` removal records. The first little-endian 32-bit
+field identifies the entity in both. Entity `9028` appears at 48.17 s
+(offset 709192), leaves at 61.78 s (offset 1006608), and appears again
+at 74.68 s (offset 1211030). The two create payloads are 187 bytes.
+These records establish observable entity lifetime. They do not expose
+the reason for an individual exit, the radio graph, or raw UDP framing.
+
+The installed bundle declares `OwnVehicle.onObservedByEnemy(INT16)`.
+`OwnVehicleBase.pyc` forwards it to `Avatar.pyc`, which triggers Sixth
+Sense. `constants.pyc` assigns 0 to ordinary ray detection. The roster
+`position` is an X/Z pair of signed 16-bit integers. The client
+`AvatarVehiclesInfoBase.pyc` forwards position updates to the
+`ClientArena` minimap state. A bidirectional client capture would show
+minimap transitions on the wire.
+
+### Training client crash and Sixth Sense
+
+The unfinished Training recording `temp.wotreplay` from 2026-11-27 (SHA-256
+`13f12ce4983087f441b2edcd935381998fb935ad7204a9947dc7faaf893a7210`)
+contains the raw playback stream and ends mid-record. It has 9,559 complete
+records. At 128.34 s a remote ELC EVEN 90 is created. At 131.34 s the
+`0x37` record at offset 346205 contains the six-byte NRL payload
+`04 1e 00 02 00 00`. The client's log reports `ClientHub::processUpdateNode:
+Can't find nodeID 0` in four Training runs on the same installed executable
+(`2.4.2.1580 #2671428` in `game.log`).
+
+In the official Mines replay above, the `OwnVehicle` creation at stream
+offset 14961 registers method index 5 (`onObservedByEnemy`) as node `0x0303`.
+The first corresponding `0x37` record is at 150.675 s (offset 2562126).
+It contains four NRL bytes, `03 03 00 00`, and is followed by the `0x36`
+apply record. The six subsequent calls use the same bytes. The big-endian
+node ID is followed immediately by the little-endian detection reason.
+An NRL method reads its declared arguments directly, as shown in the
+[Toolkit NRL decoder](references/wg-toolkit-rs/wg-toolkit/src/app/nrl.rs).
+The old Training payload used property framing between the node and the
+arguments. It therefore supplies a reason of 512 and leaves `00 00` in
+the stream for a later update to consume as node 0.
+
+The client also logged `No such entity` for a volatile pose immediately
+before a revealed vehicle's appearance became ready. The server now sends
+pending reliable lifecycle messages before its unreliable poses. The
+snapshot names the latest reliable sequence in its Mercury footer so a
+receiver drops a pose that arrives ahead of creation or trails removal.
+
+### Prokhorovka visibility follow-up
+
+The local Training recording `replay_last_battle.wotreplay` from 2026-11-27
+reports EU `2.4.2.0 #1007` and `05_prohorovka`. Its SHA-256 is
+`67c8b4697f48fdd8667ead159c833fd0d538197f624c212cd903d095a2e95650`.
+The installed x64 executable has the same SHA-256 as the Mines test above.
+
+The AMX 12 t recorder and the ELC EVEN 90 are stationary about 305 m apart
+near the end. The client's ELC entity leaves at 572.425 s (stream offset
+3312770). The ELC fires at 573.925 s and reappears at 574.425 s. It leaves
+again at 592.425 s, fires at 597.825 s and reappears at 598.425 s. Its last
+removal at 614.425 s is about 16.6 seconds after its last shot. The timing
+fits a 5 s firing penalty followed by the far visibility check and 10 s
+retention. The installed vehicle definitions give the recorder 360 m base
+view range and the ELC 0.388 stationary concealment and a 0.25 firing
+multiplier. Under the server's formula its uncovered detection threshold
+changes from about 300 m to 345 m when firing. These observations cover
+the recorder's view of the ELC.
+
+The `0x06` records contain 28 distinct native tree falls. All 28 identities
+are present in the older local `#1000` extraction, including
+`0x7c7a008e` at 522.825 s. Only five are present in the fresh `#1007` trunk
+catalog. This points to the older bundle, whose Prokhorovka geometry has no
+`foliage.bin`. Its trees can fall visually while providing zero concealment.
+The fresh `#1007` extraction has 5,393 foliage placements on this map,
+including the late high-crown tree `0x7c7a0019` that fell at 543.425 s.
+
+All five ELC creations start at the same hull pose as the next recorded
+position sample. The reveal at 94.915 s (offset 544987) initializes
+the gun angle to `0x8025`, then a separate property sets it to `0x552a`
+(offset 545148). At 598.425 s (offset 3457834), creation again uses
+`0x8025` and full health before publishing `0x87ec` and 668 HP. The first
+parked pose follows about 0.4 s later. Vehicle creation now carries live
+angles, health and chassis state, and a reveal refreshes pose cadence
+immediately. Native rendering of that change still needs verification.

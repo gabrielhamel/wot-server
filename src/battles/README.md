@@ -22,7 +22,7 @@ game's rules to the current Training implementation and identifies open work.
 
 | Layer | Responsibilities |
 | --- | --- |
-| `domain/` | Round timing and phase transitions, vehicle movement and world contact, aim, ammunition, hit resolution and fire progression. |
+| `domain/` | Round timing and phase transitions, vehicle movement and world contact, aim, ammunition, hit resolution, fire progression, direct detection and radio sharing. |
 | `application/` | Participant identity, launch inputs, roster eligibility and typed Avatar and vehicle commands. |
 | `infrastructure/` | In-memory arena and participant lifecycle, bundled arena definitions, terrain and obstacle collision, and native battle payload encoders. The delivery port connects those encoders to the local Mercury adapter. |
 
@@ -35,8 +35,7 @@ access to the live BaseApp, including entity creation and packet delivery.
 The simulation task in [worker.rs](src/infrastructure/worker.rs) owns live
 arena state and the 100 ms tick. A bounded queue carries activation, entry,
 Avatar and vehicle commands, and disconnects. A bounded FIFO carries Mercury
-deliveries and garage returns to Player Sessions. Position snapshots are sent
-as unreliable UDP. Under output pressure the simulation task drops position
+deliveries and garage returns to Player Sessions. Position snapshots carry each participant’s visible entities over unreliable UDP. Under output pressure the simulation task drops position
 snapshots and waits for space to enqueue ordered deliveries. The gateway
 disconnects a participant whose command cannot be queued and retries cleanup
 as capacity becomes available.
@@ -91,6 +90,8 @@ viewers. See the [replay and resource evidence](../../docs/battle-replays.md#per
 | Armor plate | A projectile collision surface with a material that specifies thickness, damage factor and applicable angle rules. |
 | Engine compartment | A module collision region from authored geometry or a volume estimated from the mounted hull’s exhaust hardpoints. |
 | Vehicle fire | Attributed damage over time after eligible engine damage or fuel tank destruction. The arena replicates ignition, HP loss and cleanup. |
+| Direct spot | One living observer’s detection of an enemy through proximity or an unblocked sight ray. |
+| Radio group | Living allies connected by a chain of overlapping signal ranges. |
 | Damage sticker | A persistent penetration mark replicated on the struck vehicle when the shell defines one. |
 | Scene impact | The first projectile contact with terrain or a placed obstacle, reported with its effect material and any native references to fragments broken on impact. |
 | Scenery controller | A native `AreaDestructibles` entity that publishes broken objects and tree falls for one map chunk. Its state belongs to one arena. |

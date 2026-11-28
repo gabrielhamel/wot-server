@@ -111,16 +111,12 @@ impl<'a> MercuryArena<'a> {
                 pitch: *pitch,
             },
             ("vehicle_shoot", []) => VehicleCommand::Shoot,
-            (
-                "vehicle_changeSetting",
-                [
-                    Value::UInt8(setting @ (0 | 1 | 17 | 18)),
-                    Value::Int32(shell),
-                ],
-            ) => VehicleCommand::ChangeSetting {
-                setting: *setting,
-                shell: *shell,
-            },
+            ("vehicle_changeSetting", [Value::UInt8(setting), Value::Int32(value)]) => {
+                VehicleCommand::ChangeSetting {
+                    setting: *setting,
+                    value: *value,
+                }
+            }
             _ => VehicleCommand::Unsupported,
         };
         VehicleControl {

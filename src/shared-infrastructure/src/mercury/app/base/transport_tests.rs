@@ -1,6 +1,74 @@
 use super::*;
 
 #[test]
+fn arena_snapshot_depends_on_reliable_vehicle_creation() {
+    use crate::mercury::app::client::element::arena::{
+        AvatarPosition, CreateArenaEntity, VehiclePosition,
+    };
+    use crate::mercury::net::packet::PacketConfig;
+    use blowfish::cipher::KeyInit;
+    use glam::Vec3;
+
+    let localhost = "127.0.0.1:0".parse().unwrap();
+    let mut app = App::new(localhost, Script::default()).unwrap();
+    let mut peer = PacketSocket::bind(localhost).unwrap();
+    peer.set_recv_timeout(Some(Duration::from_secs(1))).unwrap();
+    let addr = peer.addr().unwrap();
+    let server = app.addr().unwrap();
+    let cipher = Arc::new(Blowfish::new_from_slice(&[42; 56]).unwrap());
+    peer.set_encryption(server, cipher.clone());
+    app.pending_clients.insert(addr, (1, Instant::now()));
+    let client = app.answer_login_success(addr, cipher).unwrap();
+    peer.recv().unwrap();
+
+    app.send_arena_element(
+        client,
+        CreateArenaEntity {
+            entity_id: 42,
+            type_id: 6,
+            position: Vec3::ZERO,
+            direction: Vec3::ZERO,
+            properties: vec![],
+        },
+    )
+    .unwrap();
+    let mut snapshot = ArenaSnapshot::encode(
+        1,
+        AvatarPosition {
+            reference: 0,
+            position: Vec3::ZERO,
+            direction: Vec3::ZERO,
+        },
+        std::iter::once(VehiclePosition {
+            reference: 0,
+            entity_id: 42,
+            position: Vec3::X,
+            direction: Vec3::ZERO,
+        }),
+        Instant::now(),
+    )
+    .unwrap();
+    app.arena_tick(client, &mut snapshot, None).unwrap();
+
+    let (creation, _) = peer.recv().unwrap();
+    let (pose, _) = peer.recv().unwrap();
+    let mut reliable = PacketConfig::new();
+    creation.read_config(&mut reliable).unwrap();
+    let mut unreliable = PacketConfig::new();
+    pose.read_config(&mut unreliable).unwrap();
+    assert!(reliable.reliable());
+    assert!(!unreliable.reliable());
+    assert_eq!(
+        unreliable.last_reliable_sequence_num(),
+        Some(reliable.sequence_num())
+    );
+    let mut receiver = Protocol::new();
+    assert!(receiver.accept(pose.clone(), server).is_err());
+    assert!(receiver.accept(creation, server).is_ok());
+    assert!(receiver.accept(pose, server).is_ok());
+}
+
+#[test]
 fn udp_transport_counts_acks_as_activity_and_exports_diagnostics() {
     use blowfish::cipher::KeyInit;
     use opentelemetry::trace::TracerProvider;

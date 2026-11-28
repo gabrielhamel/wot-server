@@ -4,6 +4,7 @@ use super::{
     AvatarUpdate, ParticipantId, ScriptValue, mercury::MercuryArena, worker::BattleOutput,
 };
 use std::{
+    collections::HashSet,
     io,
     net::SocketAddrV4,
     sync::atomic::{AtomicU64, Ordering},
@@ -81,14 +82,13 @@ pub struct BattlePositions {
     pub(super) battle_id: u32,
     pub(super) tick: u8,
     pub(super) queued_at: Instant,
-    pub(super) recipients: Vec<(ParticipantId, Option<VehiclePosition>)>,
+    pub(super) recipients: Vec<(ParticipantId, Option<VehiclePosition>, HashSet<u32>)>,
     pub(super) vehicles: Vec<VehiclePosition>,
     pub(super) spans: Vec<Span>,
 }
 
 impl BattlePositions {
     pub fn deliver(self, adapter: &mut MercuryArena<'_>) -> Option<Duration> {
-        let mut delivered = 0;
         let avatar = AvatarPosition {
             reference: 0,
             // The Avatar rides its Vehicle, so its pose is relative to the hull.
@@ -100,41 +100,34 @@ impl BattlePositions {
             .first()
             .cloned()
             .unwrap_or_else(tracing::Span::none);
-        let snapshot = ArenaSnapshot::encode(
-            self.tick,
-            avatar,
-            self.vehicles.iter().cloned(),
-            self.queued_at,
-        );
-        let mut snapshot = match snapshot {
-            Ok(snapshot) => snapshot,
-            Err(error) => {
-                replication.in_scope(|| {
-                    error!(%error, battle_id = self.battle_id, "Could not encode battle tick");
-                });
-                for &(participant, _) in &self.recipients {
-                    adapter.disconnect(participant);
-                }
-                let count = self.recipients.len();
-                self.finish(count, 0, Some("Arena pose snapshot encoding failed"));
-                return None;
-            }
-        };
+        let mut delivered = 0;
         let mut attempted = 0;
-        for (participant, own_vehicle) in self.recipients.iter().cloned() {
-            if !adapter.has_client(participant) {
+        for (participant, own_vehicle, visible) in &self.recipients {
+            if !adapter.has_client(*participant) {
                 continue;
             }
             attempted += 1;
-            match replication
-                .in_scope(|| adapter.deliver_positions(participant, &mut snapshot, own_vehicle))
-            {
+            let result = replication.in_scope(|| {
+                let mut snapshot = ArenaSnapshot::encode(
+                    self.tick,
+                    avatar.clone(),
+                    self.vehicles
+                        .iter()
+                        .filter(|pose| visible.contains(&pose.entity_id))
+                        .cloned(),
+                    self.queued_at,
+                )?;
+                adapter.deliver_positions(*participant, &mut snapshot, own_vehicle.clone())
+            });
+            match result {
                 Ok(()) => delivered += 1,
                 Err(error) => {
                     replication.in_scope(|| {
                         error!(%error, battle_id = self.battle_id, "Could not send battle tick");
                     });
-                    adapter.disconnect(participant);
+                    if error.kind() != io::ErrorKind::WouldBlock {
+                        adapter.disconnect(*participant);
+                    }
                 }
             }
         }
@@ -285,7 +278,7 @@ mod tests {
             battle_id: 1,
             tick: 7,
             queued_at: Instant::now(),
-            recipients: vec![(participant, None)],
+            recipients: vec![(participant, None, Default::default())],
             vehicles: Vec::new(),
             spans: Vec::new(),
         };

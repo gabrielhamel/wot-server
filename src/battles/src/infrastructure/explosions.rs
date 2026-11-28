@@ -204,8 +204,11 @@ impl Battle {
             "output.explosion.fires_ended",
             applied.iter().filter(|hit| hit.fire_stopped).count(),
         );
-        for (&peer, _) in self.players.iter().filter(|(_, player)| player.entered) {
+        for (&peer, player) in self.players.iter().filter(|(_, player)| player.entered) {
             for hit in &applied {
+                if !player.visible_vehicles.contains(&hit.entity) && peer != blast.shooter {
+                    continue;
+                }
                 if let Err(error) = self
                     .publish_blast_hit(delivery, wire, peer, center, &blast, hit)
                     .and_then(|()| {
@@ -233,7 +236,11 @@ impl Battle {
         blast: &Explosion<'_>,
         hit: &BlastHit,
     ) -> Result<()> {
-        if let Some(end) = hit.stunned {
+        let visible = self
+            .players
+            .get(&peer)
+            .is_some_and(|player| player.visible_vehicles.contains(&hit.entity));
+        if visible && let Some(end) = hit.stunned {
             let end = end.saturating_duration_since(self.started_at).as_secs_f64();
             wire.vehicle_properties(
                 delivery,
@@ -260,39 +267,41 @@ impl Battle {
         if damage == 0 {
             return Ok(());
         }
-        let factor =
-            (i32::from(damage) * 255 / i32::from(hit.max_health.max(1))).clamp(0, 255) as u8;
-        delivery.arena_vehicle_method(
-            peer,
-            hit.entity,
-            "showDamageFromExplosion",
-            vec![
-                WireValue::Int32(blast.attacker as i32),
-                WireValue::Vector3(center),
-                WireValue::UInt8(blast.shot.effects.legacy_index),
-                WireValue::Int32(i32::from(damage)),
-                WireValue::UInt8(factor),
-                WireValue::UInt8(0),
-            ],
-        )?;
-        wire.vehicle_properties(
-            delivery,
-            peer,
-            hit.entity,
-            [("health", WireValue::Int16(hit.health))],
-        )?;
-        delivery.arena_vehicle_method(
-            peer,
-            hit.entity,
-            "onHealthChanged",
-            vec![
-                WireValue::Int16(hit.health),
-                WireValue::Int16(hit.previous),
-                WireValue::Int32(blast.attacker as i32),
-                WireValue::UInt8(0),
-                WireValue::Int8(-1),
-            ],
-        )?;
+        if visible {
+            let factor =
+                (i32::from(damage) * 255 / i32::from(hit.max_health.max(1))).clamp(0, 255) as u8;
+            delivery.arena_vehicle_method(
+                peer,
+                hit.entity,
+                "showDamageFromExplosion",
+                vec![
+                    WireValue::Int32(blast.attacker as i32),
+                    WireValue::Vector3(center),
+                    WireValue::UInt8(blast.shot.effects.legacy_index),
+                    WireValue::Int32(i32::from(damage)),
+                    WireValue::UInt8(factor),
+                    WireValue::UInt8(0),
+                ],
+            )?;
+            wire.vehicle_properties(
+                delivery,
+                peer,
+                hit.entity,
+                [("health", WireValue::Int16(hit.health))],
+            )?;
+            delivery.arena_vehicle_method(
+                peer,
+                hit.entity,
+                "onHealthChanged",
+                vec![
+                    WireValue::Int16(hit.health),
+                    WireValue::Int16(hit.previous),
+                    WireValue::Int32(blast.attacker as i32),
+                    WireValue::UInt8(0),
+                    WireValue::Int8(-1),
+                ],
+            )?;
+        }
         if peer == hit.victim || peer == blast.shooter {
             let received = peer == hit.victim;
             delivery.send_avatar(
@@ -328,7 +337,9 @@ impl Battle {
         }
         for (entity, span) in expired {
             span.in_scope(|| {
-                for (&peer, _) in self.players.iter().filter(|(_, player)| player.entered) {
+                for (&peer, _) in self.players.iter().filter(|(_, player)| {
+                    player.entered && player.visible_vehicles.contains(&entity)
+                }) {
                     if let Err(error) = wire.vehicle_properties(
                         delivery,
                         peer,

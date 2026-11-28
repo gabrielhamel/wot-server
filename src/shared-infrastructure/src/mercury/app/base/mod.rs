@@ -965,7 +965,9 @@ impl App {
     ) -> io::Result<()> {
         let span = tracing::Span::current();
         let result = (|| {
-            self.client(client)?;
+            // Entity creation and removal use the reliable stream. Send them before
+            // preparing the snapshot so its sequence dependency includes them.
+            self.flush_client(client)?;
             snapshot.bundle.clear_packet_config();
             // Native ping compensates for half a server tick. Carry pending ACKs on
             // outgoing traffic, including this snapshot when there are no replies.
@@ -991,12 +993,20 @@ impl App {
             "output.snapshot.age_ms",
             snapshot.queued_at.elapsed().as_secs_f64() * 1_000.0,
         );
-        if result.is_ok() {
-            span.record("output.delivery", "sent");
-        } else {
-            span.record("output.delivery", "failed");
-            span.record("otel.status_code", "ERROR");
-        }
+        match &result {
+            Ok(()) => span.record("output.delivery", "sent"),
+            Err(error) => {
+                span.record(
+                    "output.delivery",
+                    if error.kind() == io::ErrorKind::WouldBlock {
+                        "backpressured"
+                    } else {
+                        "failed"
+                    },
+                );
+                span.record("otel.status_code", "ERROR")
+            }
+        };
         result
     }
 

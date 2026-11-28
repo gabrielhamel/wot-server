@@ -23,6 +23,6 @@ pub enum VehicleCommand {
     AimWorld(Vec3),
     AimAngles { yaw: f32, pitch: f32 },
     Shoot,
-    ChangeSetting { setting: u8, shell: i32 },
+    ChangeSetting { setting: u8, value: i32 },
     Unsupported,
 }

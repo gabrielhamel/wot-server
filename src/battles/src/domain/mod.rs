@@ -8,4 +8,5 @@ pub(super) mod parameters;
 pub(super) mod round;
 pub(super) mod vehicle;
 
+pub(super) mod spotting;
 pub(super) mod tracer;

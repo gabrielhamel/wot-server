@@ -405,6 +405,8 @@ mod tests {
                 )
                 .unwrap(),
                 areas: Default::default(),
+                spotting: Default::default(),
+                pending_spotting_alerts: Default::default(),
                 arena_type: 1,
                 players: Default::default(),
                 started_at: now,

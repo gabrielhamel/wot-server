@@ -88,6 +88,7 @@ impl ClientResources {
         }
         resources.index_loose(&root, "spaces")?;
         resources.index_loose(&root, "vehicles")?;
+        resources.index_loose(&root, "vegetation")?;
         resources.index_loose(&root, "objects/misc/bbox")?;
         resources.index_loose(&root, "system/data/material_kinds.xml")?;
         Ok(resources)
@@ -289,6 +290,8 @@ fn is_candidate(path: &str) -> bool {
         || is_hull_visual(path)
         || ((path.starts_with("content/") || path.starts_with("objects/misc/bbox/"))
             && path.ends_with(".havok"))
+        || (path.starts_with("vegetation/") && path.ends_with(".srt"))
+        || matches!(path, "vegetation/bushes.xml" | "vegetation/grassBushes.xml")
         || path == "system/data/material_kinds.xml"
     {
         return true;

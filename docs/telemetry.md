@@ -365,9 +365,9 @@ removal use that same identifier. A movement command parents the first changed
 position snapshot. Aim commands retain their spans through the turret traverse
 to the requested aim, with a child span for each resulting angle or server
 marker update. Enabling the marker parents its first delivery. The marker
-replicates to the owner and the packed angle replicates to battle peers.
-Position replication records the tick and counts the recipients and successful
-socket writes of the shared timestamped snapshot. `mercury.arena_snapshot`
+replicates to the owner and the packed angle replicates to viewers of the
+vehicle. Position replication records the tick and counts the recipients and
+successful socket writes of its per-viewer snapshots. `mercury.arena_snapshot`
 records the peer, wire tick, vehicle pose count, sequence number, elapsed time
 since enqueue, and delivery result. Successful sends record the datagram count
 and final UDP payload bytes, including the Mercury framing, pending ACKs and
@@ -747,3 +747,17 @@ After deployment, compare request roots with the known caller address, including
 a dashboard request with a forged forwarding header and an external game login,
 command, and XMPP stanza. Local NAT-loopback tests alone cannot establish public
 source preservation.
+
+
+### Spotting
+
+`battles.spotting` covers one arena tick's detection checks, radio groups,
+visibility transitions and Sixth Sense scheduling. Movement and successful
+shot spans are carried into the tick. The first causal input parents the
+operation and additional inputs are linked. Ordered visibility messages
+capture the operation span through Mercury delivery. Pure timer ticks have
+their own trace. Sixth Sense holds the detection span until its delay ends
+and parents `battles.sixth_sense` to it. The alert span parents the owner
+delivery. Delivery failure records error status and disconnects the affected
+session. Arena preparation records the number of loaded foliage
+placements through `battles.load_obstacles`.

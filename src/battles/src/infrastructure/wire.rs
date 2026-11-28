@@ -17,6 +17,7 @@ use wot_platform::mercury::{
 mod controls;
 mod fire;
 mod roster;
+mod spotting;
 
 pub(super) use controls::{DamageStickers, ShotImpact, pack_wheel_speed, pack_wheel_steering};
 
@@ -124,6 +125,7 @@ impl ArenaWire {
         let sample = Entrant::sample();
         schema.vehicle(&sample)?;
         schema.validate_controls()?;
+        schema.sixth_sense_message()?;
         schema.validate_scenery()?;
         schema.entry(1, 1, BattleMode::Training, &sample, &[&sample])?;
         Ok(schema)
@@ -525,11 +527,12 @@ pub(super) fn publish_entity(
     delivery.send_arena_element(client, entity)
 }
 
-pub(super) fn properties_by_id<const N: usize>(
+pub(super) fn properties_by_id<'a>(
     dispatch: &EntityDispatch,
-    fields: [(&str, WireValue); N],
+    fields: impl IntoIterator<Item = (&'a str, WireValue), IntoIter: ExactSizeIterator>,
 ) -> Result<Vec<u8>> {
-    let mut data = vec![u8::try_from(N)?];
+    let fields = fields.into_iter();
+    let mut data = vec![u8::try_from(fields.len())?];
     for (name, value) in fields {
         let (index, property) = dispatch
             .properties

@@ -67,6 +67,15 @@ server. Older manifests without the field remain supported.
   extractor joins `SpTr` placements to `scripts/destructibles.xml` and excludes
   entries in `vegetation/bushes.xml`. Re-extract to enable tree contact and
   native fall replication.
+  The optional `spaces/<map>/foliage.bin` (`WCF1`) stores SpeedTree
+  placement transforms, model bounds, canopy classification and optional
+  destructible identity. Re-extract the resource bundle to populate it.
+  The extractor keeps the bounds and classification only. Bush and grass
+  catalogs and model names distinguish cover, leafless vegetation and low
+  crowns. Tall crowns use a tunable fraction of model height and follow
+  the replicated fall angle. These are approximations for sight rays.
+  Bundles without this file provide terrain and solid cover only. Arena
+  preparation logs a warning when foliage data is missing.
   Battles uses
   `system/data/material_kinds.xml` to resolve the client effect index.
   **Accounts** reads the legacy and prefab shot effect tables and the common

@@ -150,6 +150,8 @@ impl Battle {
                 self.obstacles
                     .tree_fall_pitch(&self.ground, native, cause.yaw())
                     .map(|pitch| {
+                        self.obstacles
+                            .record_fallen_crown(native, cause.yaw(), pitch);
                         area.broken.record_tree(native as u16, pitch, cause);
                         trees += 1;
                         None

@@ -57,7 +57,7 @@ impl DamageStickers {
         self.0.is_empty()
     }
 
-    fn value(&self) -> WireValue {
+    pub(super) fn value(&self) -> WireValue {
         WireValue::Seq(
             self.0
                 .iter()
@@ -533,7 +533,15 @@ impl ArenaWire {
             dict(
                 ty,
                 [
-                    ("circularVisionRadius", WireValue::UInt16(350)),
+                    (
+                        "circularVisionRadius",
+                        WireValue::UInt16(
+                            tank.performance
+                                .as_ref()
+                                .and_then(|profile| profile.spotting)
+                                .map_or(0, |profile| profile.view_range as u16),
+                        ),
+                    ),
                     ("gunPiercing", WireValue::Float32(1.0)),
                     ("gunShotsSpeed", WireValue::Float32(1.0)),
                 ],
@@ -649,18 +657,22 @@ impl ArenaWire {
         vehicle: u32,
         tank: &Tank,
     ) -> Result<()> {
+        self.vehicle_properties(
+            delivery,
+            client,
+            vehicle,
+            [("publicStateModifiers", self.broken_tracks_state(tank))],
+        )
+    }
+
+    pub(super) fn broken_tracks_state(&self, tank: &Tank) -> WireValue {
         let extras = TRACKS
             .into_iter()
             .zip(self.track_extras)
             .filter(|(track, _)| tank.condition.disabled(*track))
             .map(|(_, extra)| WireValue::UInt8(extra))
             .collect();
-        self.vehicle_properties(
-            delivery,
-            client,
-            vehicle,
-            [("publicStateModifiers", WireValue::Seq(extras))],
-        )
+        WireValue::Seq(extras)
     }
 
     pub(in super::super) fn publish_device_damage(

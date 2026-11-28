@@ -1,5 +1,6 @@
 mod collision;
 mod destructibles;
+mod foliage;
 mod mesh;
 mod space;
 mod tagfile;
@@ -32,6 +33,7 @@ pub(crate) fn extract(
     let mut files = 0;
     let mut bytes = 0;
     let mut unsupported = 0;
+    let mut foliage = foliage::Catalog::load(client)?;
     let destructibles = destructibles::Catalog::load(client)?;
     for path in layouts {
         let data = client.read_bounded(path, 384 * 1024 * 1024)?;
@@ -46,6 +48,8 @@ pub(crate) fn extract(
             files += 1;
             bytes += size;
         }
+        bytes += foliage.extract(client, &space, &map_root.join("foliage.bin"))?;
+        files += 1;
         let mesh_path = map_root.join("collision.bin");
         let mut placements = BufWriter::new(File::create(&mesh_path)?);
         placements.write_all(b"WCP2")?;

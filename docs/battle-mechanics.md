@@ -76,54 +76,60 @@ rates, exceptions and mode-specific settlement need independent evidence.
 
 | Mechanic | Game mechanic | Server coverage |
 | --- | --- | --- |
-| Draw distance and tracers | Local rendering, the server's vehicle draw radius, minimap knowledge and tracer visibility are separate. [Wargaming Player Support][eu-spotting] gives a 565 m vehicle draw circle. The archive lists 564 m and describes historical camera-dependent rules for tracers from hidden vehicles. | **Partial.** Training supplies known sources for every viewer. Tracer delivery enforces draw range and remembers recipients for tracer stops. The policy also accepts hidden sources, a direct-view direction, or strategic viewport containment. Camera and spotting providers for the hidden-source path are open. See [vehicle replication](../src/battles/src/infrastructure/controls.rs) and [shot delivery](../src/battles/src/infrastructure/projectiles.rs). |
-| View and spotting range | View range is an input to detection. A vehicle can spot an enemy itself up to 445 m, with proximity detection within 50 m even through cover. Extra view range helps detect concealed targets within the cap. See [Wargaming Player Support][eu-spotting]. | **Open.** There is no detection state or per-viewer enemy discovery. |
-| Visibility checks and camouflage | Beyond proximity range, detection depends on line of sight and concealment. The archive describes view ports and target checkpoints, changes to concealment from movement, firing and vegetation, and how long a vehicle stays spotted. Its check intervals are explicitly flagged as outdated after 9.16. See [Wargaming's visibility system changes][eu-cadence]. | **Open.** Terrain and obstacle queries are used for projectile contact. Exterior customization is carried with the arena loadout, with no corresponding spotting or concealment calculation. See [garage camouflage](camouflage.md) and [scene impacts](battle-replays.md#scene-impacts-and-gun-audio). |
-| Radio range | Allies within signal range share spotted positions, which can appear on the minimap beyond the recipient's vehicle draw range. See [Wargaming Player Support][eu-spotting]. The combined-range formula and relay behavior in the archive need current-client verification. | **Open.** The arena has no signal-range or shared-spotting model. |
+| Draw distance and tracers | Local rendering, the server's vehicle draw radius, minimap knowledge and tracer visibility are separate. [Wargaming Player Support][eu-spotting] gives a 565 m vehicle draw circle. The archive lists 564 m and describes historical camera-dependent rules for tracers from hidden vehicles. | **Implemented in Training.** Vehicle entities and live poses follow per-player visibility and the draw radius. Tracer delivery uses that visibility and remembers recipients for tracer stops. Strategic camera containment remains open. See [vehicle replication](../src/battles/src/infrastructure/controls.rs) and [shot delivery](../src/battles/src/infrastructure/projectiles.rs). |
+| View and spotting range | View range is an input to detection. A vehicle can spot an enemy itself up to 445 m, with proximity detection within 50 m even through cover. Extra view range helps detect concealed targets within the cap. See [Wargaming Player Support][eu-spotting]. | **Implemented in Training.** Pairwise detection uses fitted base view range, three-dimensional distance and scheduled checks. |
+| Visibility checks and camouflage | Beyond proximity range, detection depends on line of sight and concealment. The archive describes view ports and target checkpoints, changes to concealment from movement, firing and vegetation, and how long a vehicle stays spotted. Its check intervals are explicitly flagged as outdated after 9.16. See [Wargaming's visibility system changes][eu-cadence]. | **Implemented in Training.** Each ray tests terrain, solid scenery and estimated foliage volumes. Fitted camouflage coefficients and hull movement determine the vehicle contribution. See [garage camouflage](camouflage.md) and [scene impacts](battle-replays.md#scene-impacts-and-gun-audio). |
+| Radio range | Allies within signal range share spotted positions, which can appear on the minimap beyond the recipient's vehicle draw range. See [Wargaming Player Support][eu-spotting]. The combined-range formula and relay behavior in the archive need current-client verification. | **Implemented in Training.** Living allies share contacts throughout each connected radio group. Losing a link freezes the last reported allied positions and removes enemy contacts supplied only across the split. |
 
 ### Detection, concealment and delivery
 
-1. **Calculate the observer's view range.** The archive combines the fitted
-   turret and applicable crew, perks and equipment. For an observer view range
-   `V` and target concealment fraction `C`, the archived relation before caps is
-   `V - (V - 50 m) × C`. Apply the 50 m proximity rule and 445 m self-spotting
-   cap separately from the draw radius.
-2. **Resolve concealment and line of sight.** The archive combines vehicle
-   concealment for stationary and moving states, the crew skill contribution
-   and a vehicle/gun firing penalty, then adds applicable exterior, stationary
-   equipment and foliage bonuses. Foliage can stack up to a cap. A shot
-   temporarily reduces the contribution of nearby foliage, with the wiki
-   describing a 15 m boundary and separate handling of foliage outside it.
-   In its model, firing retains only the strongest nearby foliage contribution
-   at 30% of its original value, with more distant foliage unchanged.
-   Opaque terrain and buildings block sight beyond proximity range.
-   Wargaming support distinguishes hull movement from turret and gun traverse
-   when explaining concealment. [Wargaming Player Support][eu-spotting]
-3. **Test the view ports.** The archived model casts sight rays from a high
-   fixed port or a gun-mount port to six checkpoints on the target. They
-   cover the turret top, gun mount, hull front and rear, and both turret
-   sides. One clear ray is sufficient inside the calculated spotting range.
-   The archive treats other vehicles and wrecks as transparent for spotting.
-4. **Track spotted state.** The archive gives a 10-second baseline linger
-   after contact is lost, with crew and equipment effects on the duration.
-   Its old distance-band intervals of 0.1, 0.5, 1 and 2 seconds are historical.
-   Verify cadence, port scheduling, terrain and foliage occlusion, and
-   spotting retention independently. [Wargaming's visibility changes][eu-cadence]
-5. **Deliver the applicable information to each viewer.** Separate self-spots,
-   allied reports, minimap markers and 3D vehicles. The archive models sharing
-   using the sum of two allies' signal ranges and excludes relaying secondhand
-   contacts. It describes friendly and spotted-enemy tracers within the draw
-   limit, a restricted forward cone for some unspotted tracers, and separate
-   rules for the SPG strategic viewport. These sharing and tracer filters need
-   controlled verification before implementation.
+Battles derives the static and turret-relative observer ports and six fixed
+target checkpoints from collision bounds and mount positions. The side
+checkpoints use hull width at gun-mount height. The observer alternates ports
+on the arena clock. Proximity detection uses three-dimensional distance and
+bypasses ray tests. Outside proximity range a single unblocked ray within
+`view - (view - proximity) × concealment` qualifies for detection. View is
+capped at the configured maximum. The loadout uses base ranges and base
+stationary or moving concealment, multiplied by 0.5 for zero crew skill. Hull
+translation or turning selects moving concealment.
 
-The archived concealment calculation scales the stationary or moving base
-value by `0.5 + 0.00375 × effective concealment skill` and by the shot
-multiplier, then adds exterior, active camouflage equipment and foliage.
-The result is capped at 100%. Verify the modifier order, foliage weights
-and caps, equipment activation and firing penalties against the current
-client. Historical equipment configurations and individual vehicle examples
-illustrate the calculation.
+A successful shot applies the fitted gun's `invisibilityFactorAtShot` for five
+seconds from the latest shot. In the inspected EU build `2.4.2.0 #1007`, the
+three SU-152 loadouts use multipliers of 0.143, 0.19 and 0.20. Wargaming's
+[PC concealment video][eu-concealment-video] compares three SU-152 guns,
+including the two 122 mm configurations with different muzzle brakes. The
+PC firing duration is a configurable default. The [Blitz spotting
+guide][blitz-spotting] describes five seconds for Blitz.
+Along each sight ray, foliage near the observer
+is transparent. Foliage near a firing target contributes the strongest nearby
+bonus at 30%, and farther foliage keeps its full contribution. The vegetation
+total is capped at 80% and total concealment at 100%. Foliage weights and
+crown geometry currently use approximations described in the resource guide.
+
+A living target starts one ten-second retention timer when its last direct
+detection is lost. Live spotters can share a retained contact. Splitting or
+rejoining a radio group affects access immediately and leaves its retention
+clock running. Direct detection works with a group of one. In-range
+contacts get a client Vehicle entity, and contacts outside the draw radius
+can get minimap positions and health. Losing an allied link preserves its
+last reported marker. Sixth Sense schedules one owner alert three seconds
+into a continuous spotted period. The alert rearms after the vehicle goes
+fully dark. Commander incapacitation is a later mechanic.
+
+Under **Admin → Battles → Battle parameters → Spotting**, the default
+distance bands end at 50, 150, 270 and 445 m. The supported ranges are
+0–100, 1–300, 1–444 and 1–445 m, respectively, and the bands must increase.
+The default check intervals are 1, 5, 10 and 20 simulation ticks (100 ms
+each). The first three support 1–20 ticks and the far interval 1–50 ticks.
+Port alternation defaults to 20 ticks and accepts 1–100. Retention defaults
+to 100 ticks and accepts 0–600. Sixth Sense and the firing penalty default
+to 30 and 50 ticks respectively and both accept 0–300. The draw radius
+defaults to 565 m and accepts 0–1500. Nearby foliage distance defaults to
+15 m and accepts 0–100. Foliage coefficients and the crown base fraction
+accept values from 0 to 1. Their defaults are 0.5 leafy, 0.25 leafless,
+0.8 cap, 0.3 retained after firing and 0.4 crown base. Check intervals and
+shot duration are agreed implementation defaults. Measurements for the
+current official PC battle server are open.
 
 ## Movement, aiming and projectiles
 
@@ -192,9 +198,7 @@ by simulation and replication for that arena. The existing values are the
 defaults used by native Training Rooms.
 
 The native movement bitmask identifies commands. Shell ballistics and equipped
-vehicle performance come from the resource bundle. The tracer rule for hidden
-shooters is available to the simulator, while current Training replication
-treats shooters as known.
+vehicle performance come from the resource bundle. The tracer policy uses each recipient's known Vehicle entities.
 
 ### Parked vehicle positions
 
@@ -437,7 +441,7 @@ the Toolkit's matching captured battle in its `WGDE` decoder and
 | Remaining gap | What is missing |
 | --- | --- |
 | Scenery and ground contact fidelity | The convex hull and six suspension probes approximate the full track footprint and chassis shape. Native suspension tuning and grip at mixed-material contacts still need calibration. |
-| Destruction coverage and fidelity | Unnumbered scenery lacks native synchronization. Trunk shapes, contact loads and pitch limits are estimates. Fall collisions with tanks and other trees, authoritative debris motion, and foliage concealment from standing and fallen vegetation remain open. Exact shell damage rules, shell continuation through broken cover and splash destruction remain open. |
+| Destruction coverage and fidelity | Unnumbered scenery lacks native synchronization. Trunk shapes, contact loads, pitch limits and foliage volumes are estimates. Fall collisions with tanks and other trees, authoritative debris motion, exact shell damage, shell continuation through broken cover and splash destruction remain open. |
 | Rollover fidelity and feedback | Rigid bodies can tip and roll onto the roof. Rollover destruction rules and native recovery HUD messages remain open. Ramming damage is outside this work. |
 | Environmental hazards | Airborne motion lands on the height map or a supporting surface. Landing and fall damage, water volumes and depth, drowning warnings and timers, and their battle outcomes remain open. |
 | Damage and vehicle abilities | Damaged-engine power loss, reserve tracks, crew incapacitation, emergency and active repair interactions, wheeled mode switching, and vehicle-specific boosts still need implementation or further wire evidence. |
@@ -539,8 +543,9 @@ Training uses the published 565 m draw range for known sources. The archived
 section 6.2 describes the policy for unspotted enemies. In arcade and sniper
 views, it accepts origins within
 445 m and 25° of the viewing direction. In strategic view it accepts origins
-inside the viewport. These inputs belong to tracer delivery. Training currently
-provides known sources, and no spotting or camera detection was added.
+inside the viewport. These inputs belong to tracer delivery. Training uses per-viewer spotting
+and the gun direction for its direct-view fallback. The strategic camera
+viewport remains open.
 The client receives the same launch velocity used by flight simulation and
 the shell's effective range. The effect metadata controls how the native client
 draws that tracer, including artillery visuals.
@@ -740,8 +745,8 @@ events and verify cue selection in the client.
   Calibrate fire damage and passive module repair timing.
 - **Active consumables.** Implement repair kits, first-aid kits, and fire
   extinguishers with their cooldowns.
-- **Tracers and flight.** Connect the hidden-source tracer policy to future
-  spotting and camera inputs. Spotting belongs to a separate workstream.
+- **Tracers and flight.** Connect the strategic camera viewport to the hidden-source tracer
+  policy.
   Check for collisions against vehicles that move during shell flight.
 - **Native client validation.** Verify stun timers, module and crew indicators,
   ammo-rack effects, and artillery tracers in a live client session.
@@ -763,6 +768,8 @@ events and verify cue selection in the client.
 [eu-history]: https://worldoftanks.eu/en/content/docs/release_notes/
 [eu-crew]: https://worldoftanks.eu/en/news/general-news/crew-perks-expansion-2026/
 [eu-spotting]: https://wargaming.net/support/en/products/wot/article/10222/
+[eu-concealment-video]: https://www.youtube.com/watch?v=rgEE7L7jXvI
+[blitz-spotting]: https://wargaming.net/support/en/products/wotb/article/15414/
 [eu-cadence]: https://worldoftanks.eu/en/news/general-news/version-916-spotting-improvement/
 [eu-penetration]: https://worldoftanks.eu/en/content/guide/newcomers-guide/how_to_survive/
 [eu-he-support]: https://wargaming.net/support/en/products/wot/article/15053/

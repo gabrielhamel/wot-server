@@ -1198,6 +1198,15 @@ it("launches a Training battle with selected players and a customized stationary
         dummy_vehicles: [{ id: 81, key: "ussr:R04_T-34", name: "T-34", tier: 5 }],
         parameters: [
           {
+            key: "spotting_retention_ticks",
+            label: "Spotted retention (100 ms ticks)",
+            group: "Spotting",
+            default: 100,
+            min: 0,
+            max: 600,
+            integer: true,
+          },
+          {
             key: "suspension_frequency_hz",
             label: "Suspension frequency (Hz)",
             group: "Hull physics",
@@ -1439,6 +1448,13 @@ it("launches a Training battle with selected players and a customized stationary
     await user.click(parameters);
     const countdown = screen.getByRole("spinbutton", { name: "Countdown (seconds)" });
     expect(countdown).toHaveValue(10);
+    const retention = screen.getByRole("spinbutton", { name: "Spotted retention (100 ms ticks)" });
+    expect(retention).toHaveValue(100);
+    await user.clear(retention);
+    await user.type(retention, "601");
+    expect(start).toBeDisabled();
+    await user.clear(retention);
+    await user.type(retention, "100");
     await user.clear(countdown);
     await user.type(countdown, "61");
     expect(start).toBeDisabled();
@@ -1447,6 +1463,8 @@ it("launches a Training battle with selected players and a customized stationary
     expect(start).toBeEnabled();
     await user.clear(countdown);
     await user.type(countdown, "2");
+    await user.clear(retention);
+    await user.type(retention, "80");
     expect(screen.queryByRole("combobox", { name: "Hull physics model" })).not.toBeInTheDocument();
     const suspension = screen.getByRole("spinbutton", { name: "Suspension frequency (Hz)" });
     expect(suspension).toHaveValue(3);
@@ -1469,7 +1487,11 @@ it("launches a Training battle with selected players and a customized stationary
     expect(posts[1]?.body).toEqual({
       arena_type: 5,
       duration_seconds: 600,
-      parameters: { countdown_seconds: 2, suspension_frequency_hz: 4 },
+      parameters: {
+        countdown_seconds: 2,
+        spotting_retention_ticks: 80,
+        suspension_frequency_hz: 4,
+      },
       players: [
         {
           account_id: 123,
@@ -1546,7 +1568,7 @@ it("launches a Training battle with selected players and a customized stationary
       "ddd.bounded_context.name": "player_administration",
       "input.arena_type_id": 5,
       "input.round_length.seconds": 600,
-      "input.battle.parameters.count": 2,
+      "input.battle.parameters.count": 3,
       "input.players.count": 2,
       "input.players.custom_loadout_count": 1,
       "input.players.owned_override_count": 1,

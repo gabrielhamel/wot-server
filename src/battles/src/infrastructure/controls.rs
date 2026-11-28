@@ -4,6 +4,8 @@ use crate::{
     domain::vehicle::{Aim, AmmunitionCommand},
 };
 
+const AUTOROTATION_ENABLED: u8 = 2;
+
 impl BattleSimulation {
     pub(super) fn vehicle_control_with_delivery(
         &mut self,
@@ -29,6 +31,7 @@ impl Battle {
         input.participant.id = event.participant.0, input.entity_id = event.entity_id, rpc.method = %event.method, input.args.count = event.argument_count,
         input.drive.flags = tracing::field::Empty, input.ammunition.setting = tracing::field::Empty,
         input.ammunition.shell = tracing::field::Empty, input.aim.kind = tracing::field::Empty,
+        input.vehicle.setting = tracing::field::Empty,
         input.aim.server_marker = tracing::field::Empty, output.outcome = tracing::field::Empty,
         otel.status_code = tracing::field::Empty
     ))]
@@ -47,6 +50,9 @@ impl Battle {
         };
         let avatar_target = event.entity_id == player.avatar_id;
         let vehicle_target = event.entity_id == player.vehicle.entity_id;
+        if let VehicleCommand::ChangeSetting { setting, .. } = event.command {
+            operation.record("input.vehicle.setting", setting);
+        }
         let outcome = if let VehicleCommand::SetServerMarker(enabled) = event.command
             && avatar_target
         {
@@ -97,7 +103,26 @@ impl Battle {
                         "round_inactive"
                     }
                 }
-                VehicleCommand::ChangeSetting { setting, shell } if avatar_target => {
+                VehicleCommand::ChangeSetting {
+                    setting: AUTOROTATION_ENABLED,
+                    value,
+                } if avatar_target && !matches!(value, 0 | 1) => "invalid_setting_value",
+                VehicleCommand::ChangeSetting {
+                    setting: AUTOROTATION_ENABLED,
+                    ..
+                } if avatar_target
+                    && player
+                        .tank
+                        .performance
+                        .as_ref()
+                        .is_some_and(|vehicle| vehicle.gun.yaw_limits.is_none()) =>
+                {
+                    "autorotation_not_applicable"
+                }
+                VehicleCommand::ChangeSetting {
+                    setting,
+                    value: shell,
+                } if avatar_target && matches!(setting, 0 | 1 | 17 | 18) => {
                     operation.record("input.ammunition.setting", setting);
                     if matches!(setting, 0 | 1) {
                         operation.record("input.ammunition.shell", shell);
@@ -164,12 +189,12 @@ impl Battle {
         wire: &ArenaWire,
         now: Instant,
     ) -> Vec<(u32, tracing::Span)> {
-        let peers: Vec<_> = self
-            .players
-            .iter()
-            .filter(|(_, p)| p.entered)
-            .map(|(&key, _)| key)
-            .collect();
+        let mut viewers = HashMap::<u32, Vec<ParticipantId>>::new();
+        for (&peer, player) in self.players.iter().filter(|(_, player)| player.entered) {
+            for &entity in &player.visible_vehicles {
+                viewers.entry(entity).or_default().push(peer);
+            }
+        }
         let mut movement = Vec::new();
         let time = now.saturating_duration_since(self.started_at).as_secs_f32();
         let seconds = TICK.as_secs_f32();
@@ -221,7 +246,10 @@ impl Battle {
                     },
                 );
             }
-            player.publish_chassis_motion(delivery, wire, &peers, movement_parent);
+            let peers = viewers
+                .get(&player.vehicle.entity_id)
+                .map_or(&[][..], Vec::as_slice);
+            player.publish_chassis_motion(delivery, wire, peers, movement_parent);
             if player.tank.health <= 0 || self.round.phase == RoundPhase::Finished {
                 continue;
             }
@@ -237,7 +265,7 @@ impl Battle {
             let parent = aim.or(drive);
             if player.last_gun_angles != gun {
                 player.last_gun_angles = gun;
-                deliver_state(parent.clone(), "gun_angles", entity_id, &peers, |client| {
+                deliver_state(parent.clone(), "gun_angles", entity_id, peers, |client| {
                     wire.publish_gun_angles(delivery, client, entity_id, gun)
                 });
             }

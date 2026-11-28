@@ -249,6 +249,7 @@ fn a_ray_can_strike_an_off_center_part_or_pass_through_empty_space() {
             mobility: Default::default(),
             turret_pivot: Some(Vec3::ZERO),
             armor,
+            spotting: None,
             device_health: Default::default(),
             gun: GunPerformance {
                 turret_traverse: 0.0,
