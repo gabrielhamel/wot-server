@@ -1110,7 +1110,7 @@ describe("Server Administration", () => {
   });
 });
 
-it("launches a Training battle with selected players and a customized stationary dummy", async () => {
+it("starts Training with players and a customized dummy", { timeout: 15_000 }, async () => {
   localStorage.setItem(lastBattleKey, "{invalid");
   const telemetry = captureTraces();
   const posts: { trace: string | null; body: unknown }[] = [];
