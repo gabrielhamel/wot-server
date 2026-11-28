@@ -86,20 +86,15 @@ the extractor alone reuse the current version's existing bundle. To test an
 extractor change against that same game version, run it locally with a fresh
 output directory.
 
-Daily and release jobs share the installed client, versioned bundles and
-compiled Rust dependencies under `/cache/wot` on the dedicated runner. The daily
-workflow runs at 08:00 Europe/Paris and can also run from the Actions tab.
+All PR, daily, and release E2E jobs and image publishing use the dedicated
+Talos runner. They share the client at `/cache/wot/eu-sd-en`, the versioned
+bundles, and the native Cargo registry and target directory under
+`/cache/wot`. The daily workflow runs at 08:00 Europe/Paris and can also run
+from the Actions tab.
 On the default branch it checks for a matching [release image](container.md)
 and publishes it if missing. The repository's `DISCORD_WEBHOOK_URL` Actions
 secret reports E2E or publishing failures and successful new publications.
 An existing image produces no Discord notification.
-
-PR E2E uses the repository variable `WOT_PR_E2E_RUNNER` to select a Linux x64
-runner with access to the production client downloads, Docker for PostgreSQL,
-native build tools, and at least 120 GiB of free disk. Provision this runner
-before switching PRs to this workflow. All PR code, including fork changes,
-runs on this isolated runner. Use a disposable workspace and writable client
-and Cargo directories isolated from the daily and release runner.
 
 The admin battle E2E case drives an authenticated dashboard launch through
 PostgreSQL, the gateway and an encrypted Mercury peer. It checks stationary

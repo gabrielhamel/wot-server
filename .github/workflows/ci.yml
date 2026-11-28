@@ -44,20 +44,13 @@ jobs:
 
   e2e:
     name: E2E Tests
-    runs-on: ${{ vars.WOT_PR_E2E_RUNNER || 'ubuntu-24.04' }}
+    runs-on: [self-hosted, linux, x64, wot-server-image]
     timeout-minutes: 180
     steps:
-      - name: Require an isolated runner with a full client disk
-        if: vars.WOT_PR_E2E_RUNNER == ''
-        run: |
-          echo "::error::Set WOT_PR_E2E_RUNNER to an isolated Linux x64 runner with enough storage for the EU client."
-          exit 1
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-native-e2e
-        with:
-          cache-root: ${{ runner.temp }}/wot-ci
       - uses: ./.github/actions/extract-game-resources
         id: extract
       - uses: ./.github/actions/run-e2e

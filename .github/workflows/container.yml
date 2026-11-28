@@ -71,9 +71,6 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/setup-native-e2e
-        with:
-          cache-root: /cache/wot
-          persistent: 'true'
       - uses: ./.github/actions/extract-game-resources
         id: extract
         with:

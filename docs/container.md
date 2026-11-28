@@ -17,7 +17,7 @@ run summary shows the published image names:
 The dedicated self-hosted runner maintains the current EU production SD
 English client at `/cache/wot/eu-sd-en` using
 [wg-launcher](references/wg-launcher/README.md). It shares versioned bundles
-and native Cargo dependencies with the daily E2E workflow. See
+and native Cargo dependencies with PR and daily E2E. See
 [E2E tests](testing.md#e2e-tests) for cache behavior.
 
 For a tag-triggered run, the publisher uses the pushed tag. After a successful
