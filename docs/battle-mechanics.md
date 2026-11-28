@@ -187,8 +187,8 @@ After a successful admin launch, the browser replaces its last battle setup
 in local storage with the map, duration, simulation overrides and stationary
 dummies (including teams and loadouts). Players and their tank configurations
 are selected afresh for each launch. Reopening the panel restores the setup
-and expands **Battle parameters**. The setup status and **Reset battle setup** button
-appear below the map and duration, even when **Battle parameters** is collapsed.
+with **Battle parameters** collapsed. The setup status and **Reset battle setup**
+button appear below the map and duration.
 Reset clears the entire current form. Reloading still restores the last successful launch.
 
 Every adjustable mechanic and hardcoded gameplay tuning value owned by
@@ -241,6 +241,22 @@ arithmetic and cap the result using the per-step velocity limit.
 
 The native movement bitmask identifies commands. Shell ballistics and equipped
 vehicle performance come from the resource bundle. The tracer policy uses each recipient's known Vehicle entities.
+
+### Gameplay settings
+
+In **Admin → Battles → Battle parameters**, **Gameplay** appears above the
+technical settings. These controls apply to players and stationary dummies
+where the mechanic applies. Native Training Rooms use the defaults.
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| Spotting system | Arcade | Arcade uses direct detection, concealment, radio sharing, and the vehicle draw radius. Everyone visible delivers every present combat vehicle across the map, including stationary dummies, regardless of range, cover, or radio links. It skips detection and Sixth Sense. Fog of war is disabled in the menu and rejected by the server. |
+| Horsepower multiplier | 1 | Scales equipped engine power for acceleration and scenery pushing. Zero disables engine power. Accepts finite values from zero through the largest finite `f32`. |
+| Vehicle speed limit | On | Turning it off bypasses the forward and reverse governors at full throttle. Half- and quarter-speed commands still use their configured cruise speeds. Traction, drag, and the solver's velocity ceiling still apply. |
+| Unlimited ammo | Off | Shell types with a positive starting count have a fixed in-arena stock of at least one full magazine. Shots consume loaded rounds and follow the fitted gun's normal reload, magazine, and autoreload timing. Counts in the garage are independent of the arena. |
+| Unlimited life | Off | Shell, explosion, and fire damage reduce a living vehicle to a minimum of 1 HP. Module damage, crew injuries, and fires still apply. |
+| Weight multiplier | 1 | Scales mass for Rapier contacts and the drive power-to-weight calculation. Accepts positive finite `f32` values. Effective mass is clamped to the solver's mass range described above. |
+| Combat RNG | On | Turning it off uses nominal shell penetration and damage at the impact distance. Every module or crew hit reached by the projectile or spall takes its calculated damage regardless of the hit-chance roll. Hit geometry, armor, damage curves, and device-strike limits still apply. Engine ignition is a separate check that triggers at 50% chance or higher in this mode when the ignition damage threshold is met. |
 
 ### Parked vehicle positions
 

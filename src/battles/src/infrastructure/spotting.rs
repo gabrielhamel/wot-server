@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::parameters::SpottingSystem;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct MinimapContact {
@@ -17,6 +18,7 @@ impl Battle {
         movement: &[(u32, tracing::Span)],
     ) {
         let tick = self.ticks(now);
+        let everyone_visible = self.parameters.spotting_system == SpottingSystem::EveryoneVisible;
         let mut combatants = Vec::new();
         let mut causes: Vec<_> = movement.iter().map(|(_, span)| span.clone()).collect();
         for player in self.players.values_mut() {
@@ -44,6 +46,7 @@ impl Battle {
         let span = tracing::info_span!(parent: causes.first().unwrap_or(&tracing::Span::none()),
             "battles.spotting", ddd.bounded_context.name = "battles",
             input.battle.id = battle_id, input.arena.tick = tick, input.vehicles.count = combatants.len(),
+            input.battle.spotting_system = self.parameters.spotting_system.name(),
             output.pairs.count = tracing::field::Empty, output.rays.count = tracing::field::Empty,
             output.radio_groups.count = tracing::field::Empty, output.vehicles.entered = tracing::field::Empty,
             output.vehicles.left = tracing::field::Empty, output.alerts.count = tracing::field::Empty,
@@ -110,17 +113,18 @@ impl Battle {
                     .values()
                     .filter(|target| {
                         let id = target.vehicle.entity_id;
-                        id == own
-                            || (!target.observer
-                                && viewer.tank.position.distance_squared(target.tank.position)
-                                    <= self.parameters.spotting_draw_metres.powi(2)
-                                && (viewer.observer
-                                    || (target.team == viewer.team
-                                        && self.spotting.linked(own, id))
-                                    || (target.team != viewer.team
-                                        && self.spotting.knows_enemy(own, id))
-                                    || (target.tank.health <= 0
-                                        && viewer.visible_vehicles.contains(&id))))
+                        if id == own || target.observer {
+                            return id == own;
+                        }
+                        if everyone_visible {
+                            return target.entered || target.entry.is_none();
+                        }
+                        viewer.tank.position.distance_squared(target.tank.position)
+                            <= self.parameters.spotting_draw_metres.powi(2)
+                            && (viewer.observer
+                                || (target.team == viewer.team && self.spotting.linked(own, id))
+                                || (target.team != viewer.team && self.spotting.knows_enemy(own, id))
+                                || (target.tank.health <= 0 && viewer.visible_vehicles.contains(&id)))
                     })
                     .map(|target| target.vehicle.entity_id)
                     .collect();
@@ -128,7 +132,8 @@ impl Battle {
                 for target in self
                     .players
                     .values()
-                    .filter(|target| target.vehicle.entity_id != own && !target.observer)
+                    // Visible entities already provide minimap positions and health.
+                    .filter(|target| !everyone_visible && target.vehicle.entity_id != own && !target.observer)
                 {
                     let id = target.vehicle.entity_id;
                     let allied = target.team == viewer.team;

@@ -81,6 +81,7 @@ impl Drive {
         seconds: f32,
         parameters: &BattleParameters,
         [old_speed, old_yaw_rate]: [f32; 2],
+        power_per_kg: f64,
     ) -> DriveResponse {
         let mobility = &performance.mobility;
         let resistance = ground.average(mobility.terrain_resistance);
@@ -103,12 +104,16 @@ impl Drive {
         } else {
             1.0
         };
+        let governor_enabled =
+            parameters.speed_limit_enabled || self.flags & (HALF_SPEED | QUARTER_SPEED) != 0;
         self.target_speed = if braking {
             0.0
         } else if !mobility.turns_in_place && throttle == 0.0 && steering != 0.0 {
             parameters.wheel_turn_creep_mps.min(speed_limit)
-        } else {
+        } else if governor_enabled {
             throttle * (speed_limit * cruise).min(MAX_LINEAR_SPEED)
+        } else {
+            throttle * MAX_LINEAR_SPEED
         };
 
         let reversing = old_speed * self.target_speed < 0.0;
@@ -122,8 +127,8 @@ impl Drive {
             };
             approach(old_speed, 0.0, deceleration * seconds)
         } else {
-            let traction =
-                parameters.traction_multiplier * mobility.power_per_kg / old_speed.abs().max(1.0);
+            let traction = f64::from(parameters.traction_multiplier) * power_per_kg
+                / f64::from(old_speed.abs().max(1.0));
             let rolling_drag =
                 parameters.gravity_mps2.max(0.0) * ground.average(mobility.rolling_friction);
             let grade = ground.pitch * self.target_speed.signum();
@@ -132,7 +137,9 @@ impl Drive {
             let drive_force = if mobility.max_climb_angle.is_some_and(|limit| grade < -limit) {
                 0.0
             } else {
-                traction.min(parameters.traction_acceleration_mps2 / resistance)
+                traction.min(f64::from(
+                    parameters.traction_acceleration_mps2 / resistance,
+                )) as f32
             };
             // Gravity acts on the body independently. Predict its contribution only
             // to decide when the engine or the speed governor needs to act.
@@ -146,8 +153,12 @@ impl Drive {
             let drag = rolling_drag.min(speed / seconds + drive_force);
             let requested_acceleration = (target - speed - gravity_dv) / seconds + drag;
             let propulsion = requested_acceleration.max(0.0).min(drive_force);
-            let governor = ((speed + (propulsion - drag) * seconds + gravity_dv - limit) / seconds)
-                .clamp(0.0, parameters.coast_deceleration_mps2);
+            let governor = if governor_enabled {
+                ((speed + (propulsion - drag) * seconds + gravity_dv - limit) / seconds)
+                    .clamp(0.0, parameters.coast_deceleration_mps2)
+            } else {
+                0.0
+            };
             let speed = speed + (propulsion - drag - governor) * seconds;
             speed * self.target_speed.signum()
         };
@@ -155,7 +166,9 @@ impl Drive {
         let ground_traverse = performance.hull_traverse * mobility.terrain_resistance[0]
             / (resistance * mobility.turning_resistance);
         let traverse = ground_traverse.min(mobility.traverse_limit.unwrap_or(f32::INFINITY));
-        let turn_target = if mobility.turns_in_place {
+        let turn_target = if power_per_kg == 0.0 {
+            0.0
+        } else if mobility.turns_in_place {
             let pivot_at_rest =
                 throttle == 0.0 && speed.abs() <= parameters.moving_turn_min_speed_mps;
             let direction = if (speed < 0.0 && !pivot_at_rest) || (speed == 0.0 && throttle < 0.0) {
@@ -220,9 +233,17 @@ impl Drive {
         seconds: f32,
         parameters: &BattleParameters,
         measured: [f32; 2],
+        power_per_kg: f64,
     ) -> DriveDemand {
         let [speed, yaw_rate] = measured;
-        let response = self.response(performance, ground, seconds, parameters, measured);
+        let response = self.response(
+            performance,
+            ground,
+            seconds,
+            parameters,
+            measured,
+            power_per_kg,
+        );
         let moving_pivot = response.single_track_pivot && self.has_steering();
         let next_speed = if self.flags == 0 {
             // Releasing powered movement coasts to a stop. A parked hull pushed

@@ -187,7 +187,11 @@ impl Condition {
                     Device::Engine
                         if strike.can_ignite_engine
                             && strike.damage >= parameters.engine_ignition_min_damage
-                            && fastrand::f32() < state.profile.fire_chance =>
+                            && if parameters.combat_rng {
+                                fastrand::f32() < state.profile.fire_chance
+                            } else {
+                                state.profile.fire_chance >= 0.5
+                            } =>
                     {
                         Some(FireOrigin::Engine)
                     }

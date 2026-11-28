@@ -192,7 +192,6 @@ export function BattleSetup() {
             setDummies(saved.dummies.map((dummy) => ({ ...dummy, key: ++nextDummy.current })));
             setWarnings(saved.warnings);
             setSource("restored");
-            setExpanded(true);
           }
         }
         if (controller.signal.aborted) return;

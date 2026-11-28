@@ -110,7 +110,10 @@ export type BattleParameterDefinition = {
   min: number;
   max: number;
   integer: boolean;
-};
+} & (
+  | { control?: "number" | "switch" }
+  | { control: "select"; options: { value: number; label: string; disabled: boolean }[] }
+);
 
 export type BattleOptions = {
   maps: BattleChoice[];

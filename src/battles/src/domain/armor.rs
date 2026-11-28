@@ -76,7 +76,7 @@ struct Surface {
 impl Shot {
     #[tracing::instrument(name = "battles.resolve_armor", skip_all, fields(
         ddd.bounded_context.name = "battles", input.target.entity_id = target_id,
-        input.shell.caliber_mm = self.ballistics.caliber_mm,
+        input.shell.caliber_mm = self.ballistics.caliber_mm, input.battle.combat_rng = parameters.combat_rng,
         input.shell.range_metres = self.max_distance,
         output.part.index = tracing::field::Empty, output.material.kind = tracing::field::Empty,
         output.plate.thickness_mm = tracing::field::Empty, output.plate.effective_mm = tracing::field::Empty,
@@ -385,12 +385,7 @@ impl Shot {
                         if ap && is_track(*internal) {
                             break;
                         }
-                        self.record_device(
-                            *internal,
-                            false,
-                            &mut hit.devices,
-                            parameters.max_device_hits,
-                        );
+                        self.record_device(*internal, false, &mut hit.devices, parameters);
                         internal_penetration -= internal.plate.thickness_mm;
                     }
                     hit.remaining_mm = penetration - effective;
@@ -438,12 +433,7 @@ impl Shot {
                         {
                             break;
                         }
-                        self.record_device(
-                            *internal,
-                            true,
-                            &mut hit.devices,
-                            parameters.max_device_hits,
-                        );
+                        self.record_device(*internal, true, &mut hit.devices, parameters);
                         if !he.piercing_spalls && internal.plate.thickness_mm > 0.0 {
                             break;
                         }
@@ -469,7 +459,7 @@ impl Shot {
                 hit.outcome = ArmorOutcome::ScreenBlocked;
                 return Some(hit);
             }
-            self.record_device(surface, false, &mut devices, parameters.max_device_hits);
+            self.record_device(surface, false, &mut devices, parameters);
             hit.devices = devices;
             penetration = (penetration - effective * loss_factor).max(0.0);
             hit.remaining_mm = penetration;
@@ -542,12 +532,7 @@ impl Shot {
                     break;
                 }
                 if exited && is_track(surface) {
-                    self.record_device(
-                        surface,
-                        false,
-                        &mut hit.devices,
-                        parameters.max_device_hits,
-                    );
+                    self.record_device(surface, false, &mut hit.devices, parameters);
                 }
                 if surface.plate.once {
                     seen.push(key);
@@ -561,7 +546,7 @@ impl Shot {
         hit: Surface,
         explosion: bool,
         devices: &mut [Option<DeviceStrike>],
-        limit: usize,
+        parameters: &BattleParameters,
     ) {
         let Some(device) = hit.plate.device else {
             return;
@@ -578,7 +563,7 @@ impl Shot {
         } else {
             device.projectile_chance
         };
-        if chance <= 0.0 || fastrand::f32() >= chance {
+        if parameters.combat_rng && (chance <= 0.0 || fastrand::f32() >= chance) {
             return;
         }
         let damage = if !explosion && is_track(hit) {
@@ -598,7 +583,10 @@ impl Shot {
             )
         };
         if damage > 0
-            && let Some(slot) = devices.iter_mut().take(limit).find(|slot| slot.is_none())
+            && let Some(slot) = devices
+                .iter_mut()
+                .take(parameters.max_device_hits)
+                .find(|slot| slot.is_none())
         {
             *slot = Some(DeviceStrike {
                 device: device.device,
@@ -623,7 +611,7 @@ fn rolled_damage(nominal: f32, roll: f32, factor: f32) -> u16 {
 }
 
 pub(crate) fn roll(magnitude: f32, uniform: bool, parameters: &BattleParameters) -> f32 {
-    if magnitude == 0.0 {
+    if !parameters.combat_rng || magnitude == 0.0 {
         return 1.0;
     }
     let unit = fastrand::f32;

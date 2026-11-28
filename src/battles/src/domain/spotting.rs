@@ -1,4 +1,4 @@
-use super::parameters::BattleParameters;
+use super::parameters::{BattleParameters, SpottingSystem};
 use glam::Vec3;
 use std::collections::{HashMap, HashSet};
 use wot_shared_kernel::VehicleSpotting;
@@ -76,6 +76,9 @@ impl Spotting {
         mut sight: impl FnMut(&Combatant, &Combatant, Vec3, Vec3) -> Option<f32>,
     ) -> SpottingChanges {
         let mut changes = SpottingChanges::default();
+        if parameters.spotting_system == SpottingSystem::EveryoneVisible {
+            return changes;
+        }
         let (groups, count) = radio_groups(vehicles);
         self.radio_groups = groups;
         changes.radio_groups = count;

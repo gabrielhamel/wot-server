@@ -127,12 +127,13 @@ Players already in battle or in a Training Room appear disabled. **Refresh
 players** updates availability after a crew change, login, disconnect or
 garage return. The server checks readiness again when starting the battle.
 
-Expand **Battle parameters** to tune the arena's round timing, movement,
-contacts, projectile and damage simulation, and tracer visibility. Each field
-starts at the server default and shows its supported range when the entry is
-invalid. **Reset parameters to defaults** clears all overrides. Edits apply to
-the battle started from this setup. Training launched from the native room
-uses server defaults.
+Expand **Battle parameters** to find **Gameplay** above the simulation tuning
+sections. Set the spotting system, horsepower and weight multipliers, vehicle
+speed limit, unlimited ammo and life, and combat RNG for the next arena.
+Fog of war appears in the spotting menu as an unavailable option. See the
+[Gameplay settings](battle-mechanics.md#gameplay-settings) for defaults and
+behavior. **Reset battle setup** returns the form to the server defaults.
+Training launched from the native room uses the same defaults.
 
 All battles use Rapier. Adjust suspension and lateral grip under **Hull physics**. See [battle physics and tuning](battle-mechanics.md#rapier-hull-physics).
 

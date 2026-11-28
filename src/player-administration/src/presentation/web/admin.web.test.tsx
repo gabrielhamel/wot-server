@@ -1597,12 +1597,41 @@ it("restores the last battle, resets the whole form and replaces the save only a
   const stored = JSON.stringify(previous);
   localStorage.setItem(lastBattleKey, stored);
   let reject = true;
+  const posts: unknown[] = [];
+  const gameplay = (key: string, label: string, defaultValue: number, control = "switch") => ({
+    key,
+    label,
+    group: "Gameplay",
+    default: defaultValue,
+    control,
+    min: 0,
+    max: 1,
+    integer: control !== "number",
+  });
   httpServer.use(
     players(),
     http.get(`${origin}/battles`, () =>
       HttpResponse.json({
         maps: [{ id: 5, name: "Prokhorovka" }],
         parameters: [
+          {
+            ...gameplay("spotting_system", "Spotting system", 0, "select"),
+            options: [
+              { value: 0, label: "Arcade", disabled: false },
+              { value: 1, label: "Everyone visible", disabled: false },
+              { value: 2, label: "Fog of war (not implemented)", disabled: true },
+            ],
+          },
+          { ...gameplay("horsepower_multiplier", "Horsepower multiplier", 1, "number"), max: 100 },
+          gameplay("speed_limit_enabled", "Vehicle speed limit", 1),
+          gameplay("unlimited_ammo", "Unlimited ammo", 0),
+          gameplay("unlimited_life", "Unlimited life", 0),
+          {
+            ...gameplay("weight_multiplier", "Weight multiplier", 1, "number"),
+            min: 0.01,
+            max: 100,
+          },
+          gameplay("combat_rng", "Combat RNG", 1),
           {
             key: "countdown",
             label: "Countdown",
@@ -1624,11 +1653,12 @@ it("restores the last battle, resets the whole form and replaces the save only a
         equipment: [{ id: 120, name: "Hardening" }],
       }),
     ),
-    http.post(`${origin}/battles`, () =>
-      reject
+    http.post(`${origin}/battles`, async ({ request }) => {
+      posts.push(await request.json());
+      return reject
         ? HttpResponse.json({ message: "Launch refused" }, { status: 409 })
-        : HttpResponse.json({ battle_id: 8, players_handed_off: 1 }),
-    ),
+        : HttpResponse.json({ battle_id: 8, players_handed_off: 1 });
+    }),
   );
   async function open() {
     const page = openAdmin(true);
@@ -1644,7 +1674,26 @@ it("restores the last battle, resets the whole form and replaces the save only a
   try {
     const first = await open();
     const toggle = screen.getByRole("button", { name: "Battle parameters" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("heading", { name: "Gameplay" })).toBeNull();
+    expect(screen.getByText("Loaded from your last launched battle")).toBeVisible();
+    await first.user.click(toggle);
     expect(screen.getByLabelText("Countdown")).toHaveValue(2);
+    expect(
+      screen.getAllByRole("heading", { level: 3 }).map(({ textContent }) => textContent),
+    ).toEqual(expect.arrayContaining(["Gameplay", "Timing"]));
+    const gameplayHeading = screen.getByRole("heading", { name: "Gameplay" });
+    expect(
+      gameplayHeading.compareDocumentPosition(screen.getByRole("heading", { name: "Timing" })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Spotting system" })).toHaveTextContent("Arcade");
+    expect(screen.getByRole("spinbutton", { name: "Horsepower multiplier" })).toHaveValue(1);
+    expect(screen.getByRole("spinbutton", { name: "Weight multiplier" })).toHaveValue(1);
+    expect(screen.getByRole("switch", { name: "Vehicle speed limit" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Unlimited ammo" })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "Unlimited life" })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "Combat RNG" })).toBeChecked();
     await first.user.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Loaded from your last launched battle")).toBeVisible();
@@ -1667,6 +1716,7 @@ it("restores the last battle, resets the whole form and replaces the save only a
     expect(screen.getByLabelText("Map and battle type")).toHaveValue("");
     first.unmount();
     const second = await open();
+    await second.user.click(screen.getByRole("button", { name: "Battle parameters" }));
     const duration = screen.getByLabelText("Battle duration (minutes)");
     expect(duration).toHaveValue(10);
     await second.user.clear(duration);
@@ -1674,6 +1724,24 @@ it("restores the last battle, resets the whole form and replaces the save only a
     expect(screen.getByText(/Changes will be saved/)).toBeVisible();
     await addPlayer(second.user);
     const start = screen.getByRole("button", { name: "Start battle" });
+    const spotting = screen.getByRole("combobox", { name: "Spotting system" });
+    await second.user.click(spotting);
+    expect(
+      await screen.findByRole("option", { name: /Fog of war.*not implemented/ }),
+    ).toHaveAttribute("aria-disabled", "true");
+    await second.user.click(screen.getByRole("option", { name: "Everyone visible" }));
+    for (const name of ["Vehicle speed limit", "Unlimited ammo", "Unlimited life", "Combat RNG"]) {
+      await second.user.click(screen.getByRole("switch", { name }));
+    }
+    const horsepower = screen.getByRole("spinbutton", { name: "Horsepower multiplier" });
+    const weight = screen.getByRole("spinbutton", { name: "Weight multiplier" });
+    await second.user.clear(horsepower);
+    await second.user.type(horsepower, "2.5");
+    await second.user.clear(weight);
+    await second.user.type(weight, "0");
+    expect(start).toBeDisabled();
+    await second.user.clear(weight);
+    await second.user.type(weight, "0.5");
     await second.user.click(start);
     expect(await screen.findByText("Launch refused")).toBeVisible();
     expect(localStorage.getItem(lastBattleKey)).toBe(stored);
@@ -1683,13 +1751,38 @@ it("restores the last battle, resets the whole form and replaces the save only a
     const updated = {
       ...previous,
       duration_seconds: 720,
+      parameters: {
+        ...previous.parameters,
+        spotting_system: 1,
+        horsepower_multiplier: 2.5,
+        speed_limit_enabled: 0,
+        unlimited_ammo: 1,
+        unlimited_life: 1,
+        weight_multiplier: 0.5,
+        combat_rng: 0,
+      },
       dummies: [{ team: 2, loadout: { vehicle: 81, equipment: [120, 0], hit_points: 650 } }],
     };
     expect(JSON.parse(localStorage.getItem(lastBattleKey)!)).toEqual(updated);
-    await addPlayer(second.user);
-    await second.user.clear(duration);
-    await second.user.type(duration, "14");
-    await second.user.click(start);
+    expect(posts[1]).toMatchObject({ parameters: updated.parameters });
+    second.unmount();
+    const restored = await open();
+    const restoredToggle = screen.getByRole("button", { name: "Battle parameters" });
+    expect(restoredToggle).toHaveAttribute("aria-expanded", "false");
+    await restored.user.click(restoredToggle);
+    expect(screen.getByRole("combobox", { name: "Spotting system" })).toHaveTextContent(
+      "Everyone visible",
+    );
+    expect(screen.getByRole("switch", { name: "Unlimited ammo" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "Combat RNG" })).not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Weight multiplier" })).toHaveValue(0.5);
+    await restored.user.click(restoredToggle);
+    const restoredDuration = screen.getByLabelText("Battle duration (minutes)");
+    const restoredStart = screen.getByRole("button", { name: "Start battle" });
+    await addPlayer(restored.user);
+    await restored.user.clear(restoredDuration);
+    await restored.user.type(restoredDuration, "14");
+    await restored.user.click(restoredStart);
     await waitFor(() =>
       expect(JSON.parse(localStorage.getItem(lastBattleKey)!)).toEqual({
         ...updated,
@@ -1700,8 +1793,8 @@ it("restores the last battle, resets the whole form and replaces the save only a
       throw new Error("Storage unavailable");
     });
     try {
-      await addPlayer(second.user);
-      await second.user.click(start);
+      await addPlayer(restored.user);
+      await restored.user.click(restoredStart);
       expect(await screen.findByText(/could not save its settings/)).toBeVisible();
     } finally {
       write.mockRestore();

@@ -291,6 +291,50 @@ fn a_ray_can_strike_an_off_center_part_or_pass_through_empty_space() {
 }
 
 #[test]
+fn disabling_combat_rng_uses_nominal_rolls_and_guarantees_module_and_crew_strikes() {
+    let mut shot = shot(ShellKind::ArmorPiercing, 100.0);
+    shot.ballistics.device_damage = [50.0; 2];
+    let entry = surface(30.0, 1, plate(50.0, 1.0), 0.0);
+    let mut engine = surface(30.25, 2, plate(0.0, 0.0), 0.0);
+    engine.plate.device = Some(ArmorDevice {
+        device: Device::Engine,
+        can_ignite_engine: true,
+        health: None,
+        projectile_chance: 0.0,
+        explosion_chance: 0.0,
+    });
+    let mut crew = surface(30.5, 3, plate(0.0, 0.0), 0.0);
+    crew.plate.device = engine.plate.device.map(|device| ArmorDevice {
+        device: Device::Crew(7),
+        ..device
+    });
+    let mut beyond = crew;
+    beyond.distance = 31.0;
+    beyond.plate.device = crew.plate.device.map(|device| ArmorDevice {
+        device: Device::Crew(8),
+        ..device
+    });
+    let surfaces = [entry, engine, crew, beyond];
+    let mut parameters = BattleParameters::default();
+    let hit = shot.resolve_surfaces(&surfaces, &parameters).unwrap();
+    assert!(hit.devices.iter().all(Option::is_none));
+
+    parameters.combat_rng = false;
+    assert_eq!(roll(0.25, true, &parameters), 1.0);
+    assert_eq!(roll(0.25, false, &parameters), 1.0);
+    let hit = shot.resolve_surfaces(&surfaces, &parameters).unwrap();
+    assert_eq!(hit.damage, 100);
+    assert_eq!(
+        hit.devices
+            .iter()
+            .flatten()
+            .map(|hit| (hit.device, hit.damage))
+            .collect::<Vec<_>>(),
+        [(Device::Engine, 50), (Device::Crew(7), 50)]
+    );
+}
+
+#[test]
 fn penetrating_shell_traces_devices_before_the_next_hull_surface() {
     let mut shot = shot(ShellKind::ArmorPiercing, 100.0);
     shot.ballistics.device_damage = [50.0; 2];

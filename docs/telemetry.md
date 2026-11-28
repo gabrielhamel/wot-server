@@ -349,7 +349,7 @@ game.command                                      [doCmdInt3, 411]
       player_sessions.prepare_training_battle
         accounts.battle_vehicle                   [for each combat vehicle, outfit byte count]
           accounts.battle_mobility                 [equipment and supply counts, collision bounds availability, effective profile]
-        battles.prepare                           [allocates battle ID and counts arena outfits]
+        battles.prepare                           [records arena settings, allocates battle ID and counts outfits]
           battles.load_terrain                     [when terrain is loaded]
           battles.load_obstacles                  [when obstacle collision is loaded]
           battles.enter                            [one per participant handoff]

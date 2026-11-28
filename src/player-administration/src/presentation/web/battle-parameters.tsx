@@ -4,7 +4,10 @@ import {
   AccordionDetails,
   AccordionSummary,
   Box,
+  FormControlLabel,
+  MenuItem,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from "@mui/material";
@@ -62,22 +65,61 @@ export function BattleParameterEditor({
                   pt: 1,
                 }}
               >
-                {entries.map(({ key, label, min, max, integer, value, invalid }) => (
-                  <TextField
-                    key={key}
-                    label={label}
-                    type="number"
-                    value={value}
-                    error={invalid}
-                    helperText={
-                      invalid
-                        ? `Enter ${integer ? "a whole number" : "a number"} from ${min} to ${max}.`
-                        : undefined
-                    }
-                    slotProps={{ htmlInput: { min, max, step: integer ? 1 : "any" } }}
-                    onChange={(event) => onChange(key, event.target.value)}
-                  />
-                ))}
+                {entries.map((field) => {
+                  const { key, label, min, max, integer, value, invalid } = field;
+                  if (field.control === "switch") {
+                    return (
+                      <FormControlLabel
+                        key={key}
+                        label={label}
+                        control={
+                          <Switch
+                            checked={value === "1"}
+                            onChange={(_, checked) => onChange(key, checked ? "1" : "0")}
+                            slotProps={{ input: { role: "switch" } }}
+                          />
+                        }
+                      />
+                    );
+                  }
+                  if (field.control === "select") {
+                    return (
+                      <TextField
+                        key={key}
+                        select
+                        label={label}
+                        value={value}
+                        onChange={(event) => onChange(key, event.target.value)}
+                      >
+                        {field.options.map((option) => (
+                          <MenuItem
+                            key={option.value}
+                            value={String(option.value)}
+                            disabled={option.disabled}
+                          >
+                            {option.label}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    );
+                  }
+                  return (
+                    <TextField
+                      key={key}
+                      label={label}
+                      type="number"
+                      value={value}
+                      error={invalid}
+                      helperText={
+                        invalid
+                          ? `Enter ${integer ? "a whole number" : "a number"} from ${min} to ${max}.`
+                          : undefined
+                      }
+                      slotProps={{ htmlInput: { min, max, step: integer ? 1 : "any" } }}
+                      onChange={(event) => onChange(key, event.target.value)}
+                    />
+                  );
+                })}
               </Box>
             </Stack>
           ))}
