@@ -44,82 +44,18 @@ jobs:
 
   e2e:
     name: E2E Tests
-    permissions:
-      actions: read
-      contents: read
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
-        env:
-          POSTGRES_DB: wot_test
-          POSTGRES_USER: wot_test
-          POSTGRES_PASSWORD: ci-only
-        ports:
-          - 5432/tcp
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -U wot_test -d wot_test"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
+    runs-on: [self-hosted, linux, x64, wot-server-image]
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup-native-e2e
+      - uses: ./.github/actions/extract-game-resources
+        id: extract
+      - uses: ./.github/actions/run-e2e
         with:
-          node-version: "22"
-          cache: npm
-      - name: Install Rust
-        run: rustup toolchain install stable --profile minimal
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          cache-bin: false
-      - name: Download the latest extracted EU client resources
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
-          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
-          WOT_RESOURCE_DIR: ${{ runner.temp }}/wot-e2e-resources
-        run: |
-          branches=("$DEFAULT_BRANCH")
-          if [[ "$HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" && "$HEAD_BRANCH" != "$DEFAULT_BRANCH" ]]; then
-            branches=("$HEAD_BRANCH" "${branches[@]}")
-          fi
-          for branch in "${branches[@]}"; do
-            runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/latest-client-e2e.yml/runs" \
-              -f branch="$branch" -F per_page=10 \
-              --jq '.workflow_runs[] | select(.event == "schedule" or .event == "workflow_dispatch") | .id')
-            for run in $runs; do
-              count=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts" \
-                -f name=latest-eu-server-resources \
-                --jq '[.artifacts[] | select(.name == "latest-eu-server-resources" and .expired == false)] | length')
-              if [[ "$count" -gt 0 ]]; then
-                gh run download "$run" --repo "$GITHUB_REPOSITORY" \
-                  --name latest-eu-server-resources --dir "$WOT_RESOURCE_DIR"
-                jq -er '"Test resource version: " + .game_version' "$WOT_RESOURCE_DIR/manifest.json"
-                printf 'Resource extraction run: %s (%s)\n' "$run" "$branch"
-                exit 0
-              fi
-            done
-          done
-          echo "::error::No current resource bundle. Run Latest client E2E on the default branch or on this repository’s PR branch."
-          exit 1
-      - name: Run PostgreSQL and protocol E2E tests
-        env:
-          WOT_RESOURCE_DIR: ${{ runner.temp }}/wot-e2e-resources
-          WOT_TEST_DATABASE_URL: postgresql://wot_test:ci-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/wot_test
-        run: |
-          cargo +stable test --locked -p wot-battles projectile_tests -- --ignored
-          cargo +stable test --locked -p wot-battles rapier_scenarios::acceptance -- --ignored --test-threads=1
-          cargo +stable test --locked -p wot-server-runtime --lib initializes_context_storage -- --ignored
-          # The access lifecycle test installs a process-wide tracing subscriber.
-          cargo +stable test --locked --features integration-test-support --test admin_traces exports_admin_http_request_inputs -- --ignored
-          cargo +stable test --locked --features integration-test-support --test admin_traces exports_admin_http_access_lifecycle -- --ignored
-          cargo +stable test --locked -p wot-server --features integration-test-support --test garage -- --ignored
+          resources: ${{ steps.extract.outputs.resources }}
 
   web:
     name: Web UI checks and tests

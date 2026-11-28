@@ -1,10 +1,18 @@
 name: Extract current EU game resources
-description: Update the cached production client and extract its server resource bundle.
+description: Update the cached production client and prepare its versioned server resource bundle.
+
+inputs:
+  working-directory:
+    description: Path to the server checkout to build and test.
+    default: .
 
 outputs:
   game-version:
     description: Game version from the extracted resource manifest.
     value: ${{ steps.extract.outputs.game-version }}
+  resources:
+    description: Absolute path to the extracted bundle on this runner.
+    value: ${{ steps.extract.outputs.resources }}
 
 runs:
   using: composite
@@ -25,28 +33,8 @@ runs:
         tar -xzf "$archive.tar.gz" "$archive/wg-launcher"
         echo "$launcher_dir/$archive" >> "$GITHUB_PATH"
 
-    - name: Install or update the cached EU SD client
-      shell: bash
-      run: |
-        mkdir -p "$GAME_DIR"
-        if [[ ! -f "$GAME_DIR/.wg-launcher/state.json" ]]; then
-          wg-launcher install --game wot --region eu --client-type sd \
-            --language EN --output "$GAME_DIR"
-        fi
-        wg-launcher update --path "$GAME_DIR"
-
-    - name: Extract the server bundle
+    - name: Prepare current EU client resources
       id: extract
       shell: bash
-      run: |
-        extractor="wot-extract-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-        docker build --target extractor --tag "$extractor" .
-        container=$(docker create --mount "type=bind,source=$GAME_DIR,target=/game,readonly" \
-          "$extractor" /game --output /tmp/resources)
-        trap 'docker rm -f "$container"; docker image rm "$extractor"' EXIT
-        docker start --attach "$container"
-        [[ $(docker inspect --format '{{.State.ExitCode}}' "$container") == 0 ]]
-        docker cp "$container:/tmp/resources" ./resources
-        version=$(jq -er '.game_version | strings | select(length > 0)' resources/manifest.json)
-        echo "game-version=$version" >> "$GITHUB_OUTPUT"
-        printf 'Extracted EU client version %s\n' "$version" >> "$GITHUB_STEP_SUMMARY"
+      working-directory: ${{ inputs.working-directory }}
+      run: bash "$GITHUB_ACTION_PATH"/../../scripts/prepare-game-resources.sh

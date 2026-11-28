@@ -1,0 +1,44 @@
+name: Set up native E2E
+description: Configure Node, Rust, and the E2E cache on the job runner.
+
+runs:
+  using: composite
+  steps:
+    - name: Configure native build paths
+      shell: bash
+      run: |
+        for command in cc pkg-config python3 jq flock docker; do
+          command -v "$command" >/dev/null || {
+            echo "::error::The E2E runner must provide $command."
+            exit 1
+          }
+        done
+        cache_root=/cache/wot
+        mkdir -p "$cache_root"
+        {
+          echo "WOT_CI_CACHE=$cache_root"
+          echo "CARGO_HOME=$cache_root/cargo"
+          echo "CARGO_TARGET_DIR=$cache_root/target"
+          echo "RUSTUP_HOME=$cache_root/rustup"
+          echo "CARGO_BUILD_JOBS=2"
+          echo "CARGO_PROFILE_DEV_DEBUG=0"
+          echo "CARGO_INCREMENTAL=0"
+        } >> "$GITHUB_ENV"
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: '22'
+        package-manager-cache: false
+
+    - name: Install Rust
+      shell: bash
+      run: |
+        rustup_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+        if [[ ! -x "$rustup_bin/rustup" ]]; then
+          installer=$(mktemp "$RUNNER_TEMP/rustup.XXXXXX")
+          trap 'rm -f -- "$installer"' EXIT
+          curl --fail --silent --show-error --location --retry 3 https://sh.rustup.rs --output "$installer"
+          sh "$installer" -y --profile minimal --default-toolchain none --no-modify-path
+        fi
+        "$rustup_bin/rustup" toolchain install stable --profile minimal
+        echo "$rustup_bin" >> "$GITHUB_PATH"
