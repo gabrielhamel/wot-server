@@ -423,10 +423,6 @@ impl Chassis {
     ) -> Self {
         let (half, center) = Self::bounds(tank);
         let mobility = tank.performance.as_ref().map(|profile| &profile.mobility);
-        let mass = mobility
-            .map(|profile| profile.mass_kg)
-            .filter(|mass| mass.is_finite() && *mass > 0.0)
-            .unwrap_or(tank.parameters.fallback_mass_kg);
         let travel = tank.parameters.suspension_travel_metres.min(half.y);
         let (body, collider) = world.insert(
             RigidBodyBuilder::new(kind)
@@ -434,7 +430,7 @@ impl Chassis {
                 .ccd_enabled(kind == RigidBodyType::Dynamic),
             ColliderBuilder::cuboid(half.x, half.y - travel * 0.5, half.z)
                 .translation(center + Vector::Y * (travel * 0.5))
-                .mass(mass)
+                .mass(tank.effective_mass_kg())
                 .contact_skin(tank.parameters.contact_skin_metres)
                 .user_data(u128::from(id.0) + 1),
         );

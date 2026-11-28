@@ -4,7 +4,7 @@ use super::{
     ballistics::elevation,
     devices::{Condition, Criticals, DeviceStrike},
     movement::{Drive, DriveDemand, GroundContact, approach},
-    parameters::BattleParameters,
+    parameters::{BattleParameters, MAX_VEHICLE_MASS_KG, MIN_VEHICLE_MASS_KG},
     spotting::{Combatant, SightGeometry, local_checkpoints},
 };
 use glam::{EulerRot, Quat, Vec2, Vec3, Vec3Swizzles};
@@ -89,7 +89,7 @@ impl Tank {
             health,
             performance,
             max_health: health,
-            ammunition: Ammunition::new(ammo, capacity),
+            ammunition: Ammunition::new(ammo, capacity, parameters.unlimited_ammo),
             drive: Drive::default(),
             aim: None,
             gun_yaw: 0.0,
@@ -139,15 +139,34 @@ impl Tank {
         self.physics_tipped
     }
 
+    fn base_mass_kg(&self) -> f32 {
+        self.performance
+            .as_ref()
+            .map(|profile| profile.mobility.mass_kg)
+            .filter(|mass| mass.is_finite() && *mass > 0.0)
+            .unwrap_or(self.parameters.fallback_mass_kg)
+    }
+
+    pub fn effective_mass_kg(&self) -> f32 {
+        (f64::from(self.base_mass_kg()) * f64::from(self.parameters.weight_multiplier)).clamp(
+            f64::from(MIN_VEHICLE_MASS_KG),
+            f64::from(MAX_VEHICLE_MASS_KG),
+        ) as f32
+    }
+
+    fn effective_power_watts(&self) -> f64 {
+        let base_power = self.performance.as_ref().map_or(
+            f64::from(self.parameters.fallback_engine_power_watts),
+            |profile| f64::from(self.base_mass_kg()) * f64::from(profile.mobility.power_per_kg),
+        );
+        base_power * f64::from(self.parameters.horsepower_multiplier)
+    }
+
     pub fn collision_inverse_mass(&self) -> f32 {
         if self.health <= 0 {
             0.0
         } else {
-            self.performance
-                .as_ref()
-                .map_or(1.0 / self.parameters.fallback_mass_kg, |p| {
-                    1.0 / p.mobility.mass_kg.max(1.0)
-                })
+            self.effective_mass_kg().recip()
         }
     }
 
@@ -160,14 +179,8 @@ impl Tank {
         if !powered || !self.physics_grounded || self.is_tipped() || self.condition.immobilized() {
             return 0.0;
         }
-        let power = self
-            .performance
-            .as_ref()
-            .map_or(self.parameters.fallback_engine_power_watts, |profile| {
-                profile.mobility.mass_kg * profile.mobility.power_per_kg
-            });
         (f64::from(self.parameters.traction_multiplier)
-            * f64::from(power)
+            * self.effective_power_watts()
             * f64::from(self.parameters.scenery_push_force_scale)
             * f64::from(seconds)
             * 0.5)
@@ -257,12 +270,14 @@ impl Tank {
         {
             return DriveDemand::default();
         }
+        let power_per_kg = self.effective_power_watts() / f64::from(self.effective_mass_kg());
         self.drive.demand(
             performance,
             ground,
             seconds,
             &self.parameters,
             [forward_speed, yaw_rate],
+            power_per_kg,
         )
     }
 
@@ -582,7 +597,8 @@ impl Tank {
 
     pub fn hit(&mut self, damage: u16) -> (i16, i16) {
         let previous = self.health;
-        self.health = previous.saturating_sub_unsigned(damage).max(0);
+        let minimum = i16::from(self.parameters.unlimited_life && previous > 0);
+        self.health = previous.saturating_sub_unsigned(damage).max(minimum);
         if self.health == 0 {
             self.condition.extinguish();
             self.drive.set_flags(0);
@@ -759,6 +775,66 @@ mod tests {
             obstacle_damage: None,
             obstacle_penetration_loss: 0.0,
         }
+    }
+
+    #[test]
+    fn gameplay_mobility_scales_power_and_mass_and_can_bypass_the_speed_governor() {
+        let mut tank = tank(vec![]);
+        tank.drive(FORWARD);
+        let mass = tank.effective_mass_kg();
+        let acceleration = tank
+            .drive_demand(0.1, HARD, 8.0, 0.0)
+            .longitudinal_acceleration;
+        tank.parameters.horsepower_multiplier = 2.0;
+        assert!(
+            tank.drive_demand(0.1, HARD, 8.0, 0.0)
+                .longitudinal_acceleration
+                > acceleration
+        );
+        tank.parameters.weight_multiplier = 2.0;
+        assert_eq!(tank.effective_mass_kg(), 2.0 * mass);
+        assert_eq!(tank.collision_inverse_mass(), (2.0 * mass).recip());
+        assert_eq!(
+            tank.drive_demand(0.1, HARD, 8.0, 0.0)
+                .longitudinal_acceleration,
+            acceleration
+        );
+
+        for (flags, speed) in [(FORWARD, 13.0), (REVERSE, -5.0)] {
+            tank.drive(flags);
+            assert!(
+                tank.drive_demand(0.1, HARD, speed, 0.0)
+                    .longitudinal_acceleration
+                    * speed
+                    < 0.0
+            );
+            tank.parameters.speed_limit_enabled = false;
+            assert!(
+                tank.drive_demand(0.1, HARD, speed, 0.0)
+                    .longitudinal_acceleration
+                    * speed
+                    > 0.0
+            );
+            tank.parameters.speed_limit_enabled = true;
+        }
+        tank.parameters.horsepower_multiplier = 0.0;
+        assert!(
+            tank.drive_demand(0.1, HARD, 0.0, 0.0)
+                .longitudinal_acceleration
+                .abs()
+                < f32::EPSILON
+        );
+    }
+
+    #[test]
+    fn unlimited_life_preserves_normal_damage_until_one_hit_point() {
+        let mut tank = tank(vec![]);
+        tank.parameters.unlimited_life = true;
+        assert_eq!(tank.hit(20), (100, 80));
+        assert_eq!(tank.hit(u16::MAX), (80, 1));
+        assert_eq!(tank.hit(80), (1, 1));
+        tank.parameters.unlimited_life = false;
+        assert_eq!(tank.hit(1), (1, 0));
     }
 
     #[test]

@@ -15,14 +15,62 @@ pub(crate) const MAX_LINEAR_SPEED: f32 = MAX_PHYSICS_DISTANCE / PHYSICS_STEP_SEC
 pub(crate) const MAX_ANGULAR_SPEED: f32 = PI / PHYSICS_STEP_SECONDS;
 pub(crate) const MAX_GRAVITY: f32 = MAX_LINEAR_SPEED / PHYSICS_STEP_SECONDS;
 // Keep linear momentum at the solver's speed limit within a finite squared norm.
-const MAX_FALLBACK_MASS: f32 = MAX_SQUARED_DISTANCE_METRES / MAX_LINEAR_SPEED;
+pub(super) const MAX_VEHICLE_MASS_KG: f32 = MAX_SQUARED_DISTANCE_METRES / MAX_LINEAR_SPEED;
 // Keep the mass-to-volume ratio normal at the largest fallback cuboid.
-const MIN_FALLBACK_MASS: f32 =
+pub(super) const MIN_VEHICLE_MASS_KG: f32 =
     f32::MIN_POSITIVE * 8.0 * MAX_PHYSICS_DISTANCE * MAX_PHYSICS_DISTANCE * MAX_PHYSICS_DISTANCE;
 const MIN_POSITIVE_RESPONSE_SECONDS: f32 = f32::from_bits(1);
 const MAX_FLIGHT_SEGMENTS: usize = 640;
 const MAX_NORMAL_ROLL_SAMPLES: usize = 12;
 const MAX_TRACK_BASE_REPAIR_SECONDS: f64 = 120.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SpottingSystem {
+    Arcade,
+    EveryoneVisible,
+}
+
+impl SpottingSystem {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Arcade => "arcade",
+            Self::EveryoneVisible => "everyone_visible",
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "control", rename_all = "snake_case")]
+enum ParameterControl {
+    Number,
+    Switch,
+    Select { options: &'static [ParameterOption] },
+}
+
+#[derive(Serialize)]
+struct ParameterOption {
+    value: u8,
+    label: &'static str,
+    disabled: bool,
+}
+
+const SPOTTING_OPTIONS: &[ParameterOption] = &[
+    ParameterOption {
+        value: 0,
+        label: "Arcade",
+        disabled: false,
+    },
+    ParameterOption {
+        value: 1,
+        label: "Everyone visible",
+        disabled: false,
+    },
+    ParameterOption {
+        value: 2,
+        label: "Fog of war (not implemented)",
+        disabled: true,
+    },
+];
 
 #[derive(Serialize)]
 pub struct BattleParameterDefinition {
@@ -33,14 +81,41 @@ pub struct BattleParameterDefinition {
     pub min: f64,
     pub max: f64,
     pub integer: bool,
+    #[serde(flatten)]
+    control: ParameterControl,
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("A battle parameter is unknown or outside its supported range.")]
 pub struct InvalidBattleParameters;
 
+macro_rules! parameter_control {
+    () => {
+        ParameterControl::Number
+    };
+    ($control:expr) => {
+        $control
+    };
+}
+
+macro_rules! parameter_value {
+    ($value:expr, bool) => {
+        $value != 0.0
+    };
+    ($value:expr, SpottingSystem) => {
+        if $value == 0.0 {
+            SpottingSystem::Arcade
+        } else {
+            SpottingSystem::EveryoneVisible
+        }
+    };
+    ($value:expr, $kind:ident) => {
+        $value as $kind
+    };
+}
+
 macro_rules! battle_parameters {
-    ($($group:literal { $($field:ident: $kind:ty = $default:literal, $min:expr, $max:expr, $integer:literal, $label:literal;)* })*) => {
+    ($($group:literal { $($field:ident: $kind:ident = $default:literal, $min:expr, $max:expr, $integer:literal, $label:literal $(, $control:expr)?;)* })*) => {
         #[derive(Clone, Copy, Debug)]
         pub struct BattleParameters {
             $($(pub(crate) $field: $kind,)*)*
@@ -48,13 +123,13 @@ macro_rules! battle_parameters {
 
         impl Default for BattleParameters {
             fn default() -> Self {
-                Self { $($($field: $default,)*)* }
+                Self { $($($field: parameter_value!($default as f64, $kind),)*)* }
             }
         }
 
         impl BattleParameters {
             pub fn definitions() -> &'static [BattleParameterDefinition] {
-                &[$($(BattleParameterDefinition {
+                static DEFINITIONS: &[BattleParameterDefinition] = &[$($(BattleParameterDefinition {
                     key: stringify!($field),
                     label: $label,
                     group: $group,
@@ -62,7 +137,9 @@ macro_rules! battle_parameters {
                     min: $min as f64,
                     max: $max as f64,
                     integer: $integer,
-                },)*)*]
+                    control: parameter_control!($($control)?),
+                },)*)*];
+                DEFINITIONS
             }
 
             pub fn from_overrides(overrides: &BTreeMap<String, f64>) -> Result<Self, InvalidBattleParameters> {
@@ -73,7 +150,7 @@ macro_rules! battle_parameters {
                             if ($min as f64..=$max as f64).contains(&value)
                                 && (!$integer || value.fract() == 0.0) =>
                         {
-                            parameters.$field = value as $kind;
+                            parameters.$field = parameter_value!(value, $kind);
                         })*)*
                         _ => return Err(InvalidBattleParameters),
                     }
@@ -105,6 +182,15 @@ impl BattleParameters {
 }
 
 battle_parameters! {
+    "Gameplay" {
+        spotting_system: SpottingSystem = 0, 0, 1, true, "Spotting system", ParameterControl::Select { options: SPOTTING_OPTIONS };
+        horsepower_multiplier: f32 = 1.0, 0.0, f32::MAX, false, "Horsepower multiplier";
+        speed_limit_enabled: bool = 1, 0, 1, true, "Vehicle speed limit", ParameterControl::Switch;
+        unlimited_ammo: bool = 0, 0, 1, true, "Unlimited ammo", ParameterControl::Switch;
+        unlimited_life: bool = 0, 0, 1, true, "Unlimited life", ParameterControl::Switch;
+        weight_multiplier: f32 = 1.0, f32::from_bits(1), f32::MAX, false, "Weight multiplier";
+        combat_rng: bool = 1, 0, 1, true, "Combat RNG", ParameterControl::Switch;
+    }
     "Round timing" {
         load_timeout_seconds: u64 = 60, 0, MAX_ARENA_SECONDS, true, "Loading timeout (seconds)";
         countdown_seconds: u64 = 10, 0, MAX_ARENA_SECONDS, true, "Countdown (seconds)";
@@ -163,7 +249,7 @@ battle_parameters! {
         hull_height_metres: f32 = 2.0, 2.0 * MIN_COLLIDER_HALF_EXTENT, 2.0 * MAX_PHYSICS_DISTANCE, false, "Fallback hull height (metres)";
         fallback_hull_half_width_metres: f32 = 1.25, MIN_COLLIDER_HALF_EXTENT, MAX_PHYSICS_DISTANCE, false, "Fallback hull half-width (metres)";
         fallback_hull_half_length_metres: f32 = 2.5, MIN_COLLIDER_HALF_EXTENT, MAX_PHYSICS_DISTANCE, false, "Fallback hull half-length (metres)";
-        fallback_mass_kg: f32 = 30_000.0, MIN_FALLBACK_MASS, MAX_FALLBACK_MASS, false, "Fallback vehicle mass (kg)";
+        fallback_mass_kg: f32 = 30_000.0, MIN_VEHICLE_MASS_KG, MAX_VEHICLE_MASS_KG, false, "Fallback vehicle mass (kg)";
         fallback_engine_power_watts: f32 = 300_000.0, 0.0, f32::MAX, false, "Fallback engine power (watts)";
         scenery_push_force_scale: f32 = 0.0002, 0.0, f32::MAX, false, "Scenery push force scale";
         hard_surface_grip: f32 = 0.58, 0.0, f32::MAX, false, "Hard surface grip";

@@ -95,15 +95,16 @@ Discord notification.
 
 The admin battle E2E case drives an authenticated dashboard launch through
 PostgreSQL, the gateway and an encrypted Mercury peer. It checks stationary
-dummy replication, the default Rapier solver, equipped and overridden HP, perk scaling at partial
+dummy replication in Everyone visible and Arcade, the default Rapier solver,
+equipped and overridden HP, perk scaling at partial
 efficiency, and ammunition projected into the arena loadout. The player
 enters in a catalog tank they do not own, drives and fires it, then returns
 to their existing garage. A second launch changes the modules and HP of an
 owned tank and verifies that the native vehicle carries its saved 3D style.
 The garage still reports the original modules and ammunition afterward. It also checks
 the overridden countdown in a decoded native period update, the garage
-return, and the exported HTTP-to-arena trace, including rejected loadouts and
-battle parameter overrides.
+return, and the exported HTTP-to-arena trace for rejected loadouts, rejected
+Gameplay settings, and the effective settings after launch.
 
 Pose cadence assertions count frames across consecutive received arena ticks.
 If an unreliable snapshot is skipped, the peer restarts the window within its

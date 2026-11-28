@@ -6,6 +6,7 @@ pub(super) struct Ammunition {
     current: usize,
     next: usize,
     loaded: u16,
+    unlimited: bool,
     cooldown: Option<Reload>,
     refill: Option<Reload>,
 }
@@ -30,7 +31,12 @@ impl Reload {
 }
 
 impl Ammunition {
-    pub fn new(rounds: Vec<(i32, u16)>, capacity: u16) -> Self {
+    pub fn new(mut rounds: Vec<(i32, u16)>, capacity: u16, unlimited: bool) -> Self {
+        if unlimited {
+            for (_, count) in rounds.iter_mut().filter(|(_, count)| *count > 0) {
+                *count = (*count).max(capacity);
+            }
+        }
         let current = rounds.iter().position(|&(_, count)| count > 0).unwrap_or(0);
         let loaded = rounds
             .get(current)
@@ -40,6 +46,7 @@ impl Ammunition {
             current,
             next: current,
             loaded,
+            unlimited,
             cooldown: None,
             refill: None,
         }
@@ -137,7 +144,9 @@ impl Ammunition {
         if self.loaded == 0 {
             return Err("empty");
         }
-        *count -= 1;
+        if !self.unlimited {
+            *count -= 1;
+        }
         self.loaded -= 1;
         if self.loaded == 0
             && self.stock(self.next) == 0
@@ -222,9 +231,39 @@ mod tests {
     }
 
     #[test]
+    fn unlimited_ammunition_preserves_magazine_and_autoreload_cycles() {
+        let gun = magazine();
+        let mut ammo = Ammunition::new(vec![(10, 1), (20, 0)], gun.capacity, true);
+        let now = Instant::now();
+        assert_eq!(ammo.select(&gun, now, 20, false), "shell_unavailable");
+        assert_eq!(ammo.loaded(10), 3);
+        for cycle in 0..3 {
+            let start = now + Duration::from_secs(cycle * 12);
+            ammo.advance(&gun, start);
+            for offset in [0, 2, 4] {
+                let time = start + Duration::from_secs(offset);
+                assert!(ammo.fire(&gun, time).is_ok());
+                assert_eq!(ammo.fire(&gun, time), Err("reloading"));
+            }
+        }
+        assert_eq!(ammo.rounds, [(10, 3), (20, 0)]);
+
+        let gun = GunLoading {
+            autoreload_times: vec![3.0, 4.0, 5.0],
+            ..gun
+        };
+        let mut ammo = Ammunition::new(vec![(10, 1)], gun.capacity, true);
+        assert!(ammo.fire(&gun, now).is_ok());
+        assert_eq!(ammo.loaded(10), 2);
+        assert!(ammo.advance(&gun, now + Duration::from_secs(5)));
+        assert_eq!(ammo.loaded(10), 3);
+        assert_eq!(ammo.rounds, [(10, 3)]);
+    }
+
+    #[test]
     fn changing_shells_queues_or_reloads_without_spending_unfired_rounds() {
         let gun = magazine();
-        let mut ammo = Ammunition::new(vec![(10, 5), (20, 2), (30, 0)], gun.capacity);
+        let mut ammo = Ammunition::new(vec![(10, 5), (20, 2), (30, 0)], gun.capacity, false);
         let now = Instant::now();
         assert_eq!(ammo.select(&gun, now, 30, false), "shell_unavailable");
         assert_eq!(ammo.select(&gun, now, 20, false), "shell_queued");
@@ -248,7 +287,7 @@ mod tests {
     #[test]
     fn manual_magazine_reload_uses_the_queued_shell_and_full_reload_time() {
         let gun = magazine();
-        let mut ammo = Ammunition::new(vec![(10, 5), (20, 5)], gun.capacity);
+        let mut ammo = Ammunition::new(vec![(10, 5), (20, 5)], gun.capacity, false);
         let now = Instant::now();
         assert_eq!(ammo.manual_reload(&gun, now), "magazine_full");
         ammo.select(&gun, now, 20, false);
@@ -266,7 +305,7 @@ mod tests {
             autoreload_times: vec![4.0, 6.0, 9.0],
             ..magazine()
         };
-        let mut ammo = Ammunition::new(vec![(10, 7)], gun.capacity);
+        let mut ammo = Ammunition::new(vec![(10, 7)], gun.capacity, false);
         let start = Instant::now();
         let at = |seconds| start + Duration::from_secs(seconds);
         assert_eq!(ammo.manual_reload(&gun, at(0)), "manual_reload_unavailable");

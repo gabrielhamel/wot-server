@@ -188,6 +188,11 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(status, 200, "{options}");
         assert_eq!(options["players"][0]["id"], account);
         let parameters = options["parameters"].as_array().unwrap();
+        assert_eq!(parameters[0]["group"], "Gameplay");
+        assert_eq!(parameters[0]["key"], "spotting_system");
+        assert_eq!(parameters[0]["control"], "select");
+        assert_eq!(parameters[0]["options"][2]["disabled"], true);
+        assert_eq!(parameters[2]["control"], "switch");
         let duration = parameters.iter().find(|p| p["key"] == "spotting_retention_ticks").unwrap();
         assert_eq!(duration["group"], "Spotting");
         assert_eq!(duration["default"], 100.0);
@@ -279,6 +284,10 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             json!({"hull_physics": 0}),
             json!({"track_repair_time_scale": -1.0}),
             json!({"spotting_near_metres": 30}),
+            json!({"spotting_system": 2}),
+            json!({"combat_rng": 0.5}),
+            json!({"weight_multiplier": 0}),
+            json!({"horsepower_multiplier": -1}),
         ] {
             let mut invalid = battle.clone();
             invalid["parameters"] = parameters;
@@ -288,6 +297,13 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         }
         battle["parameters"] = json!({
             "countdown_seconds": 2,
+            "spotting_system": 1,
+            "horsepower_multiplier": 1.5,
+            "speed_limit_enabled": 0,
+            "unlimited_ammo": 1,
+            "unlimited_life": 1,
+            "weight_multiplier": 1.25,
+            "combat_rng": 0,
             "gravity_mps2": 31.0,
             "parked_vehicle_pose_interval_ticks": 5,
             "track_repair_time_scale": 12.125,
@@ -336,7 +352,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(peer.entered_arena, Some((battle_id, arena)));
         let (vehicle_type, schema) = script.entity_from_name("Vehicle").unwrap();
         peer.until(&script, |p| p.arena_entities.iter()
-            .filter(|entity| entity.type_id == vehicle_type).count() == 3);
+            .filter(|entity| entity.type_id == vehicle_type).count() == 4);
         use wot_platform::mercury::net::codec::Codec;
         let own = peer.cell.as_ref().unwrap().vehicle_id;
         let mut dummy_health = peer.arena_entities.iter()
@@ -375,13 +391,14 @@ async fn dashboard_launches_player_and_stationary_dummies() {
                 }
             }).collect::<Vec<_>>();
         dummy_health.sort_unstable();
-        assert_eq!(dummy_health.len(), 2);
+        assert_eq!(dummy_health.len(), 3);
         assert_eq!(dummy_health[0], 71);
-        assert!(dummy_health[1] > stock_hp, "Hardening must increase dummy HP: {dummy_health:?}");
+        assert_eq!(dummy_health[1], stock_hp);
+        assert!(dummy_health[2] > stock_hp, "Hardening must increase dummy HP: {dummy_health:?}");
         let dummies = peer.arena_entities.iter()
             .filter(|entity| entity.type_id == vehicle_type && entity.entity_id != own)
             .map(|entity| (entity.entity_id, entity.position)).collect::<Vec<_>>();
-        assert_eq!(dummies.len(), 2);
+        assert_eq!(dummies.len(), 3);
         peer.command(&script, "setClientReady", vec![]);
         peer.until(&script, |p| p.methods.iter().any(|(name, args)| {
             if name != "updateArena" || args[0].as_i64() != Some(3) { return false; }
@@ -441,6 +458,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         invalid["players"][0]["owned_overrides"]["vehicle"] = json!(custom_tank);
         assert_eq!(request("POST", "/battles", &cookie, invalid).0, 400);
         battle["parameters"]["parked_vehicle_pose_interval_ticks"] = json!(1);
+        battle["parameters"].as_object_mut().unwrap().remove("spotting_system");
         let (status, owned_battle) = request("POST", "/battles", &cookie, battle);
         assert_eq!(status, 200, "{owned_battle}");
         peer.until(&script, |p| p.resets == 3);
@@ -601,7 +619,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     for span in [launch, handler] {
         assert_eq!(
             get(span, "input.battle.parameters.count").as_deref(),
-            Some("5")
+            Some("12")
         );
     }
     assert!(spans.iter().any(|span| {
@@ -722,6 +740,20 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         && get(step, "output.physics.substeps").as_deref() == Some("6")
         && spans.iter().any(|command| command.name == "battles.control"
             && step.parent_span_id == command.span_context.span_id())));
+    for (key, value) in [
+        ("spotting_system", "everyone_visible"),
+        ("horsepower_multiplier", "1.5"),
+        ("speed_limit_enabled", "false"),
+        ("unlimited_ammo", "true"),
+        ("unlimited_life", "true"),
+        ("weight_multiplier", "1.25"),
+        ("combat_rng", "false"),
+    ] {
+        assert_eq!(
+            get(preparation, &format!("input.battle.{key}")).as_deref(),
+            Some(value)
+        );
+    }
     assert_eq!(
         get(preparation, "input.battle.countdown.seconds").as_deref(),
         Some("2")

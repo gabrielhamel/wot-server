@@ -1395,6 +1395,37 @@ fn engine_fire_battle() -> (u32, Battle, Arc<ArenaWire>) {
 
 #[test]
 #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
+fn unlimited_life_keeps_a_vehicle_alive_during_lethal_impact_and_fire() {
+    let (id, mut battle, wire) = engine_fire_battle();
+    let victim = &mut battle.players.get_mut(&VICTIM).unwrap().tank;
+    victim.health = 5;
+    victim.parameters.unlimited_life = true;
+    let mut delivery = ImpactDelivery::default();
+    let start = battle.started_at;
+    assert_eq!(
+        battle
+            .fire(&mut delivery, &wire, id, SHOOTER, start)
+            .unwrap(),
+        "launched"
+    );
+    let impact = start + Duration::from_millis(100);
+    battle.advance_projectiles(&mut delivery, &wire, id, impact);
+    assert_eq!(battle.players[&VICTIM].tank.health, 1);
+    assert!(battle.players[&VICTIM].active_fire.is_some());
+    for tick in 1..=3 {
+        battle.advance_damage(
+            &mut delivery,
+            &wire,
+            id,
+            impact + Duration::from_millis(tick * 500),
+        );
+        assert_eq!(battle.players[&VICTIM].tank.health, 1);
+    }
+    assert!(battle.players[&VICTIM].active_fire.is_none());
+}
+
+#[test]
+#[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
 fn engine_hit_replicates_fire_to_driver_attacker_and_observer() {
     use wot_shared_kernel::Device;
 
@@ -1887,6 +1918,21 @@ fn spotting_delivers_vehicle_transitions_and_preserves_the_movement_trace() {
                 .count(),
             1
         );
+        battle.parameters.spotting_system =
+            crate::domain::parameters::SpottingSystem::EveryoneVisible;
+        battle.advance_spotting(
+            &mut delivery,
+            &wire,
+            id,
+            start + Duration::from_secs(5),
+            &[],
+        );
+        assert!(battle.players[&SHOOTER].visible_vehicles.contains(&enemy));
+        assert!(delivery.track_updates.iter().any(|(peer, kind, body)| {
+            *peer == SHOOTER
+                && *kind == CreateArenaEntity::ID
+                && body.get(1..5) == Some(enemy.to_le_bytes().as_slice())
+        }));
     });
     let spans = exporter.get_finished_spans().unwrap();
     let drive = spans
@@ -1906,6 +1952,30 @@ fn spotting_delivers_vehicle_transitions_and_preserves_the_movement_trace() {
             .any(|field| field.key.as_str() == "output.vehicles.entered"
                 && field.value.to_string() == "2")
     );
+    let everyone_visible = spans
+        .iter()
+        .find(|span| {
+            span.name == "battles.spotting"
+                && span.attributes.iter().any(|field| {
+                    field.key.as_str() == "input.battle.spotting_system"
+                        && field.value.as_str() == "everyone_visible"
+                })
+        })
+        .unwrap();
+    for key in [
+        "output.pairs.count",
+        "output.rays.count",
+        "output.alerts.count",
+    ] {
+        assert!(
+            everyone_visible
+                .attributes
+                .iter()
+                .any(|field| { field.key.as_str() == key && field.value.to_string() == "0" }),
+            "{key}: {:?}",
+            everyone_visible.attributes
+        );
+    }
     assert!(spans.iter().any(|span| span.name == "test.track_delivery"
         && span.parent_span_id == visibility.span_context.span_id()));
     assert!(spans.iter().any(|span| {

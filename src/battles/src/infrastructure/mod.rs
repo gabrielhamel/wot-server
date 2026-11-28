@@ -429,6 +429,13 @@ impl BattleRuntime {
     #[tracing::instrument(name = "battles.prepare", skip_all, fields(
         ddd.bounded_context.name = "battles", input.arena_type_id = launch.arena_type,
         input.round_length.seconds = launch.duration.as_secs(), input.players.count = launch.participants.len(),
+        input.battle.spotting_system = launch.parameters.spotting_system.name(),
+        input.battle.horsepower_multiplier = launch.parameters.horsepower_multiplier,
+        input.battle.speed_limit_enabled = launch.parameters.speed_limit_enabled,
+        input.battle.unlimited_ammo = launch.parameters.unlimited_ammo,
+        input.battle.unlimited_life = launch.parameters.unlimited_life,
+        input.battle.weight_multiplier = launch.parameters.weight_multiplier,
+        input.battle.combat_rng = launch.parameters.combat_rng,
         input.battle.load_timeout.seconds = launch.parameters.load_timeout_seconds,
         input.battle.countdown.seconds = launch.parameters.countdown_seconds,
         input.battle.results.seconds = launch.parameters.results_seconds,

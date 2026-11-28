@@ -99,6 +99,9 @@ impl Battle {
     #[tracing::instrument(name = "battles.shot", skip_all, fields(
         ddd.bounded_context.name = "battles", input.battle.id = battle_id,
         input.participant.id = client.0, input.entity_id = tracing::field::Empty,
+        input.battle.unlimited_ammo = self.parameters.unlimited_ammo,
+        input.battle.unlimited_life = self.parameters.unlimited_life,
+        input.battle.combat_rng = self.parameters.combat_rng,
         input.ammunition.shell = tracing::field::Empty, input.shell.damage = tracing::field::Empty,
         input.shell.kind = tracing::field::Empty, input.shell.caliber_mm = tracing::field::Empty,
         input.shell.max_distance_metres = tracing::field::Empty,
