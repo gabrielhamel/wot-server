@@ -3,12 +3,13 @@ name: Publish server image
 on:
   push:
     tags: ['**']
+  workflow_dispatch:
   workflow_call:
     inputs:
-      game-version:
-        description: Game version from the caller's latest-eu-server-resources artifact.
-        required: true
-        type: string
+      publish:
+        description: Allow a caller to publish a missing release image.
+        type: boolean
+        default: false
     outputs:
       published-image:
         description: Fully qualified release image tag pushed by this run.
@@ -31,12 +32,13 @@ jobs:
     defaults:
       run:
         shell: bash
+        working-directory: release
     env:
-      GAME_DIR: /cache/wot/eu-sd-en
       DOCKER_BUILDKIT: '1'
     steps:
       - name: Select server release
         id: release
+        working-directory: .
         run: |
           release_ref="$GITHUB_SHA"
           release_tag="$GITHUB_REF_NAME"
@@ -54,20 +56,34 @@ jobs:
           echo "ref=$release_ref" >> "$GITHUB_OUTPUT"
           echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v6
+      - name: Check out the CI workflow scripts
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: .github
+
+      - name: Check out the server release
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.release.outputs.ref }}
+          path: release
           persist-credentials: false
 
+      - uses: ./.github/actions/setup-native-e2e
+        with:
+          cache-root: /cache/wot
+          persistent: 'true'
       - uses: ./.github/actions/extract-game-resources
-        if: github.event_name == 'push'
         id: extract
+        with:
+          working-directory: release
 
       - name: Compute image tags
         id: image
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          BUNDLE_VERSION: ${{ inputs.game-version || steps.extract.outputs.game-version }}
+          BUNDLE_VERSION: ${{ steps.extract.outputs.game-version }}
         run: |
           if ! bundle_version=$(jq -ner --arg version "$BUNDLE_VERSION" '
             $version | select(test("^(v\\.)?[0-9]+(\\.[0-9]+){3}([[:blank:]]+#[0-9]+)?\\z"))
@@ -99,7 +115,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Check whether the release image already exists
-        if: github.event_name != 'push'
+        if: github.event_name != 'push' && inputs.publish
         id: registry
         env:
           TAG_IMAGE: ${{ steps.image.outputs.tag }}
@@ -126,12 +142,12 @@ jobs:
             exit 1
           fi
 
-      - name: Download the tested resource bundle
-        if: github.event_name != 'push' && steps.registry.outputs.exists != 'true'
-        uses: actions/download-artifact@v4
+      - name: Run native E2E from the release checkout
+        if: steps.registry.outputs.exists != 'true'
+        uses: ./.github/actions/run-e2e
         with:
-          name: latest-eu-server-resources
-          path: resources/
+          resources: ${{ steps.extract.outputs.resources }}
+          working-directory: release
 
       - name: Build and check the server image
         if: steps.registry.outputs.exists != 'true'
@@ -142,7 +158,9 @@ jobs:
           GAME_VERSION: ${{ steps.image.outputs.game_version }}
           BUNDLE_VERSION: ${{ steps.image.outputs.bundle_version }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RESOURCE_DIR: ${{ steps.extract.outputs.resources }}
         run: |
+          cp -a -- "$RESOURCE_DIR" resources
           chmod -R a+rX resources
           docker build --provenance=false --tag "$IMAGE" \
             --build-arg WOT_SERVER_VERSION="$RELEASE_TAG" \
@@ -169,9 +187,8 @@ jobs:
             exit 1
           fi
 
-      - name: Check startup and copy packaged resources
+      - name: Check packaged server startup
         if: steps.registry.outputs.exists != 'true'
-        id: startup
         env:
           IMAGE: ${{ steps.image.outputs.commit }}
           POSTGRES_IMAGE: docker.io/library/postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
@@ -214,19 +231,9 @@ jobs:
             exit 1
           fi
           docker stop "$smoke-server"
-          resource_dir=$(mktemp -d "$RUNNER_TEMP/wot-release-resources.XXXXXX")
-          echo "resource-dir=$resource_dir" >> "$GITHUB_OUTPUT"
-          docker cp "$smoke-server:/opt/wot-server/resources" "$resource_dir"
-          echo "resources=$resource_dir/resources" >> "$GITHUB_OUTPUT"
-
-      - name: Run E2E tests against packaged resources
-        if: steps.registry.outputs.exists != 'true'
-        uses: ./.github/actions/run-e2e
-        with:
-          resources: ${{ steps.startup.outputs.resources }}
 
       - name: Publish to GitHub Container Registry
-        if: steps.registry.outputs.exists != 'true'
+        if: steps.registry.outputs.exists != 'true' && (github.event_name == 'push' || inputs.publish)
         id: push
         env:
           GHCR_TOKEN: ${{ github.token }}
@@ -248,17 +255,14 @@ jobs:
           done
           echo "published-image=$TAG_IMAGE" >> "$GITHUB_OUTPUT"
 
-      - name: Remove local image tags and smoke-test resources
+      - name: Remove local image tags and staged resources
         if: always() && steps.build.outcome != '' && steps.build.outcome != 'skipped'
         env:
           IMAGE: ${{ steps.image.outputs.commit }}
           TAG_IMAGE: ${{ steps.image.outputs.tag }}
           LATEST_IMAGE: ${{ steps.image.outputs.latest }}
-          RESOURCE_DIR: ${{ steps.startup.outputs.resource-dir }}
         run: |
           for image in "$TAG_IMAGE" "$LATEST_IMAGE" "$IMAGE"; do
             docker image rm "$image" || true
           done
-          if [[ -n "$RESOURCE_DIR" ]]; then
-            rm -rf -- "$RESOURCE_DIR"
-          fi
+          rm -rf -- resources

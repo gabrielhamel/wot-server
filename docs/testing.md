@@ -67,31 +67,39 @@ exported server span continues that remote parent into downstream work.
 
 ## E2E Tests
 
-When a PR changes the extractor or needs new resource files, dispatch
-**Latest client E2E** on its branch. Once the workflow uploads its bundle,
-rerun the PR E2E job. Fork PRs use the default branch bundle.
+The [PR E2E job](../.github/workflows/ci.yml), the
+[Latest client E2E workflow](../.github/workflows/latest-client-e2e.yml), and
+[release publishing](../.github/workflows/container.yml) use the same native
+Cargo suite. Each run uses a fresh PostgreSQL container bound to a dynamic
+loopback port on the runner. The suite includes projectile checks, Rapier
+acceptance scenarios, context storage initialization, admin trace contracts,
+and garage workflows.
 
-The [E2E Tests job](../.github/workflows/ci.yml) starts a fresh PostgreSQL
-service and runs the checked-out Rust code against the EU client resources
-from the latest-client workflow. It prefers an extraction run for the PR branch
-in this repository and falls back to the default branch. The job logs the bundle version used
-for the run. Publishing separately updates the client from the EU production
-channel, boots the final image and runs the E2E suite with the resources
-copied from that image before pushing any tags. The E2E suite checks the
-version property and value in the decoded Account creation packet and the
-property name on the trace that delivers `showGUI`.
+At the start of each E2E run, `wg-launcher` updates the installed EU production
+SD English client. The runner uses the full version from `version.xml`,
+including the build number, to find its bundle under `extracted-client/`.
+A build without a cached bundle runs the checked-out extractor. The directory
+is published only after its manifest matches the client version. Extraction
+and client updates share a lock. The run summary reports the version,
+executable SHA-256, and whether the bundle was created or reused. Changes to
+the extractor alone reuse the current version's existing bundle. To test an
+extractor change against that same game version, run it locally with a fresh
+output directory.
 
-The [Latest client E2E workflow](../.github/workflows/latest-client-e2e.yml) runs
-daily at 08:00 Europe/Paris. It updates the cached EU production client on
-the dedicated runner, uploads a fresh resource bundle for pull-request CI, and runs E2E against
-the latest default-branch server code and a fresh PostgreSQL database.
-The run summary records the extracted version. The workflow can also run from
-the Actions tab. A successful run on the default branch checks for a matching
-[release image](container.md) and publishes it if missing. The publish job has
-package write access. The workflow uses the repository's `DISCORD_WEBHOOK_URL`
-Actions secret to report E2E and publishing failures with a run link. Successful
-publications send the image tag and run link. An existing image produces no
-Discord notification.
+Daily and release jobs share the installed client, versioned bundles and
+compiled Rust dependencies under `/cache/wot` on the dedicated runner. The daily
+workflow runs at 08:00 Europe/Paris and can also run from the Actions tab.
+On the default branch it checks for a matching [release image](container.md)
+and publishes it if missing. The repository's `DISCORD_WEBHOOK_URL` Actions
+secret reports E2E or publishing failures and successful new publications.
+An existing image produces no Discord notification.
+
+PR E2E uses the repository variable `WOT_PR_E2E_RUNNER` to select a Linux x64
+runner with access to the production client downloads, Docker for PostgreSQL,
+native build tools, and at least 120 GiB of free disk. Provision this runner
+before switching PRs to this workflow. All PR code, including fork changes,
+runs on this isolated runner. Use a disposable workspace and writable client
+and Cargo directories isolated from the daily and release runner.
 
 The admin battle E2E case drives an authenticated dashboard launch through
 PostgreSQL, the gateway and an encrypted Mercury peer. It checks stationary

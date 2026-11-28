@@ -14,34 +14,27 @@ run summary shows the published image names:
   If the Git tag needs sanitizing or truncating, or looks like a full commit
   SHA, the image tag includes a hash of the original Git tag.
 
-The dedicated self-hosted runner installs the latest EU production SD English
-client with [wg-launcher](references/wg-launcher/README.md). Its
-installed game tree persists at `/cache/wot/eu-sd-en`, and subsequent jobs
-use the launcher's in-place update and download only the needed patches. The
-launcher requires the complete package set to install. The full client stays on
-the runner. For a tag-triggered run, the extractor and server build use the same
-checkout. After a successful daily E2E run, the publisher selects the highest
-numeric server release Git tag and checks GHCR for that release paired with the
-tested client version. If the tag exists, the run skips publication. Otherwise it
-builds that server release using the resource artifact from the E2E run. Before
-building, the publisher makes the staged bundle readable by the image's
-non-root user. It verifies the manifest version as that user in the final image.
-Production Flux image automation follows the digest of `latest`.
+The dedicated self-hosted runner maintains the current EU production SD
+English client at `/cache/wot/eu-sd-en` using
+[wg-launcher](references/wg-launcher/README.md). It shares versioned bundles
+and native Cargo dependencies with the daily E2E workflow. See
+[E2E tests](testing.md#e2e-tests) for cache behavior.
 
-The extractor and server builds share BuildKit caches for the Cargo registry
-and compiled dependencies. They reuse these caches while the runner's Docker
-storage is available and rebuild the workspace crates when source layers change.
-The E2E test build shares the Cargo registry cache and uses a separate
-cache for compiled test dependencies. The server and E2E build stages provide
-Node.js and npm to Cargo. The final image packages the browser bundle produced
-by the server build.
+For a tag-triggered run, the publisher uses the pushed tag. After a successful
+daily E2E run, it selects the highest numeric server release tag and checks
+GHCR for that release paired with the current client version. If the image
+tag exists, the run skips publication. Otherwise the publisher runs native
+E2E from the release checkout with fresh PostgreSQL, stages the tested
+resource bundle, and builds the final image. CI scripts come from the workflow
+revision so this path can test release tags created before the scripts were
+introduced.
 
-Before pushing any tags, the workflow starts the final image alongside a
-fresh PostgreSQL instance on an isolated Docker network. It then copies the
-resources out of that image and runs the existing E2E suite from the
-release checkout against a separate test database. Both startup and the
-E2E suite must pass before publication. The workflow removes the test
-containers, network and local test image after the run.
+The final image packages the browser bundle produced by the server build. The
+publisher verifies the game version in the packaged manifest as the image's
+non-root user and checks startup against fresh PostgreSQL on an isolated
+Docker network. The Actions tab can dispatch **Publish server image** to run
+the release tests, build and startup check without pushing. Production Flux
+image automation follows the digest of `latest`.
 
 ## Run an image
 
@@ -54,7 +47,7 @@ The package is public and can be pulled without signing in. Set
 the release binary with the embedded dashboard and Store, plus
 `/opt/wot-server/resources`. The runtime user has UID and GID 10001.
 
-Both the server and extractor images include the project license and
+The server image includes the project license and
 [WG Toolkit attribution](../THIRD_PARTY_NOTICES.md) in
 `/usr/share/licenses/wot-server/`.
 

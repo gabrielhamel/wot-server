@@ -13,28 +13,19 @@ jobs:
   e2e:
     runs-on: [self-hosted, linux, x64, wot-server-image]
     timeout-minutes: 180
-    outputs:
-      game-version: ${{ steps.extract.outputs.game-version }}
-    env:
-      GAME_DIR: /cache/wot/eu-sd-en
-      DOCKER_BUILDKIT: '1'
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup-native-e2e
+        with:
+          cache-root: /cache/wot
+          persistent: 'true'
       - uses: ./.github/actions/extract-game-resources
         id: extract
-      - name: Upload the extracted EU resource bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: latest-eu-server-resources
-          path: resources/
-          if-no-files-found: error
-          compression-level: 1
-          retention-days: 3
       - uses: ./.github/actions/run-e2e
         with:
-          resources: resources
+          resources: ${{ steps.extract.outputs.resources }}
 
   publish:
     needs: e2e
@@ -44,7 +35,7 @@ jobs:
       contents: read
       packages: write
     with:
-      game-version: ${{ needs.e2e.outputs.game-version }}
+      publish: true
 
   notify-discord:
     needs: [e2e, publish]
