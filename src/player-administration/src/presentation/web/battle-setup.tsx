@@ -320,6 +320,13 @@ export function BattleSetup() {
   const selectedName = selectedPlayer
     ? (options?.players.find(({ id }) => id === selectedPlayer.account_id)?.name ?? "Player tank")
     : `Dummy ${selectedDummyIndex + 1}`;
+  const status = {
+    initial: "",
+    restored: "Loaded from your last launched battle",
+    modified: "Changes will be saved when your next battle starts successfully.",
+    reset: "Battle setup reset to defaults.",
+    saved: "Settings saved for your next battle.",
+  }[source];
   const full = players.length + dummies.length >= MAX_ENTRANTS;
   return (
     <Stack spacing={2}>
@@ -372,25 +379,25 @@ export function BattleSetup() {
                 }}
               />
             </Stack>
+            <Stack spacing={1} alignItems="start">
+              {status && <Alert severity="info">{status}</Alert>}
+              {warnings.map((message) => (
+                <Alert key={message} severity="warning">
+                  {message}
+                </Alert>
+              ))}
+              <Button variant="outlined" onClick={reset}>
+                Reset battle setup
+              </Button>
+            </Stack>
             <BattleParameterEditor
               fields={parameterFields}
               expanded={expanded}
               onToggle={setExpanded}
-              status={
-                {
-                  initial: "",
-                  restored: "Loaded from your last launched battle",
-                  modified: "Changes will be saved when your next battle starts successfully.",
-                  reset: "Using default battle parameters.",
-                  saved: "Settings saved for your next battle.",
-                }[source]
-              }
-              warnings={warnings}
               onChange={(key, value) => {
                 markEdited();
                 setParameterDrafts((drafts) => ({ ...drafts, [key]: value }));
               }}
-              onReset={reset}
             />
             <Stack spacing={2}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">

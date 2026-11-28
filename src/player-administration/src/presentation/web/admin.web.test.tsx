@@ -1643,14 +1643,20 @@ it("restores the last battle, resets the whole form and replaces the save only a
   }
   try {
     const first = await open();
+    const toggle = screen.getByRole("button", { name: "Battle parameters" });
+    expect(screen.getByLabelText("Countdown")).toHaveValue(2);
+    await first.user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Loaded from your last launched battle")).toBeVisible();
     expect(screen.getByText(/Dummy 1: review equipment/)).toBeVisible();
-    expect(screen.getByLabelText("Countdown")).toHaveValue(2);
     expect(screen.getByLabelText("Vehicle for Dummy 1")).toHaveValue("T-34");
     expect(screen.queryByLabelText("Vehicle for Commander")).toBeNull();
     await addPlayer(first.user);
-    await first.user.click(screen.getByRole("button", { name: "Reset battle parameters" }));
+    await first.user.click(screen.getByRole("button", { name: "Reset battle setup" }));
     expect(screen.getByLabelText("Map and battle type")).toHaveValue("");
+    expect(screen.getByText("Battle setup reset to defaults.")).toBeVisible();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await first.user.click(toggle);
     expect(screen.getByLabelText("Countdown")).toHaveValue(10);
     expect(screen.getByLabelText("Battle duration (minutes)")).toHaveValue(15);
     expect(screen.queryByLabelText("Vehicle for Dummy 1")).toBeNull();

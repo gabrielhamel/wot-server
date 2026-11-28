@@ -187,8 +187,9 @@ After a successful admin launch, the browser replaces its last battle setup
 in local storage with the map, duration, simulation overrides and stationary
 dummies (including teams and loadouts). Players and their tank configurations
 are selected afresh for each launch. Reopening the panel restores the setup
-and expands **Battle parameters**. **Reset battle parameters** clears the
-entire current form. Reloading still restores the last successful launch.
+and expands **Battle parameters**. The setup status and **Reset battle setup** button
+appear below the map and duration, even when **Battle parameters** is collapsed.
+Reset clears the entire current form. Reloading still restores the last successful launch.
 
 Every adjustable mechanic and hardcoded gameplay tuning value owned by
 Battles belongs in the admin Battle parameters panel. Define validated
