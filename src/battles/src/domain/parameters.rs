@@ -248,7 +248,7 @@ mod tests {
         assert_eq!(parameters.fire_ticks, u8::MAX);
         assert_eq!(parameters.normal_roll_standard_deviation, f32::MAX);
         assert!(parameters.spotting_max_metres.powi(2).is_finite());
-        assert_eq!(parameters.track_repair_time_scale, 0.000_123_456_789);
+        assert_eq!(parameters.track_repair_time_scale, 0.000_123_456_79);
 
         for seconds in [255.5, 256.0, f64::NAN, f64::INFINITY] {
             overrides.insert("fire_ticks".to_owned(), seconds);
