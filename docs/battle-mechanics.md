@@ -407,7 +407,10 @@ Numbered trees use the same chunk controllers. Extraction joins each
 Drive contact can break a standing trunk with impact energy or sustained
 engine force. The Rust solver uses a scaled trunk proxy for vehicle contact.
 Shells pass through standing trunks, as in the Toolkit model. Bushes listed
-in the vegetation catalog remain pass-through vegetation. Fallen trees no
+in the vegetation catalog remain pass-through vegetation and provide
+concealment. The supplied client's `AreaDestructibles.py` deactivates a bush
+when its native ID arrives in a `fallenTrees` update. The server skips older
+tree catalogs that could contain those IDs. Fallen trees no
 longer block hulls in the server. The native `fallenTrees` record carries the
 object index, the maximum pitch, the fall direction and the initial speed
 step. The server estimates the pitch limit against terrain and standing

@@ -759,5 +759,7 @@ capture the operation span through Mercury delivery. Pure timer ticks have
 their own trace. Sixth Sense holds the detection span until its delay ends
 and parents `battles.sixth_sense` to it. The alert span parents the owner
 delivery. Delivery failure records error status and disconnects the affected
-session. Arena preparation records the number of loaded foliage
-placements through `battles.load_obstacles`.
+session. Arena preparation records the number of loaded foliage placements
+and tree trunks through `battles.load_obstacles`. When it skips an older
+tree catalog, the same span records zero loaded trunks and
+`output.obstacles.trees.skipped_unverified=true`.

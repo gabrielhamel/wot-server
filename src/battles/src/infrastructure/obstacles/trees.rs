@@ -29,7 +29,17 @@ impl Trees {
             return Ok(Self(trees));
         }
         let (header, input) = record_input(resources, &path)?;
-        anyhow::ensure!(&header == b"WCT1", "Invalid tree format in {path}");
+        let legacy = &header == b"WCT1";
+        tracing::Span::current().record("output.obstacles.trees.skipped_unverified", legacy);
+        if legacy {
+            tracing::Span::current().record("output.obstacles.trees", 0);
+            tracing::warn!(
+                geometry,
+                "Tree contact disabled for an unverified tree catalog. Re-extract client resources to restore tree falls"
+            );
+            return Ok(Self(trees));
+        }
+        anyhow::ensure!(&header == b"WCT2", "Invalid tree format in {path}");
         let data = read_records(&path, input, 28, 100_000)?;
         let trunk = trunk();
         let mesh = meshes.len();
