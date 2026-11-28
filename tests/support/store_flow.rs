@@ -14,6 +14,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::{Duration, Instant},
 };
 use tower::ServiceExt;
 use wot_accounts::test_support::{Accounts, GarageCatalog, PostgresAccounts};
@@ -845,19 +846,21 @@ fn assert_tech_tree_traces(account_id: i64) {
 }
 
 fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) {
-    let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
     let has = |span: &opentelemetry_sdk::trace::SpanData, key, expected: &str| {
         span.attributes
             .iter()
             .any(|attr| attr.key.as_str() == key && attr.value.to_string() == expected)
     };
-    let root = |outcome| {
-        spans
-            .iter()
-            .find(|span| {
+    let account = account_id.to_string();
+    let item_id = item.to_string();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (spans, success, stale) = loop {
+        let spans = telemetry_capture::exporter().get_finished_spans().unwrap();
+        let purchase = |outcome| {
+            spans.iter().position(|span| {
                 span.name == "store.purchase_request"
-                    && has(span, "user.id", &account_id.to_string())
-                    && has(span, "input.item", &item.to_string())
+                    && has(span, "user.id", &account)
+                    && has(span, "input.item", &item_id)
                     && has(span, "output.outcome", outcome)
                     && spans.iter().any(|quote| {
                         quote.parent_span_id == span.span_context.span_id()
@@ -865,8 +868,23 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
                             && quote.name == "store.resolve_quote"
                             && has(quote, "output.outcome", "quoted")
                     })
+                    && spans
+                        .iter()
+                        .any(|parent| parent.span_context.span_id() == span.parent_span_id)
             })
-            .unwrap_or_else(|| panic!("Missing {outcome} Store request span for item {item}"))
+        };
+        let success = purchase("success");
+        let stale = purchase("stale");
+        if let (Some(success), Some(stale)) = (success, stale) {
+            break (spans, success, stale);
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Missing completed Store traces for item {item} (success: {}, stale: {})",
+            success.is_some(),
+            stale.is_some()
+        );
+        std::thread::sleep(Duration::from_millis(10));
     };
     assert!(
         spans
@@ -874,8 +892,8 @@ fn assert_store_traces(account_id: i64, item: i64, currency: &str, amount: i64) 
             .any(|span| span.name == "player_sessions.enable"
                 && has(span, "output.store.host", "192.168.1.3"))
     );
-    let success = root("success");
-    let stale = root("stale");
+    let success = &spans[success];
+    let stale = &spans[stale];
     for (operation, status) in [(success, "200"), (stale, "409")] {
         let root = spans
             .iter()
