@@ -1,5 +1,6 @@
 use super::*;
-use crate::domain::movement::GroundContact;
+use crate::domain::{movement::GroundContact, parameters::MAX_GRAVITY};
+use glam::DVec2;
 use std::f32::consts::TAU;
 
 const CONTACTS_PER_TRACK: usize = 3;
@@ -8,6 +9,7 @@ pub(super) const SUPPORT_POINTS: usize = 2 * CONTACTS_PER_TRACK;
 pub(super) struct Support {
     pub grounded: bool,
     pub scenery: bool,
+    pub rejected_impulse: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -31,6 +33,7 @@ pub(super) fn drive(
     let mut supported = Support {
         grounded: false,
         scenery: false,
+        rejected_impulse: false,
     };
     let Some(body) = world.bodies.get(chassis.body) else {
         return supported;
@@ -61,11 +64,14 @@ pub(super) fn drive(
         chassis.supported_by.fill(None);
         return supported;
     }
-    let travel = parameters.suspension_travel_metres;
-    let frequency = TAU * parameters.suspension_frequency_hz;
+    let travel = chassis.suspension_travel;
+    let frequency = f64::from(TAU) * f64::from(parameters.suspension_frequency_hz);
     let stiffness = frequency * frequency;
-    let damping = 2.0 * parameters.suspension_damping_ratio * frequency;
-    let reach = travel + (parameters.gravity_mps2 / stiffness).min(travel);
+    let damping = 2.0 * frequency * f64::from(parameters.suspension_damping_ratio);
+    let gravity_load = parameters.gravity_mps2.max(0.0);
+    let reach = travel
+        + (f64::from(gravity_load) / stiffness.max(f64::MIN_POSITIVE)).min(f64::from(travel))
+            as f32;
     let geometry_only = |_: ColliderHandle, collider: &rapier3d::prelude::Collider| {
         collider.is_enabled() && collider.parent().is_none()
     };
@@ -149,18 +155,19 @@ pub(super) fn drive(
         contact.map(|contact| {
             let normal = contact.terrain_normal;
             let velocity = linear + angular.cross(contact.position - center);
-            let spring =
-                parameters.gravity_mps2 * normal.y + stiffness * (travel - contact.distance);
-            (contact, (spring - damping * velocity.dot(normal)).max(0.0))
+            let spring = f64::from(gravity_load * normal.y)
+                + stiffness * f64::from(travel - contact.distance);
+            let load = spring - damping * f64::from(velocity.dot(normal));
+            (contact, load.clamp(0.0, f64::from(MAX_GRAVITY)) as f32)
         })
     });
     let average_load =
         loads.iter().flatten().map(|(_, load)| load).sum::<f32>() / SUPPORT_POINTS as f32;
     let drive_reference_load = average_load.max(parameters.gravity_mps2).max(f32::EPSILON);
     let lateral_response = if driven.track_locked {
-        parameters.track_lock_heading_response
+        f64::from(parameters.track_lock_heading_response)
     } else {
-        parameters.lateral_grip_response_seconds.recip()
+        f64::from(parameters.lateral_grip_response_seconds).recip()
     };
     let hold_grade = !driven.requests_travel && !driven.track_locked;
     for (contact, normal_acceleration) in loads.into_iter().flatten() {
@@ -175,28 +182,35 @@ pub(super) fn drive(
         } else {
             angular.dot(normal) * linear.dot(tangent)
         };
-        let lateral = cornering - gravity.x - linear.dot(right) * lateral_response;
-        let mut requested_grip = Vec2::new(lateral, 0.0) * load_share;
+        let lateral =
+            f64::from(cornering - gravity.x) - f64::from(linear.dot(right)) * lateral_response;
+        let mut requested_grip = DVec2::new(lateral, 0.0) * f64::from(load_share);
         let drive_load_share = normal_acceleration / drive_reference_load;
         let steering = -contact.side * driven.yaw_acceleration * chassis.yaw_inertia_per_kg
             / chassis.track_half_width
             * drive_load_share;
         let mut drive_acceleration = driven.longitudinal_acceleration * drive_load_share;
         if hold_grade {
-            requested_grip.y -= gravity.y * load_share;
+            requested_grip.y -= f64::from(gravity.y * load_share);
             // Service brakes keep their level-ground response. On a grade, holding
             // against gravity uses part of the same grip that can slow the hull.
             let grade_share =
                 (gravity.length() / (grip * normal_gravity).max(f32::EPSILON)).min(1.0);
-            requested_grip.y += drive_acceleration * grade_share;
+            requested_grip.y += f64::from(drive_acceleration * grade_share);
             drive_acceleration *= 1.0 - grade_share;
         }
-        let friction = requested_grip.clamp_length_max(grip * normal_acceleration);
+        let friction_limit =
+            (f64::from(grip) * f64::from(normal_acceleration)).min(f64::from(MAX_GRAVITY));
+        let friction = requested_grip.clamp_length_max(friction_limit).as_vec2();
         let impulse = (normal * normal_acceleration
             + right * friction.x
             + tangent * (friction.y + drive_acceleration + steering))
             * (STEP_SECONDS * mass_per_point);
-        body.apply_impulse_at_point(impulse, contact.position, false);
+        if impulse.is_finite() {
+            body.apply_impulse_at_point(impulse, contact.position, false);
+        } else {
+            supported.rejected_impulse = true;
+        }
     }
     supported
 }

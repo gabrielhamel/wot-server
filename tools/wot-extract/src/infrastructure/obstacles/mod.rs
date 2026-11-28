@@ -34,7 +34,7 @@ pub(crate) fn extract(
     let mut bytes = 0;
     let mut unsupported = 0;
     let mut foliage = foliage::Catalog::load(client)?;
-    let destructibles = destructibles::Catalog::load(client)?;
+    let destructibles = destructibles::Catalog::load(client, foliage.bushes())?;
     for path in layouts {
         let data = client.read_bounded(path, 384 * 1024 * 1024)?;
         let Some(space) = space::Space::decode(&data).with_context(|| format!("Decode {path}"))?

@@ -69,7 +69,7 @@ const AFTERBATTLE_PERIOD: Duration = Duration::from_secs(60);
 const ELIMINATION: u8 = 1;
 const TIME_LIMIT: u8 = 3;
 const TECHNICAL: u8 = 5;
-pub const TICK: Duration = Duration::from_millis(100);
+pub use crate::domain::parameters::TICK;
 
 struct Entrant {
     season: wot_shared_kernel::ArenaSeason,
@@ -209,7 +209,9 @@ impl PoseCadence {
             self.previous = Some(pose);
             self.refresh(tick);
         }
-        tick.saturating_sub(self.changed_at) < interval || tick % interval == entity_id % interval
+        const FULL_RATE_REFRESH_TICKS: u32 = 5;
+        tick.saturating_sub(self.changed_at) < interval.min(FULL_RATE_REFRESH_TICKS)
+            || tick % interval == entity_id % interval
     }
 }
 
@@ -241,7 +243,8 @@ impl Battle {
     }
 
     fn ticks(&self, now: Instant) -> u32 {
-        (now.saturating_duration_since(self.started_at).as_millis() / TICK.as_millis()) as u32
+        let ticks = now.saturating_duration_since(self.started_at).as_millis() / TICK.as_millis();
+        u32::try_from(ticks).unwrap_or(u32::MAX)
     }
 
     fn finish_if_team_left(&mut self, now: Instant) -> bool {
@@ -429,6 +432,9 @@ impl BattleRuntime {
         input.battle.load_timeout.seconds = launch.parameters.load_timeout_seconds,
         input.battle.countdown.seconds = launch.parameters.countdown_seconds,
         input.battle.results.seconds = launch.parameters.results_seconds,
+        input.battle.gravity.mps2 = launch.parameters.gravity_mps2,
+        input.battle.suspension.frequency.hz = launch.parameters.suspension_frequency_hz,
+        input.battle.suspension.damping_ratio = launch.parameters.suspension_damping_ratio,
         input.outfits.count = tracing::field::Empty,
         output.battle.id = tracing::field::Empty, output.players.count = tracing::field::Empty,
         output.outcome = tracing::field::Empty, otel.status_code = tracing::field::Empty,
@@ -1015,5 +1021,16 @@ mod pose_cadence_tests {
         assert!((9..=12).all(|tick| cadence.includes(turning, entity, tick, 5)));
         assert!(!cadence.includes(turning, entity, 13, 5));
         assert!(cadence.includes(turning, entity, 14, 1));
+    }
+
+    #[test]
+    fn long_parked_intervals_keep_the_motion_refresh_burst_bounded() {
+        let mut cadence = PoseCadence::default();
+        let parked = (Vec3::ZERO, Vec3::ZERO);
+
+        assert!((1..=5).all(|tick| cadence.includes(parked, 12, tick, u32::MAX)));
+        assert!(!cadence.includes(parked, 12, 6, u32::MAX));
+        assert!(cadence.includes(parked, 12, 12, u32::MAX));
+        assert!(cadence.includes((Vec3::Z, Vec3::ZERO), 12, 13, u32::MAX));
     }
 }

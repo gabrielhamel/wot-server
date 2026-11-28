@@ -1,4 +1,4 @@
-use super::ClientResources;
+use super::{ClientResources, foliage::BUSHES_PATH};
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use wot_platform::client_formats::pxml;
@@ -53,7 +53,7 @@ pub(super) struct Tree {
 }
 
 impl Catalog {
-    pub(super) fn load(client: &mut ClientResources) -> Result<Self> {
+    pub(super) fn load(client: &mut ClientResources, bushes: &HashSet<String>) -> Result<Self> {
         const PATH: &str = "scripts/destructibles.xml";
         if !client.contains(PATH) {
             return Ok(Self::default());
@@ -61,7 +61,7 @@ impl Catalog {
         let bytes = client.read_bounded(PATH, 16 * 1024 * 1024)?;
         let root = pxml::from_bytes(bytes).context("Read scenery destruction definitions")?;
         let mut result = Self {
-            trees: trees(client, &root)?,
+            trees: trees(&root, bushes)?,
             ..Self::default()
         };
         for group in ["fragiles", "fallingAtoms", "structures"] {
@@ -103,20 +103,14 @@ impl Catalog {
     }
 }
 
-fn trees(client: &mut ClientResources, root: &pxml::Element) -> Result<HashMap<String, Tree>> {
+fn trees(root: &pxml::Element, bushes: &HashSet<String>) -> Result<HashMap<String, Tree>> {
     let Some(section) = root.get_child_element("trees") else {
         return Ok(HashMap::new());
     };
-    let path = "vegetation/bushes.xml";
-    let bushes: HashSet<_> = if client.contains(path) {
-        let bytes = client.read_bounded(path, 4 * 1024 * 1024)?;
-        pxml::from_bytes(bytes)?
-            .iter_children_all()
-            .map(|(name, _)| name.to_ascii_lowercase())
-            .collect()
-    } else {
-        HashSet::new()
-    };
+    anyhow::ensure!(
+        !bushes.is_empty(),
+        "Missing or empty {BUSHES_PATH}; cannot classify destructible trees"
+    );
     Ok(section
         .iter_child_elements()
         .filter_map(|(_, entry)| {
@@ -213,6 +207,27 @@ fn health(item: &pxml::Element) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numbered_tree_definitions_require_the_bush_catalog_and_exclude_its_entries() {
+        let mut section = pxml::Element::new();
+        for path in ["vegetation/Hawthorn_01.srt", "vegetation/Hawthorn_03.srt"] {
+            let mut entry = pxml::Element::new();
+            entry.add_children("filename", pxml::Value::String(path.into()));
+            entry.add_children("physicParams", pxml::Value::String("10 3".into()));
+            entry.add_children("health", pxml::Value::Integer(3));
+            section.add_children("entry", pxml::Value::Element(Box::new(entry)));
+        }
+        let mut root = pxml::Element::new();
+        root.add_children("trees", pxml::Value::Element(Box::new(section)));
+
+        let error = trees(&root, &HashSet::new()).err().unwrap();
+        assert!(error.to_string().contains("vegetation/bushes.xml"));
+
+        let definitions = trees(&root, &HashSet::from(["hawthorn_01".into()])).unwrap();
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions["vegetation/hawthorn_03.srt"].health, 3);
+    }
 
     #[test]
     fn sorts_native_module_kinds_and_resolves_transitive_and_cyclic_dependencies() {

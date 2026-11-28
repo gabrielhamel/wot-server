@@ -1,5 +1,5 @@
 use super::{ClientResources, space::Space};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use byteorder::{LE, ReadBytesExt, WriteBytesExt};
 use glam::Vec3;
 use std::{
@@ -9,6 +9,8 @@ use std::{
     path::Path,
 };
 use wot_platform::client_formats::pxml;
+
+pub(super) const BUSHES_PATH: &str = "vegetation/bushes.xml";
 
 #[derive(Clone, Copy)]
 struct Plant {
@@ -28,7 +30,10 @@ impl Catalog {
             if !client.contains(path) {
                 return Ok(HashSet::new());
             }
-            let xml = pxml::from_bytes(client.read_bounded(path, 4 * 1024 * 1024)?)?;
+            let bytes = client
+                .read_bounded(path, 4 * 1024 * 1024)
+                .with_context(|| format!("Read {path}"))?;
+            let xml = pxml::from_bytes(bytes).with_context(|| format!("Decode {path}"))?;
             Ok(xml
                 .iter_children_all()
                 .map(|(name, _)| name.to_ascii_lowercase())
@@ -36,9 +41,13 @@ impl Catalog {
         };
         Ok(Self {
             plants: HashMap::new(),
-            bushes: list("vegetation/bushes.xml")?,
+            bushes: list(BUSHES_PATH)?,
             grass: list("vegetation/grassBushes.xml")?,
         })
+    }
+
+    pub(super) fn bushes(&self) -> &HashSet<String> {
+        &self.bushes
     }
 
     pub(super) fn extract(

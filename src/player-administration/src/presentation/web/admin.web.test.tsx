@@ -1205,7 +1205,7 @@ it("launches a Training battle with selected players and a customized stationary
             group: "Spotting",
             default: 100,
             min: 0,
-            max: 600,
+            max: 4_294_967_295,
             integer: true,
           },
           {
@@ -1213,8 +1213,8 @@ it("launches a Training battle with selected players and a customized stationary
             label: "Suspension frequency (Hz)",
             group: "Hull physics",
             default: 3,
-            min: 1,
-            max: 5,
+            min: 0,
+            max: 3.4028234663852886e38,
             integer: false,
           },
           {
@@ -1223,7 +1223,7 @@ it("launches a Training battle with selected players and a customized stationary
             group: "Round timing",
             default: 10,
             min: 0,
-            max: 60,
+            max: 429_496_729,
             integer: true,
           },
           {
@@ -1231,8 +1231,8 @@ it("launches a Training battle with selected players and a customized stationary
             label: "Gravity (m/s²)",
             group: "Vehicle movement",
             default: 9.81,
-            min: 0,
-            max: 30,
+            min: -30_198_988,
+            max: 30_198_988,
             integer: false,
           },
         ],
@@ -1453,22 +1453,21 @@ it("launches a Training battle with selected players and a customized stationary
     const retention = screen.getByRole("spinbutton", { name: "Spotted retention (100 ms ticks)" });
     expect(retention).toHaveValue(100);
     await user.clear(retention);
-    await user.type(retention, "601");
+    await user.type(retention, "4294967296");
     expect(start).toBeDisabled();
     await user.clear(retention);
-    await user.type(retention, "100");
+    await user.type(retention, "4294967295");
     await user.clear(countdown);
     await user.type(countdown, "61");
-    expect(start).toBeDisabled();
-    await user.clear(countdown);
-    await user.type(countdown, "2");
-    await user.clear(retention);
-    await user.type(retention, "80");
+    expect(start).toBeEnabled();
     expect(screen.queryByRole("combobox", { name: "Hull physics model" })).not.toBeInTheDocument();
     const suspension = screen.getByRole("spinbutton", { name: "Suspension frequency (Hz)" });
     expect(suspension).toHaveValue(3);
     await user.clear(suspension);
-    await user.type(suspension, "4");
+    await user.type(suspension, "24");
+    const gravity = screen.getByRole("spinbutton", { name: "Gravity (m/s²)" });
+    await user.clear(gravity);
+    await user.type(gravity, "-42.125");
     await user.click(parameters);
     expect(parameters).toHaveAttribute("aria-expanded", "false");
     await user.click(start);
@@ -1487,9 +1486,10 @@ it("launches a Training battle with selected players and a customized stationary
       arena_type: 5,
       duration_seconds: 600,
       parameters: {
-        countdown_seconds: 2,
-        spotting_retention_ticks: 80,
-        suspension_frequency_hz: 4,
+        countdown_seconds: 61,
+        spotting_retention_ticks: 4_294_967_295,
+        suspension_frequency_hz: 24,
+        gravity_mps2: -42.125,
       },
       players: [
         {
@@ -1574,7 +1574,7 @@ it("launches a Training battle with selected players and a customized stationary
       "ddd.bounded_context.name": "player_administration",
       "input.arena_type_id": 5,
       "input.round_length.seconds": 600,
-      "input.battle.parameters.count": 3,
+      "input.battle.parameters.count": 4,
       "input.players.count": 2,
       "input.players.custom_loadout_count": 1,
       "input.players.owned_override_count": 1,
@@ -1643,14 +1643,20 @@ it("restores the last battle, resets the whole form and replaces the save only a
   }
   try {
     const first = await open();
+    const toggle = screen.getByRole("button", { name: "Battle parameters" });
+    expect(screen.getByLabelText("Countdown")).toHaveValue(2);
+    await first.user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Loaded from your last launched battle")).toBeVisible();
     expect(screen.getByText(/Dummy 1: review equipment/)).toBeVisible();
-    expect(screen.getByLabelText("Countdown")).toHaveValue(2);
     expect(screen.getByLabelText("Vehicle for Dummy 1")).toHaveValue("T-34");
     expect(screen.queryByLabelText("Vehicle for Commander")).toBeNull();
     await addPlayer(first.user);
-    await first.user.click(screen.getByRole("button", { name: "Reset battle parameters" }));
+    await first.user.click(screen.getByRole("button", { name: "Reset battle setup" }));
     expect(screen.getByLabelText("Map and battle type")).toHaveValue("");
+    expect(screen.getByText("Battle setup reset to defaults.")).toBeVisible();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await first.user.click(toggle);
     expect(screen.getByLabelText("Countdown")).toHaveValue(10);
     expect(screen.getByLabelText("Battle duration (minutes)")).toHaveValue(15);
     expect(screen.queryByLabelText("Vehicle for Dummy 1")).toBeNull();

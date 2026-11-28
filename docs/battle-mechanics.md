@@ -187,8 +187,9 @@ After a successful admin launch, the browser replaces its last battle setup
 in local storage with the map, duration, simulation overrides and stationary
 dummies (including teams and loadouts). Players and their tank configurations
 are selected afresh for each launch. Reopening the panel restores the setup
-and expands **Battle parameters**. **Reset battle parameters** clears the
-entire current form. Reloading still restores the last successful launch.
+and expands **Battle parameters**. The setup status and **Reset battle setup** button
+appear below the map and duration, even when **Battle parameters** is collapsed.
+Reset clears the entire current form. Reloading still restores the last successful launch.
 
 Every adjustable mechanic and hardcoded gameplay tuning value owned by
 Battles belongs in the admin Battle parameters panel. Define validated
@@ -201,8 +202,42 @@ Battles owns the defaults and ranges in
 can override round timing, parked position refresh, gravity and drive
 response, hull contacts and rollover, ballistic integration, armor and device
 damage, track repair, fire and tracer visibility. The validated values travel with the battle launch and are shared
-by simulation and replication for that arena. The existing values are the
-defaults used by native Training Rooms.
+by simulation and replication for that arena. Native Training Rooms use the same defaults.
+
+The dashboard takes the field limits from the server. Use only technical
+constraints for per-battle minimum and maximum values. These include numeric
+representation, protocol fields, required invariants, and bounded server
+work. Settings may produce unrealistic gameplay or a broken simulation as
+long as the server handles them safely and continues serving other battles.
+
+Integer intervals use their Rust storage limits. Spotting and parked pose intervals accept up to
+4,294,967,295 ticks and fire accepts up to 255 ticks. Loading, countdown,
+active play and results share the arena's 429,496,729-second clock budget.
+Spotting distances must remain strictly ordered from proximity through
+maximum range. Distance checks use the largest `f32` value that can be
+squared without overflow.
+
+Decimal settings accept fractional input and round to `f32` precision.
+Fractions and cosines use their mathematical ranges. The track repair
+multiplier uses the 120-second maximum base repair time when calculating
+its upper limit. Projectile processing caps each flight at 640 segments
+and each damage roll at 12 samples to bound synchronous work. Device hits
+use the capacity of the strike buffer. The ballistic step accepts up to the
+arena clock budget divided by the maximum segment count.
+
+The 60 Hz physics step and single-precision collision geometry determine the
+physics limits. Geometry uses a minimum fallback collider half extent of
+1 mm and a scale of approximately 8.39 km as its upper bound. The server
+derives its linear velocity limit from that distance per step and its angular
+velocity limit from half a turn per step. Signed gravity is limited to the acceleration that
+can change velocity by the linear speed limit in one step, approximately
+30.2 million m/s² in either direction. Positive values pull down and
+negative values pull up. Fallback mass bounds keep the mass-to-volume ratio
+and squared momentum representable.
+
+Suspension frequency, damping, and track response accept values beyond the
+stable range of the integrator. Track forces use wider intermediate
+arithmetic and cap the result using the per-step velocity limit.
 
 The native movement bitmask identifies commands. Shell ballistics and equipped
 vehicle performance come from the resource bundle. The tracer policy uses each recipient's known Vehicle entities.
@@ -213,13 +248,13 @@ Training sends `TickSync`, the hull-relative Avatar pose and pending Mercury
 ACKs every 100 ms. Each driver also receives their own hull pose every tick.
 For other vehicles, the server compares position, yaw, pitch and roll with
 the previous tick. A changed pose is sent immediately and remains
-at the full tick rate for the refresh interval starting with that change. A client
+at the full tick rate for up to five ticks starting with that change. A client
 entering the arena also triggers a full snapshot. Unchanged poses then use
 refresh slots staggered by entity ID. Turret angle properties have their own
 delivery path.
 
 Under **Admin → Battles → Battle parameters → Network replication**,
-**Other parked vehicle pose interval (100 ms ticks)** accepts 1–5 and defaults to 5.
+**Other parked vehicle pose interval (100 ms ticks)** accepts 1–4,294,967,295 and defaults to 5.
 It applies to other vehicles. Set it to 1 to include every pose on every tick. Native Training Rooms use the
 default. See the [native replay evidence](battle-replays.md#widepark-parked-vehicle-cadence-from-2026-11-26).
 
@@ -330,11 +365,11 @@ in two seconds. Driving across the 11.5° bank for 1.67 s produced
 bank the hull still moved 5.40 m forward while sliding 1.56 m downhill
 in the map plane and losing 1.18 m in height.
 
-The El Halluf regression uses the approach to tree 36 in chunk `0x8181`
-from the playtest. It drives a test hull on the extracted map twice, first
-with the trunk cleared, then with it standing. Over the 0.30 s after the
-tree broke, the second run added less than 0.01° of pitch or yaw and
-less than 2 mm of hull rise. On a separate flat course, an off-centre
+The El Halluf regression drives through the bush from the playtest without
+publishing its fall. A separate downhill approach drives past tree 20 in
+chunk `0x8081` twice, first with the trunk cleared, then with it standing.
+Over the 0.30 s after the tree broke, the second run added less than 0.01°
+of pitch or yaw and less than 2 mm of hull rise. On a separate flat course, an off-centre
 4 m tree proxy previously added 13.86° of pitch. The same impact now adds
 less than 0.02°. A 24 cm breakable prop also fractures as the track reaches it.
 
@@ -407,7 +442,10 @@ Numbered trees use the same chunk controllers. Extraction joins each
 Drive contact can break a standing trunk with impact energy or sustained
 engine force. The Rust solver uses a scaled trunk proxy for vehicle contact.
 Shells pass through standing trunks, as in the Toolkit model. Bushes listed
-in the vegetation catalog remain pass-through vegetation. Fallen trees no
+in the vegetation catalog remain pass-through vegetation and provide
+concealment. The supplied client's `AreaDestructibles.py` deactivates a bush
+when its native ID arrives in a `fallenTrees` update. The server skips older
+tree catalogs that could contain those IDs. Fallen trees no
 longer block hulls in the server. The native `fallenTrees` record carries the
 object index, the maximum pitch, the fall direction and the initial speed
 step. The server estimates the pitch limit against terrain and standing

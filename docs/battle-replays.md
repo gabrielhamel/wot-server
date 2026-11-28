@@ -85,11 +85,16 @@ projected onto the middle sample's horizontal heading and right axis.
 | Time | Observation |
 | --- | --- |
 | 16.02 s | During a left turn, the AMX 30 moved at 11.03 m/s forwards and 1.82 m/s to its right. At the centre of the hull, the extracted terrain had a 2.3° grade. Position offset 55913. |
-| 22.52 s | On the downhill approach under forward-only input, an `AreaDestructibles` property update at offset 78360 added tree 36 to `fallenTrees` in chunk `0x8181`. Its extracted trunk is at (217.73, 54.59, 237.37). The hull descended throughout the contact and changed heading by about 17° between 22.32 and 23.02 s. Position offsets 77548, 78236 and 80066. |
+| 22.52 s | On the downhill approach under forward-only input, an `AreaDestructibles` property update at offset 78360 added object 36 to `fallenTrees` in chunk `0x8181`. The older tree catalog placed its contact proxy at (217.73, 54.59, 237.37). The hull descended throughout the contact and changed heading by about 17° between 22.32 and 23.02 s. Position offsets 77548, 78236 and 80066. |
 | 35.12 s | The hull first rolled beyond 90° on a later descent. The terrain beneath its centre had steepened from 3° at 32.02 s to 53° here. |
 
-The recording documents handling on the development server. The [Rapier driving scenarios](battle-mechanics.md#rapier-hull-physics)
-use the numbered tree and approach to check the server's response to a break.
+The recording documents handling on the development server. The fresh
+`#1007` extraction from [Latest client E2E](https://github.com/gabrielhamel/wot-server/actions/runs/46123717246)
+keeps `0x81810024` in `foliage.bin` and excludes it from the verified tree
+catalog. The [Rapier driving scenarios](battle-mechanics.md#rapier-hull-physics)
+use the recorded approach to check that the bush no longer falls. They use
+verified tree `0x80810014` at (179.89, 53.72, 271.80) for the downhill
+tree impact check.
 
 ## Widepark Training capture from 2026-11-23
 

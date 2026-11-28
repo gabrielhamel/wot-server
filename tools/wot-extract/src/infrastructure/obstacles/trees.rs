@@ -27,7 +27,7 @@ pub(super) fn extract(space: &Space<'_>, catalog: &Catalog, path: &Path) -> Resu
         return Ok(None);
     }
     let mut out = BufWriter::new(File::create(path)?);
-    out.write_all(b"WCT1")?;
+    out.write_all(b"WCT2")?;
     for (native, position, scale, height, health) in trees {
         out.write_u32::<LE>(native)?;
         out.write_u32::<LE>(health)?;

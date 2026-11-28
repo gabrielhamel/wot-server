@@ -94,9 +94,13 @@ Expose gameplay mechanics and hardcoded simulation tuning values owned by the
 Battles bounded context in **Admin → Battles → Battle parameters**. When adding
 or changing a mechanic, define its adjustable values as validated per-battle
 settings, publish their defaults and supported ranges, and apply the selected
-values at arena launch. Native Training Rooms use the same defaults. Keep
-protocol identifiers, mathematical constants, resource definitions and hard
-safety ceilings in their owning implementation. See the
+values at arena launch. Native Training Rooms use the same defaults. Set
+parameter bounds only for technical constraints such as numeric representation,
+wire formats, required invariants, or bounded resource use. Allow values that
+produce unrealistic, unstable, or broken gameplay as long as the server can
+process them safely and continue serving other battles. Keep protocol
+identifiers, mathematical constants, resource definitions and hard safety
+ceilings in their owning implementation. See the
 [per-battle simulation parameters guide](docs/battle-mechanics.md#per-battle-simulation-parameters).
 
 ## Admin grants for player items

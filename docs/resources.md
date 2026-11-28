@@ -62,11 +62,15 @@ server. Older manifests without the field remain supported.
   breaks. Older mesh versions remain readable.
   Re-extract the client bundle to recover contact bodies omitted by older
   extractors.
-  The optional `spaces/<map>/trees.bin` (`WCT1`) stores each numbered SpeedTree's
+  The optional `spaces/<map>/trees.bin` (`WCT2`) stores each numbered tree's
   `WGDE` identity, scaled health, foot position, scale and fall height. The
-  extractor joins `SpTr` placements to `scripts/destructibles.xml` and excludes
-  entries in `vegetation/bushes.xml`. Re-extract to enable tree contact and
-  native fall replication.
+  extractor joins `SpTr` placements to `scripts/destructibles.xml` and requires
+  a populated `vegetation/bushes.xml` when decoding the tree definitions.
+  Catalogued bushes are excluded from tree contacts and stay in the foliage
+  data. The server skips older `WCT1` files because they could include bush
+  IDs. Re-extract with the matching extractor to restore tree contact and
+  native fall replication. Resource-backed tests that exercise tree contact
+  also require a fresh extraction.
   The optional `spaces/<map>/foliage.bin` (`WCF1`) stores SpeedTree
   placement transforms, model bounds, canopy classification and optional
   destructible identity. Re-extract the resource bundle to populate it.

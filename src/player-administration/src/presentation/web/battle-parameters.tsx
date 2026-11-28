@@ -1,11 +1,9 @@
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {
-  Alert,
   Accordion,
   AccordionDetails,
   AccordionSummary,
   Box,
-  Button,
   Stack,
   TextField,
   Typography,
@@ -21,19 +19,13 @@ export type BattleParameterField = BattleParameterDefinition & {
 export function BattleParameterEditor({
   expanded,
   onToggle,
-  status,
-  warnings,
   fields,
   onChange,
-  onReset,
 }: {
   expanded: boolean;
   onToggle: (expanded: boolean) => void;
-  status: string;
-  warnings: string[];
   fields: BattleParameterField[];
   onChange: (key: string, value: string) => void;
-  onReset: () => void;
 }) {
   const id = useId();
   const groups = new Map<string, BattleParameterField[]>();
@@ -57,17 +49,6 @@ export function BattleParameterEditor({
       </AccordionSummary>
       <AccordionDetails>
         <Stack spacing={3}>
-          <Stack spacing={1} alignItems="start">
-            {status && <Alert severity="info">{status}</Alert>}
-            {warnings.map((message) => (
-              <Alert key={message} severity="warning">
-                {message}
-              </Alert>
-            ))}
-            <Button variant="outlined" onClick={onReset}>
-              Reset battle parameters
-            </Button>
-          </Stack>
           {Array.from(groups, ([group, entries]) => (
             <Stack key={group} spacing={1}>
               <Typography component="h3" variant="subtitle1">

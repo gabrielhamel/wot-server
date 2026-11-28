@@ -235,6 +235,7 @@ impl Obstacles {
         ddd.bounded_context.name = "battles", input.geometry = geometry,
         input.arena_type_id = arena_type, output.obstacles.instances = tracing::field::Empty,
         output.obstacles.trees = tracing::field::Empty,
+        output.obstacles.trees.skipped_unverified = tracing::field::Empty,
         output.obstacles.foliage = tracing::field::Empty,
         output.obstacles.foliage.available = tracing::field::Empty,
         otel.status_code = tracing::field::Empty,
@@ -746,6 +747,88 @@ fn visibility_mask(resources: &ResourceBundle, geometry: &str, arena_type: i32) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arena_load_omits_unverified_tree_colliders_and_preserves_verified_falls() {
+        use opentelemetry::trace::TracerProvider as _;
+        use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+        use rapier3d::prelude::PhysicsWorld;
+        use std::fs;
+        use tracing_subscriber::prelude::*;
+
+        let root = std::env::temp_dir().join(format!("wot-trees-{:016x}", fastrand::u64(..)));
+        let map = root.join("res/spaces/test");
+        fs::create_dir_all(&map).unwrap();
+        ResourceBundle::write_manifest(&root, Default::default()).unwrap();
+        let resources = ResourceBundle::open(&root).unwrap();
+        fs::write(map.join("collision.bin"), b"WCP2").unwrap();
+        let settings = fs::File::create(map.join("space.settings")).unwrap();
+        pxml::to_writer(settings, &pxml::Element::new()).unwrap();
+
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("tree-catalog-test")));
+
+        tracing::subscriber::with_default(subscriber, || {
+            let launch = tracing::info_span!("test_arena_launch");
+            launch.in_scope(|| {
+                for (header, expected_count) in [(b"WCT1", 0), (b"WCT2", 1)] {
+                    let native = 0x8181_0024u32;
+                    let mut data = header.to_vec();
+                    data.extend(native.to_le_bytes());
+                    data.extend(3u32.to_le_bytes());
+                    for value in [0.0f32, 0.0, 0.0, 1.0, 3.0] {
+                        data.extend(value.to_le_bytes());
+                    }
+                    fs::write(map.join("trees.bin"), data).unwrap();
+                    let geometry = Obstacles::load(&resources, "spaces/test", 1).unwrap();
+                    let mut scene = Scenery::new(Arc::new(geometry));
+                    let mut world = PhysicsWorld::default();
+                    scene.physics_colliders().unwrap().update_near(
+                        &mut world,
+                        &scene,
+                        [(-Vec3::ONE, Vec3::ONE)],
+                    );
+                    assert_eq!(world.colliders.len(), expected_count);
+                    let breaks = scene.blast_trees(Vec3::ZERO, 1.0, 10.0);
+                    assert_eq!(breaks.len(), expected_count);
+                    if let Some(tree) = breaks.first() {
+                        assert_eq!((tree.native, tree.part), (Some(native), TREE_PART));
+                    }
+                }
+            });
+        });
+        fs::remove_dir_all(root).unwrap();
+
+        let spans = exporter.get_finished_spans().unwrap();
+        let launch = spans
+            .iter()
+            .find(|span| span.name == "test_arena_launch")
+            .unwrap();
+        let loads: Vec<_> = spans
+            .iter()
+            .filter(|span| span.name == "battles.load_obstacles")
+            .collect();
+        assert_eq!(loads.len(), 2);
+        for (load, (skipped, count)) in loads.into_iter().zip([("true", "0"), ("false", "1")]) {
+            assert_eq!(load.parent_span_id, launch.span_context.span_id());
+            for (key, value) in [
+                ("ddd.bounded_context.name", "battles"),
+                ("input.geometry", "spaces/test"),
+                ("output.obstacles.trees.skipped_unverified", skipped),
+                ("output.obstacles.trees", count),
+            ] {
+                assert!(
+                    load.attributes
+                        .iter()
+                        .any(|field| field.key.as_str() == key && field.value.to_string() == value)
+                );
+            }
+        }
+    }
 
     #[test]
     #[ignore = "Requires WOT_RESOURCE_DIR with the extracted EU client bundle"]
