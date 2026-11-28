@@ -330,11 +330,11 @@ in two seconds. Driving across the 11.5° bank for 1.67 s produced
 bank the hull still moved 5.40 m forward while sliding 1.56 m downhill
 in the map plane and losing 1.18 m in height.
 
-The El Halluf regression uses the approach to tree 36 in chunk `0x8181`
-from the playtest. It drives a test hull on the extracted map twice, first
-with the trunk cleared, then with it standing. Over the 0.30 s after the
-tree broke, the second run added less than 0.01° of pitch or yaw and
-less than 2 mm of hull rise. On a separate flat course, an off-centre
+The El Halluf regression drives through the bush from the playtest without
+publishing its fall. A separate downhill approach drives past tree 20 in
+chunk `0x8081` twice, first with the trunk cleared, then with it standing.
+Over the 0.30 s after the tree broke, the second run added less than 0.01°
+of pitch or yaw and less than 2 mm of hull rise. On a separate flat course, an off-centre
 4 m tree proxy previously added 13.86° of pitch. The same impact now adds
 less than 0.02°. A 24 cm breakable prop also fractures as the track reaches it.
 
