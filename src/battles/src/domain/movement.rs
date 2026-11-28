@@ -1,4 +1,4 @@
-use super::parameters::BattleParameters;
+use super::parameters::{BattleParameters, MAX_ANGULAR_SPEED, MAX_LINEAR_SPEED};
 use wot_shared_kernel::VehiclePerformance;
 
 const FORWARD: u8 = 1;
@@ -17,12 +17,13 @@ pub(crate) struct GroundContact {
 
 impl GroundContact {
     pub(crate) fn average(self, coefficients: [f32; 3]) -> f32 {
-        self.surfaces
+        (self
+            .surfaces
             .into_iter()
             .zip(coefficients)
-            .map(|(count, coefficient)| f32::from(count) * coefficient)
-            .sum::<f32>()
-            * 0.25
+            .map(|(count, coefficient)| f64::from(count) * f64::from(coefficient))
+            .sum::<f64>()
+            * 0.25) as f32
     }
 }
 
@@ -107,7 +108,7 @@ impl Drive {
         } else if !mobility.turns_in_place && throttle == 0.0 && steering != 0.0 {
             parameters.wheel_turn_creep_mps.min(speed_limit)
         } else {
-            throttle * speed_limit * cruise
+            throttle * (speed_limit * cruise).min(MAX_LINEAR_SPEED)
         };
 
         let reversing = old_speed * self.target_speed < 0.0;
@@ -123,7 +124,8 @@ impl Drive {
         } else {
             let traction =
                 parameters.traction_multiplier * mobility.power_per_kg / old_speed.abs().max(1.0);
-            let rolling_drag = parameters.gravity_mps2 * ground.average(mobility.rolling_friction);
+            let rolling_drag =
+                parameters.gravity_mps2.max(0.0) * ground.average(mobility.rolling_friction);
             let grade = ground.pitch * self.target_speed.signum();
             let slope = parameters.gravity_mps2 * grade.sin();
             let target = self.target_speed.abs();
@@ -168,7 +170,7 @@ impl Drive {
             } else {
                 1.0
             };
-            steering * direction * traverse * moving
+            steering * direction * (traverse * moving).min(MAX_ANGULAR_SPEED)
         } else {
             let max_curvature = mobility
                 .wheels
@@ -225,8 +227,8 @@ impl Drive {
         let next_speed = if self.flags == 0 {
             // Releasing powered movement coasts to a stop. A parked hull pushed
             // by another vehicle only opposes its new motion with rolling resistance.
-            let rolling =
-                parameters.gravity_mps2 * ground.average(performance.mobility.rolling_friction);
+            let rolling = parameters.gravity_mps2.max(0.0)
+                * ground.average(performance.mobility.rolling_friction);
             let coast = if speed * self.released_speed > 0.0 {
                 self.released_speed
                     .abs()

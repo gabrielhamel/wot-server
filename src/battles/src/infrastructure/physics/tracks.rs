@@ -8,6 +8,7 @@ pub(super) const SUPPORT_POINTS: usize = 2 * CONTACTS_PER_TRACK;
 pub(super) struct Support {
     pub grounded: bool,
     pub scenery: bool,
+    pub rejected_impulse: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -31,6 +32,7 @@ pub(super) fn drive(
     let mut supported = Support {
         grounded: false,
         scenery: false,
+        rejected_impulse: false,
     };
     let Some(body) = world.bodies.get(chassis.body) else {
         return supported;
@@ -61,11 +63,12 @@ pub(super) fn drive(
         chassis.supported_by.fill(None);
         return supported;
     }
-    let travel = parameters.suspension_travel_metres;
+    let travel = chassis.suspension_travel;
     let frequency = TAU * parameters.suspension_frequency_hz;
     let stiffness = frequency * frequency;
-    let damping = 2.0 * parameters.suspension_damping_ratio * frequency;
-    let reach = travel + (parameters.gravity_mps2 / stiffness).min(travel);
+    let damping = 2.0 * frequency * parameters.suspension_damping_ratio;
+    let gravity_load = parameters.gravity_mps2.max(0.0);
+    let reach = travel + (gravity_load / stiffness.max(f32::MIN_POSITIVE)).min(travel);
     let geometry_only = |_: ColliderHandle, collider: &rapier3d::prelude::Collider| {
         collider.is_enabled() && collider.parent().is_none()
     };
@@ -149,8 +152,7 @@ pub(super) fn drive(
         contact.map(|contact| {
             let normal = contact.terrain_normal;
             let velocity = linear + angular.cross(contact.position - center);
-            let spring =
-                parameters.gravity_mps2 * normal.y + stiffness * (travel - contact.distance);
+            let spring = gravity_load * normal.y + stiffness * (travel - contact.distance);
             (contact, (spring - damping * velocity.dot(normal)).max(0.0))
         })
     });
@@ -191,12 +193,19 @@ pub(super) fn drive(
             requested_grip.y += drive_acceleration * grade_share;
             drive_acceleration *= 1.0 - grade_share;
         }
-        let friction = requested_grip.clamp_length_max(grip * normal_acceleration);
+        let friction = requested_grip
+            .as_dvec2()
+            .clamp_length_max(f64::from(grip) * f64::from(normal_acceleration))
+            .as_vec2();
         let impulse = (normal * normal_acceleration
             + right * friction.x
             + tangent * (friction.y + drive_acceleration + steering))
             * (STEP_SECONDS * mass_per_point);
-        body.apply_impulse_at_point(impulse, contact.position, false);
+        if impulse.is_finite() {
+            body.apply_impulse_at_point(impulse, contact.position, false);
+        } else {
+            supported.rejected_impulse = true;
+        }
     }
     supported
 }

@@ -1,11 +1,30 @@
 use super::devices::DEVICE_STRIKE_CAPACITY;
 use serde::Serialize;
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    f32::consts::{PI, TAU},
+    time::Duration,
+};
 
 pub const TICK: Duration = Duration::from_millis(100);
 const MAX_ARENA_SECONDS: u64 = u32::MAX as u64 * TICK.as_millis() as u64 / 1000;
 // Greatest finite f32 whose square is also finite.
 const MAX_SQUARED_DISTANCE_METRES: f32 = f32::from_bits(0x5f7f_ffff);
+pub(crate) const PHYSICS_HZ: u32 = 60;
+pub(crate) const PHYSICS_STEP_SECONDS: f32 = 1.0 / PHYSICS_HZ as f32;
+pub(crate) const MIN_COLLIDER_HALF_EXTENT: f32 = 0.001;
+// Preserve the minimum collider scale in a single-precision coordinate.
+const MAX_PHYSICS_DISTANCE: f32 = MIN_COLLIDER_HALF_EXTENT / f32::EPSILON;
+pub(crate) const MAX_LINEAR_SPEED: f32 = MAX_PHYSICS_DISTANCE / PHYSICS_STEP_SECONDS;
+pub(crate) const MAX_ANGULAR_SPEED: f32 = PI / PHYSICS_STEP_SECONDS;
+const MAX_GRAVITY: f32 = MAX_LINEAR_SPEED / PHYSICS_STEP_SECONDS;
+const MAX_RESPONSE_RATE: f32 = 2.0 / PHYSICS_STEP_SECONDS;
+const MAX_SUSPENSION_HZ: f32 = (MAX_RESPONSE_RATE / TAU).next_down();
+// Keep linear momentum at the solver's speed limit within a finite squared norm.
+const MAX_FALLBACK_MASS: f32 = MAX_SQUARED_DISTANCE_METRES / MAX_LINEAR_SPEED;
+// Keep the mass-to-volume ratio normal at the largest fallback cuboid.
+const MIN_FALLBACK_MASS: f32 =
+    f32::MIN_POSITIVE * 8.0 * MAX_PHYSICS_DISTANCE * MAX_PHYSICS_DISTANCE * MAX_PHYSICS_DISTANCE;
 const MAX_FLIGHT_SEGMENTS: usize = 640;
 const MAX_NORMAL_ROLL_SAMPLES: usize = 12;
 const MAX_TRACK_BASE_REPAIR_SECONDS: f64 = 120.0;
@@ -70,6 +89,14 @@ macro_rules! battle_parameters {
                 {
                     return Err(InvalidBattleParameters);
                 }
+                let spring_step = f64::from(TAU)
+                    * f64::from(parameters.suspension_frequency_hz)
+                    * f64::from(PHYSICS_STEP_SECONDS);
+                // The linearized spring and damper use semi-implicit Euler.
+                let damping_step = 4.0 * spring_step * f64::from(parameters.suspension_damping_ratio);
+                if spring_step * spring_step + damping_step >= 4.0 {
+                    return Err(InvalidBattleParameters);
+                }
                 Ok(parameters)
             }
         }
@@ -121,7 +148,7 @@ battle_parameters! {
         parked_vehicle_pose_interval_ticks: u32 = 5, 1, u32::MAX, true, "Other parked vehicle pose interval (100 ms ticks)";
     }
     "Vehicle movement" {
-        gravity_mps2: f32 = 9.81, 0.0, 30.0, false, "Gravity (m/s²)";
+        gravity_mps2: f32 = 9.81, -MAX_GRAVITY, MAX_GRAVITY, false, "Gravity (m/s²)";
         coast_deceleration_mps2: f32 = 14.0, 0.0, f32::MAX, false, "Coast deceleration (m/s²)";
         brake_deceleration_mps2: f32 = 24.0, 0.0, f32::MAX, false, "Brake deceleration (m/s²)";
         turn_response_seconds: f32 = 0.2, f32::MIN_POSITIVE, f32::MAX, false, "Turn response (seconds)";
@@ -130,39 +157,39 @@ battle_parameters! {
         track_lock_response_seconds: f32 = 0.1, f32::MIN_POSITIVE, f32::MAX, false, "Track-lock response (seconds)";
         downhill_speed_limit_ratio: f32 = 1.5, 0.0, f32::MAX, false, "Downhill speed multiplier";
         traction_multiplier: f32 = 1.13, 0.0, f32::MAX, false, "Traction multiplier";
-        traction_acceleration_mps2: f32 = 6.0, 0.0, 30.0, false, "Traction acceleration cap (m/s²)";
-        half_speed_ratio: f32 = 0.5, 0.0, 1.0, false, "Half-speed drive multiplier";
-        quarter_speed_ratio: f32 = 0.25, 0.0, 1.0, false, "Quarter-speed drive multiplier";
+        traction_acceleration_mps2: f32 = 6.0, 0.0, MAX_GRAVITY, false, "Traction acceleration cap (m/s²)";
+        half_speed_ratio: f32 = 0.5, 0.0, f32::MAX, false, "Half-speed drive multiplier";
+        quarter_speed_ratio: f32 = 0.25, 0.0, f32::MAX, false, "Quarter-speed drive multiplier";
         wheel_turn_creep_mps: f32 = 2.0, 0.0, f32::MAX, false, "Wheeled turning creep speed (m/s)";
         moving_turn_min_speed_mps: f32 = 0.5, 0.0, f32::MAX, false, "Moving turn minimum speed (m/s)";
-        moving_turn_multiplier: f32 = 0.85, 0.0, 2.0, false, "Moving turn multiplier";
-        track_lock_heading_response: f32 = 2.0, 0.0, 20.0, false, "Track-lock heading response (per second)";
+        moving_turn_multiplier: f32 = 0.85, 0.0, f32::MAX, false, "Moving turn multiplier";
+        track_lock_heading_response: f32 = 2.0, 0.0, MAX_RESPONSE_RATE, false, "Track-lock heading response (per second)";
     }
     "Hull physics" {
-        suspension_travel_metres: f32 = 0.3, 0.05, 0.8, false, "Suspension travel (metres)";
-        suspension_frequency_hz: f32 = 3.0, 1.0, 5.0, false, "Suspension frequency (Hz)";
-        suspension_damping_ratio: f32 = 0.8, 0.1, 1.5, false, "Suspension damping ratio";
-        lateral_grip_response_seconds: f32 = 0.08, 0.05, 2.0, false, "Lateral grip response (seconds)";
+        suspension_travel_metres: f32 = 0.3, 0.0, MAX_PHYSICS_DISTANCE, false, "Suspension travel (metres)";
+        suspension_frequency_hz: f32 = 3.0, 0.0, MAX_SUSPENSION_HZ, false, "Suspension frequency (Hz)";
+        suspension_damping_ratio: f32 = 0.8, 0.0, f32::MAX, false, "Suspension damping ratio";
+        lateral_grip_response_seconds: f32 = 0.08, 1.0 / MAX_RESPONSE_RATE, f32::MAX, false, "Lateral grip response (seconds)";
     }
     "World contacts" {
-        contact_skin_metres: f32 = 0.025, 0.0, 0.25, false, "Collision clearance (metres)";
-        hull_height_metres: f32 = 2.0, 0.25, 6.0, false, "Fallback hull height (metres)";
-        fallback_hull_half_width_metres: f32 = 1.25, 0.25, 5.0, false, "Fallback hull half-width (metres)";
-        fallback_hull_half_length_metres: f32 = 2.5, 0.25, 8.0, false, "Fallback hull half-length (metres)";
-        fallback_mass_kg: f32 = 30_000.0, 100.0, 200_000.0, false, "Fallback vehicle mass (kg)";
-        fallback_engine_power_watts: f32 = 300_000.0, 100.0, 1_000_000.0, false, "Fallback engine power (watts)";
-        scenery_push_force_scale: f32 = 0.0002, 0.0, 0.002, false, "Scenery push force scale";
-        hard_surface_grip: f32 = 0.58, 0.0, 2.0, false, "Hard surface grip";
-        medium_surface_grip: f32 = 0.50, 0.0, 2.0, false, "Medium surface grip";
-        soft_surface_grip: f32 = 0.42, 0.0, 2.0, false, "Soft surface grip";
+        contact_skin_metres: f32 = 0.025, 0.0, MAX_PHYSICS_DISTANCE, false, "Collision clearance (metres)";
+        hull_height_metres: f32 = 2.0, 2.0 * MIN_COLLIDER_HALF_EXTENT, 2.0 * MAX_PHYSICS_DISTANCE, false, "Fallback hull height (metres)";
+        fallback_hull_half_width_metres: f32 = 1.25, MIN_COLLIDER_HALF_EXTENT, MAX_PHYSICS_DISTANCE, false, "Fallback hull half-width (metres)";
+        fallback_hull_half_length_metres: f32 = 2.5, MIN_COLLIDER_HALF_EXTENT, MAX_PHYSICS_DISTANCE, false, "Fallback hull half-length (metres)";
+        fallback_mass_kg: f32 = 30_000.0, MIN_FALLBACK_MASS, MAX_FALLBACK_MASS, false, "Fallback vehicle mass (kg)";
+        fallback_engine_power_watts: f32 = 300_000.0, 0.0, f32::MAX, false, "Fallback engine power (watts)";
+        scenery_push_force_scale: f32 = 0.0002, 0.0, f32::MAX, false, "Scenery push force scale";
+        hard_surface_grip: f32 = 0.58, 0.0, f32::MAX, false, "Hard surface grip";
+        medium_surface_grip: f32 = 0.50, 0.0, f32::MAX, false, "Medium surface grip";
+        soft_surface_grip: f32 = 0.42, 0.0, f32::MAX, false, "Soft surface grip";
         tip_terrain_roll_radians: f32 = 1.0, 0.0, std::f32::consts::PI, false, "Tip roll threshold (radians)";
         settle_time_seconds: f32 = 3.0, 0.0, MAX_ARENA_SECONDS, false, "Overturned settling time (seconds)";
         recovery_time_seconds: f32 = 15.0, 0.0, MAX_ARENA_SECONDS, false, "Overturned recovery time (seconds)";
     }
     "Projectiles and damage" {
-        flight_step_seconds: f32 = 0.125, 0.025, 0.5, false, "Ballistic integration step (seconds)";
+        flight_step_seconds: f32 = 0.125, 0.0, MAX_ARENA_SECONDS as f64 / MAX_FLIGHT_SEGMENTS as f64, false, "Ballistic integration step (seconds)";
         max_flight_segments: usize = 320, 0, MAX_FLIGHT_SEGMENTS, true, "Maximum ballistic segments";
-        fallback_turret_height_metres: f32 = 1.35, 0.0, 6.0, false, "Fallback turret pivot height (metres)";
+        fallback_turret_height_metres: f32 = 1.35, 0.0, MAX_PHYSICS_DISTANCE, false, "Fallback turret pivot height (metres)";
         fallback_gun_ray_speed_mps: f32 = 450.0, 0.0, MAX_SQUARED_DISTANCE_METRES, false, "Fallback gun ray speed (m/s)";
         projectile_contact_clearance_metres: f32 = 0.002, 0.0, f32::MAX, false, "Projectile contact clearance (metres)";
         ricochet_range_calibers: f32 = 10.0, 0.0, f32::MAX, false, "Ricochet range (calibers)";
@@ -259,6 +286,44 @@ mod tests {
                     .is_err()
             );
         }
+    }
+
+    #[test]
+    fn physics_ranges_follow_solver_limits() {
+        let settings = |values: &[(&str, f64)]| {
+            BattleParameters::from_overrides(
+                &values
+                    .iter()
+                    .map(|&(key, value)| (key.to_owned(), value))
+                    .collect(),
+            )
+        };
+
+        for gravity in [-MAX_GRAVITY, -42.125, 100.0, MAX_GRAVITY] {
+            let parameters = settings(&[("gravity_mps2", f64::from(gravity))]).unwrap();
+            assert_eq!(parameters.gravity_mps2, gravity);
+        }
+        assert!(settings(&[("gravity_mps2", f64::from(MAX_GRAVITY.next_up()))]).is_err());
+
+        assert!(settings(&[("suspension_frequency_hz", 6.0)]).is_ok());
+        assert!(
+            settings(&[
+                ("suspension_frequency_hz", 18.0),
+                ("suspension_damping_ratio", 1.0)
+            ])
+            .is_err()
+        );
+        assert!(
+            settings(&[
+                ("suspension_frequency_hz", f64::from(MAX_SUSPENSION_HZ)),
+                ("suspension_damping_ratio", 0.0),
+                ("contact_skin_metres", 0.5),
+                ("fallback_mass_kg", 250_000.0),
+                ("hard_surface_grip", 3.5),
+                ("flight_step_seconds", 0.75),
+            ])
+            .is_ok()
+        );
     }
 
     #[test]

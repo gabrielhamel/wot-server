@@ -16,7 +16,14 @@ impl Fixture {
         position: Vec3,
         profile: Option<wot_shared_kernel::VehiclePerformance>,
     ) -> Self {
-        let parameters = BattleParameters::default();
+        Self::with_parameters(position, profile, BattleParameters::default())
+    }
+
+    fn with_parameters(
+        position: Vec3,
+        profile: Option<wot_shared_kernel::VehiclePerformance>,
+        parameters: BattleParameters,
+    ) -> Self {
         let terrain = Terrain::flat();
         let mut physics = ArenaPhysics::new(
             &terrain,
@@ -88,6 +95,24 @@ fn unsupported_hull_falls_under_gravity_and_suspension_settles_at_ground_level()
             fixture.step();
         }
         assert_eq!(*fixture.body().position(), parked);
+    }
+}
+
+#[test]
+fn signed_gravity_above_the_old_limit_moves_hulls_in_both_directions() {
+    for gravity in [-100.0, 100.0] {
+        let parameters = BattleParameters::from_overrides(&BTreeMap::from([
+            ("gravity_mps2".to_owned(), gravity),
+            ("suspension_frequency_hz".to_owned(), 8.0),
+        ]))
+        .unwrap();
+        let mut fixture = Fixture::with_parameters(Vec3::Y * 20.0, None, parameters);
+        for _ in 0..12 {
+            assert!(!fixture.step().grounded);
+        }
+        assert!(fixture.physics.world.quarantine().is_empty());
+        let expected_speed = -gravity as f32 * 12.0 * STEP_SECONDS;
+        assert!((fixture.body().linvel().y - expected_speed).abs() < 0.05);
     }
 }
 

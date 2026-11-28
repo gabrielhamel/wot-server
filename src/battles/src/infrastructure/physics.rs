@@ -3,6 +3,10 @@ use super::obstacles::{Breakage, Scenery, SceneryColliders};
 use super::scenery::BreakageCause;
 use super::terrain::Terrain;
 use super::{BattleParameters, Participant, ParticipantId, Result, Tank, Vec2, Vec3};
+use crate::domain::parameters::{
+    MAX_ANGULAR_SPEED, MAX_LINEAR_SPEED, MIN_COLLIDER_HALF_EXTENT, PHYSICS_HZ,
+    PHYSICS_STEP_SECONDS as STEP_SECONDS,
+};
 use glam::{EulerRot, Quat, Vec3Swizzles};
 use rapier3d::parry::shape::{Cuboid, RoundCuboid};
 use rapier3d::prelude::{
@@ -14,7 +18,6 @@ use std::collections::{BTreeMap, HashMap};
 mod contacts;
 mod tracks;
 
-const STEP_SECONDS: f32 = 1.0 / 60.0;
 const MAX_STEPS_PER_TICK: u32 = 12;
 
 pub(super) struct ArenaPhysics {
@@ -33,6 +36,7 @@ struct Chassis {
     hull_center: Vector,
     track_half_width: f32,
     track_half_length: f32,
+    suspension_travel: f32,
     yaw_inertia_per_kg: f32,
     query_radius: f32,
     supported_by: [Option<ColliderHandle>; tracks::SUPPORT_POINTS],
@@ -166,7 +170,7 @@ impl ArenaPhysics {
         } else {
             0.0
         };
-        let dt = 1.0 / 60.0_f64;
+        let dt = 1.0 / f64::from(PHYSICS_HZ);
         self.remainder += f64::from(seconds).clamp(0.0, f64::from(MAX_STEPS_PER_TICK) * dt);
         let substeps = ((self.remainder / dt + 1e-7).floor() as u32).min(MAX_STEPS_PER_TICK);
         self.remainder = (self.remainder - f64::from(substeps) * dt).max(0.0);
@@ -179,6 +183,7 @@ impl ArenaPhysics {
                 Some(StepState::new(client, tank, substeps))
             })
             .collect();
+        let mut rejected_track_impulse = false;
         for _ in 0..substeps {
             self.scenery_regions.clear();
             self.scenery_regions
@@ -223,9 +228,11 @@ impl ArenaPhysics {
                     &mut player.tank,
                     &self.parameters,
                 );
+                rejected_track_impulse |= supported.rejected_impulse;
                 state.motion.grounded = supported.grounded;
                 state.motion.scenery_support = supported.scenery;
-                if let Some(body) = self.world.bodies.get(chassis.body) {
+                if let Some(body) = self.world.bodies.get_mut(chassis.body) {
+                    bound_solver_velocity(body);
                     state.velocity = body.linvel();
                     state.angular_velocity = body.angvel();
                     state.mass_center = body.center_of_mass();
@@ -252,15 +259,18 @@ impl ArenaPhysics {
                     &mut self.scenery,
                     chassis,
                     scenery,
-                    self.parameters.scenery_push_force_scale * seconds / STEP_SECONDS,
+                    (f64::from(self.parameters.scenery_push_force_scale) * f64::from(seconds)
+                        / f64::from(STEP_SECONDS))
+                    .min(f64::from(f32::MAX)) as f32,
                     can_damage && player.entry.is_some() && player.tank.health > 0,
                 );
-                let Some(body) = self.world.bodies.get(chassis.body) else {
+                let Some(body) = self.world.bodies.get_mut(chassis.body) else {
                     continue;
                 };
-                if !body.is_dynamic() {
+                if !body.is_dynamic() || !body.is_enabled() {
                     continue;
                 }
+                bound_solver_velocity(body);
                 let position = game_vec(body.translation());
                 let direction = game_direction(body);
                 let stationary = body.is_sleeping() || body.activation().time_since_can_sleep > 0.0;
@@ -286,6 +296,10 @@ impl ArenaPhysics {
                     recover_upright(&mut self.world, chassis, player);
                 }
             }
+        }
+        if rejected_track_impulse {
+            tracing::Span::current().record("otel.status_code", "ERROR");
+            tracing::error!("Skipped non-finite arena track impulse");
         }
         states
             .into_iter()
@@ -357,6 +371,29 @@ impl ArenaPhysics {
     }
 }
 
+fn bound_solver_velocity(body: &mut RigidBody) {
+    let linear = body.linvel();
+    let angular = body.angvel();
+    if linear.is_finite() && linear.length_squared() > MAX_LINEAR_SPEED * MAX_LINEAR_SPEED {
+        let limit = Vector::splat(MAX_LINEAR_SPEED);
+        body.set_linvel(
+            linear
+                .clamp(-limit, limit)
+                .clamp_length_max(MAX_LINEAR_SPEED),
+            false,
+        );
+    }
+    if angular.is_finite() && angular.length_squared() > MAX_ANGULAR_SPEED * MAX_ANGULAR_SPEED {
+        let limit = Vector::splat(MAX_ANGULAR_SPEED);
+        body.set_angvel(
+            angular
+                .clamp(-limit, limit)
+                .clamp_length_max(MAX_ANGULAR_SPEED),
+            false,
+        );
+    }
+}
+
 impl Chassis {
     fn query_radius(half: Vec3, center: Vector, travel: f32) -> f32 {
         (center.length() + half.z * 2.0).max(half.length() + travel * 2.0)
@@ -369,7 +406,8 @@ impl Chassis {
             tank.parameters.fallback_hull_half_length_metres,
         );
         let (half, center) = tank.collision_extents();
-        if center.is_finite() && half.is_finite() && half.min_element() >= 0.001 {
+        if center.is_finite() && half.is_finite() && half.min_element() >= MIN_COLLIDER_HALF_EXTENT
+        {
             (half, physics_vec(center))
         } else {
             (fallback_half, Vector::Y * fallback_half.y)
@@ -404,7 +442,7 @@ impl Chassis {
         let track_length = mobility.map(|profile| profile.track_half_length);
         let track_extent = |value: Option<f32>, extent: f32| {
             value
-                .filter(|v| v.is_finite() && *v >= 0.001)
+                .filter(|v| v.is_finite() && *v >= MIN_COLLIDER_HALF_EXTENT)
                 .unwrap_or(extent)
                 .min(extent)
         };
@@ -418,6 +456,7 @@ impl Chassis {
             hull_center: center,
             track_half_width: track_extent(track_width, half.x),
             track_half_length: track_extent(track_length, half.z),
+            suspension_travel: travel,
             supported_by: [None; tracks::SUPPORT_POINTS],
             query_radius: Self::query_radius(half, center, travel),
             yaw_inertia_per_kg: (half.x * half.x + half.z * half.z) / 3.0,

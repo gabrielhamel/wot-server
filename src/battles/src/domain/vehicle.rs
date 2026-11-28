@@ -166,8 +166,12 @@ impl Tank {
             .map_or(self.parameters.fallback_engine_power_watts, |profile| {
                 profile.mobility.mass_kg * profile.mobility.power_per_kg
             });
-        let press_force = self.parameters.traction_multiplier * power / 2.0;
-        press_force * self.parameters.scenery_push_force_scale * seconds
+        (f64::from(self.parameters.traction_multiplier)
+            * f64::from(power)
+            * f64::from(self.parameters.scenery_push_force_scale)
+            * f64::from(seconds)
+            * 0.5)
+            .min(f64::from(f32::MAX)) as f32
     }
 
     pub fn scenery_push_direction(&self) -> Vec2 {

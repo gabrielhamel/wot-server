@@ -1213,8 +1213,8 @@ it("launches a Training battle with selected players and a customized stationary
             label: "Suspension frequency (Hz)",
             group: "Hull physics",
             default: 3,
-            min: 1,
-            max: 5,
+            min: 0,
+            max: 19.09859,
             integer: false,
           },
           {
@@ -1231,8 +1231,8 @@ it("launches a Training battle with selected players and a customized stationary
             label: "Gravity (m/s²)",
             group: "Vehicle movement",
             default: 9.81,
-            min: 0,
-            max: 30,
+            min: -30_198_988,
+            max: 30_198_988,
             integer: false,
           },
         ],
@@ -1464,7 +1464,10 @@ it("launches a Training battle with selected players and a customized stationary
     const suspension = screen.getByRole("spinbutton", { name: "Suspension frequency (Hz)" });
     expect(suspension).toHaveValue(3);
     await user.clear(suspension);
-    await user.type(suspension, "4");
+    await user.type(suspension, "6");
+    const gravity = screen.getByRole("spinbutton", { name: "Gravity (m/s²)" });
+    await user.clear(gravity);
+    await user.type(gravity, "-42.125");
     await user.click(parameters);
     expect(parameters).toHaveAttribute("aria-expanded", "false");
     await user.click(start);
@@ -1485,7 +1488,8 @@ it("launches a Training battle with selected players and a customized stationary
       parameters: {
         countdown_seconds: 61,
         spotting_retention_ticks: 4_294_967_295,
-        suspension_frequency_hz: 4,
+        suspension_frequency_hz: 6,
+        gravity_mps2: -42.125,
       },
       players: [
         {
@@ -1570,7 +1574,7 @@ it("launches a Training battle with selected players and a customized stationary
       "ddd.bounded_context.name": "player_administration",
       "input.arena_type_id": 5,
       "input.round_length.seconds": 600,
-      "input.battle.parameters.count": 3,
+      "input.battle.parameters.count": 4,
       "input.players.count": 2,
       "input.players.custom_loadout_count": 1,
       "input.players.owned_override_count": 1,

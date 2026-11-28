@@ -217,9 +217,27 @@ Fractions and cosines use their mathematical ranges. The track repair
 multiplier uses the 120-second maximum base repair time when calculating
 its upper limit. Projectile processing caps each flight at 640 segments
 and each damage roll at 12 samples to bound synchronous work. Device hits
-use the capacity of the strike buffer. The current hull physics and ballistic
-step ranges bound inputs to the fixed-step solver, collision geometry and
-integration.
+use the capacity of the strike buffer. The ballistic step accepts up to the
+arena clock budget divided by the maximum segment count.
+
+The 60 Hz physics step and single-precision collision geometry determine the
+physics limits. Geometry uses a minimum fallback collider half extent of
+1 mm and a scale of approximately 8.39 km as its upper bound. The server
+derives its linear velocity limit from that distance per step and its angular
+velocity limit from half a turn per step. Signed gravity is limited to the acceleration that
+can change velocity by the linear speed limit in one step, approximately
+30.2 million m/s² in either direction. Positive values pull down and
+negative values pull up. Fallback mass bounds keep the mass-to-volume ratio
+and squared momentum representable.
+
+The suspension allows zero frequency and damping. For a nonzero frequency
+the server rejects frequency and damping settings outside the linearized
+spring's semi-implicit Euler stability region. With `x = 2π × frequency × step`
+and damping ratio `ζ`, the requirement is `x² + 4ζx < 4`. At zero damping
+the frequency ceiling is approximately 19.1 Hz. Lateral and track-lock grip
+response use the explicit velocity feedback limit of twice the solver
+frequency. Traction, grip, drive ratios, and scenery pressure accept wider
+values, with resulting speeds limited where they enter the solver.
 
 The native movement bitmask identifies commands. Shell ballistics and equipped
 vehicle performance come from the resource bundle. The tracer policy uses each recipient's known Vehicle entities.

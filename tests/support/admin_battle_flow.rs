@@ -196,6 +196,9 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         assert_eq!(countdown["default"], 10.0);
         assert_eq!(countdown["integer"], true);
         assert!(parameters.iter().all(|p| p["key"] != "hull_physics" && p["key"] != "max_passive_speed_mps"));
+        let gravity = parameters.iter().find(|p| p["key"] == "gravity_mps2").unwrap();
+        assert!(gravity["min"].as_f64().unwrap() < 0.0);
+        assert!(gravity["max"].as_f64().unwrap() > 30.0);
         let track_repair = parameters.iter().find(|p| p["key"] == "track_repair_time_scale").unwrap();
         assert_eq!(track_repair["group"], "Tracks");
         assert_eq!(track_repair["default"], 1.0);
@@ -271,6 +274,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             json!({"countdown_seconds": 1.5}),
             json!({"parked_vehicle_pose_interval_ticks": u64::from(u32::MAX) + 1}),
             json!({"countdown_seconds": 429_496_729}),
+            json!({"suspension_frequency_hz": 18, "suspension_damping_ratio": 1}),
             json!({"max_flight_segments": 10000}),
             json!({"hull_physics": 0}),
             json!({"track_repair_time_scale": -1.0}),
@@ -284,6 +288,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         }
         battle["parameters"] = json!({
             "countdown_seconds": 2,
+            "gravity_mps2": 31.0,
             "parked_vehicle_pose_interval_ticks": 5,
             "track_repair_time_scale": 12.125,
             "spotting_retention_ticks": u32::MAX,
@@ -596,7 +601,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     for span in [launch, handler] {
         assert_eq!(
             get(span, "input.battle.parameters.count").as_deref(),
-            Some("4")
+            Some("5")
         );
     }
     assert!(spans.iter().any(|span| {
@@ -720,6 +725,14 @@ async fn dashboard_launches_player_and_stationary_dummies() {
     assert_eq!(
         get(preparation, "input.battle.countdown.seconds").as_deref(),
         Some("2")
+    );
+    assert_eq!(
+        get(preparation, "input.battle.gravity.mps2").as_deref(),
+        Some("31")
+    );
+    assert_eq!(
+        get(preparation, "input.battle.suspension.frequency.hz").as_deref(),
+        Some("3")
     );
     assert_eq!(
         get(preparation, "input.battle.load_timeout.seconds").as_deref(),
