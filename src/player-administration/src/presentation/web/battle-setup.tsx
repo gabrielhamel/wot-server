@@ -20,6 +20,7 @@ import type {
 } from "../../application/admin-contracts";
 import { getBattleOptions, startBattle } from "../../infrastructure/admin-api";
 import { errorMessage } from "../../../../shared-infrastructure/src/infrastructure/web/http";
+import { restoreLastBattle, saveLastBattle } from "./last-battle";
 import { BattleParameterEditor } from "./battle-parameters";
 import { ChoiceSelect } from "./battle-select";
 import { BattleLoadoutConfiguration } from "./battle-loadout-configuration";
@@ -146,10 +147,54 @@ export function BattleSetup() {
   const [receipt, setReceipt] = useState<{ joined: number; requested: number }>();
   const nextDummy = useRef(0);
 
+  const initialized = useRef(false);
+  const [expanded, setExpanded] = useState(false);
+  const [source, setSource] = useState<"initial" | "restored" | "modified" | "reset" | "saved">(
+    "initial",
+  );
+  const [warnings, setWarnings] = useState<string[]>([]);
+
+  function markEdited() {
+    setSource((previous) =>
+      previous === "restored" || previous === "saved" || previous === "modified"
+        ? "modified"
+        : "initial",
+    );
+  }
+
+  function reset() {
+    setMap("");
+    setDuration("15");
+    setParameterDrafts({});
+    setPlayers([]);
+    setPlayerSearch("");
+    setDummies([]);
+    setConfiguring(undefined);
+    setReceipt(undefined);
+    setError("");
+    setWarnings([]);
+    setSource("reset");
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     getBattleOptions(controller.signal).then(
-      (data) => {
+      async (data) => {
+        if (controller.signal.aborted) return;
+        if (!initialized.current) {
+          const saved = await restoreLastBattle(data, controller.signal);
+          if (controller.signal.aborted) return;
+          initialized.current = true;
+          if (saved) {
+            setMap(saved.map);
+            setDuration(saved.duration);
+            setParameterDrafts(saved.parameters);
+            setDummies(saved.dummies.map((dummy) => ({ ...dummy, key: ++nextDummy.current })));
+            setWarnings(saved.warnings);
+            setSource("restored");
+            setExpanded(true);
+          }
+        }
         if (controller.signal.aborted) return;
         setOptions(data);
         setLoading(false);
@@ -176,6 +221,7 @@ export function BattleSetup() {
   }
 
   function updateDummy(key: number, edit: Partial<Dummy>) {
+    markEdited();
     setDummies((roster) =>
       roster.map((dummy) => (dummy.key === key ? { ...dummy, ...edit } : dummy)),
     );
@@ -227,13 +273,20 @@ export function BattleSetup() {
               : undefined,
         }),
       );
-      const started = await startBattle({
+      const setup = {
         arena_type: map,
         duration_seconds: minutes * 60,
         parameters,
-        players: roster,
         dummies: dummies.map(({ team, loadout }) => ({ team, loadout })),
-      });
+      };
+      const started = await startBattle({ ...setup, players: roster });
+      if (saveLastBattle(setup)) {
+        setSource("saved");
+        setWarnings([]);
+      } else {
+        setSource("initial");
+        setWarnings(["The battle started, but this browser could not save its settings."]);
+      }
       setReceipt({ joined: started.players_handed_off, requested: players.length });
       setPlayers([]);
       refresh();
@@ -298,7 +351,10 @@ export function BattleSetup() {
                 value={map}
                 choices={options.maps}
                 placeholder="Select a map"
-                onChange={setMap}
+                onChange={(value) => {
+                  markEdited();
+                  setMap(value);
+                }}
               />
               <TextField
                 fullWidth
@@ -310,18 +366,32 @@ export function BattleSetup() {
                 slotProps={{
                   htmlInput: { min: MIN_DURATION_MINUTES, max: MAX_DURATION_MINUTES, step: 1 },
                 }}
-                onChange={(event) => setDuration(event.target.value)}
+                onChange={(event) => {
+                  markEdited();
+                  setDuration(event.target.value);
+                }}
               />
             </Stack>
-            {parameterFields.length > 0 && (
-              <BattleParameterEditor
-                fields={parameterFields}
-                onChange={(key, value) =>
-                  setParameterDrafts((drafts) => ({ ...drafts, [key]: value }))
-                }
-                onReset={() => setParameterDrafts({})}
-              />
-            )}
+            <BattleParameterEditor
+              fields={parameterFields}
+              expanded={expanded}
+              onToggle={setExpanded}
+              status={
+                {
+                  initial: "",
+                  restored: "Loaded from your last launched battle",
+                  modified: "Changes will be saved when your next battle starts successfully.",
+                  reset: "Using default battle parameters.",
+                  saved: "Settings saved for your next battle.",
+                }[source]
+              }
+              warnings={warnings}
+              onChange={(key, value) => {
+                markEdited();
+                setParameterDrafts((drafts) => ({ ...drafts, [key]: value }));
+              }}
+              onReset={reset}
+            />
             <Stack spacing={2}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography component="h3" variant="h6">
@@ -469,12 +539,13 @@ export function BattleSetup() {
                 </Typography>
                 <Button
                   disabled={full}
-                  onClick={() =>
+                  onClick={() => {
+                    markEdited();
                     setDummies([
                       ...dummies,
                       { key: ++nextDummy.current, team: 2, loadout: emptyLoadout() },
-                    ])
-                  }
+                    ]);
+                  }}
                 >
                   Add dummy
                 </Button>
@@ -483,7 +554,10 @@ export function BattleSetup() {
                 <RosterCard
                   key={key}
                   title={`Dummy ${index + 1}`}
-                  remove={() => setDummies(dummies.filter((dummy) => dummy.key !== key))}
+                  remove={() => {
+                    markEdited();
+                    setDummies(dummies.filter((dummy) => dummy.key !== key));
+                  }}
                 >
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                     <ChoiceSelect

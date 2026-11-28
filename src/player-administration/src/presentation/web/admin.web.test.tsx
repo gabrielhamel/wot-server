@@ -1,12 +1,13 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { httpServer } from "../../../../server-runtime/src/infrastructure/web/test/setup";
 import { adminHandlers } from "../../../../server-runtime/src/infrastructure/web/mocks/admin";
 import { captureTraces } from "../../../../server-runtime/src/infrastructure/web/test/traces";
 import type { AdminSession, Garage, Grant, PlayerRecord } from "../../application/admin-contracts";
 import type { StoreOffer } from "../../../../store/src/web";
+import { lastBattleKey } from "./last-battle";
 import Admin from "./admin-page";
 
 const origin = "http://localhost:8080/api/admin";
@@ -1110,6 +1111,7 @@ describe("Server Administration", () => {
 });
 
 it("launches a Training battle with selected players and a customized stationary dummy", async () => {
+  localStorage.setItem(lastBattleKey, "{invalid");
   const telemetry = captureTraces();
   const posts: { trace: string | null; body: unknown }[] = [];
   let optionsTrace: string | null = null;
@@ -1458,9 +1460,6 @@ it("launches a Training battle with selected players and a customized stationary
     await user.clear(countdown);
     await user.type(countdown, "61");
     expect(start).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Reset parameters to defaults" }));
-    expect(countdown).toHaveValue(10);
-    expect(start).toBeEnabled();
     await user.clear(countdown);
     await user.type(countdown, "2");
     await user.clear(retention);
@@ -1535,6 +1534,13 @@ it("launches a Training battle with selected players and a customized stationary
         },
       ],
     });
+    const accepted = posts[1]?.body as Record<string, unknown>;
+    expect(JSON.parse(localStorage.getItem(lastBattleKey)!)).toEqual({
+      arena_type: accepted.arena_type,
+      duration_seconds: accepted.duration_seconds,
+      parameters: accepted.parameters,
+      dummies: accepted.dummies,
+    });
     telemetry.expectRequest(optionsTrace, "web.admin.battle_options", "/api/admin/battles", 200);
     expect(loadoutTraces).toHaveLength(3);
     telemetry.expectRequest(
@@ -1576,6 +1582,125 @@ it("launches a Training battle with selected players and a customized stationary
       "output.battle.id": 7,
     });
   } finally {
+    localStorage.removeItem(lastBattleKey);
     await telemetry.stop();
+  }
+});
+
+it("restores the last battle, resets the whole form and replaces the save only after a successful launch", async () => {
+  const previous = {
+    arena_type: 5,
+    duration_seconds: 600,
+    parameters: { countdown: 2 },
+    dummies: [{ team: 2, loadout: { vehicle: 81, equipment: [120, 999], hit_points: 650 } }],
+  };
+  const stored = JSON.stringify(previous);
+  localStorage.setItem(lastBattleKey, stored);
+  let reject = true;
+  httpServer.use(
+    players(),
+    http.get(`${origin}/battles`, () =>
+      HttpResponse.json({
+        maps: [{ id: 5, name: "Prokhorovka" }],
+        parameters: [
+          {
+            key: "countdown",
+            label: "Countdown",
+            group: "Timing",
+            min: 0,
+            max: 60,
+            default: 10,
+            integer: true,
+          },
+        ],
+        players: [{ id: 123, name: "Commander", vehicles: [{ id: 209, name: "T-34" }] }],
+        dummy_vehicles: [{ id: 81, name: "T-34" }],
+        observer_available: false,
+      }),
+    ),
+    http.get(`${origin}/battles/vehicles/81`, () =>
+      HttpResponse.json({
+        equipment_slots: 3,
+        equipment: [{ id: 120, name: "Hardening" }],
+      }),
+    ),
+    http.post(`${origin}/battles`, () =>
+      reject
+        ? HttpResponse.json({ message: "Launch refused" }, { status: 409 })
+        : HttpResponse.json({ battle_id: 8, players_handed_off: 1 }),
+    ),
+  );
+  async function open() {
+    const page = openAdmin(true);
+    await page.user.click(await screen.findByRole("tab", { name: "Admin" }));
+    await page.user.click(await screen.findByRole("link", { name: "Battles" }));
+    await screen.findByLabelText("Map and battle type");
+    return page;
+  }
+  async function addPlayer(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByLabelText("Add connected player"), "Commander");
+    await user.click(await screen.findByRole("option", { name: "Commander" }));
+  }
+  try {
+    const first = await open();
+    expect(screen.getByText("Loaded from your last launched battle")).toBeVisible();
+    expect(screen.getByText(/Dummy 1: review equipment/)).toBeVisible();
+    expect(screen.getByLabelText("Countdown")).toHaveValue(2);
+    expect(screen.getByLabelText("Vehicle for Dummy 1")).toHaveValue("T-34");
+    expect(screen.queryByLabelText("Vehicle for Commander")).toBeNull();
+    await addPlayer(first.user);
+    await first.user.click(screen.getByRole("button", { name: "Reset battle parameters" }));
+    expect(screen.getByLabelText("Map and battle type")).toHaveValue("");
+    expect(screen.getByLabelText("Countdown")).toHaveValue(10);
+    expect(screen.getByLabelText("Battle duration (minutes)")).toHaveValue(15);
+    expect(screen.queryByLabelText("Vehicle for Dummy 1")).toBeNull();
+    expect(screen.queryByLabelText("Vehicle for Commander")).toBeNull();
+    expect(localStorage.getItem(lastBattleKey)).toBe(stored);
+    await first.user.click(screen.getByRole("button", { name: "Refresh players" }));
+    await waitFor(() => expect(screen.queryByLabelText("Loading battle options")).toBeNull());
+    expect(screen.getByLabelText("Map and battle type")).toHaveValue("");
+    first.unmount();
+    const second = await open();
+    const duration = screen.getByLabelText("Battle duration (minutes)");
+    expect(duration).toHaveValue(10);
+    await second.user.clear(duration);
+    await second.user.type(duration, "12");
+    expect(screen.getByText(/Changes will be saved/)).toBeVisible();
+    await addPlayer(second.user);
+    const start = screen.getByRole("button", { name: "Start battle" });
+    await second.user.click(start);
+    expect(await screen.findByText("Launch refused")).toBeVisible();
+    expect(localStorage.getItem(lastBattleKey)).toBe(stored);
+    reject = false;
+    await second.user.click(start);
+    expect(await screen.findByText("Battle started.")).toBeVisible();
+    const updated = {
+      ...previous,
+      duration_seconds: 720,
+      dummies: [{ team: 2, loadout: { vehicle: 81, equipment: [120, 0], hit_points: 650 } }],
+    };
+    expect(JSON.parse(localStorage.getItem(lastBattleKey)!)).toEqual(updated);
+    await addPlayer(second.user);
+    await second.user.clear(duration);
+    await second.user.type(duration, "14");
+    await second.user.click(start);
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem(lastBattleKey)!)).toEqual({
+        ...updated,
+        duration_seconds: 840,
+      }),
+    );
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("Storage unavailable");
+    });
+    try {
+      await addPlayer(second.user);
+      await second.user.click(start);
+      expect(await screen.findByText(/could not save its settings/)).toBeVisible();
+    } finally {
+      write.mockRestore();
+    }
+  } finally {
+    localStorage.removeItem(lastBattleKey);
   }
 });
