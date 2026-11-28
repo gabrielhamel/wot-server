@@ -191,7 +191,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let duration = parameters.iter().find(|p| p["key"] == "spotting_retention_ticks").unwrap();
         assert_eq!(duration["group"], "Spotting");
         assert_eq!(duration["default"], 100.0);
-        assert_eq!(duration["max"], 600.0);
+        assert_eq!(duration["max"], f64::from(u32::MAX));
         let countdown = parameters.iter().find(|p| p["key"] == "countdown_seconds").unwrap();
         assert_eq!(countdown["default"], 10.0);
         assert_eq!(countdown["integer"], true);
@@ -199,8 +199,8 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         let track_repair = parameters.iter().find(|p| p["key"] == "track_repair_time_scale").unwrap();
         assert_eq!(track_repair["group"], "Tracks");
         assert_eq!(track_repair["default"], 1.0);
-        assert_eq!(track_repair["min"], 0.1);
-        assert_eq!(track_repair["max"], 10.0);
+        assert_eq!(track_repair["min"], 0.0);
+        assert!(track_repair["max"].as_f64().unwrap() > 10.0);
         assert_eq!(track_repair["integer"], false);
         let vehicles = options["players"][0]["vehicles"].as_array().unwrap();
         let unavailable = |id| vehicles.iter().find(|vehicle| vehicle["id"] == id).unwrap()["unavailable_reason"].clone();
@@ -269,10 +269,11 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         for parameters in [
             json!({"unknown_setting": 1}),
             json!({"countdown_seconds": 1.5}),
-            json!({"parked_vehicle_pose_interval_ticks": 6}),
+            json!({"parked_vehicle_pose_interval_ticks": u64::from(u32::MAX) + 1}),
+            json!({"countdown_seconds": 429_496_729}),
             json!({"max_flight_segments": 10000}),
             json!({"hull_physics": 0}),
-            json!({"track_repair_time_scale": 0.0}),
+            json!({"track_repair_time_scale": -1.0}),
             json!({"spotting_near_metres": 30}),
         ] {
             let mut invalid = battle.clone();
@@ -284,8 +285,8 @@ async fn dashboard_launches_player_and_stationary_dummies() {
         battle["parameters"] = json!({
             "countdown_seconds": 2,
             "parked_vehicle_pose_interval_ticks": 5,
-            "track_repair_time_scale": 1.5,
-            "spotting_retention_ticks": 80,
+            "track_repair_time_scale": 12.125,
+            "spotting_retention_ticks": u32::MAX,
         });
         let mut unready = battle.clone();
         unready["players"][0]["inventory_id"] = json!(2);
@@ -745,6 +746,16 @@ async fn dashboard_launches_player_and_stationary_dummies() {
                 && s.span_context.span_id() == crew_rejection.parent_span_id
                 && get(s, "output.outcome").as_deref() == Some("crew_incomplete"))
     );
+    assert!(spans.iter().any(|s| {
+        s.name == "player_sessions.start_admin_battle"
+            && get(s, "output.outcome").as_deref() == Some("invalid_parameters")
+            && get(s, "input.battle.parameters.count").as_deref() == Some("1")
+            && spans.iter().any(|parent| {
+                parent.name == "admin.start_battle"
+                    && parent.span_context.span_id() == s.parent_span_id
+                    && get(parent, "output.outcome").as_deref() == Some("invalid_parameters")
+            })
+    }));
     for expected in [
         "invalid_dummy",
         "invalid_parameters",

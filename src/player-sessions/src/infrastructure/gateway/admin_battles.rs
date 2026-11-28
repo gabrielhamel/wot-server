@@ -201,6 +201,9 @@ impl Gateway {
         {
             return Err(InvalidSetup);
         }
+        parameters
+            .validate_round_length(setup.duration_seconds as u64)
+            .map_err(|_| InvalidParameters)?;
         if self.pending_admin_battles.len() >= MAX_PENDING
             || self.battle_participants.len() + setup.players.len() > self.config.max_clients
         {

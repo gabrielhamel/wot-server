@@ -1205,7 +1205,7 @@ it("launches a Training battle with selected players and a customized stationary
             group: "Spotting",
             default: 100,
             min: 0,
-            max: 600,
+            max: 4_294_967_295,
             integer: true,
           },
           {
@@ -1223,7 +1223,7 @@ it("launches a Training battle with selected players and a customized stationary
             group: "Round timing",
             default: 10,
             min: 0,
-            max: 60,
+            max: 429_496_729,
             integer: true,
           },
           {
@@ -1453,17 +1453,13 @@ it("launches a Training battle with selected players and a customized stationary
     const retention = screen.getByRole("spinbutton", { name: "Spotted retention (100 ms ticks)" });
     expect(retention).toHaveValue(100);
     await user.clear(retention);
-    await user.type(retention, "601");
+    await user.type(retention, "4294967296");
     expect(start).toBeDisabled();
     await user.clear(retention);
-    await user.type(retention, "100");
+    await user.type(retention, "4294967295");
     await user.clear(countdown);
     await user.type(countdown, "61");
-    expect(start).toBeDisabled();
-    await user.clear(countdown);
-    await user.type(countdown, "2");
-    await user.clear(retention);
-    await user.type(retention, "80");
+    expect(start).toBeEnabled();
     expect(screen.queryByRole("combobox", { name: "Hull physics model" })).not.toBeInTheDocument();
     const suspension = screen.getByRole("spinbutton", { name: "Suspension frequency (Hz)" });
     expect(suspension).toHaveValue(3);
@@ -1487,8 +1483,8 @@ it("launches a Training battle with selected players and a customized stationary
       arena_type: 5,
       duration_seconds: 600,
       parameters: {
-        countdown_seconds: 2,
-        spotting_retention_ticks: 80,
+        countdown_seconds: 61,
+        spotting_retention_ticks: 4_294_967_295,
         suspension_frequency_hz: 4,
       },
       players: [

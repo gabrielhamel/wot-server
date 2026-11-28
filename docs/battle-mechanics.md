@@ -202,8 +202,24 @@ Battles owns the defaults and ranges in
 can override round timing, parked position refresh, gravity and drive
 response, hull contacts and rollover, ballistic integration, armor and device
 damage, track repair, fire and tracer visibility. The validated values travel with the battle launch and are shared
-by simulation and replication for that arena. The existing values are the
-defaults used by native Training Rooms.
+by simulation and replication for that arena. Native Training Rooms use the same defaults.
+
+The dashboard takes the field limits from the server. Integer intervals use
+their Rust storage limits. Spotting and parked pose intervals accept up to
+4,294,967,295 ticks and fire accepts up to 255 ticks. Loading, countdown,
+active play and results share the arena's 429,496,729-second clock budget.
+Spotting distances must remain strictly ordered from proximity through
+maximum range. Distance checks use the largest `f32` value that can be
+squared without overflow.
+
+Decimal settings accept fractional input and round to `f32` precision.
+Fractions and cosines use their mathematical ranges. The track repair
+multiplier uses the 120-second maximum base repair time when calculating
+its upper limit. Projectile processing caps each flight at 640 segments
+and each damage roll at 12 samples to bound synchronous work. Device hits
+use the capacity of the strike buffer. The current hull physics and ballistic
+step ranges bound inputs to the fixed-step solver, collision geometry and
+integration.
 
 The native movement bitmask identifies commands. Shell ballistics and equipped
 vehicle performance come from the resource bundle. The tracer policy uses each recipient's known Vehicle entities.
@@ -214,13 +230,13 @@ Training sends `TickSync`, the hull-relative Avatar pose and pending Mercury
 ACKs every 100 ms. Each driver also receives their own hull pose every tick.
 For other vehicles, the server compares position, yaw, pitch and roll with
 the previous tick. A changed pose is sent immediately and remains
-at the full tick rate for the refresh interval starting with that change. A client
+at the full tick rate for up to five ticks starting with that change. A client
 entering the arena also triggers a full snapshot. Unchanged poses then use
 refresh slots staggered by entity ID. Turret angle properties have their own
 delivery path.
 
 Under **Admin → Battles → Battle parameters → Network replication**,
-**Other parked vehicle pose interval (100 ms ticks)** accepts 1–5 and defaults to 5.
+**Other parked vehicle pose interval (100 ms ticks)** accepts 1–4,294,967,295 and defaults to 5.
 It applies to other vehicles. Set it to 1 to include every pose on every tick. Native Training Rooms use the
 default. See the [native replay evidence](battle-replays.md#widepark-parked-vehicle-cadence-from-2026-11-26).
 

@@ -17,7 +17,7 @@ pub(crate) struct Tank {
     hull_tilt: Vec2,
     physics_grounded: bool,
     physics_tipped: bool,
-    physics_settled_seconds: f32,
+    physics_settled_seconds: f64,
     pub health: i16,
     pub max_health: i16,
     pub performance: Option<VehiclePerformance>,
@@ -289,9 +289,10 @@ impl Tank {
             self.physics_settled_seconds = 0.0;
             return false;
         }
-        self.physics_settled_seconds += seconds;
+        self.physics_settled_seconds += f64::from(seconds);
         self.physics_settled_seconds
-            >= self.parameters.settle_time_seconds + self.parameters.recovery_time_seconds
+            >= f64::from(self.parameters.settle_time_seconds)
+                + f64::from(self.parameters.recovery_time_seconds)
     }
 
     pub fn set_stun_traverse(&mut self, factor: Option<f32>) {
