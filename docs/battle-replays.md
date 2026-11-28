@@ -15,8 +15,9 @@ read the Toolkit's own proxy format.
 
 ## Inspect a capture
 
-The repository includes two raw Random Battle samples under
-`docs/replay-samples/`. For additional captures, download an individual replay
+The repository includes raw Random Battle samples under
+`docs/replay-samples/`, including the [Mines spotting sample](#mines-visibility-lifecycle-from-2026-11-27).
+For additional captures, download an individual replay
 from the [Wotlytics replay archive](https://wotlytics.com/replays/) or copy a
 recording from the official client's `replays/` directory. Save working
 downloads in the checkout's ignored `.local/replays/` directory. Track
@@ -704,8 +705,9 @@ commands and production wire ordering.
 
 ## Mines visibility lifecycle from 2026-11-27
 
-The user-supplied EU1 replay
-`20261127_0901_china-Ch52_WZ_122_6_F3_10_hills.wotreplay` has SHA-256
+The [Mines replay](replay-samples/mines-2026-11-27.wotreplay) is the
+user-supplied EU1 recording `20261127_0901_china-Ch52_WZ_122_6_F3_10_hills.wotreplay`.
+Its SHA-256 is
 `a0088ae4d967b627ca018aea716af75d0bd740baccffd8bce5df3a9f7a3e5c74`.
 Its metadata reports `2.4.2.0 #1007` and map `10_hills`. The matching
 local `win64/WorldOfTanks.exe` has SHA-256
