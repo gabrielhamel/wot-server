@@ -274,7 +274,7 @@ async fn dashboard_launches_player_and_stationary_dummies() {
             json!({"countdown_seconds": 1.5}),
             json!({"parked_vehicle_pose_interval_ticks": u64::from(u32::MAX) + 1}),
             json!({"countdown_seconds": 429_496_729}),
-            json!({"suspension_frequency_hz": 18, "suspension_damping_ratio": 1}),
+            json!({"suspension_frequency_hz": -1}),
             json!({"max_flight_segments": 10000}),
             json!({"hull_physics": 0}),
             json!({"track_repair_time_scale": -1.0}),

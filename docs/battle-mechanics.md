@@ -204,8 +204,13 @@ response, hull contacts and rollover, ballistic integration, armor and device
 damage, track repair, fire and tracer visibility. The validated values travel with the battle launch and are shared
 by simulation and replication for that arena. Native Training Rooms use the same defaults.
 
-The dashboard takes the field limits from the server. Integer intervals use
-their Rust storage limits. Spotting and parked pose intervals accept up to
+The dashboard takes the field limits from the server. Use only technical
+constraints for per-battle minimum and maximum values. These include numeric
+representation, protocol fields, required invariants, and bounded server
+work. Settings may produce unrealistic gameplay or a broken simulation as
+long as the server handles them safely and continues serving other battles.
+
+Integer intervals use their Rust storage limits. Spotting and parked pose intervals accept up to
 4,294,967,295 ticks and fire accepts up to 255 ticks. Loading, countdown,
 active play and results share the arena's 429,496,729-second clock budget.
 Spotting distances must remain strictly ordered from proximity through
@@ -230,14 +235,9 @@ can change velocity by the linear speed limit in one step, approximately
 negative values pull up. Fallback mass bounds keep the mass-to-volume ratio
 and squared momentum representable.
 
-The suspension allows zero frequency and damping. For a nonzero frequency
-the server rejects frequency and damping settings outside the linearized
-spring's semi-implicit Euler stability region. With `x = 2π × frequency × step`
-and damping ratio `ζ`, the requirement is `x² + 4ζx < 4`. At zero damping
-the frequency ceiling is approximately 19.1 Hz. Lateral and track-lock grip
-response use the explicit velocity feedback limit of twice the solver
-frequency. Traction, grip, drive ratios, and scenery pressure accept wider
-values, with resulting speeds limited where they enter the solver.
+Suspension frequency, damping, and track response accept values beyond the
+stable range of the integrator. Track forces use wider intermediate
+arithmetic and cap the result using the per-step velocity limit.
 
 The native movement bitmask identifies commands. Shell ballistics and equipped
 vehicle performance come from the resource bundle. The tracer policy uses each recipient's known Vehicle entities.

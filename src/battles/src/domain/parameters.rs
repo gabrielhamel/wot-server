@@ -1,10 +1,6 @@
 use super::devices::DEVICE_STRIKE_CAPACITY;
 use serde::Serialize;
-use std::{
-    collections::BTreeMap,
-    f32::consts::{PI, TAU},
-    time::Duration,
-};
+use std::{collections::BTreeMap, f32::consts::PI, time::Duration};
 
 pub const TICK: Duration = Duration::from_millis(100);
 const MAX_ARENA_SECONDS: u64 = u32::MAX as u64 * TICK.as_millis() as u64 / 1000;
@@ -17,14 +13,13 @@ pub(crate) const MIN_COLLIDER_HALF_EXTENT: f32 = 0.001;
 const MAX_PHYSICS_DISTANCE: f32 = MIN_COLLIDER_HALF_EXTENT / f32::EPSILON;
 pub(crate) const MAX_LINEAR_SPEED: f32 = MAX_PHYSICS_DISTANCE / PHYSICS_STEP_SECONDS;
 pub(crate) const MAX_ANGULAR_SPEED: f32 = PI / PHYSICS_STEP_SECONDS;
-const MAX_GRAVITY: f32 = MAX_LINEAR_SPEED / PHYSICS_STEP_SECONDS;
-const MAX_RESPONSE_RATE: f32 = 2.0 / PHYSICS_STEP_SECONDS;
-const MAX_SUSPENSION_HZ: f32 = (MAX_RESPONSE_RATE / TAU).next_down();
+pub(crate) const MAX_GRAVITY: f32 = MAX_LINEAR_SPEED / PHYSICS_STEP_SECONDS;
 // Keep linear momentum at the solver's speed limit within a finite squared norm.
 const MAX_FALLBACK_MASS: f32 = MAX_SQUARED_DISTANCE_METRES / MAX_LINEAR_SPEED;
 // Keep the mass-to-volume ratio normal at the largest fallback cuboid.
 const MIN_FALLBACK_MASS: f32 =
     f32::MIN_POSITIVE * 8.0 * MAX_PHYSICS_DISTANCE * MAX_PHYSICS_DISTANCE * MAX_PHYSICS_DISTANCE;
+const MIN_POSITIVE_RESPONSE_SECONDS: f32 = f32::from_bits(1);
 const MAX_FLIGHT_SEGMENTS: usize = 640;
 const MAX_NORMAL_ROLL_SAMPLES: usize = 12;
 const MAX_TRACK_BASE_REPAIR_SECONDS: f64 = 120.0;
@@ -87,14 +82,6 @@ macro_rules! battle_parameters {
                     && parameters.spotting_near_metres < parameters.spotting_middle_metres
                     && parameters.spotting_middle_metres < parameters.spotting_max_metres)
                 {
-                    return Err(InvalidBattleParameters);
-                }
-                let spring_step = f64::from(TAU)
-                    * f64::from(parameters.suspension_frequency_hz)
-                    * f64::from(PHYSICS_STEP_SECONDS);
-                // The linearized spring and damper use semi-implicit Euler.
-                let damping_step = 4.0 * spring_step * f64::from(parameters.suspension_damping_ratio);
-                if spring_step * spring_step + damping_step >= 4.0 {
                     return Err(InvalidBattleParameters);
                 }
                 Ok(parameters)
@@ -163,13 +150,13 @@ battle_parameters! {
         wheel_turn_creep_mps: f32 = 2.0, 0.0, f32::MAX, false, "Wheeled turning creep speed (m/s)";
         moving_turn_min_speed_mps: f32 = 0.5, 0.0, f32::MAX, false, "Moving turn minimum speed (m/s)";
         moving_turn_multiplier: f32 = 0.85, 0.0, f32::MAX, false, "Moving turn multiplier";
-        track_lock_heading_response: f32 = 2.0, 0.0, MAX_RESPONSE_RATE, false, "Track-lock heading response (per second)";
+        track_lock_heading_response: f32 = 2.0, 0.0, f32::MAX, false, "Track-lock heading response (per second)";
     }
     "Hull physics" {
         suspension_travel_metres: f32 = 0.3, 0.0, MAX_PHYSICS_DISTANCE, false, "Suspension travel (metres)";
-        suspension_frequency_hz: f32 = 3.0, 0.0, MAX_SUSPENSION_HZ, false, "Suspension frequency (Hz)";
+        suspension_frequency_hz: f32 = 3.0, 0.0, f32::MAX, false, "Suspension frequency (Hz)";
         suspension_damping_ratio: f32 = 0.8, 0.0, f32::MAX, false, "Suspension damping ratio";
-        lateral_grip_response_seconds: f32 = 0.08, 1.0 / MAX_RESPONSE_RATE, f32::MAX, false, "Lateral grip response (seconds)";
+        lateral_grip_response_seconds: f32 = 0.08, MIN_POSITIVE_RESPONSE_SECONDS, f32::MAX, false, "Lateral grip response (seconds)";
     }
     "World contacts" {
         contact_skin_metres: f32 = 0.025, 0.0, MAX_PHYSICS_DISTANCE, false, "Collision clearance (metres)";
@@ -311,12 +298,12 @@ mod tests {
                 ("suspension_frequency_hz", 18.0),
                 ("suspension_damping_ratio", 1.0)
             ])
-            .is_err()
+            .is_ok()
         );
         assert!(
             settings(&[
-                ("suspension_frequency_hz", f64::from(MAX_SUSPENSION_HZ)),
-                ("suspension_damping_ratio", 0.0),
+                ("suspension_frequency_hz", f64::from(f32::MAX)),
+                ("suspension_damping_ratio", f64::from(f32::MAX)),
                 ("contact_skin_metres", 0.5),
                 ("fallback_mass_kg", 250_000.0),
                 ("hard_surface_grip", 3.5),

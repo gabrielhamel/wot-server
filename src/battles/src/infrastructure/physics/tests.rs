@@ -117,6 +117,27 @@ fn signed_gravity_above_the_old_limit_moves_hulls_in_both_directions() {
 }
 
 #[test]
+fn extreme_suspension_runs_without_non_finite_physics_objects() {
+    let parameters = BattleParameters::from_overrides(&BTreeMap::from([
+        ("suspension_frequency_hz".to_owned(), f64::from(f32::MAX)),
+        ("suspension_damping_ratio".to_owned(), f64::from(f32::MAX)),
+        (
+            "lateral_grip_response_seconds".to_owned(),
+            f64::from(f32::from_bits(1)),
+        ),
+    ]))
+    .unwrap();
+    let mut fixture = Fixture::with_parameters(Vec3::Y * 0.1, None, parameters);
+    assert!((0..12).any(|_| fixture.step().grounded));
+    for _ in 0..12 {
+        fixture.step();
+        assert!(fixture.physics.world.quarantine().is_empty());
+        assert!(fixture.body().translation().is_finite());
+        assert!(fixture.body().linvel().is_finite());
+    }
+}
+
+#[test]
 fn uneven_support_rolls_the_hull_on_one_track_and_recovers_on_flat_ground() {
     let mut fixture = Fixture::new(Vec3::Y * 0.5);
     let platform =

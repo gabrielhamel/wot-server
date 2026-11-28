@@ -1214,7 +1214,7 @@ it("launches a Training battle with selected players and a customized stationary
             group: "Hull physics",
             default: 3,
             min: 0,
-            max: 19.09859,
+            max: 3.4028234663852886e38,
             integer: false,
           },
           {
@@ -1464,7 +1464,7 @@ it("launches a Training battle with selected players and a customized stationary
     const suspension = screen.getByRole("spinbutton", { name: "Suspension frequency (Hz)" });
     expect(suspension).toHaveValue(3);
     await user.clear(suspension);
-    await user.type(suspension, "6");
+    await user.type(suspension, "24");
     const gravity = screen.getByRole("spinbutton", { name: "Gravity (m/s²)" });
     await user.clear(gravity);
     await user.type(gravity, "-42.125");
@@ -1488,7 +1488,7 @@ it("launches a Training battle with selected players and a customized stationary
       parameters: {
         countdown_seconds: 61,
         spotting_retention_ticks: 4_294_967_295,
-        suspension_frequency_hz: 6,
+        suspension_frequency_hz: 24,
         gravity_mps2: -42.125,
       },
       players: [
